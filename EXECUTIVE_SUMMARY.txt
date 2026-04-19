@@ -1,0 +1,33 @@
+Quant PD Framework is an application for developing, validating, stress testing,
+and documenting quantitative models built from tabular data delivered in Excel,
+CSV, or pandas dataframes.
+
+At a business level, the application helps a user take raw data through the
+major stages of a controlled quantitative modeling workflow:
+
+- standardize and validate incoming data
+- define schema, target, and feature rules
+- train a new model or reuse an existing fitted model
+- compare challenger models during development
+- test feature policies, explainability outputs, and scenario shocks
+- evaluate model quality when realized outcomes are available
+- generate diagnostics, charts, statistical tests, and documentation artifacts
+- export a complete rerunnable package for review, approval, and follow-up work
+
+The application is intentionally focused on model development and documentation,
+not on standing up an ongoing production monitoring platform.
+
+The current model families support the main target use cases of PD, LGD, CCAR,
+and CECL development. These include logistic, elastic-net logistic, scorecard
+logistic, probit, linear, beta, two-stage LGD, panel, quantile, Tobit, and
+XGBoost workflows.
+
+The application is designed for three audiences:
+
+- model builders who need a configurable Python and GUI workflow
+- validation and risk teams who need diagnostic evidence and exportable support
+- business stakeholders who need readable summaries and clear visual outputs
+
+The final output of each run is a structured artifact package that can include
+the fitted model, predictions, metrics, comparison results, scenario outputs,
+diagnostic tables, charts, a written report, and a rerun-ready code bundle.

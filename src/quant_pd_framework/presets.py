@@ -1,0 +1,178 @@
+"""Reusable workflow presets for common PD, LGD, CECL, and CCAR use cases."""
+
+from __future__ import annotations
+
+from copy import deepcopy
+from dataclasses import dataclass
+
+from .config import (
+    ComparisonConfig,
+    DataStructure,
+    DiagnosticConfig,
+    ExplainabilityConfig,
+    FeatureEngineeringConfig,
+    FeaturePolicyConfig,
+    ModelConfig,
+    ModelType,
+    PresetName,
+    ScenarioTestConfig,
+    TargetMode,
+)
+
+
+@dataclass(slots=True)
+class PresetDefinition:
+    """Fully-specified defaults for a named workflow preset."""
+
+    name: PresetName
+    label: str
+    description: str
+    target_mode: TargetMode
+    data_structure: DataStructure
+    model: ModelConfig
+    feature_engineering: FeatureEngineeringConfig
+    diagnostics: DiagnosticConfig
+    feature_policy: FeaturePolicyConfig
+    explainability: ExplainabilityConfig
+    comparison: ComparisonConfig
+    scenario_testing: ScenarioTestConfig
+    target_output_column: str
+    positive_values_text: str = ""
+
+
+PRESET_DEFINITIONS: dict[PresetName, PresetDefinition] = {
+    PresetName.PD_DEVELOPMENT: PresetDefinition(
+        name=PresetName.PD_DEVELOPMENT,
+        label="PD Development",
+        description=(
+            "Binary development workflow centered on interpretable PD modeling, "
+            "challenger comparisons, and documentation-ready diagnostics."
+        ),
+        target_mode=TargetMode.BINARY,
+        data_structure=DataStructure.CROSS_SECTIONAL,
+        model=ModelConfig(model_type=ModelType.LOGISTIC_REGRESSION, class_weight="balanced"),
+        feature_engineering=FeatureEngineeringConfig(),
+        diagnostics=DiagnosticConfig(),
+        feature_policy=FeaturePolicyConfig(
+            enabled=True,
+            max_missing_pct=25.0,
+            max_vif=10.0,
+            minimum_information_value=0.02,
+        ),
+        explainability=ExplainabilityConfig(),
+        comparison=ComparisonConfig(
+            enabled=True,
+            challenger_model_types=[
+                ModelType.ELASTIC_NET_LOGISTIC_REGRESSION,
+                ModelType.SCORECARD_LOGISTIC_REGRESSION,
+                ModelType.PROBIT_REGRESSION,
+                ModelType.XGBOOST,
+            ],
+        ),
+        scenario_testing=ScenarioTestConfig(enabled=False),
+        target_output_column="default_flag",
+        positive_values_text="1",
+    ),
+    PresetName.LIFETIME_PD_CECL: PresetDefinition(
+        name=PresetName.LIFETIME_PD_CECL,
+        label="Lifetime PD / CECL",
+        description=(
+            "Panel-oriented binary development preset for CECL-style lifetime "
+            "default modeling and scenario documentation."
+        ),
+        target_mode=TargetMode.BINARY,
+        data_structure=DataStructure.PANEL,
+        model=ModelConfig(
+            model_type=ModelType.ELASTIC_NET_LOGISTIC_REGRESSION,
+            class_weight="balanced",
+            l1_ratio=0.35,
+        ),
+        feature_engineering=FeatureEngineeringConfig(),
+        diagnostics=DiagnosticConfig(quantile_bucket_count=12),
+        feature_policy=FeaturePolicyConfig(
+            enabled=True,
+            max_missing_pct=20.0,
+            max_vif=8.0,
+            minimum_information_value=0.01,
+        ),
+        explainability=ExplainabilityConfig(top_n_features=6),
+        comparison=ComparisonConfig(
+            enabled=True,
+            challenger_model_types=[
+                ModelType.LOGISTIC_REGRESSION,
+                ModelType.SCORECARD_LOGISTIC_REGRESSION,
+                ModelType.XGBOOST,
+            ],
+        ),
+        scenario_testing=ScenarioTestConfig(enabled=False),
+        target_output_column="lifetime_default_flag",
+        positive_values_text="1",
+    ),
+    PresetName.LGD_SEVERITY: PresetDefinition(
+        name=PresetName.LGD_SEVERITY,
+        label="LGD Severity",
+        description=(
+            "Bounded continuous workflow for LGD model development with "
+            "severity-focused diagnostics and what-if testing."
+        ),
+        target_mode=TargetMode.CONTINUOUS,
+        data_structure=DataStructure.CROSS_SECTIONAL,
+        model=ModelConfig(model_type=ModelType.TWO_STAGE_LGD_MODEL),
+        feature_engineering=FeatureEngineeringConfig(),
+        diagnostics=DiagnosticConfig(),
+        feature_policy=FeaturePolicyConfig(enabled=True, max_missing_pct=20.0, max_vif=10.0),
+        explainability=ExplainabilityConfig(top_n_features=6),
+        comparison=ComparisonConfig(
+            enabled=True,
+            challenger_model_types=[
+                ModelType.BETA_REGRESSION,
+                ModelType.QUANTILE_REGRESSION,
+                ModelType.XGBOOST,
+            ],
+            ranking_metric="rmse",
+        ),
+        scenario_testing=ScenarioTestConfig(enabled=False),
+        target_output_column="lgd_value",
+    ),
+    PresetName.CCAR_FORECASTING: PresetDefinition(
+        name=PresetName.CCAR_FORECASTING,
+        label="CCAR Forecasting",
+        description=(
+            "Panel forecasting preset for macro-linked CCAR development with "
+            "challengers, policy checks, and scenario documentation."
+        ),
+        target_mode=TargetMode.CONTINUOUS,
+        data_structure=DataStructure.PANEL,
+        model=ModelConfig(model_type=ModelType.PANEL_REGRESSION),
+        feature_engineering=FeatureEngineeringConfig(
+            derive_date_parts=True,
+            drop_raw_date_columns=False,
+        ),
+        diagnostics=DiagnosticConfig(quantile_bucket_count=12),
+        feature_policy=FeaturePolicyConfig(enabled=True, max_missing_pct=15.0, max_vif=8.0),
+        explainability=ExplainabilityConfig(top_n_features=6),
+        comparison=ComparisonConfig(
+            enabled=True,
+            challenger_model_types=[
+                ModelType.QUANTILE_REGRESSION,
+                ModelType.XGBOOST,
+                ModelType.LINEAR_REGRESSION,
+            ],
+            ranking_metric="rmse",
+        ),
+        scenario_testing=ScenarioTestConfig(enabled=False),
+        target_output_column="forecast_value",
+    ),
+}
+
+
+def get_preset_definition(name: PresetName) -> PresetDefinition:
+    """Returns a deep copy of the requested preset so callers can mutate safely."""
+
+    return deepcopy(PRESET_DEFINITIONS[name])
+
+
+def list_preset_definitions() -> list[PresetDefinition]:
+    """Returns every configured preset in display order."""
+
+    return [get_preset_definition(name) for name in PRESET_DEFINITIONS]
