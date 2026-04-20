@@ -18,7 +18,13 @@ from sklearn.preprocessing import OneHotEncoder, StandardScaler
 from statsmodels.othermod.betareg import BetaModel
 from xgboost import XGBClassifier, XGBRegressor
 
-from .config import ModelConfig, ModelType, TargetMode
+from .config import (
+    ModelConfig,
+    ModelType,
+    ScorecardConfig,
+    ScorecardMonotonicity,
+    TargetMode,
+)
 
 
 def build_preprocessor(
@@ -109,6 +115,11 @@ class BaseModelAdapter(ABC):
 
     def get_model_artifacts(self) -> dict[str, pd.DataFrame]:
         """Returns optional model-specific tables that support documentation/export."""
+
+        return {}
+
+    def get_prediction_outputs(self, x_frame: pd.DataFrame) -> dict[str, np.ndarray | list[str]]:
+        """Returns optional prediction-side outputs such as scorecard points."""
 
         return {}
 
@@ -225,6 +236,23 @@ class LogisticRegressionAdapter(SklearnAdapter):
         )
 
 
+class DiscreteTimeHazardModelAdapter(LogisticRegressionAdapter):
+    """Pooled-logit discrete-time hazard model for lifetime PD development."""
+
+    model_type = ModelType.DISCRETE_TIME_HAZARD_MODEL
+
+    @property
+    def summary_text(self) -> str:
+        return (
+            "Discrete-time hazard model fitted as a pooled logistic regression.\n"
+            "This is intended for lifetime PD and CECL-style person-period development.\n"
+            f"Solver: {self.model_config.solver}\n"
+            f"Max iterations: {self.model_config.max_iter}\n"
+            f"C: {self.model_config.C}\n"
+            f"Class weight: {self.model_config.class_weight}\n"
+        )
+
+
 class ElasticNetLogisticRegressionAdapter(SklearnAdapter):
     """Elastic-net logistic regression for sparse and collinear binary PD features."""
 
@@ -269,6 +297,7 @@ class ScorecardFeatureSpec:
     bin_edges: list[float] | None
     woe_mapping: dict[str, float]
     fallback_woe: float
+    coefficient: float = 0.0
 
 
 class ScorecardLogisticRegressionAdapter(BaseModelAdapter):
@@ -276,10 +305,18 @@ class ScorecardLogisticRegressionAdapter(BaseModelAdapter):
 
     model_type = ModelType.SCORECARD_LOGISTIC_REGRESSION
 
-    def __init__(self, model_config: ModelConfig, target_mode: TargetMode) -> None:
+    def __init__(
+        self,
+        model_config: ModelConfig,
+        target_mode: TargetMode,
+        scorecard_config: ScorecardConfig | None = None,
+        scorecard_bin_overrides: dict[str, list[float]] | None = None,
+    ) -> None:
         if target_mode != TargetMode.BINARY:
             raise ValueError("Scorecard logistic regression requires a binary target.")
         super().__init__(model_config, target_mode)
+        self.scorecard_config = scorecard_config or ScorecardConfig()
+        self.scorecard_bin_overrides = scorecard_bin_overrides or {}
         self.estimator = LogisticRegression(
             max_iter=model_config.max_iter,
             C=model_config.C,
@@ -288,6 +325,11 @@ class ScorecardLogisticRegressionAdapter(BaseModelAdapter):
         )
         self.feature_specs_: list[ScorecardFeatureSpec] = []
         self.scorecard_table_: pd.DataFrame = pd.DataFrame()
+        self.scorecard_points_table_: pd.DataFrame = pd.DataFrame()
+        self.scorecard_scaling_summary_: pd.DataFrame = pd.DataFrame()
+        self.score_factor_: float = 0.0
+        self.score_offset_: float = 0.0
+        self.base_points_: float = 0.0
 
     def fit(
         self,
@@ -317,7 +359,12 @@ class ScorecardLogisticRegressionAdapter(BaseModelAdapter):
         self.feature_specs_ = specs
         self.feature_names_ = list(transformed.columns)
         self.estimator.fit(transformed.to_numpy(dtype=float), y_values.astype(int))
+        coefficients = np.ravel(self.estimator.coef_)
+        for spec, coefficient in zip(self.feature_specs_, coefficients, strict=False):
+            spec.coefficient = float(coefficient)
+        self._fit_score_scaling()
         self.scorecard_table_ = pd.concat(detail_rows, ignore_index=True)
+        self.scorecard_points_table_ = self._build_points_table()
         return self
 
     def _fit_feature(
@@ -330,7 +377,7 @@ class ScorecardLogisticRegressionAdapter(BaseModelAdapter):
     ) -> tuple[ScorecardFeatureSpec, pd.Series, pd.DataFrame]:
         if kind == "numeric":
             numeric_series = pd.to_numeric(series, errors="coerce")
-            bin_edges = self._build_numeric_bin_edges(numeric_series)
+            bin_edges = self._build_numeric_bin_edges(numeric_series, y_values.astype(int))
             bucket_labels = self._bucket_numeric_series(numeric_series, bin_edges)
         else:
             bin_edges = None
@@ -371,14 +418,37 @@ class ScorecardLogisticRegressionAdapter(BaseModelAdapter):
         )
         return spec, transformed, summary.rename(columns={"bucket": "bucket_label"})
 
-    def _build_numeric_bin_edges(self, series: pd.Series) -> list[float] | None:
+    def _build_numeric_bin_edges(
+        self,
+        series: pd.Series,
+        y_values: pd.Series,
+    ) -> list[float] | None:
+        if series.name in self.scorecard_bin_overrides:
+            manual_edges = np.asarray(self.scorecard_bin_overrides[series.name], dtype=float)
+            if manual_edges.size == 0:
+                return None
+            manual_edges = np.unique(manual_edges)
+            if manual_edges.size == 0:
+                return None
+            manual_edges = manual_edges.astype(float)
+            return [-np.inf, *manual_edges.tolist(), np.inf]
+
         non_null = series.dropna().astype(float)
         if non_null.nunique() < 2:
             return None
+        max_bins_from_share = max(
+            2,
+            int(1.0 / self.scorecard_config.min_bin_share),
+        )
+        requested_bins = min(
+            self.model_config.scorecard_bins,
+            int(non_null.nunique()),
+            max_bins_from_share,
+        )
         quantiles = np.linspace(
             0,
             1,
-            min(self.model_config.scorecard_bins, int(non_null.nunique())) + 1,
+            requested_bins + 1,
         )
         edges = np.unique(np.quantile(non_null.to_numpy(), quantiles))
         if len(edges) < 2:
@@ -388,7 +458,103 @@ class ScorecardLogisticRegressionAdapter(BaseModelAdapter):
         edges[-1] = np.inf
         if len(np.unique(edges)) < 2:
             return None
-        return edges.tolist()
+        optimized_edges = self._optimize_numeric_bin_edges(
+            series=series,
+            y_values=y_values,
+            edges=edges.tolist(),
+        )
+        return optimized_edges
+
+    def _optimize_numeric_bin_edges(
+        self,
+        *,
+        series: pd.Series,
+        y_values: pd.Series,
+        edges: list[float],
+    ) -> list[float] | None:
+        if len(edges) <= 2:
+            return edges
+        monotonicity = self.scorecard_config.monotonicity
+        current_edges = list(edges)
+        while len(current_edges) > 2:
+            summary = self._summarize_numeric_bins(series, y_values, current_edges)
+            if summary.empty:
+                return current_edges
+            too_small = summary["share"] < self.scorecard_config.min_bin_share
+            if too_small.any() and len(current_edges) > 3:
+                smallest_position = int(summary.loc[too_small, "position"].iloc[0])
+                current_edges.pop(self._edge_to_remove(smallest_position, len(current_edges)))
+                continue
+            if monotonicity == ScorecardMonotonicity.NONE:
+                break
+            direction = self._resolve_monotonic_direction(summary)
+            if direction is None or self._is_monotonic(summary["bad_rate"].tolist(), direction):
+                break
+            violation_index = self._first_monotonic_violation(
+                summary["bad_rate"].tolist(),
+                direction,
+            )
+            if violation_index is None or len(current_edges) <= 3:
+                break
+            current_edges.pop(self._edge_to_remove(violation_index, len(current_edges)))
+        return current_edges
+
+    def _summarize_numeric_bins(
+        self,
+        series: pd.Series,
+        y_values: pd.Series,
+        edges: list[float],
+    ) -> pd.DataFrame:
+        numeric_series = pd.to_numeric(series, errors="coerce")
+        bucketed = pd.cut(
+            numeric_series,
+            bins=edges,
+            include_lowest=True,
+            duplicates="drop",
+        )
+        summary = (
+            pd.DataFrame({"bucket": bucketed, "target": y_values.astype(int)})
+            .groupby("bucket", dropna=False)
+            .agg(bad=("target", "sum"), total=("target", "size"))
+            .reset_index()
+        )
+        summary["bucket"] = summary["bucket"].astype(str)
+        summary["bad_rate"] = summary["bad"] / summary["total"].replace(0, np.nan)
+        summary["share"] = summary["total"] / max(float(summary["total"].sum()), 1.0)
+        summary["position"] = range(len(summary))
+        return summary
+
+    def _resolve_monotonic_direction(self, summary: pd.DataFrame) -> str | None:
+        if self.scorecard_config.monotonicity == ScorecardMonotonicity.INCREASING:
+            return "increasing"
+        if self.scorecard_config.monotonicity == ScorecardMonotonicity.DECREASING:
+            return "decreasing"
+        if self.scorecard_config.monotonicity == ScorecardMonotonicity.NONE:
+            return None
+        if len(summary) < 2:
+            return None
+        return (
+            "increasing"
+            if float(summary["bad_rate"].iloc[-1]) >= float(summary["bad_rate"].iloc[0])
+            else "decreasing"
+        )
+
+    def _is_monotonic(self, values: list[float], direction: str) -> bool:
+        if direction == "increasing":
+            return all(left <= right for left, right in zip(values, values[1:], strict=False))
+        return all(left >= right for left, right in zip(values, values[1:], strict=False))
+
+    def _first_monotonic_violation(self, values: list[float], direction: str) -> int | None:
+        for index, (left, right) in enumerate(zip(values, values[1:], strict=False)):
+            if direction == "increasing" and left > right:
+                return index
+            if direction == "decreasing" and left < right:
+                return index
+        return None
+
+    def _edge_to_remove(self, violation_index: int, edge_count: int) -> int:
+        candidate = min(violation_index + 1, edge_count - 2)
+        return max(candidate, 1)
 
     def _bucket_numeric_series(self, series: pd.Series, bin_edges: list[float] | None) -> pd.Series:
         if not bin_edges:
@@ -416,8 +582,49 @@ class ScorecardLogisticRegressionAdapter(BaseModelAdapter):
             )
         return transformed.to_numpy(dtype=float)
 
+    def _transform_frame(self, x_frame: pd.DataFrame) -> pd.DataFrame:
+        transformed = pd.DataFrame(index=x_frame.index)
+        for spec in self.feature_specs_:
+            series = x_frame[spec.feature_name]
+            if spec.kind == "numeric":
+                numeric_series = pd.to_numeric(series, errors="coerce")
+                labels = self._bucket_numeric_series(numeric_series, spec.bin_edges)
+            else:
+                labels = series.fillna("MISSING").astype(str)
+            transformed[spec.feature_name] = (
+                labels.astype(str).map(spec.woe_mapping).fillna(spec.fallback_woe).astype(float)
+            )
+        return transformed
+
     def predict_score(self, x_frame: pd.DataFrame) -> np.ndarray:
         return self.estimator.predict_proba(self._transform(x_frame))[:, 1]
+
+    def get_prediction_outputs(self, x_frame: pd.DataFrame) -> dict[str, np.ndarray | list[str]]:
+        transformed = self._transform_frame(x_frame)
+        contribution_frame = pd.DataFrame(index=transformed.index)
+        for spec in self.feature_specs_:
+            contribution_frame[spec.feature_name] = (
+                -self.score_factor_ * spec.coefficient * transformed[spec.feature_name]
+            )
+        score_points = self.base_points_ + contribution_frame.sum(axis=1)
+        outputs: dict[str, np.ndarray | list[str]] = {
+            "scorecard_points": score_points.to_numpy(dtype=float),
+        }
+        reason_code_count = min(
+            self.scorecard_config.reason_code_count,
+            len(contribution_frame.columns),
+        )
+        if reason_code_count <= 0:
+            return outputs
+        reason_code_frame = contribution_frame.apply(
+            lambda row: row.nsmallest(reason_code_count).index.tolist(),
+            axis=1,
+        )
+        for index in range(reason_code_count):
+            outputs[f"reason_code_{index + 1}"] = reason_code_frame.map(
+                lambda values, position=index: values[position] if len(values) > position else ""
+            ).tolist()
+        return outputs
 
     def get_feature_importance(self) -> pd.DataFrame:
         coefficients = np.ravel(self.estimator.coef_)
@@ -439,13 +646,50 @@ class ScorecardLogisticRegressionAdapter(BaseModelAdapter):
         )
 
     def get_model_artifacts(self) -> dict[str, pd.DataFrame]:
-        return {"scorecard_woe_table": self.scorecard_table_.copy(deep=True)}
+        return {
+            "scorecard_woe_table": self.scorecard_table_.copy(deep=True),
+            "scorecard_points_table": self.scorecard_points_table_.copy(deep=True),
+            "scorecard_scaling_summary": self.scorecard_scaling_summary_.copy(deep=True),
+        }
+
+    def _fit_score_scaling(self) -> None:
+        self.score_factor_ = self.scorecard_config.points_to_double_odds / np.log(2.0)
+        self.score_offset_ = self.scorecard_config.base_score - self.score_factor_ * np.log(
+            self.scorecard_config.odds_reference
+        )
+        intercept = float(np.ravel(self.estimator.intercept_)[0])
+        self.base_points_ = self.score_offset_ - self.score_factor_ * intercept
+        self.scorecard_scaling_summary_ = pd.DataFrame(
+            [
+                {"metric": "base_score", "value": self.scorecard_config.base_score},
+                {
+                    "metric": "points_to_double_odds",
+                    "value": self.scorecard_config.points_to_double_odds,
+                },
+                {"metric": "odds_reference", "value": self.scorecard_config.odds_reference},
+                {"metric": "score_factor", "value": self.score_factor_},
+                {"metric": "score_offset", "value": self.score_offset_},
+                {"metric": "base_points", "value": self.base_points_},
+            ]
+        )
+
+    def _build_points_table(self) -> pd.DataFrame:
+        if self.scorecard_table_.empty:
+            return pd.DataFrame()
+        coefficient_map = {spec.feature_name: spec.coefficient for spec in self.feature_specs_}
+        points_table = self.scorecard_table_.copy(deep=True)
+        points_table["coefficient"] = points_table["feature_name"].map(coefficient_map).fillna(0.0)
+        points_table["partial_score_points"] = (
+            -self.score_factor_ * points_table["coefficient"] * points_table["woe"]
+        )
+        return points_table
 
     @property
     def summary_text(self) -> str:
         return (
             "Scorecard logistic regression fitted on WoE-transformed features.\n"
             f"Bins per numeric feature: {self.model_config.scorecard_bins}\n"
+            f"Monotonicity: {self.scorecard_config.monotonicity.value}\n"
             f"Max iterations: {self.model_config.max_iter}\n"
             f"C: {self.model_config.C}\n"
         )
@@ -994,15 +1238,28 @@ class TobitRegressionAdapter(StatsmodelsAdapter):
         return predictions
 
 
-def build_model_adapter(model_config: ModelConfig, target_mode: TargetMode) -> BaseModelAdapter:
+def build_model_adapter(
+    model_config: ModelConfig,
+    target_mode: TargetMode,
+    *,
+    scorecard_config: ScorecardConfig | None = None,
+    scorecard_bin_overrides: dict[str, list[float]] | None = None,
+) -> BaseModelAdapter:
     """Factory for the supported model adapters."""
 
     if model_config.model_type == ModelType.LOGISTIC_REGRESSION:
         return LogisticRegressionAdapter(model_config, target_mode)
+    if model_config.model_type == ModelType.DISCRETE_TIME_HAZARD_MODEL:
+        return DiscreteTimeHazardModelAdapter(model_config, target_mode)
     if model_config.model_type == ModelType.ELASTIC_NET_LOGISTIC_REGRESSION:
         return ElasticNetLogisticRegressionAdapter(model_config, target_mode)
     if model_config.model_type == ModelType.SCORECARD_LOGISTIC_REGRESSION:
-        return ScorecardLogisticRegressionAdapter(model_config, target_mode)
+        return ScorecardLogisticRegressionAdapter(
+            model_config,
+            target_mode,
+            scorecard_config=scorecard_config,
+            scorecard_bin_overrides=scorecard_bin_overrides,
+        )
     if model_config.model_type == ModelType.PROBIT_REGRESSION:
         return ProbitRegressionAdapter(model_config, target_mode)
     if model_config.model_type == ModelType.LINEAR_REGRESSION:

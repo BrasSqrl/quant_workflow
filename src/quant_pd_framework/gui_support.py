@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from io import BytesIO
 from pathlib import Path
 from typing import Any
 
@@ -11,30 +12,47 @@ from pandas import CategoricalDtype
 
 from .config import (
     ArtifactConfig,
+    CalibrationConfig,
     CleaningConfig,
     ColumnRole,
     ColumnSpec,
     ComparisonConfig,
     DataStructure,
     DiagnosticConfig,
+    DocumentationConfig,
     ExecutionConfig,
     ExecutionMode,
     ExplainabilityConfig,
+    FeatureDictionaryConfig,
+    FeatureDictionaryEntry,
     FeatureEngineeringConfig,
     FeaturePolicyConfig,
+    FeatureReviewDecision,
+    FeatureReviewDecisionType,
     FrameworkConfig,
+    ManualReviewConfig,
     MissingValuePolicy,
     ModelConfig,
     ModelType,
     PresetName,
+    ReproducibilityConfig,
+    RobustnessConfig,
     ScenarioConfig,
     ScenarioFeatureShock,
     ScenarioShockOperation,
     ScenarioTestConfig,
     SchemaConfig,
+    ScorecardBinOverride,
+    ScorecardConfig,
+    ScorecardWorkbenchConfig,
     SplitConfig,
+    SuitabilityCheckConfig,
     TargetConfig,
     TargetMode,
+    TransformationConfig,
+    TransformationSpec,
+    TransformationType,
+    VariableSelectionConfig,
 )
 from .presets import get_preset_definition, list_preset_definitions
 
@@ -50,8 +68,46 @@ EDITOR_COLUMNS = [
     "default_value",
     "keep_source",
 ]
+FEATURE_DICTIONARY_COLUMNS = [
+    "enabled",
+    "feature_name",
+    "business_name",
+    "definition",
+    "source_system",
+    "unit",
+    "allowed_range",
+    "missingness_meaning",
+    "expected_sign",
+    "inclusion_rationale",
+    "notes",
+]
+TRANSFORMATION_EDITOR_COLUMNS = [
+    "enabled",
+    "transform_type",
+    "source_feature",
+    "secondary_feature",
+    "output_feature",
+    "lower_quantile",
+    "upper_quantile",
+    "bin_edges",
+    "notes",
+]
+FEATURE_REVIEW_COLUMNS = [
+    "feature_name",
+    "decision",
+    "rationale",
+]
+SCORECARD_OVERRIDE_COLUMNS = [
+    "feature_name",
+    "bin_edges",
+    "rationale",
+]
 SUPPORTED_DTYPES = ["auto", "string", "category", "float", "int", "bool", "datetime"]
 SUPPORTED_MISSING_VALUE_POLICIES = [policy.value for policy in MissingValuePolicy]
+SUPPORTED_TRANSFORMATION_TYPES = [transform_type.value for transform_type in TransformationType]
+SUPPORTED_FEATURE_REVIEW_DECISIONS = [
+    decision.value for decision in FeatureReviewDecisionType
+]
 
 
 @dataclass(slots=True)
@@ -64,9 +120,22 @@ class GUIBuildInputs:
     feature_engineering: FeatureEngineeringConfig = field(default_factory=FeatureEngineeringConfig)
     comparison: ComparisonConfig = field(default_factory=ComparisonConfig)
     feature_policy: FeaturePolicyConfig = field(default_factory=FeaturePolicyConfig)
+    feature_dictionary: FeatureDictionaryConfig = field(default_factory=FeatureDictionaryConfig)
+    transformations: TransformationConfig = field(default_factory=TransformationConfig)
+    manual_review: ManualReviewConfig = field(default_factory=ManualReviewConfig)
+    suitability_checks: SuitabilityCheckConfig = field(default_factory=SuitabilityCheckConfig)
     explainability: ExplainabilityConfig = field(default_factory=ExplainabilityConfig)
+    calibration: CalibrationConfig = field(default_factory=CalibrationConfig)
+    scorecard: ScorecardConfig = field(default_factory=ScorecardConfig)
+    scorecard_workbench: ScorecardWorkbenchConfig = field(
+        default_factory=ScorecardWorkbenchConfig
+    )
+    variable_selection: VariableSelectionConfig = field(default_factory=VariableSelectionConfig)
+    documentation: DocumentationConfig = field(default_factory=DocumentationConfig)
     scenario_testing: ScenarioTestConfig = field(default_factory=ScenarioTestConfig)
     diagnostics: DiagnosticConfig = field(default_factory=DiagnosticConfig)
+    robustness: RobustnessConfig = field(default_factory=RobustnessConfig)
+    reproducibility: ReproducibilityConfig = field(default_factory=ReproducibilityConfig)
     data_structure: DataStructure = DataStructure.CROSS_SECTIONAL
     train_size: float = 0.6
     validation_size: float = 0.2
@@ -105,6 +174,69 @@ def build_column_editor_frame(dataframe: pd.DataFrame) -> pd.DataFrame:
         )
 
     return pd.DataFrame(rows, columns=EDITOR_COLUMNS)
+
+
+def build_column_editor_frame_from_schema(schema: SchemaConfig) -> pd.DataFrame:
+    """Builds the schema editor from a resolved schema config."""
+
+    rows = [
+        {
+            "enabled": spec.enabled,
+            "source_name": spec.source_name or spec.name,
+            "name": spec.name,
+            "role": spec.role.value,
+            "dtype": spec.dtype or "auto",
+            "missing_value_policy": spec.missing_value_policy.value,
+            "missing_value_fill_value": (
+                "" if spec.missing_value_fill_value is None else spec.missing_value_fill_value
+            ),
+            "create_if_missing": spec.create_if_missing,
+            "default_value": "" if spec.default_value is None else spec.default_value,
+            "keep_source": spec.keep_source,
+        }
+        for spec in schema.column_specs
+    ]
+    return pd.DataFrame(rows, columns=EDITOR_COLUMNS)
+
+
+def build_feature_dictionary_editor_frame(dataframe: pd.DataFrame) -> pd.DataFrame:
+    """Creates a business-metadata table for the current dataframe columns."""
+
+    rows = [
+        {
+            "enabled": True,
+            "feature_name": column_name,
+            "business_name": "",
+            "definition": "",
+            "source_system": "",
+            "unit": "",
+            "allowed_range": "",
+            "missingness_meaning": "",
+            "expected_sign": "",
+            "inclusion_rationale": "",
+            "notes": "",
+        }
+        for column_name in dataframe.columns
+    ]
+    return pd.DataFrame(rows, columns=FEATURE_DICTIONARY_COLUMNS)
+
+
+def build_transformation_editor_frame() -> pd.DataFrame:
+    """Creates the governed-transformation editor shown in the GUI."""
+
+    return pd.DataFrame(columns=TRANSFORMATION_EDITOR_COLUMNS)
+
+
+def build_feature_review_editor_frame() -> pd.DataFrame:
+    """Creates the manual feature-review editor shown in the GUI."""
+
+    return pd.DataFrame(columns=FEATURE_REVIEW_COLUMNS)
+
+
+def build_scorecard_override_editor_frame() -> pd.DataFrame:
+    """Creates the scorecard override editor shown in the GUI."""
+
+    return pd.DataFrame(columns=SCORECARD_OVERRIDE_COLUMNS)
 
 
 def infer_dtype_label(series: pd.Series) -> str:
@@ -206,9 +338,20 @@ def build_framework_config_from_editor(
         model=inputs.model,
         comparison=inputs.comparison,
         feature_policy=inputs.feature_policy,
+        feature_dictionary=inputs.feature_dictionary,
+        transformations=inputs.transformations,
+        manual_review=inputs.manual_review,
+        suitability_checks=inputs.suitability_checks,
         explainability=inputs.explainability,
+        calibration=inputs.calibration,
+        scorecard=inputs.scorecard,
+        scorecard_workbench=inputs.scorecard_workbench,
+        variable_selection=inputs.variable_selection,
+        documentation=inputs.documentation,
         scenario_testing=inputs.scenario_testing,
         diagnostics=inputs.diagnostics,
+        robustness=inputs.robustness,
+        reproducibility=inputs.reproducibility,
         artifacts=ArtifactConfig(output_root=inputs.output_root),
     )
     config.validate()
@@ -274,6 +417,146 @@ def build_column_specs_from_editor(editor_frame: pd.DataFrame) -> list[ColumnSpe
     return specs
 
 
+def normalize_feature_dictionary_frame(frame: pd.DataFrame) -> pd.DataFrame:
+    """Normalizes the feature-dictionary editor into a predictable shape."""
+
+    working = frame.copy(deep=True)
+    for column in FEATURE_DICTIONARY_COLUMNS:
+        if column not in working.columns:
+            working[column] = False if column == "enabled" else ""
+    working = working.loc[:, FEATURE_DICTIONARY_COLUMNS].fillna("")
+    working["enabled"] = working["enabled"].astype(bool)
+    return working
+
+
+def normalize_transformation_frame(frame: pd.DataFrame) -> pd.DataFrame:
+    """Normalizes the transformation editor into a predictable shape."""
+
+    working = frame.copy(deep=True)
+    for column in TRANSFORMATION_EDITOR_COLUMNS:
+        if column not in working.columns:
+            working[column] = False if column == "enabled" else ""
+    working = working.loc[:, TRANSFORMATION_EDITOR_COLUMNS].fillna("")
+    working["enabled"] = working["enabled"].astype(bool)
+    return working
+
+
+def normalize_feature_review_frame(frame: pd.DataFrame) -> pd.DataFrame:
+    """Normalizes the manual feature-review editor into a predictable shape."""
+
+    working = frame.copy(deep=True)
+    for column in FEATURE_REVIEW_COLUMNS:
+        if column not in working.columns:
+            working[column] = ""
+    return working.loc[:, FEATURE_REVIEW_COLUMNS].fillna("")
+
+
+def normalize_scorecard_override_frame(frame: pd.DataFrame) -> pd.DataFrame:
+    """Normalizes the scorecard-override editor into a predictable shape."""
+
+    working = frame.copy(deep=True)
+    for column in SCORECARD_OVERRIDE_COLUMNS:
+        if column not in working.columns:
+            working[column] = ""
+    return working.loc[:, SCORECARD_OVERRIDE_COLUMNS].fillna("")
+
+
+def parse_feature_dictionary_frame(frame: pd.DataFrame) -> FeatureDictionaryConfig:
+    """Converts the feature-dictionary editor into typed config entries."""
+
+    normalized = normalize_feature_dictionary_frame(frame)
+    entries = [
+        FeatureDictionaryEntry(
+            feature_name=str(row["feature_name"]).strip(),
+            business_name=str(row["business_name"]).strip(),
+            definition=str(row["definition"]).strip(),
+            source_system=str(row["source_system"]).strip(),
+            unit=str(row["unit"]).strip(),
+            allowed_range=str(row["allowed_range"]).strip(),
+            missingness_meaning=str(row["missingness_meaning"]).strip(),
+            expected_sign=str(row["expected_sign"]).strip(),
+            inclusion_rationale=str(row["inclusion_rationale"]).strip(),
+            notes=str(row["notes"]).strip(),
+            enabled=bool(row["enabled"]),
+        )
+        for _, row in normalized.iterrows()
+        if str(row["feature_name"]).strip()
+    ]
+    enabled_entries = [entry for entry in entries if entry.enabled]
+    return FeatureDictionaryConfig(
+        enabled=bool(enabled_entries),
+        entries=entries,
+    )
+
+
+def parse_transformation_frame(frame: pd.DataFrame) -> TransformationConfig:
+    """Converts the transformation editor into typed transformation config."""
+
+    normalized = normalize_transformation_frame(frame)
+    transformations: list[TransformationSpec] = []
+    for _, row in normalized.iterrows():
+        if not bool(row["enabled"]):
+            continue
+        source_feature = str(row["source_feature"]).strip()
+        if not source_feature:
+            continue
+        transformations.append(
+            TransformationSpec(
+                enabled=True,
+                transform_type=TransformationType(str(row["transform_type"]).strip()),
+                source_feature=source_feature,
+                secondary_feature=_clean_text(row["secondary_feature"]),
+                output_feature=_clean_text(row["output_feature"]),
+                lower_quantile=_coerce_optional_float(row["lower_quantile"]),
+                upper_quantile=_coerce_optional_float(row["upper_quantile"]),
+                bin_edges=_parse_float_list(row["bin_edges"]),
+                notes=str(row["notes"]).strip(),
+            )
+        )
+    return TransformationConfig(
+        enabled=bool(transformations),
+        transformations=transformations,
+    )
+
+
+def parse_manual_review_frames(
+    feature_review_frame: pd.DataFrame,
+    scorecard_override_frame: pd.DataFrame,
+    *,
+    reviewer_name: str = "",
+    require_review_complete: bool = False,
+) -> ManualReviewConfig:
+    """Converts review editors into the typed manual-review config."""
+
+    normalized_feature_review = normalize_feature_review_frame(feature_review_frame)
+    normalized_scorecard_override = normalize_scorecard_override_frame(scorecard_override_frame)
+    feature_decisions = [
+        FeatureReviewDecision(
+            feature_name=str(row["feature_name"]).strip(),
+            decision=FeatureReviewDecisionType(str(row["decision"]).strip()),
+            rationale=str(row["rationale"]).strip(),
+        )
+        for _, row in normalized_feature_review.iterrows()
+        if str(row["feature_name"]).strip() and str(row["decision"]).strip()
+    ]
+    scorecard_bin_overrides = [
+        ScorecardBinOverride(
+            feature_name=str(row["feature_name"]).strip(),
+            bin_edges=_parse_float_list(row["bin_edges"]),
+            rationale=str(row["rationale"]).strip(),
+        )
+        for _, row in normalized_scorecard_override.iterrows()
+        if str(row["feature_name"]).strip() and str(row["bin_edges"]).strip()
+    ]
+    return ManualReviewConfig(
+        enabled=bool(feature_decisions or scorecard_bin_overrides),
+        reviewer_name=reviewer_name.strip(),
+        require_review_complete=require_review_complete,
+        feature_decisions=feature_decisions,
+        scorecard_bin_overrides=scorecard_bin_overrides,
+    )
+
+
 def parse_positive_values(raw_text: str) -> list[str] | None:
     """Parses comma-separated positive target labels entered by the user."""
 
@@ -307,6 +590,32 @@ def _normalize_default_value(value: Any) -> Any:
     return value
 
 
+def _coerce_optional_float(value: Any) -> float | None:
+    if value is None:
+        return None
+    if isinstance(value, str):
+        stripped = value.strip()
+        if not stripped:
+            return None
+        return float(stripped)
+    if pd.isna(value):
+        return None
+    return float(value)
+
+
+def _parse_float_list(value: Any) -> list[float]:
+    if value is None:
+        return []
+    if isinstance(value, list):
+        return [float(item) for item in value]
+    if pd.isna(value):
+        return []
+    text = str(value).strip()
+    if not text:
+        return []
+    return [float(item.strip()) for item in text.split(",") if item.strip()]
+
+
 def build_gui_inputs_from_preset(preset_name: PresetName) -> GUIBuildInputs:
     """Builds a GUI input bundle from a named preset."""
 
@@ -318,8 +627,14 @@ def build_gui_inputs_from_preset(preset_name: PresetName) -> GUIBuildInputs:
         comparison=preset.comparison,
         feature_policy=preset.feature_policy,
         explainability=preset.explainability,
+        calibration=preset.calibration,
+        scorecard=preset.scorecard,
+        scorecard_workbench=preset.scorecard_workbench,
+        variable_selection=preset.variable_selection,
+        documentation=preset.documentation,
         scenario_testing=preset.scenario_testing,
         diagnostics=preset.diagnostics,
+        robustness=preset.robustness,
         data_structure=preset.data_structure,
         target_mode=preset.target_mode,
         target_output_column=preset.target_output_column,
@@ -392,6 +707,199 @@ def parse_scenario_rows(rows: list[dict[str, Any]]) -> ScenarioTestConfig:
             )
 
     return ScenarioTestConfig(enabled=bool(scenarios), scenarios=scenarios)
+
+
+def build_feature_dictionary_frame_from_config(
+    feature_dictionary: FeatureDictionaryConfig,
+    feature_names: list[str],
+) -> pd.DataFrame:
+    """Builds an editor-like feature dictionary frame from config entries."""
+
+    entry_map = {entry.feature_name: entry for entry in feature_dictionary.entries}
+    rows = []
+    for feature_name in list(dict.fromkeys(feature_names)):
+        entry = entry_map.get(feature_name)
+        rows.append(
+            {
+                "enabled": True if entry is None else entry.enabled,
+                "feature_name": feature_name,
+                "business_name": "" if entry is None else entry.business_name,
+                "definition": "" if entry is None else entry.definition,
+                "source_system": "" if entry is None else entry.source_system,
+                "unit": "" if entry is None else entry.unit,
+                "allowed_range": "" if entry is None else entry.allowed_range,
+                "missingness_meaning": "" if entry is None else entry.missingness_meaning,
+                "expected_sign": "" if entry is None else entry.expected_sign,
+                "inclusion_rationale": "" if entry is None else entry.inclusion_rationale,
+                "notes": "" if entry is None else entry.notes,
+            }
+        )
+    for feature_name, entry in entry_map.items():
+        if feature_name in feature_names:
+            continue
+        rows.append(
+            {
+                "enabled": entry.enabled,
+                "feature_name": feature_name,
+                "business_name": entry.business_name,
+                "definition": entry.definition,
+                "source_system": entry.source_system,
+                "unit": entry.unit,
+                "allowed_range": entry.allowed_range,
+                "missingness_meaning": entry.missingness_meaning,
+                "expected_sign": entry.expected_sign,
+                "inclusion_rationale": entry.inclusion_rationale,
+                "notes": entry.notes,
+            }
+        )
+    return pd.DataFrame(rows, columns=FEATURE_DICTIONARY_COLUMNS)
+
+
+def build_transformation_frame_from_config(
+    transformation_config: TransformationConfig,
+) -> pd.DataFrame:
+    """Builds an editor-like transformation frame from typed config."""
+
+    rows = [
+        {
+            "enabled": transformation.enabled,
+            "transform_type": transformation.transform_type.value,
+            "source_feature": transformation.source_feature,
+            "secondary_feature": transformation.secondary_feature or "",
+            "output_feature": transformation.output_feature or "",
+            "lower_quantile": (
+                transformation.lower_quantile
+                if transformation.lower_quantile is not None
+                else ""
+            ),
+            "upper_quantile": (
+                transformation.upper_quantile
+                if transformation.upper_quantile is not None
+                else ""
+            ),
+            "bin_edges": ", ".join(str(value) for value in transformation.bin_edges),
+            "notes": transformation.notes,
+        }
+        for transformation in transformation_config.transformations
+    ]
+    return pd.DataFrame(rows, columns=TRANSFORMATION_EDITOR_COLUMNS)
+
+
+def build_feature_review_frame_from_config(
+    manual_review: ManualReviewConfig,
+) -> pd.DataFrame:
+    """Builds an editor-like feature-review frame from typed config."""
+
+    rows = [
+        {
+            "feature_name": decision.feature_name,
+            "decision": decision.decision.value,
+            "rationale": decision.rationale,
+        }
+        for decision in manual_review.feature_decisions
+    ]
+    return pd.DataFrame(rows, columns=FEATURE_REVIEW_COLUMNS)
+
+
+def build_scorecard_override_frame_from_config(
+    manual_review: ManualReviewConfig,
+) -> pd.DataFrame:
+    """Builds an editor-like scorecard override frame from typed config."""
+
+    rows = [
+        {
+            "feature_name": override.feature_name,
+            "bin_edges": ", ".join(str(value) for value in override.bin_edges),
+            "rationale": override.rationale,
+        }
+        for override in manual_review.scorecard_bin_overrides
+    ]
+    return pd.DataFrame(rows, columns=SCORECARD_OVERRIDE_COLUMNS)
+
+
+def build_template_workbook_bytes(
+    *,
+    schema_frame: pd.DataFrame,
+    feature_dictionary_frame: pd.DataFrame,
+    transformation_frame: pd.DataFrame,
+    feature_review_frame: pd.DataFrame,
+    scorecard_override_frame: pd.DataFrame,
+) -> bytes:
+    """Serializes the editable governance surfaces into an Excel workbook."""
+
+    buffer = BytesIO()
+    instructions = pd.DataFrame(
+        [
+            {
+                "sheet_name": "schema",
+                "purpose": (
+                    "Column toggles, roles, dtypes, missing-value policy, "
+                    "and create-if-missing rules."
+                ),
+            },
+            {
+                "sheet_name": "feature_dictionary",
+                "purpose": (
+                    "Business definitions, source lineage, expected sign, "
+                    "and inclusion rationale."
+                ),
+            },
+            {
+                "sheet_name": "transformations",
+                "purpose": (
+                    "Governed feature transformations such as winsorization, "
+                    "log1p, ratio, interaction, and manual bins."
+                ),
+            },
+            {
+                "sheet_name": "feature_review",
+                "purpose": "Manual approve/reject/force decisions for modeled features.",
+            },
+            {
+                "sheet_name": "scorecard_overrides",
+                "purpose": "Optional manual scorecard bin-edge overrides for numeric features.",
+            },
+        ]
+    )
+
+    with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
+        instructions.to_excel(writer, sheet_name="instructions", index=False)
+        normalize_editor_frame(schema_frame).to_excel(writer, sheet_name="schema", index=False)
+        normalize_feature_dictionary_frame(feature_dictionary_frame).to_excel(
+            writer, sheet_name="feature_dictionary", index=False
+        )
+        normalize_transformation_frame(transformation_frame).to_excel(
+            writer, sheet_name="transformations", index=False
+        )
+        normalize_feature_review_frame(feature_review_frame).to_excel(
+            writer, sheet_name="feature_review", index=False
+        )
+        normalize_scorecard_override_frame(scorecard_override_frame).to_excel(
+            writer, sheet_name="scorecard_overrides", index=False
+        )
+
+    return buffer.getvalue()
+
+
+def load_template_workbook(source: str | Path | BytesIO | Any) -> dict[str, pd.DataFrame]:
+    """Loads an exported workbook template back into editable dataframes."""
+
+    workbook = pd.read_excel(source, sheet_name=None)
+    return {
+        "schema": normalize_editor_frame(workbook.get("schema", pd.DataFrame())),
+        "feature_dictionary": normalize_feature_dictionary_frame(
+            workbook.get("feature_dictionary", pd.DataFrame())
+        ),
+        "transformations": normalize_transformation_frame(
+            workbook.get("transformations", pd.DataFrame())
+        ),
+        "feature_review": normalize_feature_review_frame(
+            workbook.get("feature_review", pd.DataFrame())
+        ),
+        "scorecard_overrides": normalize_scorecard_override_frame(
+            workbook.get("scorecard_overrides", pd.DataFrame())
+        ),
+    }
 
 
 def default_challengers_for_target_mode(target_mode: TargetMode) -> list[ModelType]:

@@ -14,6 +14,7 @@ from .config_io import load_framework_config
 from .context import PipelineContext
 from .steps import (
     ArtifactExportStep,
+    AssumptionCheckStep,
     BacktestStep,
     CleaningStep,
     DiagnosticsStep,
@@ -26,7 +27,9 @@ from .steps import (
     SchemaManagementStep,
     SplitStep,
     TargetConstructionStep,
+    TransformationStep,
     ValidationStep,
+    VariableSelectionStep,
 )
 
 
@@ -61,9 +64,18 @@ class QuantModelOrchestrator:
         base_config.execution = execution
         base_config.comparison = resolved.comparison
         base_config.feature_policy = resolved.feature_policy
+        base_config.feature_dictionary = resolved.feature_dictionary
+        base_config.transformations = resolved.transformations
+        base_config.manual_review = resolved.manual_review
+        base_config.suitability_checks = resolved.suitability_checks
         base_config.explainability = resolved.explainability
+        base_config.calibration = resolved.calibration
+        base_config.scorecard = resolved.scorecard
+        base_config.variable_selection = resolved.variable_selection
+        base_config.documentation = resolved.documentation
         base_config.scenario_testing = resolved.scenario_testing
         base_config.diagnostics = resolved.diagnostics
+        base_config.reproducibility = resolved.reproducibility
         base_config.artifacts = resolved.artifacts
         return base_config
 
@@ -76,7 +88,10 @@ class QuantModelOrchestrator:
             CleaningStep(),
             FeatureEngineeringStep(),
             SplitStep(),
+            AssumptionCheckStep(),
             ImputationStep(),
+            TransformationStep(),
+            VariableSelectionStep(),
             ModelTrainingStep(),
             EvaluationStep(),
             ModelComparisonStep(),

@@ -21,6 +21,12 @@ def test_build_asset_catalog_groups_assets_into_expected_sections() -> None:
         "split_metrics": pd.DataFrame({"split": ["test"], "roc_auc": [0.81]}),
         "psi": pd.DataFrame({"feature_name": ["balance"], "psi": [0.04]}),
         "adf_tests": pd.DataFrame({"split": ["test"], "series_name": ["prediction_mean"]}),
+        "scorecard_feature_summary": pd.DataFrame(
+            {"feature_name": ["balance"], "information_value": [0.12]}
+        ),
+        "robustness_metric_summary": pd.DataFrame(
+            {"metric_name": ["roc_auc"], "mean_value": [0.81]}
+        ),
     }
     figures = {
         "correlation_heatmap": px.imshow(pd.DataFrame([[1.0, 0.2], [0.2, 1.0]])),
@@ -34,6 +40,11 @@ def test_build_asset_catalog_groups_assets_into_expected_sections() -> None:
             x="risk_band",
             y="average_score",
         ),
+        "scorecard_feature_iv": px.bar(
+            pd.DataFrame({"feature_name": ["balance"], "information_value": [0.12]}),
+            x="feature_name",
+            y="information_value",
+        ),
     }
 
     catalog = build_asset_catalog(tables, figures)
@@ -42,9 +53,15 @@ def test_build_asset_catalog_groups_assets_into_expected_sections() -> None:
     assert catalog["model_performance"]["tables"][0].key == "split_metrics"
     assert catalog["stability_drift"]["tables"][0].key == "psi"
     assert catalog["backtesting_time"]["tables"][0].key == "adf_tests"
+    assert catalog["scorecard_workbench"]["tables"][0].key == "scorecard_feature_summary"
+    assert [descriptor.key for descriptor in catalog["stability_drift"]["tables"]] == [
+        "psi",
+        "robustness_metric_summary",
+    ]
     assert catalog["data_quality"]["figures"][0].key == "correlation_heatmap"
     assert catalog["sample_segmentation"]["figures"][0].key == "segment_performance_chart"
     assert catalog["backtesting_time"]["figures"][0].key == "quantile_backtest"
+    assert catalog["scorecard_workbench"]["figures"][0].key == "scorecard_feature_iv"
 
 
 def test_friendly_asset_title_handles_time_backtest_names() -> None:

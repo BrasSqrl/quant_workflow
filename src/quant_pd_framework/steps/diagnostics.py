@@ -3,23 +3,36 @@
 from __future__ import annotations
 
 import math
+from copy import deepcopy
 from typing import Any
 
 import numpy as np
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
+import statsmodels.api as sm
 from plotly.subplots import make_subplots
-from sklearn.calibration import calibration_curve
-from sklearn.metrics import mean_squared_error, precision_recall_curve, roc_auc_score, roc_curve
+from scipy.stats import chi2
+from sklearn.isotonic import IsotonicRegression
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import (
+    brier_score_loss,
+    log_loss,
+    mean_squared_error,
+    precision_recall_curve,
+    roc_auc_score,
+    roc_curve,
+)
 from statsmodels.graphics.gofplots import ProbPlot
 from statsmodels.stats.outliers_influence import variance_inflation_factor
 from statsmodels.tsa.stattools import adfuller
 
 from ..base import BasePipelineStep
-from ..config import DataStructure, TargetMode
+from ..config import CalibrationStrategy, DataStructure, ExecutionMode, ModelType, TargetMode
 from ..context import PipelineContext
+from ..models import build_model_adapter
 from ..presentation import apply_fintech_figure_theme, friendly_asset_title
+from .evaluation import EvaluationStep
 
 
 class DiagnosticsStep(BasePipelineStep):
@@ -57,6 +70,11 @@ class DiagnosticsStep(BasePipelineStep):
         target_mode = context.config.target.mode
         self._add_metric_overview_outputs(context)
         self._add_feature_importance_overview(context)
+        self._add_model_artifact_outputs(context)
+        if context.config.documentation.enabled:
+            self._add_documentation_metadata(context)
+        self._add_feature_dictionary_outputs(context)
+        self._add_manual_review_outputs(context)
 
         if diagnostic_config.data_quality:
             self._build_data_quality_outputs(context)
@@ -100,6 +118,8 @@ class DiagnosticsStep(BasePipelineStep):
                     "Skipped WoE/IV analysis because labels are unavailable "
                     "for this scored dataset."
                 )
+            if context.config.model.model_type == ModelType.DISCRETE_TIME_HAZARD_MODEL:
+                self._add_lifetime_pd_outputs(context, labels_available)
         else:
             if diagnostic_config.quantile_analysis:
                 self._add_regression_quantile_outputs(context, labels_available)
@@ -125,8 +145,12 @@ class DiagnosticsStep(BasePipelineStep):
             self._add_adf_outputs(context, top_features, labels_available)
         if context.comparison_results is not None:
             self._add_model_comparison_outputs(context)
+        if context.config.robustness.enabled:
+            self._add_robustness_outputs(context)
         if context.config.explainability.enabled:
             self._add_explainability_outputs(context, top_features, labels_available)
+        if context.config.scorecard_workbench.enabled:
+            self._add_scorecard_workbench_outputs(context)
         if context.config.scenario_testing.enabled:
             self._add_scenario_outputs(context)
         if context.config.feature_policy.enabled:
@@ -190,6 +214,11 @@ class DiagnosticsStep(BasePipelineStep):
             labels={value_column: "Importance", "feature_name": "Feature"},
         )
 
+    def _add_model_artifact_outputs(self, context: PipelineContext) -> None:
+        for artifact_name, artifact in context.model_artifacts.items():
+            if isinstance(artifact, pd.DataFrame):
+                context.diagnostics_tables[artifact_name] = artifact.copy(deep=True)
+
     def _build_data_quality_outputs(self, context: PipelineContext) -> None:
         data_quality = pd.DataFrame(
             [
@@ -216,6 +245,100 @@ class DiagnosticsStep(BasePipelineStep):
             ]
         )
         context.diagnostics_tables["data_quality_summary"] = data_quality
+
+    def _add_documentation_metadata(self, context: PipelineContext) -> None:
+        documentation = context.config.documentation
+        rows = [
+            {"field": "model_name", "value": documentation.model_name},
+            {"field": "model_owner", "value": documentation.model_owner},
+            {"field": "business_purpose", "value": documentation.business_purpose},
+            {"field": "portfolio_name", "value": documentation.portfolio_name},
+            {"field": "segment_name", "value": documentation.segment_name},
+            {"field": "horizon_definition", "value": documentation.horizon_definition},
+            {"field": "target_definition", "value": documentation.target_definition},
+            {"field": "loss_definition", "value": documentation.loss_definition},
+            {"field": "assumptions", "value": "; ".join(documentation.assumptions)},
+            {"field": "exclusions", "value": "; ".join(documentation.exclusions)},
+            {"field": "limitations", "value": "; ".join(documentation.limitations)},
+            {"field": "reviewer_notes", "value": documentation.reviewer_notes},
+        ]
+        context.diagnostics_tables["documentation_metadata"] = pd.DataFrame(rows)
+
+    def _add_feature_dictionary_outputs(self, context: PipelineContext) -> None:
+        feature_dictionary = context.config.feature_dictionary
+        entry_map = {
+            entry.feature_name: entry
+            for entry in feature_dictionary.entries
+        }
+        rows: list[dict[str, Any]] = []
+        for feature_name in context.feature_columns:
+            entry = entry_map.get(feature_name)
+            rows.append(
+                {
+                    "feature_name": feature_name,
+                    "present_in_model": True,
+                    "documented": bool(entry and entry.definition.strip()),
+                    "business_name": "" if entry is None else entry.business_name,
+                    "definition": "" if entry is None else entry.definition,
+                    "source_system": "" if entry is None else entry.source_system,
+                    "unit": "" if entry is None else entry.unit,
+                    "allowed_range": "" if entry is None else entry.allowed_range,
+                    "missingness_meaning": "" if entry is None else entry.missingness_meaning,
+                    "expected_sign": "" if entry is None else entry.expected_sign,
+                    "inclusion_rationale": "" if entry is None else entry.inclusion_rationale,
+                    "notes": "" if entry is None else entry.notes,
+                }
+            )
+
+        for feature_name, entry in entry_map.items():
+            if feature_name in context.feature_columns:
+                continue
+            rows.append(
+                {
+                    "feature_name": feature_name,
+                    "present_in_model": False,
+                    "documented": bool(entry.definition.strip()),
+                    "business_name": entry.business_name,
+                    "definition": entry.definition,
+                    "source_system": entry.source_system,
+                    "unit": entry.unit,
+                    "allowed_range": entry.allowed_range,
+                    "missingness_meaning": entry.missingness_meaning,
+                    "expected_sign": entry.expected_sign,
+                    "inclusion_rationale": entry.inclusion_rationale,
+                    "notes": entry.notes,
+                }
+            )
+
+        if rows:
+            feature_dictionary_table = pd.DataFrame(rows)
+            context.diagnostics_tables["feature_dictionary"] = feature_dictionary_table
+            if feature_dictionary.require_documentation_for_selected_features:
+                undocumented = feature_dictionary_table.loc[
+                    feature_dictionary_table["present_in_model"]
+                    & ~feature_dictionary_table["documented"]
+                ]
+                if not undocumented.empty:
+                    preview = ", ".join(undocumented["feature_name"].head(10))
+                    raise ValueError(
+                        "Feature dictionary coverage is required for selected features, but "
+                        f"these modeled features are undocumented: {preview}."
+                    )
+
+    def _add_manual_review_outputs(self, context: PipelineContext) -> None:
+        manual_review = context.config.manual_review
+        if manual_review.scorecard_bin_overrides:
+            context.diagnostics_tables["scorecard_bin_overrides"] = pd.DataFrame(
+                [
+                    {
+                        "feature_name": override.feature_name,
+                        "bin_edges": ", ".join(str(value) for value in override.bin_edges),
+                        "rationale": override.rationale,
+                        "reviewer_name": manual_review.reviewer_name,
+                    }
+                    for override in manual_review.scorecard_bin_overrides
+                ]
+            )
 
     def _add_descriptive_statistics(self, context: PipelineContext) -> None:
         dataframe = context.working_data
@@ -400,32 +523,153 @@ class DiagnosticsStep(BasePipelineStep):
         )
 
     def _add_calibration_outputs(self, context: PipelineContext) -> None:
+        validation_frame = context.predictions.get("validation")
         scored_test = context.predictions["test"]
         y_true = scored_test[context.target_column].astype(int).to_numpy()
-        probability = scored_test["predicted_probability"].to_numpy()
-
-        calibration_true, calibration_pred = calibration_curve(
-            y_true,
-            probability,
-            n_bins=min(10, max(2, len(scored_test) // 20)),
-            strategy="quantile",
+        probability = self._clip_probability(
+            scored_test["predicted_probability"].to_numpy(dtype=float)
         )
-        calibration_table = pd.DataFrame(
-            {
-                "mean_predicted_probability": calibration_pred,
-                "observed_default_rate": calibration_true,
-            }
-        )
-        context.diagnostics_tables["calibration"] = calibration_table
-        figure = go.Figure()
-        figure.add_trace(
-            go.Scatter(
-                x=calibration_table["mean_predicted_probability"],
-                y=calibration_table["observed_default_rate"],
-                mode="lines+markers",
-                name="Model",
+        if len(np.unique(y_true)) < 2:
+            context.warn(
+                "Skipped calibration analysis because the test split does not contain both "
+                "target classes."
             )
+            return
+
+        calibration_methods: dict[str, dict[str, Any]] = {
+            "base": {
+                "label": "Base Model",
+                "method_name": "base",
+                "fitted_on_split": "model_output",
+            }
+        }
+        calibration_config = context.config.calibration
+
+        if (
+            validation_frame is not None
+            and context.target_column in validation_frame.columns
+            and "predicted_probability" in validation_frame.columns
+        ):
+            y_validation = validation_frame[context.target_column].astype(int).to_numpy()
+            probability_validation = self._clip_probability(
+                validation_frame["predicted_probability"].to_numpy(dtype=float)
+            )
+            if len(np.unique(y_validation)) >= 2:
+                if calibration_config.platt_scaling:
+                    platt_model = self._fit_platt_calibrator(probability_validation, y_validation)
+                    if platt_model is not None:
+                        calibration_methods["platt"] = {
+                            "label": "Platt Scaling",
+                            "method_name": "platt",
+                            "fitted_on_split": "validation",
+                            "transformer": platt_model,
+                        }
+                if calibration_config.isotonic_calibration:
+                    isotonic_model = self._fit_isotonic_calibrator(
+                        probability_validation,
+                        y_validation,
+                    )
+                    if isotonic_model is not None:
+                        calibration_methods["isotonic"] = {
+                            "label": "Isotonic Calibration",
+                            "method_name": "isotonic",
+                            "fitted_on_split": "validation",
+                            "transformer": isotonic_model,
+                        }
+            elif calibration_config.platt_scaling or calibration_config.isotonic_calibration:
+                context.warn(
+                    "Calibration challengers were skipped because the validation split "
+                    "does not contain both target classes."
+                )
+        elif calibration_config.platt_scaling or calibration_config.isotonic_calibration:
+            context.warn(
+                "Calibration challengers were skipped because a labeled validation split "
+                "was unavailable."
+            )
+
+        comparison_rows: list[dict[str, Any]] = []
+        calibration_tables: list[pd.DataFrame] = []
+        figure = go.Figure()
+        ranking_metric = calibration_config.ranking_metric.value
+        recommended_column = "predicted_probability"
+        recommended_method = "base"
+
+        for method_name, method_payload in calibration_methods.items():
+            calibrated_probability = self._apply_calibration_method(
+                method_payload,
+                probability,
+            )
+            calibration_table = self._build_calibration_table(
+                y_true=y_true,
+                probability=calibrated_probability,
+                bin_count=calibration_config.bin_count,
+                strategy=calibration_config.strategy,
+            )
+            if calibration_table.empty:
+                continue
+            calibration_table.insert(0, "method_name", method_name)
+            calibration_table.insert(1, "method_label", method_payload["label"])
+            calibration_tables.append(calibration_table)
+            comparison_rows.append(
+                self._summarize_calibration_method(
+                    method_payload=method_payload,
+                    y_true=y_true,
+                    probability=calibrated_probability,
+                    calibration_table=calibration_table,
+                )
+            )
+            figure.add_trace(
+                go.Scatter(
+                    x=calibration_table["mean_predicted_probability"],
+                    y=calibration_table["observed_default_rate"],
+                    mode="lines+markers",
+                    name=method_payload["label"],
+                )
+            )
+
+        if not comparison_rows or not calibration_tables:
+            return
+
+        calibration_summary = pd.DataFrame(comparison_rows).sort_values(
+            ranking_metric,
+            ascending=True,
+            kind="stable",
         )
+        recommended_method = str(calibration_summary.iloc[0]["method_name"])
+        recommended_column = (
+            "predicted_probability"
+            if recommended_method == "base"
+            else f"predicted_probability_{recommended_method}"
+        )
+
+        for split_name, split_frame in context.predictions.items():
+            if "predicted_probability" not in split_frame.columns:
+                continue
+            split_probability = self._clip_probability(
+                split_frame["predicted_probability"].to_numpy(dtype=float)
+            )
+            updated_frame = split_frame.copy(deep=True)
+            for method_name, method_payload in calibration_methods.items():
+                if method_name == "base":
+                    continue
+                updated_frame[f"predicted_probability_{method_name}"] = (
+                    self._apply_calibration_method(method_payload, split_probability)
+                )
+            if recommended_column in updated_frame.columns:
+                updated_frame["predicted_probability_recommended"] = updated_frame[
+                    recommended_column
+                ]
+            else:
+                updated_frame["predicted_probability_recommended"] = updated_frame[
+                    "predicted_probability"
+                ]
+            context.predictions[split_name] = updated_frame
+
+        context.diagnostics_tables["calibration"] = pd.concat(
+            calibration_tables,
+            ignore_index=True,
+        )
+        context.diagnostics_tables["calibration_summary"] = calibration_summary
         figure.add_trace(
             go.Scatter(
                 x=[0, 1],
@@ -441,6 +685,40 @@ class DiagnosticsStep(BasePipelineStep):
             yaxis_title="Observed Default Rate",
         )
         context.visualizations["calibration_curve"] = figure
+        context.visualizations["calibration_method_comparison"] = px.bar(
+            calibration_summary,
+            x="method_label",
+            y=ranking_metric,
+            color="method_label",
+            title="Calibration Method Comparison",
+            hover_data={
+                "brier_score": ":.4f",
+                "log_loss": ":.4f",
+                "expected_calibration_error": ":.4f",
+                "maximum_calibration_error": ":.4f",
+                "calibration_intercept": ":.4f",
+                "calibration_slope": ":.4f",
+                "method_name": False,
+                "method_label": False,
+            },
+            labels={
+                "method_label": "Method",
+                ranking_metric: ranking_metric.replace("_", " ").title(),
+            },
+        )
+        context.metadata["calibration_ranking_metric"] = ranking_metric
+        context.metadata["recommended_calibration_method"] = recommended_method
+        context.metadata["recommended_calibration_score_column"] = recommended_column
+        context.metadata["calibration_methods_evaluated"] = calibration_summary[
+            "method_name"
+        ].tolist()
+        context.statistical_tests["calibration_methods"] = calibration_summary.to_dict(
+            orient="records"
+        )
+        context.log(
+            "Evaluated calibration methods and recommended "
+            f"`{recommended_method}` using `{ranking_metric}`."
+        )
 
         fpr, tpr, _ = roc_curve(y_true, probability)
         precision, recall, _ = precision_recall_curve(y_true, probability)
@@ -461,6 +739,215 @@ class DiagnosticsStep(BasePipelineStep):
             y="precision",
             title="Precision-Recall Curve",
         )
+
+    def _fit_platt_calibrator(
+        self,
+        probability: np.ndarray,
+        y_true: np.ndarray,
+    ) -> LogisticRegression | None:
+        try:
+            design = self._safe_logit(probability).reshape(-1, 1)
+            calibrator = LogisticRegression(max_iter=1000, solver="lbfgs")
+            calibrator.fit(design, y_true.astype(int))
+        except Exception:
+            return None
+        return calibrator
+
+    def _fit_isotonic_calibrator(
+        self,
+        probability: np.ndarray,
+        y_true: np.ndarray,
+    ) -> IsotonicRegression | None:
+        try:
+            calibrator = IsotonicRegression(out_of_bounds="clip", y_min=0.0, y_max=1.0)
+            calibrator.fit(probability, y_true.astype(int))
+        except Exception:
+            return None
+        return calibrator
+
+    def _apply_calibration_method(
+        self,
+        method_payload: dict[str, Any],
+        probability: np.ndarray,
+    ) -> np.ndarray:
+        method_name = str(method_payload["method_name"])
+        clipped_probability = self._clip_probability(probability)
+        if method_name == "base":
+            return clipped_probability
+        transformer = method_payload.get("transformer")
+        if method_name == "platt" and transformer is not None:
+            transformed = transformer.predict_proba(
+                self._safe_logit(clipped_probability).reshape(-1, 1)
+            )[:, 1]
+            return self._clip_probability(transformed)
+        if method_name == "isotonic" and transformer is not None:
+            transformed = transformer.predict(clipped_probability)
+            return self._clip_probability(np.asarray(transformed, dtype=float))
+        return clipped_probability
+
+    def _build_calibration_table(
+        self,
+        *,
+        y_true: np.ndarray,
+        probability: np.ndarray,
+        bin_count: int,
+        strategy: CalibrationStrategy,
+    ) -> pd.DataFrame:
+        if len(probability) == 0:
+            return pd.DataFrame()
+
+        clipped_probability = self._clip_probability(probability)
+        effective_bin_count = max(2, min(int(bin_count), len(clipped_probability)))
+        if strategy == CalibrationStrategy.QUANTILE:
+            ordered_index = np.argsort(clipped_probability, kind="stable")
+            ranked_positions = np.arange(len(clipped_probability))
+            bucket_codes = np.zeros(len(clipped_probability), dtype=int)
+            quantile_codes = pd.qcut(
+                ranked_positions,
+                q=effective_bin_count,
+                labels=False,
+                duplicates="drop",
+            )
+            bucket_codes[ordered_index] = np.asarray(quantile_codes, dtype=int)
+        else:
+            bucket_codes = np.minimum(
+                (clipped_probability * effective_bin_count).astype(int),
+                effective_bin_count - 1,
+            )
+
+        calibration_frame = pd.DataFrame(
+            {
+                "bucket_index": bucket_codes,
+                "predicted_probability": clipped_probability,
+                "target": y_true.astype(int),
+            }
+        )
+        grouped = (
+            calibration_frame.groupby("bucket_index", sort=True, dropna=False)
+            .agg(
+                observation_count=("target", "size"),
+                observed_default_count=("target", "sum"),
+                expected_default_count=("predicted_probability", "sum"),
+                mean_predicted_probability=("predicted_probability", "mean"),
+                observed_default_rate=("target", "mean"),
+                probability_min=("predicted_probability", "min"),
+                probability_max=("predicted_probability", "max"),
+            )
+            .reset_index()
+        )
+        grouped["bucket_label"] = grouped["bucket_index"].map(
+            lambda value: f"Bin {int(value) + 1}"
+        )
+        grouped["non_default_count"] = (
+            grouped["observation_count"] - grouped["observed_default_count"]
+        )
+        grouped["absolute_gap"] = (
+            grouped["observed_default_rate"] - grouped["mean_predicted_probability"]
+        ).abs()
+        ordered_columns = [
+            "bucket_index",
+            "bucket_label",
+            "observation_count",
+            "observed_default_count",
+            "non_default_count",
+            "expected_default_count",
+            "mean_predicted_probability",
+            "observed_default_rate",
+            "absolute_gap",
+            "probability_min",
+            "probability_max",
+        ]
+        return grouped.loc[:, ordered_columns]
+
+    def _summarize_calibration_method(
+        self,
+        *,
+        method_payload: dict[str, Any],
+        y_true: np.ndarray,
+        probability: np.ndarray,
+        calibration_table: pd.DataFrame,
+    ) -> dict[str, Any]:
+        clipped_probability = self._clip_probability(probability)
+        calibration_intercept, calibration_slope = self._calibration_slope_intercept(
+            y_true,
+            clipped_probability,
+        )
+        ece, mce = self._calibration_error_metrics(calibration_table)
+        hosmer_lemeshow_statistic, hosmer_lemeshow_p_value = (
+            self._hosmer_lemeshow_statistic(calibration_table)
+        )
+        return {
+            "method_name": method_payload["method_name"],
+            "method_label": method_payload["label"],
+            "fitted_on_split": method_payload.get("fitted_on_split", "model_output"),
+            "observation_count": int(len(y_true)),
+            "mean_predicted_probability": float(np.mean(clipped_probability)),
+            "observed_default_rate": float(np.mean(y_true)),
+            "brier_score": float(brier_score_loss(y_true, clipped_probability)),
+            "log_loss": float(log_loss(y_true, clipped_probability, labels=[0, 1])),
+            "expected_calibration_error": ece,
+            "maximum_calibration_error": mce,
+            "calibration_intercept": calibration_intercept,
+            "calibration_slope": calibration_slope,
+            "hosmer_lemeshow_statistic": hosmer_lemeshow_statistic,
+            "hosmer_lemeshow_p_value": hosmer_lemeshow_p_value,
+        }
+
+    def _calibration_slope_intercept(
+        self,
+        y_true: np.ndarray,
+        probability: np.ndarray,
+    ) -> tuple[float, float]:
+        try:
+            design = sm.add_constant(self._safe_logit(probability), has_constant="add")
+            fit = sm.GLM(y_true, design, family=sm.families.Binomial()).fit()
+            intercept = float(fit.params[0])
+            slope = float(fit.params[1])
+        except Exception:
+            intercept = float("nan")
+            slope = float("nan")
+        return intercept, slope
+
+    def _calibration_error_metrics(self, calibration_table: pd.DataFrame) -> tuple[float, float]:
+        if calibration_table.empty:
+            return float("nan"), float("nan")
+        total = float(calibration_table["observation_count"].sum()) or 1.0
+        gaps = calibration_table["absolute_gap"].to_numpy(dtype=float)
+        weights = calibration_table["observation_count"].to_numpy(dtype=float) / total
+        expected_calibration_error = float(np.sum(weights * gaps))
+        maximum_calibration_error = float(np.max(gaps))
+        return expected_calibration_error, maximum_calibration_error
+
+    def _hosmer_lemeshow_statistic(
+        self,
+        calibration_table: pd.DataFrame,
+    ) -> tuple[float, float]:
+        if calibration_table.empty:
+            return float("nan"), float("nan")
+        observed_defaults = calibration_table["observed_default_count"].to_numpy(dtype=float)
+        expected_defaults = calibration_table["expected_default_count"].to_numpy(dtype=float)
+        observation_count = calibration_table["observation_count"].to_numpy(dtype=float)
+        observed_non_defaults = observation_count - observed_defaults
+        expected_non_defaults = observation_count - expected_defaults
+        default_term = (observed_defaults - expected_defaults) ** 2 / np.maximum(
+            expected_defaults,
+            1e-9,
+        )
+        non_default_term = (
+            (observed_non_defaults - expected_non_defaults) ** 2
+            / np.maximum(expected_non_defaults, 1e-9)
+        )
+        statistic = float(np.sum(default_term + non_default_term))
+        degrees_of_freedom = max(int(len(calibration_table) - 2), 1)
+        p_value = float(1.0 - chi2.cdf(statistic, df=degrees_of_freedom))
+        return statistic, p_value
+
+    def _clip_probability(self, probability: np.ndarray) -> np.ndarray:
+        return np.clip(np.asarray(probability, dtype=float), 1e-6, 1.0 - 1e-6)
+
+    def _safe_logit(self, probability: np.ndarray) -> np.ndarray:
+        clipped_probability = self._clip_probability(probability)
+        return np.log(clipped_probability / (1.0 - clipped_probability))
 
     def _add_lift_gain_outputs(self, context: PipelineContext) -> None:
         scored_test = context.predictions["test"].copy(deep=True)
@@ -501,6 +988,50 @@ class DiagnosticsStep(BasePipelineStep):
             x="bucket",
             y="lift",
             title="Lift by Quantile Bucket",
+        )
+
+    def _add_lifetime_pd_outputs(self, context: PipelineContext, labels_available: bool) -> None:
+        scored_test = context.predictions.get("test")
+        if scored_test is None or "hazard_period_index" not in scored_test.columns:
+            return
+        grouped = (
+            scored_test.groupby("hazard_period_index", dropna=False)
+            .agg(
+                observation_count=("predicted_probability", "size"),
+                mean_predicted_hazard=("predicted_probability", "mean"),
+            )
+            .reset_index()
+            .sort_values("hazard_period_index")
+        )
+        grouped["predicted_survival_rate"] = (1.0 - grouped["mean_predicted_hazard"]).cumprod()
+        grouped["predicted_cumulative_pd"] = 1.0 - grouped["predicted_survival_rate"]
+        if labels_available and context.target_column in scored_test.columns:
+            observed = (
+                scored_test.groupby("hazard_period_index", dropna=False)[context.target_column]
+                .mean()
+                .reset_index(name="observed_hazard_rate")
+                .sort_values("hazard_period_index")
+            )
+            grouped = grouped.merge(observed, on="hazard_period_index", how="left")
+            grouped["observed_survival_rate"] = (
+                1.0 - grouped["observed_hazard_rate"].fillna(0.0)
+            ).cumprod()
+            grouped["observed_cumulative_pd"] = 1.0 - grouped["observed_survival_rate"]
+        context.diagnostics_tables["lifetime_pd_curve"] = grouped
+        plot_columns = ["predicted_cumulative_pd"]
+        if "observed_cumulative_pd" in grouped.columns:
+            plot_columns.append("observed_cumulative_pd")
+        context.visualizations["lifetime_pd_curve"] = px.line(
+            grouped,
+            x="hazard_period_index",
+            y=plot_columns,
+            markers=True,
+            title="Lifetime PD Curve",
+            labels={
+                "hazard_period_index": "Period",
+                "value": "Cumulative PD",
+                "variable": "Series",
+            },
         )
 
     def _add_woe_iv_outputs(
@@ -829,16 +1360,578 @@ class DiagnosticsStep(BasePipelineStep):
             },
         )
 
+    def _add_robustness_outputs(self, context: PipelineContext) -> None:
+        robustness = context.config.robustness
+        if context.config.execution.mode == ExecutionMode.SCORE_EXISTING_MODEL:
+            context.warn(
+                "Skipped robustness testing because existing-model scoring does not refit "
+                "the model on repeated resamples."
+            )
+            return
+        if not self._labels_available(context) or context.target_column is None:
+            context.warn(
+                "Skipped robustness testing because labels are unavailable for repeated "
+                "held-out evaluation."
+            )
+            return
+
+        train_frame = context.split_frames.get("train")
+        evaluation_frame = context.split_frames.get(robustness.evaluation_split)
+        if train_frame is None or evaluation_frame is None:
+            context.warn(
+                "Skipped robustness testing because the required train/evaluation "
+                "splits were unavailable."
+            )
+            return
+
+        metric_rows: list[dict[str, Any]] = []
+        feature_rows: list[dict[str, Any]] = []
+        successful_resamples = 0
+        sample_size = max(2, int(round(len(train_frame) * robustness.sample_fraction)))
+        if not robustness.sample_with_replacement:
+            sample_size = min(sample_size, len(train_frame))
+        evaluator = EvaluationStep()
+
+        for resample_id in range(robustness.resample_count):
+            resampled_train = train_frame.sample(
+                n=sample_size,
+                replace=robustness.sample_with_replacement,
+                random_state=robustness.random_state + resample_id,
+            ).reset_index(drop=True)
+            try:
+                resampled_model = build_model_adapter(
+                    deepcopy(context.config.model),
+                    context.config.target.mode,
+                    scorecard_config=context.config.scorecard,
+                    scorecard_bin_overrides={
+                        override.feature_name: override.bin_edges
+                        for override in context.config.manual_review.scorecard_bin_overrides
+                    },
+                )
+                resampled_model.fit(
+                    resampled_train[context.feature_columns],
+                    resampled_train[context.target_column],
+                    context.numeric_features,
+                    context.categorical_features,
+                )
+            except Exception as exc:
+                context.warn(
+                    f"Robustness resample {resample_id + 1} failed during model fitting: {exc}"
+                )
+                continue
+
+            try:
+                if context.config.target.mode == TargetMode.BINARY:
+                    _, metrics = evaluator._score_binary_split(
+                        evaluation_frame,
+                        robustness.evaluation_split,
+                        context.target_column,
+                        context.feature_columns,
+                        resampled_model,
+                        context.config.model.threshold,
+                        True,
+                    )
+                    candidate_metrics = [
+                        "roc_auc",
+                        "average_precision",
+                        "ks_statistic",
+                        "brier_score",
+                        "log_loss",
+                        "accuracy",
+                        "precision",
+                        "recall",
+                        "f1_score",
+                        "matthews_correlation",
+                    ]
+                else:
+                    _, metrics = evaluator._score_continuous_split(
+                        evaluation_frame,
+                        robustness.evaluation_split,
+                        context.target_column,
+                        context.feature_columns,
+                        resampled_model,
+                        True,
+                    )
+                    candidate_metrics = ["rmse", "mae", "r2", "explained_variance"]
+            except Exception as exc:
+                context.warn(
+                    f"Robustness resample {resample_id + 1} failed during held-out scoring: {exc}"
+                )
+                continue
+
+            successful_resamples += 1
+            if robustness.metric_stability:
+                for metric_name in candidate_metrics:
+                    metric_value = metrics.get(metric_name)
+                    if metric_value is None or pd.isna(metric_value):
+                        continue
+                    metric_rows.append(
+                        {
+                            "resample_id": resample_id + 1,
+                            "evaluation_split": robustness.evaluation_split,
+                            "metric_name": metric_name,
+                            "metric_value": float(metric_value),
+                        }
+                    )
+            if robustness.coefficient_stability:
+                feature_rows.extend(
+                    self._build_robustness_feature_rows(
+                        feature_importance=resampled_model.get_feature_importance(),
+                        resample_id=resample_id + 1,
+                        context=context,
+                    )
+                )
+
+        if successful_resamples < 2:
+            context.warn(
+                "Robustness testing did not complete enough successful resamples to build "
+                "stable outputs."
+            )
+            return
+
+        if metric_rows:
+            metric_table = pd.DataFrame(metric_rows)
+            metric_summary = self._summarize_robustness_metrics(metric_table)
+            context.diagnostics_tables["robustness_metric_distribution"] = metric_table
+            context.diagnostics_tables["robustness_metric_summary"] = metric_summary
+            context.visualizations["robustness_metric_boxplot"] = px.box(
+                metric_table,
+                x="metric_name",
+                y="metric_value",
+                color="metric_name",
+                points="all",
+                title="Metric Stability Across Resamples",
+                labels={"metric_name": "Metric", "metric_value": "Held-Out Value"},
+            )
+            context.visualizations["robustness_metric_summary_chart"] = px.bar(
+                metric_summary,
+                x="metric_name",
+                y="mean_value",
+                error_y="std_value",
+                title="Average Held-Out Metric by Resample",
+                labels={"metric_name": "Metric", "mean_value": "Average Value"},
+            )
+
+        if feature_rows:
+            feature_table = pd.DataFrame(feature_rows)
+            feature_summary = self._summarize_robustness_features(
+                feature_table,
+                successful_resamples=successful_resamples,
+            )
+            context.diagnostics_tables["robustness_feature_distribution"] = feature_table
+            context.diagnostics_tables["robustness_feature_stability"] = feature_summary
+            chart_frame = (
+                feature_summary.sort_values("mean_abs_effect", ascending=False)
+                .head(context.config.diagnostics.top_n_features)
+                .sort_values("mean_abs_effect", ascending=True)
+            )
+            if not chart_frame.empty:
+                context.visualizations["robustness_feature_stability"] = px.bar(
+                    chart_frame,
+                    x="mean_abs_effect",
+                    y="feature_name",
+                    orientation="h",
+                    error_x="std_abs_effect",
+                    color="effect_basis",
+                    title="Feature Stability Profile",
+                    labels={
+                        "mean_abs_effect": "Average Absolute Effect",
+                        "feature_name": "Feature",
+                        "effect_basis": "Effect Basis",
+                    },
+                    hover_data={
+                        "selection_frequency": ":.2f",
+                        "mean_effect": ":.4f",
+                        "std_effect": ":.4f",
+                        "sign_consistency": ":.2f",
+                    },
+                )
+
+        context.metadata["robustness_summary"] = {
+            "enabled": True,
+            "successful_resamples": successful_resamples,
+            "requested_resamples": robustness.resample_count,
+            "evaluation_split": robustness.evaluation_split,
+        }
+        context.log(
+            "Completed robustness testing across "
+            f"{successful_resamples} held-out resamples."
+        )
+
+    def _build_robustness_feature_rows(
+        self,
+        *,
+        feature_importance: pd.DataFrame,
+        resample_id: int,
+        context: PipelineContext,
+    ) -> list[dict[str, Any]]:
+        if feature_importance.empty or "feature_name" not in feature_importance.columns:
+            return []
+
+        working = feature_importance.copy(deep=True)
+        working["source_feature_name"] = working["feature_name"].map(
+            lambda value: self._infer_source_feature_name(str(value), context.feature_columns)
+        )
+        has_coefficients = (
+            "coefficient" in working.columns and working["coefficient"].notna().any()
+        )
+        rows: list[dict[str, Any]] = []
+        grouped = working.groupby("source_feature_name", dropna=False)
+        for feature_name, group in grouped:
+            importance_value = pd.to_numeric(
+                group.get("importance_value", pd.Series(dtype=float)),
+                errors="coerce",
+            ).fillna(0.0)
+            if has_coefficients:
+                coefficient_value = pd.to_numeric(
+                    group["coefficient"],
+                    errors="coerce",
+                ).fillna(0.0)
+                effect_value = float(coefficient_value.mean())
+                signed_effect = True
+                effect_basis = "coefficient"
+            else:
+                effect_value = float(importance_value.sum())
+                signed_effect = False
+                effect_basis = "importance"
+            rows.append(
+                {
+                    "resample_id": resample_id,
+                    "feature_name": str(feature_name),
+                    "effect_basis": effect_basis,
+                    "effect_value": effect_value,
+                    "abs_effect_value": float(abs(effect_value)),
+                    "importance_value": float(importance_value.sum()),
+                    "signed_effect": signed_effect,
+                }
+            )
+        return rows
+
+    def _summarize_robustness_metrics(self, metric_table: pd.DataFrame) -> pd.DataFrame:
+        rows: list[dict[str, Any]] = []
+        for metric_name, group in metric_table.groupby("metric_name", dropna=False):
+            values = group["metric_value"].astype(float)
+            rows.append(
+                {
+                    "metric_name": metric_name,
+                    "resample_count": int(len(values)),
+                    "mean_value": float(values.mean()),
+                    "std_value": float(values.std(ddof=0)),
+                    "min_value": float(values.min()),
+                    "p05_value": float(values.quantile(0.05)),
+                    "median_value": float(values.quantile(0.50)),
+                    "p95_value": float(values.quantile(0.95)),
+                    "max_value": float(values.max()),
+                }
+            )
+        return pd.DataFrame(rows).sort_values("metric_name").reset_index(drop=True)
+
+    def _summarize_robustness_features(
+        self,
+        feature_table: pd.DataFrame,
+        *,
+        successful_resamples: int,
+    ) -> pd.DataFrame:
+        rows: list[dict[str, Any]] = []
+        for feature_name, group in feature_table.groupby("feature_name", dropna=False):
+            effect_basis = str(group["effect_basis"].mode().iloc[0])
+            effect_values = pd.to_numeric(group["effect_value"], errors="coerce").fillna(0.0)
+            abs_effect_values = pd.to_numeric(
+                group["abs_effect_value"],
+                errors="coerce",
+            ).fillna(0.0)
+            importance_values = pd.to_numeric(
+                group["importance_value"],
+                errors="coerce",
+            ).fillna(0.0)
+            signed_effect = bool(group["signed_effect"].any())
+            positive_share = (
+                float((effect_values > 0).mean()) if signed_effect else float("nan")
+            )
+            negative_share = (
+                float((effect_values < 0).mean()) if signed_effect else float("nan")
+            )
+            sign_consistency = (
+                max(positive_share, negative_share) if signed_effect else float("nan")
+            )
+            rows.append(
+                {
+                    "feature_name": str(feature_name),
+                    "effect_basis": effect_basis,
+                    "selection_frequency": float(
+                        group["resample_id"].nunique() / max(successful_resamples, 1)
+                    ),
+                    "mean_effect": float(effect_values.mean()),
+                    "std_effect": float(effect_values.std(ddof=0)),
+                    "mean_abs_effect": float(abs_effect_values.mean()),
+                    "std_abs_effect": float(abs_effect_values.std(ddof=0)),
+                    "mean_importance": float(importance_values.mean()),
+                    "std_importance": float(importance_values.std(ddof=0)),
+                    "positive_share": positive_share,
+                    "negative_share": negative_share,
+                    "sign_consistency": sign_consistency,
+                }
+            )
+        return (
+            pd.DataFrame(rows)
+            .sort_values(
+                ["selection_frequency", "mean_abs_effect", "feature_name"],
+                ascending=[False, False, True],
+            )
+            .reset_index(drop=True)
+        )
+
+    def _add_scorecard_workbench_outputs(self, context: PipelineContext) -> None:
+        if context.config.model.model_type != ModelType.SCORECARD_LOGISTIC_REGRESSION:
+            return
+        woe_table = context.diagnostics_tables.get("scorecard_woe_table", pd.DataFrame())
+        points_table = context.diagnostics_tables.get("scorecard_points_table", pd.DataFrame())
+        if woe_table.empty or points_table.empty:
+            return
+
+        workbench = context.config.scorecard_workbench
+        woe_detail = woe_table.copy(deep=True)
+        points_detail = points_table.copy(deep=True)
+        woe_detail["bucket_rank"] = woe_detail.groupby("feature_name", dropna=False).cumcount() + 1
+        points_detail["bucket_rank"] = (
+            points_detail.groupby("feature_name", dropna=False).cumcount() + 1
+        )
+        woe_detail["bad_rate"] = woe_detail["bad"] / woe_detail["total"].replace(0, np.nan)
+        context.diagnostics_tables["scorecard_woe_table"] = woe_detail
+        context.diagnostics_tables["scorecard_points_table"] = points_detail
+
+        feature_summary = self._build_scorecard_feature_summary(
+            woe_detail=woe_detail,
+            points_detail=points_detail,
+            manual_override_features={
+                override.feature_name
+                for override in context.config.manual_review.scorecard_bin_overrides
+            },
+        )
+        if feature_summary.empty:
+            return
+
+        context.diagnostics_tables["scorecard_feature_summary"] = feature_summary
+        featured_features = feature_summary.head(workbench.max_features)["feature_name"].tolist()
+        context.visualizations["scorecard_feature_iv"] = px.bar(
+            feature_summary.head(workbench.max_features).sort_values(
+                "information_value", ascending=True
+            ),
+            x="information_value",
+            y="feature_name",
+            orientation="h",
+            title="Scorecard Feature Information Value",
+            labels={"information_value": "Information Value", "feature_name": "Feature"},
+        )
+
+        if workbench.include_score_distribution:
+            score_distribution_figure = self._build_scorecard_score_distribution(context)
+            if score_distribution_figure is not None:
+                context.visualizations["scorecard_score_distribution"] = score_distribution_figure
+
+        if workbench.include_reason_code_analysis:
+            reason_code_table = self._build_scorecard_reason_code_frequency(context)
+            if not reason_code_table.empty:
+                context.diagnostics_tables["scorecard_reason_code_frequency"] = reason_code_table
+                context.visualizations["scorecard_reason_code_frequency_chart"] = px.bar(
+                    reason_code_table.head(workbench.max_features * 3),
+                    x="feature_name",
+                    y="count",
+                    color="reason_code_rank",
+                    barmode="group",
+                    title="Reason Code Frequency",
+                    labels={
+                        "feature_name": "Feature",
+                        "count": "Count",
+                        "reason_code_rank": "Reason Code Slot",
+                    },
+                )
+
+        for feature_name in featured_features:
+            self._add_scorecard_feature_figures(
+                context=context,
+                feature_name=feature_name,
+                woe_detail=woe_detail,
+                points_detail=points_detail,
+            )
+
+    def _build_scorecard_feature_summary(
+        self,
+        *,
+        woe_detail: pd.DataFrame,
+        points_detail: pd.DataFrame,
+        manual_override_features: set[str],
+    ) -> pd.DataFrame:
+        rows: list[dict[str, Any]] = []
+        for feature_name, woe_feature in woe_detail.groupby("feature_name", dropna=False):
+            points_feature = points_detail.loc[
+                points_detail["feature_name"] == feature_name
+            ].copy(deep=True)
+            if points_feature.empty:
+                continue
+            bad_rates = pd.to_numeric(woe_feature["bad_rate"], errors="coerce").dropna()
+            woe_values = pd.to_numeric(woe_feature["woe"], errors="coerce").dropna()
+            point_values = pd.to_numeric(
+                points_feature["partial_score_points"],
+                errors="coerce",
+            ).dropna()
+            total_values = pd.to_numeric(woe_feature["total"], errors="coerce").dropna()
+            rows.append(
+                {
+                    "feature_name": str(feature_name),
+                    "bin_count": int(len(woe_feature)),
+                    "information_value": float(
+                        pd.to_numeric(
+                            woe_feature["iv_component"],
+                            errors="coerce",
+                        )
+                        .fillna(0.0)
+                        .sum()
+                    ),
+                    "average_bad_rate": float(bad_rates.mean()) if not bad_rates.empty else np.nan,
+                    "largest_bin_share": float(total_values.max() / total_values.sum())
+                    if not total_values.empty and float(total_values.sum()) > 0
+                    else np.nan,
+                    "woe_span": float(woe_values.max() - woe_values.min())
+                    if not woe_values.empty
+                    else np.nan,
+                    "points_span": float(point_values.max() - point_values.min())
+                    if not point_values.empty
+                    else np.nan,
+                    "bad_rate_trend": self._describe_scorecard_trend(bad_rates.tolist()),
+                    "manual_override_applied": str(feature_name) in manual_override_features,
+                }
+            )
+        return (
+            pd.DataFrame(rows)
+            .sort_values(["information_value", "feature_name"], ascending=[False, True])
+            .reset_index(drop=True)
+        )
+
+    def _build_scorecard_score_distribution(self, context: PipelineContext) -> go.Figure | None:
+        score_split = context.predictions.get("test")
+        if score_split is None:
+            score_split = next(iter(context.predictions.values()), None)
+        if score_split is None or "scorecard_points" not in score_split.columns:
+            return None
+        sampled = self._sample_frame(score_split.copy(deep=True), context)
+        color_column = None
+        if self._labels_available(context) and context.target_column in sampled.columns:
+            color_column = context.target_column
+            sampled[color_column] = sampled[color_column].astype(str)
+        elif "split" in sampled.columns:
+            color_column = "split"
+        return px.histogram(
+            sampled,
+            x="scorecard_points",
+            color=color_column,
+            nbins=40,
+            title="Scorecard Points Distribution",
+            labels={"scorecard_points": "Scorecard Points"},
+        )
+
+    def _build_scorecard_reason_code_frequency(self, context: PipelineContext) -> pd.DataFrame:
+        score_split = context.predictions.get("test")
+        if score_split is None:
+            score_split = next(iter(context.predictions.values()), None)
+        if score_split is None:
+            return pd.DataFrame()
+        reason_columns = sorted(
+            column for column in score_split.columns if column.startswith("reason_code_")
+        )
+        if not reason_columns:
+            return pd.DataFrame()
+
+        rows: list[dict[str, Any]] = []
+        denominator = max(len(score_split), 1)
+        for reason_column in reason_columns:
+            rank_text = reason_column.rsplit("_", 1)[-1]
+            rank_value = int(rank_text) if rank_text.isdigit() else reason_column
+            counts = (
+                score_split[reason_column]
+                .replace("", np.nan)
+                .dropna()
+                .astype(str)
+                .value_counts()
+            )
+            for feature_name, count in counts.items():
+                rows.append(
+                    {
+                        "reason_code_rank": rank_value,
+                        "feature_name": feature_name,
+                        "count": int(count),
+                        "share": float(count / denominator),
+                    }
+                )
+        return (
+            pd.DataFrame(rows)
+            .sort_values(["count", "feature_name"], ascending=[False, True])
+            .reset_index(drop=True)
+        )
+
+    def _add_scorecard_feature_figures(
+        self,
+        *,
+        context: PipelineContext,
+        feature_name: str,
+        woe_detail: pd.DataFrame,
+        points_detail: pd.DataFrame,
+    ) -> None:
+        feature_woe = woe_detail.loc[woe_detail["feature_name"] == feature_name].copy(deep=True)
+        feature_points = points_detail.loc[
+            points_detail["feature_name"] == feature_name
+        ].copy(deep=True)
+        if feature_woe.empty or feature_points.empty:
+            return
+        feature_woe = feature_woe.sort_values("bucket_rank")
+        feature_points = feature_points.sort_values("bucket_rank")
+        asset_key = self._sanitize_asset_name(feature_name)
+
+        context.visualizations[f"scorecard_bad_rate_{asset_key}"] = px.bar(
+            feature_woe,
+            x="bucket_label",
+            y="bad_rate",
+            title=f"Scorecard Bad Rate by Bucket: {feature_name}",
+            labels={"bucket_label": "Bucket", "bad_rate": "Bad Rate"},
+        )
+        context.visualizations[f"scorecard_woe_{asset_key}"] = px.line(
+            feature_woe,
+            x="bucket_label",
+            y="woe",
+            title=f"Scorecard WoE by Bucket: {feature_name}",
+            labels={"bucket_label": "Bucket", "woe": "WoE"},
+            markers=True,
+        )
+        context.visualizations[f"scorecard_points_{asset_key}"] = px.bar(
+            feature_points,
+            x="bucket_label",
+            y="partial_score_points",
+            title=f"Scorecard Points by Bucket: {feature_name}",
+            labels={"bucket_label": "Bucket", "partial_score_points": "Partial Score"},
+        )
+
+    def _describe_scorecard_trend(self, values: list[float]) -> str:
+        finite_values = [float(value) for value in values if pd.notna(value)]
+        if len(finite_values) < 2:
+            return "not_applicable"
+        if all(
+            left <= right
+            for left, right in zip(finite_values, finite_values[1:], strict=False)
+        ):
+            return "increasing"
+        if all(
+            left >= right
+            for left, right in zip(finite_values, finite_values[1:], strict=False)
+        ):
+            return "decreasing"
+        return "non_monotonic"
+
     def _add_explainability_outputs(
         self,
         context: PipelineContext,
         top_features: list[str],
         labels_available: bool,
     ) -> None:
-        for artifact_name, artifact in context.model_artifacts.items():
-            if isinstance(artifact, pd.DataFrame):
-                context.diagnostics_tables[artifact_name] = artifact.copy(deep=True)
-
         if (
             context.config.explainability.coefficient_breakdown
             and "coefficient" in context.feature_importance.columns

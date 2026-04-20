@@ -8,30 +8,50 @@ from typing import Any
 
 from .config import (
     ArtifactConfig,
+    CalibrationConfig,
+    CalibrationRankingMetric,
+    CalibrationStrategy,
     CleaningConfig,
     ColumnRole,
     ColumnSpec,
     ComparisonConfig,
     DataStructure,
     DiagnosticConfig,
+    DocumentationConfig,
     ExecutionConfig,
     ExecutionMode,
     ExplainabilityConfig,
+    FeatureDictionaryConfig,
+    FeatureDictionaryEntry,
     FeatureEngineeringConfig,
     FeaturePolicyConfig,
+    FeatureReviewDecision,
+    FeatureReviewDecisionType,
     FrameworkConfig,
+    ManualReviewConfig,
     MissingValuePolicy,
     ModelConfig,
     ModelType,
     PresetName,
+    ReproducibilityConfig,
+    RobustnessConfig,
     ScenarioConfig,
     ScenarioFeatureShock,
     ScenarioShockOperation,
     ScenarioTestConfig,
     SchemaConfig,
+    ScorecardBinOverride,
+    ScorecardConfig,
+    ScorecardMonotonicity,
+    ScorecardWorkbenchConfig,
     SplitConfig,
+    SuitabilityCheckConfig,
     TargetConfig,
     TargetMode,
+    TransformationConfig,
+    TransformationSpec,
+    TransformationType,
+    VariableSelectionConfig,
 )
 
 
@@ -50,9 +70,28 @@ def load_framework_config(source: str | Path | dict[str, Any]) -> FrameworkConfi
         model=_build_model_config(payload.get("model", {})),
         comparison=_build_comparison_config(payload.get("comparison", {})),
         feature_policy=_build_feature_policy_config(payload.get("feature_policy", {})),
+        feature_dictionary=_build_feature_dictionary_config(
+            payload.get("feature_dictionary", {})
+        ),
+        transformations=_build_transformation_config(payload.get("transformations", {})),
+        manual_review=_build_manual_review_config(payload.get("manual_review", {})),
+        suitability_checks=_build_suitability_check_config(
+            payload.get("suitability_checks", {})
+        ),
         explainability=_build_explainability_config(payload.get("explainability", {})),
+        calibration=_build_calibration_config(payload.get("calibration", {})),
+        scorecard=_build_scorecard_config(payload.get("scorecard", {})),
+        scorecard_workbench=_build_scorecard_workbench_config(
+            payload.get("scorecard_workbench", {})
+        ),
+        variable_selection=_build_variable_selection_config(
+            payload.get("variable_selection", {})
+        ),
+        documentation=_build_documentation_config(payload.get("documentation", {})),
         scenario_testing=_build_scenario_test_config(payload.get("scenario_testing", {})),
         diagnostics=_build_diagnostic_config(payload.get("diagnostics", {})),
+        robustness=_build_robustness_config(payload.get("robustness", {})),
+        reproducibility=_build_reproducibility_config(payload.get("reproducibility", {})),
         artifacts=_build_artifact_config(payload.get("artifacts", {})),
     )
     config.validate()
@@ -179,6 +218,92 @@ def _build_feature_policy_config(payload: dict[str, Any]) -> FeaturePolicyConfig
     )
 
 
+def _build_feature_dictionary_config(payload: dict[str, Any]) -> FeatureDictionaryConfig:
+    return FeatureDictionaryConfig(
+        enabled=payload.get("enabled", False),
+        require_documentation_for_selected_features=payload.get(
+            "require_documentation_for_selected_features", False
+        ),
+        entries=[
+            FeatureDictionaryEntry(
+                feature_name=entry.get("feature_name", ""),
+                business_name=entry.get("business_name", ""),
+                definition=entry.get("definition", ""),
+                source_system=entry.get("source_system", ""),
+                unit=entry.get("unit", ""),
+                allowed_range=entry.get("allowed_range", ""),
+                missingness_meaning=entry.get("missingness_meaning", ""),
+                expected_sign=entry.get("expected_sign", ""),
+                inclusion_rationale=entry.get("inclusion_rationale", ""),
+                notes=entry.get("notes", ""),
+                enabled=entry.get("enabled", True),
+            )
+            for entry in payload.get("entries", [])
+        ],
+    )
+
+
+def _build_transformation_config(payload: dict[str, Any]) -> TransformationConfig:
+    return TransformationConfig(
+        enabled=payload.get("enabled", False),
+        error_on_failure=payload.get("error_on_failure", True),
+        transformations=[
+            TransformationSpec(
+                transform_type=TransformationType(
+                    entry.get("transform_type", TransformationType.WINSORIZE.value)
+                ),
+                source_feature=entry.get("source_feature", ""),
+                output_feature=entry.get("output_feature"),
+                secondary_feature=entry.get("secondary_feature"),
+                lower_quantile=entry.get("lower_quantile"),
+                upper_quantile=entry.get("upper_quantile"),
+                bin_edges=[float(value) for value in entry.get("bin_edges", [])],
+                enabled=entry.get("enabled", True),
+                notes=entry.get("notes", ""),
+            )
+            for entry in payload.get("transformations", [])
+        ],
+    )
+
+
+def _build_manual_review_config(payload: dict[str, Any]) -> ManualReviewConfig:
+    return ManualReviewConfig(
+        enabled=payload.get("enabled", False),
+        reviewer_name=payload.get("reviewer_name", ""),
+        require_review_complete=payload.get("require_review_complete", False),
+        feature_decisions=[
+            FeatureReviewDecision(
+                feature_name=entry.get("feature_name", ""),
+                decision=FeatureReviewDecisionType(
+                    entry.get("decision", FeatureReviewDecisionType.APPROVE.value)
+                ),
+                rationale=entry.get("rationale", ""),
+            )
+            for entry in payload.get("feature_decisions", [])
+        ],
+        scorecard_bin_overrides=[
+            ScorecardBinOverride(
+                feature_name=entry.get("feature_name", ""),
+                bin_edges=[float(value) for value in entry.get("bin_edges", [])],
+                rationale=entry.get("rationale", ""),
+            )
+            for entry in payload.get("scorecard_bin_overrides", [])
+        ],
+    )
+
+
+def _build_suitability_check_config(payload: dict[str, Any]) -> SuitabilityCheckConfig:
+    return SuitabilityCheckConfig(
+        enabled=payload.get("enabled", True),
+        min_events_per_feature=payload.get("min_events_per_feature", 10.0),
+        min_class_rate=payload.get("min_class_rate", 0.01),
+        max_class_rate=payload.get("max_class_rate", 0.99),
+        max_dominant_category_share=payload.get("max_dominant_category_share", 0.98),
+        min_non_null_target_rows=payload.get("min_non_null_target_rows", 30),
+        error_on_failure=payload.get("error_on_failure", False),
+    )
+
+
 def _build_explainability_config(payload: dict[str, Any]) -> ExplainabilityConfig:
     return ExplainabilityConfig(
         enabled=payload.get("enabled", True),
@@ -188,6 +313,21 @@ def _build_explainability_config(payload: dict[str, Any]) -> ExplainabilityConfi
         top_n_features=payload.get("top_n_features", 5),
         grid_points=payload.get("grid_points", 12),
         sample_size=payload.get("sample_size", 2000),
+    )
+
+
+def _build_calibration_config(payload: dict[str, Any]) -> CalibrationConfig:
+    return CalibrationConfig(
+        bin_count=payload.get("bin_count", 10),
+        strategy=CalibrationStrategy(payload.get("strategy", CalibrationStrategy.QUANTILE.value)),
+        platt_scaling=payload.get("platt_scaling", True),
+        isotonic_calibration=payload.get("isotonic_calibration", True),
+        ranking_metric=CalibrationRankingMetric(
+            payload.get(
+                "ranking_metric",
+                CalibrationRankingMetric.BRIER_SCORE.value,
+            )
+        ),
     )
 
 
@@ -213,6 +353,57 @@ def _build_scenario_test_config(payload: dict[str, Any]) -> ScenarioTestConfig:
             )
             for scenario in payload.get("scenarios", [])
         ],
+    )
+
+
+def _build_scorecard_config(payload: dict[str, Any]) -> ScorecardConfig:
+    return ScorecardConfig(
+        monotonicity=ScorecardMonotonicity(
+            payload.get("monotonicity", ScorecardMonotonicity.AUTO.value)
+        ),
+        min_bin_share=payload.get("min_bin_share", 0.05),
+        base_score=payload.get("base_score", 600),
+        points_to_double_odds=payload.get("points_to_double_odds", 50),
+        odds_reference=payload.get("odds_reference", 20.0),
+        reason_code_count=payload.get("reason_code_count", 3),
+    )
+
+
+def _build_scorecard_workbench_config(payload: dict[str, Any]) -> ScorecardWorkbenchConfig:
+    return ScorecardWorkbenchConfig(
+        enabled=payload.get("enabled", True),
+        max_features=payload.get("max_features", 6),
+        include_score_distribution=payload.get("include_score_distribution", True),
+        include_reason_code_analysis=payload.get("include_reason_code_analysis", True),
+    )
+
+
+def _build_variable_selection_config(payload: dict[str, Any]) -> VariableSelectionConfig:
+    return VariableSelectionConfig(
+        enabled=payload.get("enabled", False),
+        max_features=payload.get("max_features"),
+        min_univariate_score=payload.get("min_univariate_score"),
+        correlation_threshold=payload.get("correlation_threshold", 0.8),
+        locked_include_features=payload.get("locked_include_features", []),
+        locked_exclude_features=payload.get("locked_exclude_features", []),
+    )
+
+
+def _build_documentation_config(payload: dict[str, Any]) -> DocumentationConfig:
+    return DocumentationConfig(
+        enabled=payload.get("enabled", True),
+        model_name=payload.get("model_name", "Quant Studio Model"),
+        model_owner=payload.get("model_owner", ""),
+        business_purpose=payload.get("business_purpose", ""),
+        portfolio_name=payload.get("portfolio_name", ""),
+        segment_name=payload.get("segment_name", ""),
+        horizon_definition=payload.get("horizon_definition", ""),
+        target_definition=payload.get("target_definition", ""),
+        loss_definition=payload.get("loss_definition", ""),
+        assumptions=payload.get("assumptions", []),
+        exclusions=payload.get("exclusions", []),
+        limitations=payload.get("limitations", []),
+        reviewer_notes=payload.get("reviewer_notes", ""),
     )
 
 
@@ -244,6 +435,30 @@ def _build_diagnostic_config(payload: dict[str, Any]) -> DiagnosticConfig:
     )
 
 
+def _build_robustness_config(payload: dict[str, Any]) -> RobustnessConfig:
+    return RobustnessConfig(
+        enabled=payload.get("enabled", False),
+        resample_count=payload.get("resample_count", 12),
+        sample_fraction=payload.get("sample_fraction", 0.8),
+        sample_with_replacement=payload.get("sample_with_replacement", True),
+        evaluation_split=payload.get("evaluation_split", "test"),
+        metric_stability=payload.get("metric_stability", True),
+        coefficient_stability=payload.get("coefficient_stability", True),
+        random_state=payload.get("random_state", 42),
+    )
+
+
+def _build_reproducibility_config(payload: dict[str, Any]) -> ReproducibilityConfig:
+    return ReproducibilityConfig(
+        enabled=payload.get("enabled", True),
+        capture_git_metadata=payload.get("capture_git_metadata", True),
+        package_names=payload.get(
+            "package_names",
+            ReproducibilityConfig().package_names,
+        ),
+    )
+
+
 def _build_artifact_config(payload: dict[str, Any]) -> ArtifactConfig:
     return ArtifactConfig(
         output_root=Path(payload.get("output_root", "artifacts")),
@@ -267,6 +482,19 @@ def _build_artifact_config(payload: dict[str, Any]) -> ArtifactConfig:
         model_summary_file_name=payload.get("model_summary_file_name", "model_summary.txt"),
         manifest_file_name=payload.get("manifest_file_name", "artifact_manifest.json"),
         step_manifest_file_name=payload.get("step_manifest_file_name", "step_manifest.json"),
+        documentation_pack_file_name=payload.get(
+            "documentation_pack_file_name",
+            "model_documentation_pack.md",
+        ),
+        validation_pack_file_name=payload.get("validation_pack_file_name", "validation_pack.md"),
+        reproducibility_manifest_file_name=payload.get(
+            "reproducibility_manifest_file_name",
+            "reproducibility_manifest.json",
+        ),
+        template_workbook_file_name=payload.get(
+            "template_workbook_file_name",
+            "configuration_template.xlsx",
+        ),
         runner_script_file_name=payload.get("runner_script_file_name", "generated_run.py"),
         rerun_readme_file_name=payload.get("rerun_readme_file_name", "HOW_TO_RERUN.md"),
         tables_directory_name=payload.get("tables_directory_name", "tables"),

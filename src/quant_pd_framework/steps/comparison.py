@@ -60,7 +60,15 @@ class ModelComparisonStep(BasePipelineStep):
         for challenger_type in comparison_config.challenger_model_types:
             challenger_config = deepcopy(context.config.model)
             challenger_config.model_type = challenger_type
-            challenger = build_model_adapter(challenger_config, target_mode)
+            challenger = build_model_adapter(
+                challenger_config,
+                target_mode,
+                scorecard_config=context.config.scorecard,
+                scorecard_bin_overrides={
+                    override.feature_name: override.bin_edges
+                    for override in context.config.manual_review.scorecard_bin_overrides
+                },
+            )
             challenger.fit(
                 x_train,
                 y_train,

@@ -1,5 +1,6 @@
 """Concrete pipeline steps exported for orchestrator assembly."""
 
+from .assumption_checks import AssumptionCheckStep
 from .backtesting import BacktestStep
 from .cleaning import CleaningStep
 from .comparison import ModelComparisonStep
@@ -13,9 +14,12 @@ from .schema import SchemaManagementStep
 from .splitting import SplitStep
 from .target import TargetConstructionStep
 from .training import ModelTrainingStep
+from .transformations import TransformationStep
 from .validation import ValidationStep
+from .variable_selection import VariableSelectionStep
 
 __all__ = [
+    "AssumptionCheckStep",
     "ArtifactExportStep",
     "BacktestStep",
     "CleaningStep",
@@ -29,5 +33,7 @@ __all__ = [
     "SchemaManagementStep",
     "SplitStep",
     "TargetConstructionStep",
+    "TransformationStep",
     "ValidationStep",
+    "VariableSelectionStep",
 ]

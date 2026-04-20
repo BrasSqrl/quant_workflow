@@ -64,6 +64,15 @@ SECTION_SPECS: OrderedDict[str, dict[str, str]] = OrderedDict(
             },
         ),
         (
+            "scorecard_workbench",
+            {
+                "title": "Scorecard / Binning Workbench",
+                "description": (
+                    "WoE bins, partial points, reason codes, and feature-level scorecard views."
+                ),
+            },
+        ),
+        (
             "calibration_thresholds",
             {
                 "title": "Calibration / Thresholds",
@@ -110,6 +119,14 @@ TABLE_LABELS = {
     "model_comparison": "Model Comparison Summary",
     "data_quality_summary": "Run Quality Summary",
     "imputation_rules": "Imputation Rules",
+    "assumption_checks": "Suitability And Assumption Checks",
+    "feature_dictionary": "Feature Dictionary",
+    "governed_transformations": "Governed Transformations",
+    "variable_selection": "Variable Selection",
+    "manual_review_feature_decisions": "Manual Feature Review",
+    "scorecard_bin_overrides": "Scorecard Bin Overrides",
+    "documentation_metadata": "Documentation Metadata",
+    "reproducibility_manifest": "Reproducibility Manifest",
     "descriptive_statistics": "Descriptive Statistics",
     "missingness": "Missingness Profile",
     "correlation_matrix": "Correlation Matrix",
@@ -117,6 +134,7 @@ TABLE_LABELS = {
     "quantile_summary": "Quantile Performance Table",
     "threshold_analysis": "Threshold Sweep Table",
     "calibration": "Calibration Table",
+    "calibration_summary": "Calibration Summary",
     "roc_curve": "ROC Curve Data",
     "precision_recall_curve": "Precision-Recall Data",
     "lift_gain": "Lift and Gain Table",
@@ -135,8 +153,17 @@ TABLE_LABELS = {
     "scenario_definitions": "Scenario Definitions",
     "scenario_segment_impacts": "Scenario Segment Impacts",
     "scorecard_woe_table": "Scorecard WoE Table",
+    "scorecard_points_table": "Scorecard Points Table",
+    "scorecard_scaling_summary": "Scorecard Scaling Summary",
+    "scorecard_feature_summary": "Scorecard Feature Summary",
+    "scorecard_reason_code_frequency": "Scorecard Reason Code Frequency",
     "lgd_stage_one_coefficients": "LGD Stage-One Coefficients",
     "lgd_stage_two_coefficients": "LGD Stage-Two Coefficients",
+    "lifetime_pd_curve": "Lifetime PD Curve Table",
+    "robustness_metric_distribution": "Robustness Metric Distribution",
+    "robustness_metric_summary": "Robustness Metric Summary",
+    "robustness_feature_distribution": "Robustness Feature Distribution",
+    "robustness_feature_stability": "Robustness Feature Stability",
 }
 
 FIGURE_LABELS = {
@@ -146,6 +173,7 @@ FIGURE_LABELS = {
     "quantile_backtest": "Quantile Backtest",
     "threshold_analysis": "Threshold Performance Sweep",
     "calibration_curve": "Calibration Curve",
+    "calibration_method_comparison": "Calibration Method Comparison",
     "roc_curve": "ROC Curve",
     "precision_recall_curve": "Precision-Recall Curve",
     "gain_chart": "Cumulative Gain",
@@ -163,11 +191,30 @@ FIGURE_LABELS = {
     "permutation_importance": "Permutation Importance",
     "scenario_summary_chart": "Scenario Summary",
     "scenario_segment_impact": "Scenario Impact by Segment",
+    "lifetime_pd_curve": "Lifetime PD Curve",
+    "robustness_metric_boxplot": "Robustness Metric Distribution",
+    "robustness_metric_summary_chart": "Robustness Metric Summary",
+    "robustness_feature_stability": "Feature Stability Profile",
+    "scorecard_feature_iv": "Scorecard Feature Information Value",
+    "scorecard_score_distribution": "Scorecard Points Distribution",
+    "scorecard_reason_code_frequency_chart": "Reason Code Frequency",
 }
 
 ASSET_DESCRIPTIONS = {
     "data_quality_summary": "High-level run metadata and feature coverage checks.",
     "imputation_rules": "Training-fit missing-value rules applied to each feature column.",
+    "assumption_checks": "Pre-fit suitability checks tied to the chosen model family.",
+    "feature_dictionary": "Business definitions and rationale for modeled features.",
+    "governed_transformations": "Explicit transformations fit on train and replayed downstream.",
+    "variable_selection": "Train-split feature screening results and selection rationale.",
+    "manual_review_feature_decisions": (
+        "Human review decisions that overrode or confirmed feature selection."
+    ),
+    "scorecard_bin_overrides": "Manual numeric bin edges applied to scorecard development.",
+    "documentation_metadata": "Captured model-purpose and governance metadata.",
+    "reproducibility_manifest": (
+        "Run fingerprint metadata for reruns, audits, and package-version traceability."
+    ),
     "missingness": "Null-rate profile for the current modeled dataset.",
     "correlation_heatmap": (
         "Pairwise feature correlation across the most material numeric drivers."
@@ -181,6 +228,13 @@ ASSET_DESCRIPTIONS = {
     "roc_curve": "Binary discrimination curve on held-out data.",
     "precision_recall_curve": "Precision-recall tradeoff under class imbalance.",
     "calibration_curve": "Observed versus predicted risk alignment.",
+    "calibration_summary": (
+        "Method-level calibration metrics including Brier, log loss, error, and "
+        "Hosmer-Lemeshow statistics."
+    ),
+    "calibration_method_comparison": (
+        "Comparison of base and challenger recalibration methods on the held-out test split."
+    ),
     "threshold_analysis": ("Decision threshold tradeoffs across key classification metrics."),
     "lift_gain": "Captured defaults by ranked score bucket.",
     "psi": "Population shift between development and current scored populations.",
@@ -202,10 +256,31 @@ ASSET_DESCRIPTIONS = {
     "scenario_summary": "Average score impact for each configured scenario shock.",
     "scenario_segment_impacts": "Scenario deltas broken out by the active review segment.",
     "scorecard_woe_table": "Weight-of-evidence bins used by the scorecard challenger.",
+    "scorecard_points_table": "Score contribution by feature bucket for the scorecard model.",
+    "scorecard_scaling_summary": "Base-score and points-to-double-odds scaling settings.",
+    "scorecard_feature_summary": (
+        "Feature-level summary of information value, points spread, and monotonicity."
+    ),
+    "scorecard_reason_code_frequency": (
+        "Frequency with which each feature appears in the exported reason-code slots."
+    ),
     "lgd_stage_one_coefficients": (
         "Probability-of-loss stage coefficients for the LGD two-stage model."
     ),
     "lgd_stage_two_coefficients": "Severity-stage coefficients for the LGD two-stage model.",
+    "lifetime_pd_curve": "Cumulative lifetime PD implied by the discrete-time hazard model.",
+    "robustness_metric_distribution": (
+        "Held-out metric values across repeated train resamples."
+    ),
+    "robustness_metric_summary": (
+        "Mean, spread, and percentile summary for repeated held-out metrics."
+    ),
+    "robustness_feature_distribution": (
+        "Resample-level effect and importance values for each modeled feature."
+    ),
+    "robustness_feature_stability": (
+        "Feature-level stability summary across repeated train resamples."
+    ),
     "split_metric_overview": (
         "Comparison of the primary metrics across train, validation, and test."
     ),
@@ -222,11 +297,27 @@ ASSET_DESCRIPTIONS = {
     ),
     "scenario_summary_chart": "Average predicted-score impact from each configured scenario.",
     "scenario_segment_impact": "Segment-level differences under each configured scenario.",
+    "scorecard_feature_iv": "Top scorecard features ranked by information value.",
+    "scorecard_score_distribution": "Distribution of total scorecard points on the scored split.",
+    "scorecard_reason_code_frequency_chart": (
+        "How often each feature appears as a leading reason code."
+    ),
+    "robustness_metric_boxplot": "Distribution of held-out metrics across repeated resamples.",
+    "robustness_metric_summary_chart": (
+        "Average and standard deviation of held-out metrics across repeated resamples."
+    ),
 }
 
 FEATURED_ASSETS = {
     "data_quality_summary",
     "imputation_rules",
+    "assumption_checks",
+    "feature_dictionary",
+    "governed_transformations",
+    "variable_selection",
+    "manual_review_feature_decisions",
+    "documentation_metadata",
+    "reproducibility_manifest",
     "missingness",
     "correlation_heatmap",
     "segment_performance",
@@ -235,9 +326,15 @@ FEATURED_ASSETS = {
     "feature_importance_overview",
     "roc_curve_chart",
     "calibration_curve",
+    "calibration_summary",
+    "calibration_method_comparison",
     "quantile_backtest",
     "psi_profile",
     "adf_tests",
+    "robustness_metric_summary",
+    "robustness_feature_stability",
+    "scorecard_feature_summary",
+    "scorecard_feature_iv",
 }
 
 
@@ -305,6 +402,11 @@ def infer_asset_section(asset_key: str, *, kind: str) -> str:
     if asset_key in {
         "data_quality_summary",
         "imputation_rules",
+        "assumption_checks",
+        "feature_dictionary",
+        "governed_transformations",
+        "variable_selection",
+        "documentation_metadata",
         "descriptive_statistics",
         "missingness",
         "correlation_matrix",
@@ -339,7 +441,6 @@ def infer_asset_section(asset_key: str, *, kind: str) -> str:
         "coefficient_breakdown",
         "feature_effect_curves",
         "permutation_importance",
-        "scorecard_woe_table",
         "lgd_stage_one_coefficients",
         "lgd_stage_two_coefficients",
         "scenario_summary",
@@ -350,10 +451,23 @@ def infer_asset_section(asset_key: str, *, kind: str) -> str:
     }:
         return "model_performance"
     if asset_key in {
+        "scorecard_woe_table",
+        "scorecard_points_table",
+        "scorecard_scaling_summary",
+        "scorecard_feature_summary",
+        "scorecard_reason_code_frequency",
+        "scorecard_feature_iv",
+        "scorecard_score_distribution",
+        "scorecard_reason_code_frequency_chart",
+    }:
+        return "scorecard_workbench"
+    if asset_key in {
         "threshold_analysis",
         "threshold_analysis_chart",
         "calibration",
+        "calibration_summary",
         "calibration_curve",
+        "calibration_method_comparison",
         "lift_gain",
         "gain_chart",
         "lift_chart",
@@ -361,12 +475,39 @@ def infer_asset_section(asset_key: str, *, kind: str) -> str:
         "woe_iv_detail",
     }:
         return "calibration_thresholds"
-    if asset_key in {"psi", "psi_profile"}:
+    if asset_key in {
+        "psi",
+        "psi_profile",
+        "robustness_metric_distribution",
+        "robustness_metric_summary",
+        "robustness_metric_boxplot",
+        "robustness_metric_summary_chart",
+        "robustness_feature_distribution",
+        "robustness_feature_stability",
+    }:
         return "stability_drift"
-    if asset_key in {"backtest_summary", "quantile_summary", "quantile_backtest", "adf_tests"}:
+    if asset_key in {
+        "backtest_summary",
+        "quantile_summary",
+        "quantile_backtest",
+        "adf_tests",
+        "lifetime_pd_curve",
+    }:
         return "backtesting_time"
-    if asset_key in {"feature_policy_checks"}:
+    if asset_key in {
+        "feature_policy_checks",
+        "manual_review_feature_decisions",
+        "reproducibility_manifest",
+    }:
         return "governance_export"
+    if asset_key in {"scorecard_bin_overrides"}:
+        return "scorecard_workbench"
+    if asset_key.startswith("scorecard_bad_rate_"):
+        return "scorecard_workbench"
+    if asset_key.startswith("scorecard_woe_"):
+        return "scorecard_workbench"
+    if asset_key.startswith("scorecard_points_"):
+        return "scorecard_workbench"
     if asset_key.startswith("time_backtest_"):
         return "backtesting_time"
     if asset_key.startswith("feature_effect_"):
@@ -381,6 +522,15 @@ def friendly_asset_title(asset_key: str, *, kind: str = "figure") -> str:
         return TABLE_LABELS[asset_key]
     if kind == "figure" and asset_key in FIGURE_LABELS:
         return FIGURE_LABELS[asset_key]
+    if asset_key.startswith("scorecard_bad_rate_"):
+        feature_name = asset_key.removeprefix("scorecard_bad_rate_").replace("_", " ").title()
+        return f"Scorecard Bad Rate by Bucket ({feature_name})"
+    if asset_key.startswith("scorecard_woe_"):
+        feature_name = asset_key.removeprefix("scorecard_woe_").replace("_", " ").title()
+        return f"Scorecard WoE by Bucket ({feature_name})"
+    if asset_key.startswith("scorecard_points_"):
+        feature_name = asset_key.removeprefix("scorecard_points_").replace("_", " ").title()
+        return f"Scorecard Points by Bucket ({feature_name})"
     if asset_key.startswith("time_backtest_"):
         split_name = asset_key.removeprefix("time_backtest_").replace("_", " ").title()
         return f"Observed vs Predicted Over Time ({split_name})"
@@ -451,9 +601,9 @@ def apply_fintech_figure_theme(
 
     for index, trace in enumerate(figure.data):
         if trace.type == "bar":
-            trace.marker.color = (
-                trace.marker.color or FINTECH_COLORWAY[index % len(FINTECH_COLORWAY)]
-            )
+            marker_color = getattr(trace.marker, "color", None)
+            if marker_color is None or (isinstance(marker_color, str) and marker_color == ""):
+                trace.marker.color = FINTECH_COLORWAY[index % len(FINTECH_COLORWAY)]
             trace.marker.line = {"width": 0}
             trace.opacity = trace.opacity or 0.95
         elif trace.type == "scatter":

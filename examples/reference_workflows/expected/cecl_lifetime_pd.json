@@ -1,0 +1,68 @@
+{
+  "name": "cecl_lifetime_pd",
+  "model_type": "discrete_time_hazard_model",
+  "target_mode": "binary",
+  "expected_step_count": 17,
+  "required_artifacts": [
+    "model",
+    "metrics",
+    "input_snapshot",
+    "predictions",
+    "feature_importance",
+    "backtest",
+    "report",
+    "documentation_pack",
+    "validation_pack",
+    "interactive_report",
+    "config",
+    "tests",
+    "reproducibility_manifest",
+    "configuration_template",
+    "manifest",
+    "step_manifest",
+    "runner_script",
+    "rerun_readme",
+    "workbook"
+  ],
+  "required_tables": [
+    "assumption_checks",
+    "calibration_summary",
+    "feature_dictionary",
+    "lifetime_pd_curve",
+    "reproducibility_manifest",
+    "variable_selection",
+    "feature_policy_checks",
+    "scenario_summary",
+    "woe_iv_summary"
+  ],
+  "required_figures": [
+    "lifetime_pd_curve",
+    "quantile_backtest",
+    "calibration_curve",
+    "threshold_analysis",
+    "time_backtest_test"
+  ],
+  "documentation_sections": [
+    "Development Summary",
+    "Purpose",
+    "Target And Horizon",
+    "Data And Features",
+    "Performance Summary"
+  ],
+  "metrics": {
+    "test": {
+      "roc_auc": {
+        "value": 0.4444444444,
+        "tolerance": 0.06
+      },
+      "brier_score": {
+        "value": 0.221514553,
+        "tolerance": 0.04
+      },
+      "ks_statistic": {
+        "value": 0.2380952381,
+        "tolerance": 0.07
+      }
+    }
+  }
+}

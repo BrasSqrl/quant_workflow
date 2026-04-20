@@ -128,6 +128,8 @@ def test_build_gui_inputs_from_preset_returns_expected_defaults() -> None:
     assert inputs.preset_name == PresetName.LGD_SEVERITY
     assert inputs.target_mode == TargetMode.CONTINUOUS
     assert inputs.model.model_type == ModelType.TWO_STAGE_LGD_MODEL
+    assert inputs.scorecard_workbench.enabled is True
+    assert inputs.robustness.enabled is False
 
 
 def test_parse_scenario_rows_groups_rows_into_typed_scenarios() -> None:

@@ -126,6 +126,18 @@ class ValidationStep(BasePipelineStep):
                 raise ValueError(
                     "panel_regression requires SplitConfig.entity_column to identify panels."
                 )
+        if model_type == ModelType.DISCRETE_TIME_HAZARD_MODEL:
+            if split_config.data_structure not in {
+                DataStructure.TIME_SERIES,
+                DataStructure.PANEL,
+            }:
+                raise ValueError(
+                    "discrete_time_hazard_model requires time_series or panel data."
+                )
+            if not date_column:
+                raise ValueError(
+                    "discrete_time_hazard_model requires a valid date column."
+                )
 
         null_ratio = dataframe.isna().mean().sort_values(ascending=False).to_dict()
         context.metadata["null_ratio_by_column"] = {

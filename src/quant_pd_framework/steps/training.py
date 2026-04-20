@@ -40,7 +40,15 @@ class ModelTrainingStep(BasePipelineStep):
         x_train = train_frame[context.feature_columns]
         y_train = train_frame[context.target_column]
         target_mode = context.config.target.mode
-        model_adapter = build_model_adapter(context.config.model, target_mode)
+        model_adapter = build_model_adapter(
+            context.config.model,
+            target_mode,
+            scorecard_config=context.config.scorecard,
+            scorecard_bin_overrides={
+                override.feature_name: override.bin_edges
+                for override in context.config.manual_review.scorecard_bin_overrides
+            },
+        )
         model_adapter.fit(
             x_train,
             y_train,

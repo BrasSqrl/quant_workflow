@@ -95,6 +95,7 @@ class EvaluationStep(BasePipelineStep):
         scored_frame["split"] = split_name
         scored_frame["predicted_probability"] = probability
         scored_frame["predicted_class"] = predicted_class
+        self._append_prediction_outputs(scored_frame, model, x_values)
 
         if not labels_available:
             metrics = {
@@ -172,6 +173,7 @@ class EvaluationStep(BasePipelineStep):
         scored_frame = frame.copy(deep=True).reset_index(drop=True)
         scored_frame["split"] = split_name
         scored_frame["predicted_value"] = prediction
+        self._append_prediction_outputs(scored_frame, model, x_values)
 
         if not labels_available:
             metrics = {
@@ -213,6 +215,16 @@ class EvaluationStep(BasePipelineStep):
         if value is None or pd.isna(value):
             return None
         return float(value)
+
+    def _append_prediction_outputs(
+        self,
+        scored_frame: pd.DataFrame,
+        model,
+        x_values: pd.DataFrame,
+    ) -> None:
+        extra_outputs = model.get_prediction_outputs(x_values)
+        for column_name, values in extra_outputs.items():
+            scored_frame[column_name] = values
 
     def _ks_statistic(self, y_true: pd.Series, y_score: np.ndarray) -> float:
         positives = y_score[y_true == 1]

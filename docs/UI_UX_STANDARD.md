@@ -1,6 +1,6 @@
 # UI / UX Standard
 
-This standard defines how the Quant PD Framework GUI and exported diagnostic reports should look and behave. The target experience is a premium light-mode fintech dashboard for model builders and validation teams.
+This standard defines how the Quant Studio GUI and exported diagnostic reports should look and behave. The target experience is a premium light-mode fintech dashboard for model builders and validation teams.
 
 ## 1. Visual Direction
 
@@ -34,10 +34,11 @@ The GUI and exported report should follow the same top-level structure:
 2. Data Quality
 3. Sample / Segmentation
 4. Model Performance
-5. Calibration / Thresholds
-6. Stability / Drift
-7. Backtesting / Time Diagnostics
-8. Governance / Export Bundle
+5. Scorecard / Binning Workbench (when scorecard outputs are present)
+6. Calibration / Thresholds
+7. Stability / Drift
+8. Backtesting / Time Diagnostics
+9. Governance / Export Bundle
 
 Each section should include:
 

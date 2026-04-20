@@ -104,8 +104,10 @@ def test_development_features_produce_expected_outputs() -> None:
 def test_preset_definitions_cover_expected_workflows() -> None:
     pd_preset = get_preset_definition(PresetName.PD_DEVELOPMENT)
     ccar_preset = get_preset_definition(PresetName.CCAR_FORECASTING)
+    cecl_preset = get_preset_definition(PresetName.LIFETIME_PD_CECL)
 
     assert pd_preset.model.model_type == ModelType.LOGISTIC_REGRESSION
     assert pd_preset.target_mode == TargetMode.BINARY
+    assert cecl_preset.model.model_type == ModelType.DISCRETE_TIME_HAZARD_MODEL
     assert ccar_preset.model.model_type == ModelType.PANEL_REGRESSION
     assert ccar_preset.data_structure == DataStructure.PANEL

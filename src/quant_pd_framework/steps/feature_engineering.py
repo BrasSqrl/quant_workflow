@@ -61,6 +61,9 @@ class FeatureEngineeringStep(BasePipelineStep):
                 working = working.drop(columns=column)
                 context.dropped_columns.append(column)
 
+        if context.config.model.model_type == ModelType.DISCRETE_TIME_HAZARD_MODEL:
+            self._add_hazard_time_features(working, split_config, context)
+
         excluded_columns = {column for column in ignored_columns if column}
         excluded_columns.update(identifier_columns)
         excluded_columns.update(column for column in date_columns if column in working.columns)
@@ -88,6 +91,35 @@ class FeatureEngineeringStep(BasePipelineStep):
             "categorical_feature_count": len(categorical_features),
         }
         return context
+
+    def _add_hazard_time_features(
+        self,
+        dataframe: pd.DataFrame,
+        split_config,
+        context: PipelineContext,
+    ) -> None:
+        date_column = split_config.date_column
+        if date_column is None or date_column not in dataframe.columns:
+            return
+        if split_config.entity_column and split_config.entity_column in dataframe.columns:
+            ordered = dataframe.sort_values([split_config.entity_column, date_column])
+            period_index = ordered.groupby(split_config.entity_column).cumcount() + 1
+            dataframe.loc[ordered.index, "hazard_period_index"] = period_index.to_numpy()
+        else:
+            ordered = dataframe.sort_values(date_column)
+            period_index = pd.Series(range(1, len(ordered) + 1), index=ordered.index)
+            dataframe.loc[ordered.index, "hazard_period_index"] = period_index.to_numpy()
+        dataframe["hazard_period_index"] = pd.to_numeric(
+            dataframe["hazard_period_index"],
+            errors="coerce",
+        ).astype("Int64")
+        dataframe["hazard_period_index_sq"] = (
+            dataframe["hazard_period_index"].astype(float) ** 2
+        )
+        context.metadata["hazard_time_features"] = [
+            "hazard_period_index",
+            "hazard_period_index_sq",
+        ]
 
     def _add_date_parts(
         self,

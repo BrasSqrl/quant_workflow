@@ -1,12 +1,16 @@
-# Quant PD Framework
+# Quant Studio
 
-Quant PD Framework is a Python project for quantitative model development,
-validation, scenario analysis, and documentation on tabular data. Probability of
-default modeling remains the default use case, but the framework now also
-supports LGD and forecasting workflows that are common in CCAR and CECL
-development. It is structured as a reusable, object-oriented framework rather
-than a notebook-only prototype, so each primary modeling stage lives in its own
-class and the entire run is coordinated by an orchestrator.
+Quant Studio is a Python application and modeling framework for quantitative
+model development, validation, scenario analysis, and documentation on tabular
+data. Probability of default modeling remains the default use case, but the
+platform also supports LGD and forecasting workflows that are common in CCAR
+and CECL development. It is structured as a reusable, object-oriented framework
+rather than a notebook-only prototype, so each primary modeling stage lives in
+its own class and the entire run is coordinated by an orchestrator.
+
+The underlying Python package and import path remain `quant_pd_framework`, and
+the current distribution name remains `quant-pd-framework`, for compatibility
+with the existing codebase and saved artifacts.
 
 The project supports two working modes:
 
@@ -35,11 +39,15 @@ The default workflow then moves through the main stages of a quantitative modeli
 5. Cleaning
 6. Feature engineering
 7. Train/validation/test split
-8. Model training
-9. Evaluation
-10. Backtesting
-11. Diagnostics and visualization generation
-12. Artifact export
+8. Model-suitability and assumption checks
+9. Imputation
+10. Governed transformations
+11. Variable selection and manual review
+12. Model training
+13. Evaluation
+14. Backtesting
+15. Diagnostics and visualization generation
+16. Artifact export
 
 When `score_existing_model` is used, the training stage becomes a
 model-loading stage and the remaining steps run on newly scored data so the
@@ -49,6 +57,7 @@ without refitting.
 The framework now supports:
 
 - logistic regression
+- discrete-time hazard model
 - elastic-net logistic regression
 - scorecard logistic regression
 - probit regression
@@ -73,6 +82,26 @@ The framework also includes development-focused workflow features:
 - workflow presets for `PD Development`, `Lifetime PD / CECL`, `LGD Severity`,
   and `CCAR Forecasting`
 - challenger-model comparison mode
+- reproducibility manifest export with hashes, package versions, and optional
+  git metadata
+- feature dictionary / variable catalog support for business definitions,
+  lineage, and inclusion rationale
+- governed transformation layer for winsorization, log transforms, ratio and
+  interaction features, and manual bins
+- variable-selection workflow with train-split screening and selection rationale
+- manual review workflow for approve/reject decisions and scorecard bin
+  overrides
+- model-suitability and assumption checks before fitting
+- scorecard development mode with monotonic binning, score scaling, and reason
+  codes
+- robustness and stability testing with repeated held-out resamples
+- interactive scorecard workbench outputs for binning, WoE, points, and reason
+  code review
+- calibration workflow with method comparison, recalibration challengers, and
+  recommended-method metadata
+- documentation-pack generation for development-ready model summaries
+- structured validation-pack generation for validator-facing review
+- Excel-based template import/export for offline governance edits
 - feature policy checks for required/excluded features, missingness, VIF, IV,
   expected signs, and monotonicity
 - explainability outputs such as coefficient breakdowns, permutation
@@ -95,27 +124,84 @@ The framework also includes development-focused workflow features:
 
 The repository now includes an explicit engineering rubric and alignment note:
 
-- [docs/ENGINEERING_RUBRIC.md](C:/Users/matth/Desktop/quant/docs/ENGINEERING_RUBRIC.md)
-- [docs/RUBRIC_ALIGNMENT.md](C:/Users/matth/Desktop/quant/docs/RUBRIC_ALIGNMENT.md)
-- [docs/UI_UX_STANDARD.md](C:/Users/matth/Desktop/quant/docs/UI_UX_STANDARD.md)
+- [docs/ENGINEERING_RUBRIC.md](./docs/ENGINEERING_RUBRIC.md)
+- [docs/RUBRIC_ALIGNMENT.md](./docs/RUBRIC_ALIGNMENT.md)
+- [docs/UI_UX_STANDARD.md](./docs/UI_UX_STANDARD.md)
+- [docs/DEVELOPMENT_ROADMAP.md](./docs/DEVELOPMENT_ROADMAP.md)
+
+## Transparency and Auditability Guides
+
+The repository now includes dedicated audit-oriented reference guides:
+
+- [docs/STATISTICAL_TEST_CATALOG.md](./docs/STATISTICAL_TEST_CATALOG.md)
+- [docs/MODEL_CATALOG.md](./docs/MODEL_CATALOG.md)
+- [docs/METRIC_CATALOG.md](./docs/METRIC_CATALOG.md)
+- [docs/PREPROCESSING_AND_DATA_TREATMENT_GUIDE.md](./docs/PREPROCESSING_AND_DATA_TREATMENT_GUIDE.md)
+- [docs/GUI_TO_CODE_TRACEABILITY_GUIDE.md](./docs/GUI_TO_CODE_TRACEABILITY_GUIDE.md)
+- [docs/LOGISTIC_REGRESSION_WALKTHROUGH.html](./docs/LOGISTIC_REGRESSION_WALKTHROUGH.html)
 
 There is also an executive-level non-technical summary at:
 
-- [EXECUTIVE_SUMMARY.txt](C:/Users/matth/Desktop/quant/EXECUTIVE_SUMMARY.txt)
+- [EXECUTIVE_SUMMARY.txt](./EXECUTIVE_SUMMARY.txt)
+
+## Reference Workflows
+
+The repository now includes deterministic reference workflows for the core
+intended development use cases:
+
+- `PD Development`
+- `LGD Severity`
+- `Lifetime PD / CECL`
+
+These live under [examples/reference_workflows](./examples/reference_workflows) and
+serve three purposes:
+
+- copyable end-to-end examples for users
+- locked regression targets for the test suite
+- stable workflow contracts for CI hardening
+
+Each reference workflow has:
+
+- a deterministic synthetic input dataset defined in code
+- a canonical config
+- a locked expected-output contract under `examples/reference_workflows/expected`
+- a golden-run regression test in `tests/test_reference_workflows.py`
+
+The repository also includes a GitHub Actions CI workflow at
+[.github/workflows/ci.yml](./.github/workflows/ci.yml) that runs Ruff, the
+golden reference checks, and the full test suite on push and pull request.
 
 ## Repository Layout
 
 ```text
 quant/
+  .github/
+    workflows/
+      ci.yml
   .streamlit/
     config.toml
   app/
     streamlit_app.py
   docs/
+    DEVELOPMENT_ROADMAP.md
     ENGINEERING_RUBRIC.md
+    GUI_TO_CODE_TRACEABILITY_GUIDE.md
+    METRIC_CATALOG.md
+    MODEL_CATALOG.md
+    PREPROCESSING_AND_DATA_TREATMENT_GUIDE.md
     RUBRIC_ALIGNMENT.md
+    STATISTICAL_TEST_CATALOG.md
     UI_UX_STANDARD.md
   examples/
+    reference_workflows/
+      expected/
+        cecl_lifetime_pd.json
+        lgd_severity.json
+        pd_development.json
+      cecl_lifetime_pd.py
+      lgd_severity.py
+      pd_development.py
+      README.md
     run_development_workflow.py
     run_pipeline.py
     score_existing_model.py
@@ -131,9 +217,11 @@ quant/
       models.py
       orchestrator.py
       presets.py
+      reference_workflows.py
       run.py
       sample_data.py
       steps/
+        assumption_checks.py
         comparison.py
         ingestion.py
         schema.py
@@ -142,17 +230,23 @@ quant/
         cleaning.py
         feature_engineering.py
         splitting.py
+        transformations.py
+        variable_selection.py
         training.py
         evaluation.py
         backtesting.py
         diagnostics.py
         export.py
   tests/
+    test_calibration_workflow.py
     test_existing_model_scoring.py
     test_development_features.py
+    test_governance_extensions.py
     test_gui_launcher.py
     test_gui_support.py
+    test_roadmap_features.py
     test_pipeline_smoke.py
+    test_reference_workflows.py
     test_saved_run_bundle.py
     support.py
   EXECUTIVE_SUMMARY.txt
@@ -185,6 +279,18 @@ python -m pip install -e .[dev,gui]
 ```
 
 ## Fast Start
+
+### Canonical Reference Examples
+
+To run the canonical reference workflows directly:
+
+```powershell
+python examples\reference_workflows\pd_development.py
+python examples\reference_workflows\lgd_severity.py
+python examples\reference_workflows\cecl_lifetime_pd.py
+```
+
+Those examples write full artifact bundles under `artifacts/reference_workflows/`.
 
 ### Easiest GUI Launch
 
@@ -274,6 +380,9 @@ The GUI is a thin front end over the Python framework. It does not implement mod
   - lets the user define per-column missing-value treatment
   - lets the user rename or disable columns
 - lets the user add columns that should be created if missing
+- provides a feature-dictionary editor for business metadata and inclusion rationale
+- provides a governed-transformation editor for reproducible feature engineering
+- provides a workbook download/upload loop for offline governance review
 - collects target, split, cleaning, feature-engineering, diagnostics, and model settings
 - builds a `FrameworkConfig`
 - calls the `QuantModelOrchestrator`
@@ -285,7 +394,7 @@ The current interface is intentionally styled as a premium light-mode fintech da
 
 The governing visual and interaction standard is documented in:
 
-- [docs/UI_UX_STANDARD.md](C:/Users/matth/Desktop/quant/docs/UI_UX_STANDARD.md)
+- [docs/UI_UX_STANDARD.md](./docs/UI_UX_STANDARD.md)
 
 That standard drives both the live GUI and the exported standalone HTML report. The design system emphasizes:
 
@@ -313,13 +422,28 @@ The GUI exposes the following decision areas:
 - random state
 - stratification toggle for cross-sectional data
 - logistic, elastic-net, scorecard, quantile, XGBoost, and Tobit hyperparameters
+- scorecard monotonicity, minimum bin share, scaling, and reason-code settings
 - cleaning toggles
 - date feature toggles
 - per-column missing-value policy and constant-fill controls in the column designer
+- feature dictionary rows for business definitions, source systems, units,
+  ranges, expected signs, and inclusion rationale
+- governed transformations for winsorization, log1p, ratio, interaction, and
+  manual-bin features
 - challenger model selection and ranking metric
 - feature policy inputs for required/excluded features, sign expectations, and monotonicity
+- variable-selection controls for maximum features, univariate threshold,
+  correlation threshold, and locked include/exclude fields
+- suitability-check controls for class balance, events per feature, and category
+  concentration
+- manual feature-review decisions and scorecard bin overrides
+- documentation-pack fields for model purpose, target definition, horizon,
+  assumptions, exclusions, limitations, and reviewer notes
 - explainability controls for permutation importance and feature effect curves
 - scenario table for held-out stress testing
+- calibration bin count, binning strategy, recalibration challengers, and
+  calibration ranking metric
+- reproducibility-manifest controls for tracked package versions and git capture
 - diagnostics and export toggles
 - artifact output root
 - schema editor for column-level configuration
@@ -337,6 +461,8 @@ development workflows:
 Presets do not hide the underlying configuration. They simply seed the model,
 target mode, data structure, comparison defaults, feature-policy defaults, and
 explainability defaults so the user starts from a workflow-specific baseline.
+They now also seed calibration, variable-selection, documentation, and
+scorecard-development defaults where those are relevant to the workflow.
 
 ### Diagnostic Studio Layout
 
@@ -614,6 +740,10 @@ print(context.artifacts["output_root"])
 - `comparison`
 - `feature_policy`
 - `explainability`
+- `calibration`
+- `scorecard`
+- `variable_selection`
+- `documentation`
 - `scenario_testing`
 - `diagnostics`
 - `artifacts`
@@ -839,6 +969,55 @@ Important fields:
 These checks are intended for development governance and documentation, not
 production monitoring.
 
+### `FeatureDictionaryConfig`
+
+`FeatureDictionaryConfig` stores business metadata for modeled features so runs
+can be reviewed as more than a list of column names.
+
+Important fields:
+
+- `entries`
+- `require_documentation_for_selected_features`
+
+Each `FeatureDictionaryEntry` can capture:
+
+- `feature_name`
+- `business_name`
+- `definition`
+- `source_system`
+- `unit`
+- `allowed_range`
+- `missingness_meaning`
+- `expected_sign`
+- `inclusion_rationale`
+- `notes`
+
+When dictionary coverage is required, the pipeline fails if selected modeled
+features do not have documented definitions.
+
+### `TransformationConfig`
+
+`TransformationConfig` controls governed feature transformations that are fit on
+the training split and replayed consistently everywhere else.
+
+Important fields:
+
+- `enabled`
+- `transformations`
+- `error_on_failure`
+
+Supported transformation families:
+
+- `winsorize`
+- `log1p`
+- `ratio`
+- `interaction`
+- `manual_bins`
+
+Each `TransformationSpec` defines the source feature, optional secondary
+feature, output feature, and transform-specific parameters such as quantiles or
+manual bin edges.
+
 ### `ExplainabilityConfig`
 
 `ExplainabilityConfig` controls optional interpretability outputs.
@@ -855,6 +1034,143 @@ Important fields:
 Depending on model family, this can produce coefficient tables, odds-ratio-style
 breakdowns, permutation importance, feature-effect curves, WoE tables, and
 two-stage LGD coefficient outputs.
+
+### `CalibrationConfig`
+
+`CalibrationConfig` controls probability-alignment diagnostics and
+recalibration challengers for binary workflows.
+
+Important fields:
+
+- `bin_count`
+- `strategy`
+- `platt_scaling`
+- `isotonic_calibration`
+- `ranking_metric`
+
+When labels are available, the framework fits the selected calibration
+challengers on the validation split, evaluates them on the held-out test split,
+and exports:
+
+- a bin-level calibration table
+- a calibration summary table
+- a calibration method-comparison chart
+- recommended calibration method metadata
+- calibrated score columns in the exported predictions output
+
+### `ScorecardConfig`
+
+`ScorecardConfig` controls scorecard-development behavior for
+`scorecard_logistic_regression`.
+
+Important fields:
+
+- `monotonicity`
+- `min_bin_share`
+- `base_score`
+- `points_to_double_odds`
+- `odds_reference`
+- `reason_code_count`
+
+These settings drive monotonic binning, score scaling, points tables, and the
+reason-code columns exported with scorecard predictions.
+
+### `ScorecardWorkbenchConfig`
+
+`ScorecardWorkbenchConfig` controls the dedicated scorecard binning workspace
+for `scorecard_logistic_regression`.
+
+Important fields:
+
+- `enabled`
+- `max_features`
+- `include_score_distribution`
+- `include_reason_code_analysis`
+
+These settings control the scorecard-specific workbench outputs, including:
+
+- feature-level IV and bin summary tables
+- points-distribution visuals
+- reason-code frequency views
+- bucket-level bad-rate, WoE, and partial-points visuals for the profiled
+  scorecard features
+
+### `VariableSelectionConfig`
+
+`VariableSelectionConfig` controls the optional train-split feature-screening
+workflow.
+
+Important fields:
+
+- `enabled`
+- `max_features`
+- `min_univariate_score`
+- `correlation_threshold`
+- `locked_include_features`
+- `locked_exclude_features`
+
+The selection step exports a feature-by-feature rationale table so the chosen
+development set is reviewable rather than hidden inside model training.
+
+### `ManualReviewConfig`
+
+`ManualReviewConfig` captures human review decisions that sit on top of
+screening and scorecard-development outputs.
+
+Important fields:
+
+- `reviewer_name`
+- `require_review_complete`
+- `feature_decisions`
+- `scorecard_bin_overrides`
+
+Supported feature decisions:
+
+- `approve`
+- `reject`
+- `force_include`
+- `force_exclude`
+
+Scorecard bin overrides allow explicit internal numeric cutoffs to replace the
+default monotonic bin search for selected scorecard features.
+
+### `SuitabilityCheckConfig`
+
+`SuitabilityCheckConfig` controls pre-fit model-suitability and assumption
+checks.
+
+Important fields:
+
+- `min_events_per_feature`
+- `min_class_rate`
+- `max_class_rate`
+- `max_dominant_category_share`
+- `min_non_null_target_rows`
+- `error_on_failure`
+
+These checks populate the exported `assumption_checks` table and can optionally
+fail the run when the development sample is not suitable for the chosen model
+family.
+
+### `DocumentationConfig`
+
+`DocumentationConfig` captures the narrative and governance fields used to build
+the exported development documentation pack.
+
+Important fields:
+
+- `model_name`
+- `model_owner`
+- `business_purpose`
+- `portfolio_name`
+- `segment_name`
+- `horizon_definition`
+- `target_definition`
+- `loss_definition`
+- `assumptions`
+- `exclusions`
+- `limitations`
+- `reviewer_notes`
 
 ### `ScenarioTestConfig`
 
@@ -894,6 +1210,44 @@ Key toggles include:
 - PNG chart exports
 - Excel workbook export
 
+### `RobustnessConfig`
+
+`RobustnessConfig` controls repeated-resample robustness testing for new-model
+development runs.
+
+Important fields:
+
+- `enabled`
+- `resample_count`
+- `sample_fraction`
+- `sample_with_replacement`
+- `evaluation_split`
+- `metric_stability`
+- `coefficient_stability`
+- `random_state`
+
+When enabled, the framework repeatedly refits the active model on train
+resamples, scores a held-out split, and exports:
+
+- resample-level metric distributions
+- metric summary tables with mean, spread, and percentile values
+- feature and coefficient stability tables
+- stability charts under the `Stability / Drift` reporting section
+
+### `ReproducibilityConfig`
+
+`ReproducibilityConfig` controls run-manifest metadata used for auditability and
+reruns.
+
+Important fields:
+
+- `capture_git_metadata`
+- `package_names`
+
+When enabled, the export bundle includes hashes for the input dataframe, model
+artifact, and resolved config, plus Python/platform metadata and tracked
+package versions.
+
 ### `ArtifactConfig`
 
 Artifacts are written under the configured output root using a timestamped run directory.
@@ -913,6 +1267,10 @@ Default artifact files:
 - `analysis_workbook.xlsx`
 - `artifact_manifest.json`
 - `step_manifest.json`
+- `model_documentation_pack.md`
+- `validation_pack.md`
+- `reproducibility_manifest.json`
+- `configuration_template.xlsx`
 - `generated_run.py`
 - `HOW_TO_RERUN.md`
 - `code_snapshot/`
@@ -961,17 +1319,55 @@ Builds lightweight derived features and finalizes which columns enter the model.
 
 Partitions the dataset into train, validation, and test sets according to the selected data structure.
 
-### 8. Imputation
+### 8. Assumption Checks
+
+Runs pre-fit model-suitability diagnostics such as:
+
+- non-null target count
+- class balance and events per feature for binary models
+- bounded-target and censoring checks for relevant continuous models
+- duplicate entity-date checks for panel workflows
+- dominant-category concentration checks
+
+The exported diagnostics bundle includes an `assumption_checks` table that can
+optionally fail the run when configured thresholds are breached.
+
+### 9. Imputation
 
 Fits the configured missing-value rules on the training split and applies them
 consistently to every downstream split. The exported diagnostics bundle includes
 an `imputation_rules` table so the treatment is fully documented.
 
-### 9. Training
+### 10. Governed Transformations
+
+Fits and applies explicit, reproducible feature transformations such as:
+
+- winsorization
+- `log1p`
+- ratio features
+- interaction features
+- manual-bin categorical features
+
+These transforms are fit on the training split, replayed on the remaining
+splits, and exported through a `governed_transformations` audit table.
+
+### 11. Variable Selection
+
+Applies train-split screening rules before model fitting. This workflow can:
+
+- rank variables by simple univariate power
+- remove highly correlated numeric features
+- enforce locked include and exclude lists
+- cap the selected feature count
+- apply manual approve/reject/force decisions after screening
+- export both a selection rationale table and manual review decisions for documentation
+
+### 12. Training
 
 Fits the selected model family through a common adapter interface. Depending on configuration, this can mean:
 
 - logistic regression
+- discrete-time hazard model
 - elastic-net logistic regression
 - scorecard logistic regression
 - probit regression
@@ -985,7 +1381,10 @@ Fits the selected model family through a common adapter interface. Depending on 
 
 When `execution.mode="score_existing_model"`, this stage instead loads a previously exported fitted model artifact and validates that the newly prepared dataframe still satisfies that model's raw feature contract.
 
-### 10. Evaluation
+When scorecard development is active, this stage can also apply manual numeric
+bin overrides supplied through the review workflow.
+
+### 13. Evaluation
 
 Scores each split and computes metrics appropriate to the chosen target mode.
 
@@ -1012,16 +1411,23 @@ Continuous-mode metrics include:
 
 When labels are unavailable in existing-model scoring mode, the framework still exports score-only summaries such as row counts, average score, predicted-positive rate, and score distributions while leaving label-dependent metrics blank.
 
-### 11. Backtesting
+### 14. Backtesting
 
 Creates a simple risk-band summary on the test set by comparing predicted PD to observed default rate.
 
-### 12. Diagnostics
+### 15. Diagnostics
 
 Builds validation tables and interactive Plotly visuals such as:
 
+- suitability / assumption checks
+- feature dictionary coverage tables
+- governed transformation audit tables
 - quantile plots
+- lifetime PD curves for discrete-time hazard development
 - calibration curves
+- calibration summary tables with ECE, MCE, slope/intercept, and
+  Hosmer-Lemeshow statistics
+- base-versus-recalibrated method comparison charts
 - challenger model comparison tables and charts
 - ROC and precision-recall curves
 - threshold sweeps
@@ -1030,9 +1436,13 @@ Builds validation tables and interactive Plotly visuals such as:
 - imputation rule tables
 - correlation heatmaps
 - feature importance charts
+- variable-selection tables
+- manual review decision tables
 - permutation importance charts
 - coefficient breakdowns
 - feature effect curves
+- scorecard WoE, scaling, and points tables
+- scorecard bin override tables
 - residual plots
 - QQ plots
 - segment summaries
@@ -1040,13 +1450,15 @@ Builds validation tables and interactive Plotly visuals such as:
 - PSI tables
 - WoE/IV summaries
 - feature policy checks
+- reproducibility manifest tables
 - scenario summaries and segment impacts
 
-### 13. Artifact Export
+### 16. Artifact Export
 
 Writes model artifacts, metrics, predictions, tables, figures, tests, workbook exports,
-a markdown report, a standalone interactive HTML report, and a rerun-ready code bundle
-to disk.
+a markdown report, a standalone interactive HTML report, a development
+documentation pack, a structured validation pack, a reproducibility manifest, a
+configuration workbook, and a rerun-ready code bundle to disk.
 
 ## Outputs
 
@@ -1059,8 +1471,16 @@ Typical outputs include:
 - reused-model scoring outputs when an existing model is supplied
 - per-split metrics
 - per-row predictions
+- scorecard points and reason codes when scorecard development mode is used
+- feature dictionary coverage tables
+- governed transformation audit tables
+- assumption-check tables
+- recommended calibration score columns and method metadata for binary runs
+- variable-selection tables and selected-feature metadata
+- manual feature-review decisions and scorecard override tables
 - model-specific feature importance or coefficient summary
 - challenger comparison results and recommended model metadata
+- lifetime PD curve outputs for discrete-time hazard runs
 - backtest summary by risk band
 - diagnostic tables as CSV
 - feature policy check tables
@@ -1071,6 +1491,10 @@ Typical outputs include:
 - PNG figures when static export is enabled
 - Excel workbook containing major tables
 - human-readable run report
+- documentation pack for development and review
+- validator-facing validation pack
+- reproducibility manifest with hashes and package versions
+- editable configuration workbook for offline governance
 - resolved configuration used for the run
 - ordered step manifest for the exact pipeline stack used
 - generated Python launcher for non-GUI reruns
@@ -1092,6 +1516,17 @@ Each exported run directory is now intended to be portable. A completed run fold
   A Python launcher that defaults to the exported config and input snapshot.
 - `interactive_report.html`
   A grouped standalone validation dashboard that mirrors the visual taxonomy used in the GUI.
+- `model_documentation_pack.md`
+  A development-ready narrative pack built from the run configuration, metrics,
+  calibration review, and selected-feature summary.
+- `validation_pack.md`
+  A validator-facing markdown pack focused on assumptions, review decisions,
+  challenger outcomes, and artifact index.
+- `reproducibility_manifest.json`
+  Hashes, package versions, environment metadata, and optional git information.
+- `configuration_template.xlsx`
+  The editable workbook for schema, feature dictionary, transformations, and
+  review tables.
 - `HOW_TO_RERUN.md`
   A short runbook describing the rerun path and the main editable files.
 - `code_snapshot/`
@@ -1148,8 +1583,6 @@ The current project structure is intended to support future work without forcing
 Common extension directions:
 
 - add richer feature engineering
-- add calibration steps
-- add discrete-time hazard and survival-style credit models
 - add more formal macroeconomic scenario libraries
 - add model-governance templates for documentation sections and sign-off packs
 - add alternate backtesting logic
@@ -1259,8 +1692,14 @@ The current implementation includes:
 - fresh-model and existing-model execution modes
 - binary and continuous target modes
 - workflow presets for PD, CECL, LGD, and CCAR development
-- logistic, elastic-net logistic, scorecard logistic, probit, linear, beta, two-stage LGD, panel, quantile, Tobit, and XGBoost model options
-- challenger comparison mode, feature policy checks, explainability outputs, and scenario testing
+- logistic, discrete-time hazard, elastic-net logistic, scorecard logistic,
+  probit, linear, beta, two-stage LGD, panel, quantile, Tobit, and XGBoost
+  model options
+- challenger comparison mode, feature policy checks, explainability outputs,
+  calibration workflow, variable selection, scorecard development support,
+  feature dictionary capture, governed transformations, manual review,
+  suitability checks, documentation-pack generation, validation-pack export,
+  reproducibility manifest export, and scenario testing
 - expanded evaluation metrics and diagnostics
 - labeled and score-only documentation paths when an existing model is reused
 - interactive visualizations and richer exports

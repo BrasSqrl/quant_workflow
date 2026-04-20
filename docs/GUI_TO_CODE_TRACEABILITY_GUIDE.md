@@ -1,0 +1,283 @@
+# GUI-to-Code Traceability Guide
+
+This document maps the main Quant Studio GUI controls to:
+
+1. the config fields they populate
+2. the pipeline steps they influence
+3. the code modules that implement the behavior
+4. the exported artifacts that preserve the decision
+
+The purpose is auditability. The GUI is intentionally thin. It does not own the
+modeling logic.
+
+Primary implementation files:
+
+- `app/streamlit_app.py`
+- `src/quant_pd_framework/gui_support.py`
+- `src/quant_pd_framework/config.py`
+- `src/quant_pd_framework/orchestrator.py`
+- `src/quant_pd_framework/steps/assumption_checks.py`
+- `src/quant_pd_framework/steps/transformations.py`
+
+## Core Principle
+
+The GUI collects user choices. `build_framework_config_from_editor(...)` turns
+those choices into a `FrameworkConfig`. The orchestrator then runs the same
+Python pipeline that a code-only user would run.
+
+Traceability chain:
+
+`Streamlit widget -> GUIBuildInputs / editor table -> FrameworkConfig -> pipeline step -> artifact`
+
+## 1. Data Source Controls
+
+| GUI location | Main controls | Config or runtime target | Code path | Audit surface |
+| --- | --- | --- | --- | --- |
+| `Data Source` expander | bundled sample toggle, CSV/Excel upload | runtime dataframe only | `select_input_dataframe`, `load_uploaded_dataframe` | `input_snapshot.csv`, `input_shape` |
+
+Notes:
+
+- The upload control does not modify model config directly.
+- It determines the dataframe consumed by the orchestrator.
+
+## 2. Column Designer
+
+The column designer is the most important traceability surface because it
+defines the modeled schema.
+
+| Column designer field | Config field | Main downstream step(s) |
+| --- | --- | --- |
+| `enabled` | `ColumnSpec.enabled` | `SchemaManagementStep` |
+| `source_name` | `ColumnSpec.source_name` | `SchemaManagementStep` |
+| `name` | `ColumnSpec.name` | `SchemaManagementStep`, all later steps |
+| `role` | `ColumnSpec.role` | `TargetConstructionStep`, `FeatureEngineeringStep`, `SplitStep` |
+| `dtype` | `ColumnSpec.dtype` | `SchemaManagementStep` |
+| `missing_value_policy` | `ColumnSpec.missing_value_policy` | `ImputationStep` |
+| `missing_value_fill_value` | `ColumnSpec.missing_value_fill_value` | `ImputationStep` |
+| `create_if_missing` | `ColumnSpec.create_if_missing` | `SchemaManagementStep` |
+| `default_value` | `ColumnSpec.default_value` | `SchemaManagementStep` |
+| `keep_source` | `ColumnSpec.keep_source` | `SchemaManagementStep` |
+
+Main builder functions:
+
+- `build_column_editor_frame(...)`
+- `normalize_editor_frame(...)`
+- `build_column_specs_from_editor(...)`
+- `build_framework_config_from_editor(...)`
+
+## 3. Build-Workspace Editors
+
+The main workspace now includes dedicated tabs beyond the column designer.
+
+| Workspace tab | Config field(s) | Main implementation | Export evidence |
+| --- | --- | --- | --- |
+| `Feature Dictionary` | `FeatureDictionaryConfig.entries` | `parse_feature_dictionary_frame(...)`, diagnostics feature-dictionary output | `feature_dictionary`, `validation_pack.md` |
+| `Transformations` | `TransformationConfig.transformations` | `parse_transformation_frame(...)`, `TransformationStep` | `governed_transformations` |
+| `Template Workbook` | none directly; imports/exports editor tables | `build_template_workbook_bytes(...)`, `load_template_workbook(...)` | `configuration_template.xlsx` |
+
+## 4. Sidebar Group: Core Setup
+
+| GUI control | Config field(s) | Main implementation |
+| --- | --- | --- |
+| `Execution mode` | `ExecutionConfig.mode` | `orchestrator._resolve_execution_config`, `ModelTrainingStep` |
+| `Existing model artifact path` | `ExecutionConfig.existing_model_path` | `ModelTrainingStep` |
+| `Existing run config path` | `ExecutionConfig.existing_config_path` | `orchestrator._resolve_execution_config` |
+| `Model type` | `ModelConfig.model_type` | `build_model_adapter(...)` |
+| `Target mode` | `TargetConfig.mode` | `TargetConstructionStep`, `ModelConfig.validate(...)` |
+| `Data structure` | `SplitConfig.data_structure` | `SplitStep` |
+| `Output target name` | `TargetConfig.output_column` | `TargetConstructionStep` |
+| `Positive target values` | `TargetConfig.positive_values` | `TargetConstructionStep` |
+| `Drop source target column` | `TargetConfig.drop_source_column` | `TargetConstructionStep` |
+
+## 5. Sidebar Group: Split Strategy
+
+| GUI control | Config field(s) | Main implementation | Export evidence |
+| --- | --- | --- | --- |
+| `Train size` | `SplitConfig.train_size` | `SplitStep` | `split_summary` |
+| `Validation size` | `SplitConfig.validation_size` | `SplitStep` | `split_summary` |
+| `Test size` | `SplitConfig.test_size` | `SplitStep` | `split_summary` |
+| `Random state` | `SplitConfig.random_state` | `SplitStep`, sampling helpers | `run_config.json` |
+| `Stratify cross-sectional split` | `SplitConfig.stratify` | `SplitStep._split_cross_sectional` | `run_config.json` |
+
+Date and identifier columns are not collected here. They are derived from the
+column designer role assignments.
+
+## 6. Sidebar Group: Model Settings
+
+| GUI control | Config field(s) | Main implementation |
+| --- | --- | --- |
+| `Classification threshold` | `ModelConfig.threshold` | `EvaluationStep`, `DiagnosticsStep._add_threshold_outputs` |
+| `Max iterations` | `ModelConfig.max_iter` | model adapters |
+| `Inverse regularization (C)` | `ModelConfig.C` | logistic, elastic-net, LGD stage one |
+| `Solver` | `ModelConfig.solver` | logistic-family and LGD stage one |
+| `Class weight` | `ModelConfig.class_weight` | binary models where applicable |
+| `Elastic-net l1 ratio` | `ModelConfig.l1_ratio` | `ElasticNetLogisticRegressionAdapter` |
+| `Scorecard bins` | `ModelConfig.scorecard_bins` | `ScorecardLogisticRegressionAdapter` |
+| `Scorecard monotonicity` | `ScorecardConfig.monotonicity` | scorecard bin optimization |
+| `Scorecard min bin share` | `ScorecardConfig.min_bin_share` | scorecard bin optimization |
+| `Scorecard base score` | `ScorecardConfig.base_score` | score scaling |
+| `Scorecard PDO` | `ScorecardConfig.points_to_double_odds` | score scaling |
+| `Scorecard odds reference` | `ScorecardConfig.odds_reference` | score scaling |
+| `Reason code count` | `ScorecardConfig.reason_code_count` | prediction-side reason codes |
+| `Quantile alpha` | `ModelConfig.quantile_alpha` | `QuantileRegressionAdapter` |
+| `XGBoost ...` controls | `ModelConfig.xgboost_*` | `XGBoostAdapter` |
+| `Tobit ...` controls | `ModelConfig.tobit_*` | `TobitRegressionAdapter` |
+
+## 7. Sidebar Group: Data Preparation
+
+| GUI control | Config field(s) | Main implementation |
+| --- | --- | --- |
+| `Trim string columns` | `CleaningConfig.trim_string_columns` | `CleaningStep` |
+| `Treat blank strings as null` | `CleaningConfig.blank_strings_as_null` | `CleaningStep` |
+| `Drop duplicate rows` | `CleaningConfig.drop_duplicate_rows` | `CleaningStep` |
+| `Drop rows with missing target` | `CleaningConfig.drop_rows_with_missing_target` | `CleaningStep` |
+| `Drop fully null feature columns` | `CleaningConfig.drop_all_null_feature_columns` | `CleaningStep` |
+| `Create date-part features` | `FeatureEngineeringConfig.derive_date_parts` | `FeatureEngineeringStep` |
+| `Drop raw date columns ...` | `FeatureEngineeringConfig.drop_raw_date_columns` | `FeatureEngineeringStep` |
+| `Date parts` | `FeatureEngineeringConfig.date_parts` | `FeatureEngineeringStep` |
+
+## 8. Sidebar Group: Diagnostics & Exports
+
+| GUI control | Config field(s) | Main implementation |
+| --- | --- | --- |
+| `Default segment column` | `DiagnosticConfig.default_segment_column` | `DiagnosticsStep._add_segment_outputs` |
+| `Diagnostic suites` | `DiagnosticConfig.*` booleans | `DiagnosticsStep.run(...)` |
+| `Export surfaces` | `DiagnosticConfig.interactive_visualizations`, `static_image_exports`, `export_excel_workbook` | `ArtifactExportStep` |
+| `Top features for analysis` | `DiagnosticConfig.top_n_features` | diagnostics feature ranking |
+| `Top categories per chart` | `DiagnosticConfig.top_n_categories` | segment/effect chart limits |
+| `Max rows rendered in plots` | `DiagnosticConfig.max_plot_rows` | sampling helpers |
+| `Quantile bucket count` | `DiagnosticConfig.quantile_bucket_count` | backtesting, lift/gain, WoE/IV |
+| `Calibration bin count` | `CalibrationConfig.bin_count` | calibration tables |
+| `Calibration binning strategy` | `CalibrationConfig.strategy` | calibration tables |
+| `Fit Platt scaling challenger` | `CalibrationConfig.platt_scaling` | calibration workflow |
+| `Fit isotonic challenger` | `CalibrationConfig.isotonic_calibration` | calibration workflow |
+| `Calibration ranking metric` | `CalibrationConfig.ranking_metric` | calibration method recommendation |
+| `Enable robustness testing` | `RobustnessConfig.enabled` | `DiagnosticsStep._add_robustness_outputs` |
+| `Robustness resamples` | `RobustnessConfig.resample_count` | robustness diagnostics |
+| `Robustness sample fraction` | `RobustnessConfig.sample_fraction` | robustness diagnostics |
+| `Sample with replacement` | `RobustnessConfig.sample_with_replacement` | robustness diagnostics |
+| `Robustness evaluation split` | `RobustnessConfig.evaluation_split` | robustness diagnostics |
+| `Export metric-stability views` | `RobustnessConfig.metric_stability` | robustness diagnostics |
+| `Export coefficient-stability views` | `RobustnessConfig.coefficient_stability` | robustness diagnostics |
+| `Enable scorecard workbench` | `ScorecardWorkbenchConfig.enabled` | `DiagnosticsStep._add_scorecard_workbench_outputs` |
+| `Scorecard workbench features` | `ScorecardWorkbenchConfig.max_features` | scorecard workbench asset selection |
+| `Include scorecard points distribution` | `ScorecardWorkbenchConfig.include_score_distribution` | scorecard workbench diagnostics |
+| `Include reason-code frequency view` | `ScorecardWorkbenchConfig.include_reason_code_analysis` | scorecard workbench diagnostics |
+
+## 9. Sidebar Group: Challengers & Policies
+
+| GUI control | Config field(s) | Main implementation | Export evidence |
+| --- | --- | --- | --- |
+| `Enable model comparison mode` | `ComparisonConfig.enabled` | `ModelComparisonStep` | `model_comparison` |
+| `Challenger model families` | `ComparisonConfig.challenger_model_types` | `ModelComparisonStep` | `model_comparison` |
+| `Comparison ranking metric` | `ComparisonConfig.ranking_metric` | `ModelComparisonStep` | `model_comparison` |
+| `Enable feature policy checks` | `FeaturePolicyConfig.enabled` | `DiagnosticsStep._add_feature_policy_outputs` | `feature_policy_checks` |
+| `Required features` | `FeaturePolicyConfig.required_features` | policy checks | `feature_policy_checks` |
+| `Excluded features` | `FeaturePolicyConfig.excluded_features` | policy checks | `feature_policy_checks` |
+| `Expected signs` | `FeaturePolicyConfig.expected_signs` | policy checks | `feature_policy_checks` |
+| `Monotonic features` | `FeaturePolicyConfig.monotonic_features` | policy checks | `feature_policy_checks` |
+| `Max missing %` | `FeaturePolicyConfig.max_missing_pct` | policy checks | `feature_policy_checks` |
+| `Max VIF` | `FeaturePolicyConfig.max_vif` | policy checks | `feature_policy_checks` |
+| `Minimum IV` | `FeaturePolicyConfig.minimum_information_value` | policy checks | `feature_policy_checks` |
+| `Fail run on policy violation` | `FeaturePolicyConfig.error_on_violation` | policy checks | run failure if violated |
+
+## 10. Sidebar Group: Selection & Documentation
+
+| GUI control | Config field(s) | Main implementation |
+| --- | --- | --- |
+| `Enable variable selection` | `VariableSelectionConfig.enabled` | `VariableSelectionStep` |
+| `Max selected features` | `VariableSelectionConfig.max_features` | `VariableSelectionStep` |
+| `Minimum univariate score` | `VariableSelectionConfig.min_univariate_score` | `VariableSelectionStep` |
+| `Correlation threshold` | `VariableSelectionConfig.correlation_threshold` | `VariableSelectionStep` |
+| `Locked include features` | `VariableSelectionConfig.locked_include_features` | `VariableSelectionStep` |
+| `Locked exclude features` | `VariableSelectionConfig.locked_exclude_features` | `VariableSelectionStep` |
+| `Export documentation pack` | `DocumentationConfig.enabled` | `ArtifactExportStep` |
+| documentation text fields | `DocumentationConfig.*` | diagnostics metadata and documentation pack |
+
+## 11. Sidebar Group: Governance & Review
+
+| GUI control | Config field(s) | Main implementation | Export evidence |
+| --- | --- | --- | --- |
+| `Enable suitability checks` | `SuitabilityCheckConfig.enabled` | `AssumptionCheckStep` | `assumption_checks` |
+| `Fail run on suitability failure` | `SuitabilityCheckConfig.error_on_failure` | `AssumptionCheckStep` | run failure if violated |
+| `Min events per feature` | `SuitabilityCheckConfig.min_events_per_feature` | `AssumptionCheckStep` | `assumption_checks` |
+| `Min/Max class rate` | `SuitabilityCheckConfig.min_class_rate`, `max_class_rate` | `AssumptionCheckStep` | `assumption_checks` |
+| `Max dominant category share` | `SuitabilityCheckConfig.max_dominant_category_share` | `AssumptionCheckStep` | `assumption_checks` |
+| `Enable manual review workflow` | `ManualReviewConfig.enabled` | `VariableSelectionStep`, scorecard training path | `manual_review_feature_decisions` |
+| `Require review decisions ...` | `ManualReviewConfig.require_review_complete` | `VariableSelectionStep` | run failure if incomplete |
+| `Reviewer name` | `ManualReviewConfig.reviewer_name` | `VariableSelectionStep`, diagnostics | review tables |
+| feature review editor rows | `ManualReviewConfig.feature_decisions` | `parse_manual_review_frames(...)`, `VariableSelectionStep` | `manual_review_feature_decisions` |
+| scorecard override rows | `ManualReviewConfig.scorecard_bin_overrides` | `parse_manual_review_frames(...)`, `ScorecardLogisticRegressionAdapter` | `scorecard_bin_overrides` |
+
+## 12. Sidebar Group: Explainability & Scenarios
+
+| GUI control | Config field(s) | Main implementation |
+| --- | --- | --- |
+| `Enable explainability outputs` | `ExplainabilityConfig.enabled` | `DiagnosticsStep._add_explainability_outputs` |
+| `Permutation importance` | `ExplainabilityConfig.permutation_importance` | permutation importance |
+| `Feature effect curves` | `ExplainabilityConfig.feature_effect_curves` | feature effect curves |
+| `Coefficient breakdown` | `ExplainabilityConfig.coefficient_breakdown` | coefficient table |
+| `Explainability top features` | `ExplainabilityConfig.top_n_features` | explainability ranking |
+| `Effect curve grid points` | `ExplainabilityConfig.grid_points` | numeric effect grids |
+| `Explainability sample size` | `ExplainabilityConfig.sample_size` | explainability sampling |
+| `Scenario evaluation split` | `ScenarioTestConfig.evaluation_split` | scenario testing |
+| scenario editor rows | `ScenarioTestConfig.scenarios` | scenario testing |
+
+## 13. Sidebar Group: Output Options
+
+| GUI control | Config field(s) | Main implementation |
+| --- | --- | --- |
+| `Keep unconfigured columns` | `SchemaConfig.pass_through_unconfigured_columns` | `SchemaManagementStep` |
+| `Export reproducibility manifest` | `ReproducibilityConfig.enabled` | `ArtifactExportStep` |
+| `Capture git commit metadata` | `ReproducibilityConfig.capture_git_metadata` | `ArtifactExportStep` |
+| `Tracked package names` | `ReproducibilityConfig.package_names` | `ArtifactExportStep` |
+| `Artifact root` | `ArtifactConfig.output_root` | `ArtifactExportStep` |
+
+## 14. Run Button
+
+The `Run Quant Model Workflow` button performs this chain:
+
+1. collects widget state into `GUIBuildInputs`
+2. converts the schema editor and inputs into `FrameworkConfig`
+3. instantiates `QuantModelOrchestrator`
+4. runs the full pipeline
+5. stores a snapshot for the result viewer
+
+Relevant code path:
+
+- `build_framework_config_from_editor(...)`
+- `QuantModelOrchestrator(config=config).run(dataframe)`
+- `build_run_snapshot(...)`
+
+## 15. Result-Viewer Filters
+
+The controls under `Interactive Filters` do not change the model or rerun the
+pipeline. They only change the live display of exported run outputs.
+
+Examples:
+
+- split selector
+- feature lens
+- segment filter
+- view depth
+- chart/table display selection
+
+These are presentation controls, not modeling controls.
+
+## 16. Authoritative Export Files for Traceability
+
+For an audit review, the most important files are:
+
+- `run_config.json`
+- `step_manifest.json`
+- `artifact_manifest.json`
+- `metrics.json`
+- `run_report.md`
+- `model_documentation_pack.md`
+- `validation_pack.md`
+- `reproducibility_manifest.json`
+- `configuration_template.xlsx`
+- `interactive_report.html`
+
+Together these create the formal record of what the GUI settings actually
+became in code.

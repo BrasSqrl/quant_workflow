@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from io import BytesIO
 from pathlib import Path
 from typing import Any
 
@@ -13,11 +14,15 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from quant_pd_framework import (
+    CalibrationConfig,
+    CalibrationRankingMetric,
+    CalibrationStrategy,
     CleaningConfig,
     ColumnRole,
     ComparisonConfig,
     DataStructure,
     DiagnosticConfig,
+    DocumentationConfig,
     ExecutionMode,
     ExplainabilityConfig,
     FeatureEngineeringConfig,
@@ -26,21 +31,41 @@ from quant_pd_framework import (
     ModelType,
     PresetName,
     QuantModelOrchestrator,
+    ReproducibilityConfig,
+    RobustnessConfig,
     ScenarioShockOperation,
+    ScorecardConfig,
+    ScorecardMonotonicity,
+    ScorecardWorkbenchConfig,
+    SuitabilityCheckConfig,
     TargetMode,
+    VariableSelectionConfig,
     build_sample_pd_dataframe,
 )
 from quant_pd_framework.gui_support import (
+    FEATURE_REVIEW_COLUMNS,
+    SCORECARD_OVERRIDE_COLUMNS,
     SUPPORTED_DTYPES,
+    SUPPORTED_FEATURE_REVIEW_DECISIONS,
     SUPPORTED_MISSING_VALUE_POLICIES,
+    SUPPORTED_TRANSFORMATION_TYPES,
     GUIBuildInputs,
     build_column_editor_frame,
+    build_feature_dictionary_editor_frame,
+    build_feature_review_editor_frame,
     build_framework_config_from_editor,
     build_gui_inputs_from_preset,
+    build_scorecard_override_editor_frame,
+    build_template_workbook_bytes,
+    build_transformation_editor_frame,
     default_challengers_for_target_mode,
     list_gui_preset_options,
+    load_template_workbook,
     parse_expected_signs,
+    parse_feature_dictionary_frame,
+    parse_manual_review_frames,
     parse_scenario_rows,
+    parse_transformation_frame,
 )
 from quant_pd_framework.presentation import (
     SECTION_SPECS,
@@ -134,6 +159,68 @@ def initialize_preset_state() -> GUIBuildInputs:
     )
     st.session_state["scenario_split"] = preset_inputs.scenario_testing.evaluation_split
     st.session_state["quantile_bucket_count"] = preset_inputs.diagnostics.quantile_bucket_count
+    st.session_state["calibration_bin_count"] = preset_inputs.calibration.bin_count
+    st.session_state["calibration_strategy"] = preset_inputs.calibration.strategy.value
+    st.session_state["calibration_platt_scaling"] = preset_inputs.calibration.platt_scaling
+    st.session_state["calibration_isotonic"] = (
+        preset_inputs.calibration.isotonic_calibration
+    )
+    st.session_state["calibration_ranking_metric"] = (
+        preset_inputs.calibration.ranking_metric.value
+    )
+    st.session_state["scorecard_monotonicity"] = preset_inputs.scorecard.monotonicity.value
+    st.session_state["scorecard_min_bin_share"] = preset_inputs.scorecard.min_bin_share
+    st.session_state["scorecard_base_score"] = preset_inputs.scorecard.base_score
+    st.session_state["scorecard_pdo"] = preset_inputs.scorecard.points_to_double_odds
+    st.session_state["scorecard_odds_reference"] = preset_inputs.scorecard.odds_reference
+    st.session_state["scorecard_reason_code_count"] = preset_inputs.scorecard.reason_code_count
+    st.session_state["variable_selection_enabled"] = preset_inputs.variable_selection.enabled
+    st.session_state["variable_selection_max_features"] = (
+        preset_inputs.variable_selection.max_features or 15
+    )
+    st.session_state["variable_selection_min_univariate_score"] = (
+        preset_inputs.variable_selection.min_univariate_score or 0.0
+    )
+    st.session_state["variable_selection_correlation_threshold"] = (
+        preset_inputs.variable_selection.correlation_threshold or 0.8
+    )
+    st.session_state["variable_selection_locked_include"] = ",".join(
+        preset_inputs.variable_selection.locked_include_features
+    )
+    st.session_state["variable_selection_locked_exclude"] = ",".join(
+        preset_inputs.variable_selection.locked_exclude_features
+    )
+    st.session_state["documentation_enabled"] = preset_inputs.documentation.enabled
+    st.session_state["documentation_model_name"] = preset_inputs.documentation.model_name
+    st.session_state["documentation_model_owner"] = preset_inputs.documentation.model_owner
+    st.session_state["documentation_business_purpose"] = (
+        preset_inputs.documentation.business_purpose
+    )
+    st.session_state["documentation_portfolio_name"] = (
+        preset_inputs.documentation.portfolio_name
+    )
+    st.session_state["documentation_segment_name"] = preset_inputs.documentation.segment_name
+    st.session_state["documentation_horizon_definition"] = (
+        preset_inputs.documentation.horizon_definition
+    )
+    st.session_state["documentation_target_definition"] = (
+        preset_inputs.documentation.target_definition
+    )
+    st.session_state["documentation_loss_definition"] = (
+        preset_inputs.documentation.loss_definition
+    )
+    st.session_state["documentation_assumptions"] = "\n".join(
+        preset_inputs.documentation.assumptions
+    )
+    st.session_state["documentation_exclusions"] = "\n".join(
+        preset_inputs.documentation.exclusions
+    )
+    st.session_state["documentation_limitations"] = "\n".join(
+        preset_inputs.documentation.limitations
+    )
+    st.session_state["documentation_reviewer_notes"] = (
+        preset_inputs.documentation.reviewer_notes
+    )
     st.session_state["_applied_preset"] = selected_value
     return preset_inputs
 
@@ -148,6 +235,95 @@ def format_mapping_text(mapping: dict[str, str]) -> str:
     """Renders mapping dictionaries into a compact text input format."""
 
     return ",".join(f"{key}:{value}" for key, value in mapping.items())
+
+
+def parse_multiline_list(raw_text: str) -> list[str]:
+    """Parses a textbox into a clean line-delimited list."""
+
+    return [line.strip() for line in raw_text.splitlines() if line.strip()]
+
+
+def get_or_initialize_frame(
+    state_key: str,
+    builder,
+) -> pd.DataFrame:
+    """Returns a persistent editor dataframe for the current input workspace."""
+
+    if state_key not in st.session_state:
+        st.session_state[state_key] = builder()
+    return st.session_state[state_key].copy(deep=True)
+
+
+def store_workspace_frame(state_key: str, frame: pd.DataFrame) -> None:
+    """Persists the latest editor value into session state."""
+
+    st.session_state[state_key] = frame.copy(deep=True)
+
+
+def schema_editor_column_config() -> dict[str, Any]:
+    """Returns the shared column configuration used by the schema editor."""
+
+    return {
+        "enabled": st.column_config.CheckboxColumn("Enabled"),
+        "source_name": st.column_config.TextColumn("Input column"),
+        "name": st.column_config.TextColumn("Output column"),
+        "role": st.column_config.SelectboxColumn(
+            "Role",
+            options=[role.value for role in ColumnRole],
+        ),
+        "dtype": st.column_config.SelectboxColumn("Dtype", options=SUPPORTED_DTYPES),
+        "missing_value_policy": st.column_config.SelectboxColumn(
+            "Missing policy",
+            options=SUPPORTED_MISSING_VALUE_POLICIES,
+            help=(
+                "Per-column missing-value treatment. "
+                "`inherit_default` uses median for numeric features and "
+                "mode for categorical features."
+            ),
+        ),
+        "missing_value_fill_value": st.column_config.TextColumn(
+            "Impute fill value",
+            help="Used only when the missing policy is `constant`.",
+        ),
+        "create_if_missing": st.column_config.CheckboxColumn("Create if missing"),
+        "default_value": st.column_config.TextColumn("Default value"),
+        "keep_source": st.column_config.CheckboxColumn("Keep input column"),
+    }
+
+
+def render_schema_guidance() -> None:
+    """Renders the shared schema guidance copy."""
+
+    with st.expander("Schema Guidance", expanded=False):
+        st.markdown(
+            """
+            - Mark exactly one enabled row as `target_source`.
+            - Mark one enabled row as `date` for time-series or panel runs.
+            - Mark one enabled row as `identifier` for panel runs.
+            - Rename columns in `name`, disable rows with `enabled`, and add
+              synthetic columns with `create_if_missing`.
+            """
+        )
+
+
+def render_schema_editor_panel(schema_frame: pd.DataFrame, *, editor_key: str) -> pd.DataFrame:
+    """Renders the schema editor and returns the edited table."""
+
+    st.caption(
+        "Mark one enabled row as target_source. Add date and identifier "
+        "roles when using time-series or panel workflows. Missing-value "
+        "policies are fit on the training split and reused downstream."
+    )
+    edited_schema = st.data_editor(
+        schema_frame,
+        key=editor_key,
+        num_rows="dynamic",
+        use_container_width=True,
+        hide_index=True,
+        column_config=schema_editor_column_config(),
+    )
+    render_schema_guidance()
+    return edited_schema
 
 
 def main() -> None:
@@ -166,6 +342,35 @@ def main() -> None:
         return
 
     editor_key = build_editor_key(dataframe, data_source_label)
+    schema_frame_key = f"{editor_key}_schema_frame"
+    feature_dictionary_widget_key = f"{editor_key}_feature_dictionary_widget"
+    feature_dictionary_frame_key = f"{editor_key}_feature_dictionary_frame"
+    transformation_widget_key = f"{editor_key}_transformation_widget"
+    transformation_frame_key = f"{editor_key}_transformation_frame"
+    feature_review_widget_key = f"{editor_key}_feature_review_widget"
+    feature_review_frame_key = f"{editor_key}_feature_review_frame"
+    scorecard_override_widget_key = f"{editor_key}_scorecard_override_widget"
+    scorecard_override_frame_key = f"{editor_key}_scorecard_override_frame"
+    workspace_schema_frame = get_or_initialize_frame(
+        schema_frame_key,
+        lambda: build_column_editor_frame(dataframe),
+    )
+    workspace_feature_dictionary_frame = get_or_initialize_frame(
+        feature_dictionary_frame_key,
+        lambda: build_feature_dictionary_editor_frame(dataframe),
+    )
+    workspace_transformation_frame = get_or_initialize_frame(
+        transformation_frame_key,
+        build_transformation_editor_frame,
+    )
+    workspace_feature_review_frame = get_or_initialize_frame(
+        feature_review_frame_key,
+        build_feature_review_editor_frame,
+    )
+    workspace_scorecard_override_frame = get_or_initialize_frame(
+        scorecard_override_frame_key,
+        build_scorecard_override_editor_frame,
+    )
     categorical_like_columns = dataframe.select_dtypes(
         include=["object", "string", "category"]
     ).columns.tolist()
@@ -375,6 +580,62 @@ def main() -> None:
                     disabled=model_type != ModelType.SCORECARD_LOGISTIC_REGRESSION.value,
                 )
             )
+            scorecard_monotonicity = st.selectbox(
+                "Scorecard monotonicity",
+                options=[mode.value for mode in ScorecardMonotonicity],
+                index=[
+                    mode.value for mode in ScorecardMonotonicity
+                ].index(preset_inputs.scorecard.monotonicity.value),
+                format_func=lambda value: value.replace("_", " ").title(),
+                disabled=model_type != ModelType.SCORECARD_LOGISTIC_REGRESSION.value,
+            )
+            scorecard_min_bin_share = st.number_input(
+                "Scorecard min bin share",
+                min_value=0.01,
+                max_value=0.25,
+                value=float(preset_inputs.scorecard.min_bin_share),
+                step=0.01,
+                format="%.2f",
+                disabled=model_type != ModelType.SCORECARD_LOGISTIC_REGRESSION.value,
+            )
+            scorecard_base_score = int(
+                st.number_input(
+                    "Scorecard base score",
+                    min_value=300,
+                    max_value=900,
+                    value=int(preset_inputs.scorecard.base_score),
+                    step=10,
+                    disabled=model_type != ModelType.SCORECARD_LOGISTIC_REGRESSION.value,
+                )
+            )
+            scorecard_pdo = int(
+                st.number_input(
+                    "Scorecard PDO",
+                    min_value=10,
+                    max_value=100,
+                    value=int(preset_inputs.scorecard.points_to_double_odds),
+                    step=5,
+                    disabled=model_type != ModelType.SCORECARD_LOGISTIC_REGRESSION.value,
+                )
+            )
+            scorecard_odds_reference = st.number_input(
+                "Scorecard odds reference",
+                min_value=1.0,
+                max_value=100.0,
+                value=float(preset_inputs.scorecard.odds_reference),
+                step=1.0,
+                disabled=model_type != ModelType.SCORECARD_LOGISTIC_REGRESSION.value,
+            )
+            scorecard_reason_code_count = int(
+                st.number_input(
+                    "Reason code count",
+                    min_value=1,
+                    max_value=5,
+                    value=int(preset_inputs.scorecard.reason_code_count),
+                    step=1,
+                    disabled=model_type != ModelType.SCORECARD_LOGISTIC_REGRESSION.value,
+                )
+            )
             quantile_alpha = st.number_input(
                 "Quantile alpha",
                 min_value=0.05,
@@ -523,6 +784,132 @@ def main() -> None:
                     step=1,
                 )
             )
+            calibration_bin_count = int(
+                st.number_input(
+                    "Calibration bin count",
+                    min_value=2,
+                    max_value=20,
+                    value=preset_inputs.calibration.bin_count,
+                    step=1,
+                    disabled=target_mode != TargetMode.BINARY.value,
+                )
+            )
+            calibration_strategy = st.selectbox(
+                "Calibration binning strategy",
+                options=[strategy.value for strategy in CalibrationStrategy],
+                index=[
+                    strategy.value for strategy in CalibrationStrategy
+                ].index(preset_inputs.calibration.strategy.value),
+                format_func=lambda value: value.replace("_", " ").title(),
+                disabled=target_mode != TargetMode.BINARY.value,
+            )
+            calibration_platt_scaling = st.checkbox(
+                "Fit Platt scaling challenger",
+                value=preset_inputs.calibration.platt_scaling,
+                disabled=target_mode != TargetMode.BINARY.value,
+            )
+            calibration_isotonic = st.checkbox(
+                "Fit isotonic challenger",
+                value=preset_inputs.calibration.isotonic_calibration,
+                disabled=target_mode != TargetMode.BINARY.value,
+            )
+            calibration_ranking_metric = st.selectbox(
+                "Calibration ranking metric",
+                options=[metric.value for metric in CalibrationRankingMetric],
+                index=[
+                    metric.value for metric in CalibrationRankingMetric
+                ].index(preset_inputs.calibration.ranking_metric.value),
+                format_func=lambda value: value.replace("_", " ").title(),
+                disabled=target_mode != TargetMode.BINARY.value,
+            )
+            robustness_enabled = st.checkbox(
+                "Enable robustness testing",
+                value=preset_inputs.robustness.enabled,
+                help=(
+                    "Refit the current model on repeated train resamples and score a "
+                    "held-out split to test metric and coefficient stability."
+                ),
+            )
+            robustness_resample_count = int(
+                st.number_input(
+                    "Robustness resamples",
+                    min_value=2,
+                    max_value=50,
+                    value=int(preset_inputs.robustness.resample_count),
+                    step=1,
+                    disabled=not robustness_enabled,
+                )
+            )
+            robustness_sample_fraction = st.number_input(
+                "Robustness sample fraction",
+                min_value=0.2,
+                max_value=1.0,
+                value=float(preset_inputs.robustness.sample_fraction),
+                step=0.05,
+                format="%.2f",
+                disabled=not robustness_enabled,
+            )
+            robustness_sample_with_replacement = st.checkbox(
+                "Sample with replacement",
+                value=preset_inputs.robustness.sample_with_replacement,
+                disabled=not robustness_enabled,
+            )
+            robustness_evaluation_split = st.selectbox(
+                "Robustness evaluation split",
+                options=["train", "validation", "test"],
+                index=["train", "validation", "test"].index(
+                    preset_inputs.robustness.evaluation_split
+                ),
+                disabled=not robustness_enabled,
+            )
+            robustness_metric_stability = st.checkbox(
+                "Export metric-stability views",
+                value=preset_inputs.robustness.metric_stability,
+                disabled=not robustness_enabled,
+            )
+            robustness_coefficient_stability = st.checkbox(
+                "Export coefficient-stability views",
+                value=preset_inputs.robustness.coefficient_stability,
+                disabled=not robustness_enabled,
+            )
+            scorecard_workbench_enabled = st.checkbox(
+                "Enable scorecard workbench",
+                value=preset_inputs.scorecard_workbench.enabled,
+                disabled=model_type != ModelType.SCORECARD_LOGISTIC_REGRESSION.value,
+                help=(
+                    "Publishes a dedicated scorecard binning workspace with WoE, "
+                    "bad-rate, points, and reason-code views."
+                ),
+            )
+            scorecard_workbench_max_features = int(
+                st.number_input(
+                    "Scorecard workbench features",
+                    min_value=1,
+                    max_value=12,
+                    value=int(preset_inputs.scorecard_workbench.max_features),
+                    step=1,
+                    disabled=(
+                        model_type != ModelType.SCORECARD_LOGISTIC_REGRESSION.value
+                        or not scorecard_workbench_enabled
+                    ),
+                )
+            )
+            scorecard_workbench_score_distribution = st.checkbox(
+                "Include scorecard points distribution",
+                value=preset_inputs.scorecard_workbench.include_score_distribution,
+                disabled=(
+                    model_type != ModelType.SCORECARD_LOGISTIC_REGRESSION.value
+                    or not scorecard_workbench_enabled
+                ),
+            )
+            scorecard_workbench_reason_codes = st.checkbox(
+                "Include reason-code frequency view",
+                value=preset_inputs.scorecard_workbench.include_reason_code_analysis,
+                disabled=(
+                    model_type != ModelType.SCORECARD_LOGISTIC_REGRESSION.value
+                    or not scorecard_workbench_enabled
+                ),
+            )
             enabled_diagnostic_flags = {
                 field_name
                 for label, field_name in DIAGNOSTIC_SUITE_OPTIONS
@@ -563,6 +950,29 @@ def main() -> None:
                 default_segment_column=None
                 if default_segment_column == "(auto)"
                 else default_segment_column,
+            )
+            calibration_config = CalibrationConfig(
+                bin_count=calibration_bin_count,
+                strategy=CalibrationStrategy(calibration_strategy),
+                platt_scaling=calibration_platt_scaling,
+                isotonic_calibration=calibration_isotonic,
+                ranking_metric=CalibrationRankingMetric(calibration_ranking_metric),
+            )
+            robustness_config = RobustnessConfig(
+                enabled=robustness_enabled,
+                resample_count=int(robustness_resample_count),
+                sample_fraction=float(robustness_sample_fraction),
+                sample_with_replacement=robustness_sample_with_replacement,
+                evaluation_split=robustness_evaluation_split,
+                metric_stability=robustness_metric_stability,
+                coefficient_stability=robustness_coefficient_stability,
+                random_state=int(random_state),
+            )
+            scorecard_workbench_config = ScorecardWorkbenchConfig(
+                enabled=scorecard_workbench_enabled,
+                max_features=int(scorecard_workbench_max_features),
+                include_score_distribution=scorecard_workbench_score_distribution,
+                include_reason_code_analysis=scorecard_workbench_reason_codes,
             )
 
         with st.expander("Challengers & Policies", expanded=False):
@@ -665,6 +1075,233 @@ def main() -> None:
                 disabled=not feature_policy_enabled,
             )
 
+        with st.expander("Selection & Documentation", expanded=False):
+            variable_selection_enabled = st.checkbox(
+                "Enable variable selection",
+                value=preset_inputs.variable_selection.enabled,
+            )
+            variable_selection_max_features = int(
+                st.number_input(
+                    "Max selected features",
+                    min_value=3,
+                    max_value=50,
+                    value=int(preset_inputs.variable_selection.max_features or 15),
+                    step=1,
+                    disabled=not variable_selection_enabled,
+                )
+            )
+            variable_selection_min_univariate_score = st.number_input(
+                "Minimum univariate score",
+                min_value=0.0,
+                max_value=1.0,
+                value=float(preset_inputs.variable_selection.min_univariate_score or 0.0),
+                step=0.01,
+                format="%.2f",
+                disabled=not variable_selection_enabled,
+            )
+            variable_selection_correlation_threshold = st.number_input(
+                "Correlation threshold",
+                min_value=0.1,
+                max_value=1.0,
+                value=float(preset_inputs.variable_selection.correlation_threshold or 0.8),
+                step=0.05,
+                format="%.2f",
+                disabled=not variable_selection_enabled,
+            )
+            variable_selection_locked_include = st.text_input(
+                "Locked include features",
+                value=",".join(preset_inputs.variable_selection.locked_include_features),
+                disabled=not variable_selection_enabled,
+                help="Comma-separated features that must survive selection.",
+            )
+            variable_selection_locked_exclude = st.text_input(
+                "Locked exclude features",
+                value=",".join(preset_inputs.variable_selection.locked_exclude_features),
+                disabled=not variable_selection_enabled,
+                help="Comma-separated features that must be excluded before training.",
+            )
+            documentation_enabled = st.checkbox(
+                "Export documentation pack",
+                value=preset_inputs.documentation.enabled,
+            )
+            documentation_model_name = st.text_input(
+                "Model name",
+                value=preset_inputs.documentation.model_name,
+                disabled=not documentation_enabled,
+            )
+            documentation_model_owner = st.text_input(
+                "Model owner",
+                value=preset_inputs.documentation.model_owner,
+                disabled=not documentation_enabled,
+            )
+            documentation_business_purpose = st.text_area(
+                "Business purpose",
+                value=preset_inputs.documentation.business_purpose,
+                disabled=not documentation_enabled,
+                height=80,
+            )
+            documentation_portfolio_name = st.text_input(
+                "Portfolio name",
+                value=preset_inputs.documentation.portfolio_name,
+                disabled=not documentation_enabled,
+            )
+            documentation_segment_name = st.text_input(
+                "Segment name",
+                value=preset_inputs.documentation.segment_name,
+                disabled=not documentation_enabled,
+            )
+            documentation_horizon_definition = st.text_input(
+                "Horizon definition",
+                value=preset_inputs.documentation.horizon_definition,
+                disabled=not documentation_enabled,
+            )
+            documentation_target_definition = st.text_area(
+                "Target definition",
+                value=preset_inputs.documentation.target_definition,
+                disabled=not documentation_enabled,
+                height=80,
+            )
+            documentation_loss_definition = st.text_area(
+                "Loss definition",
+                value=preset_inputs.documentation.loss_definition,
+                disabled=not documentation_enabled,
+                height=80,
+            )
+            documentation_assumptions = st.text_area(
+                "Assumptions",
+                value="\n".join(preset_inputs.documentation.assumptions),
+                disabled=not documentation_enabled,
+                height=90,
+            )
+            documentation_exclusions = st.text_area(
+                "Exclusions",
+                value="\n".join(preset_inputs.documentation.exclusions),
+                disabled=not documentation_enabled,
+                height=90,
+            )
+            documentation_limitations = st.text_area(
+                "Limitations",
+                value="\n".join(preset_inputs.documentation.limitations),
+                disabled=not documentation_enabled,
+                height=90,
+            )
+            documentation_reviewer_notes = st.text_area(
+                "Reviewer notes",
+                value=preset_inputs.documentation.reviewer_notes,
+                disabled=not documentation_enabled,
+                height=90,
+            )
+
+        with st.expander("Governance & Review", expanded=False):
+            suitability_checks_enabled = st.checkbox(
+                "Enable suitability checks",
+                value=True,
+                help=(
+                    "Runs pre-fit assumption checks such as class balance, events per "
+                    "feature, category dominance, and panel/date integrity."
+                ),
+            )
+            suitability_error_on_failure = st.checkbox(
+                "Fail run on suitability failure",
+                value=False,
+                disabled=not suitability_checks_enabled,
+            )
+            suitability_min_events_per_feature = st.number_input(
+                "Min events per feature",
+                min_value=1.0,
+                max_value=100.0,
+                value=10.0,
+                step=1.0,
+                disabled=not suitability_checks_enabled
+                or TargetMode(target_mode) != TargetMode.BINARY,
+            )
+            suitability_min_class_rate = st.number_input(
+                "Min class rate",
+                min_value=0.001,
+                max_value=0.25,
+                value=0.01,
+                step=0.001,
+                format="%.3f",
+                disabled=not suitability_checks_enabled
+                or TargetMode(target_mode) != TargetMode.BINARY,
+            )
+            suitability_max_class_rate = st.number_input(
+                "Max class rate",
+                min_value=0.25,
+                max_value=0.999,
+                value=0.99,
+                step=0.001,
+                format="%.3f",
+                disabled=not suitability_checks_enabled
+                or TargetMode(target_mode) != TargetMode.BINARY,
+            )
+            suitability_max_dominant_category_share = st.number_input(
+                "Max dominant category share",
+                min_value=0.50,
+                max_value=0.999,
+                value=0.98,
+                step=0.01,
+                format="%.2f",
+                disabled=not suitability_checks_enabled,
+            )
+            manual_review_enabled = st.checkbox(
+                "Enable manual review workflow",
+                value=False,
+                help=(
+                    "Allows human approve/reject decisions on features and manual "
+                    "scorecard bin overrides."
+                ),
+            )
+            manual_review_required = st.checkbox(
+                "Require review decisions for all screened features",
+                value=False,
+                disabled=not manual_review_enabled,
+            )
+            manual_reviewer_name = st.text_input(
+                "Reviewer name",
+                value="",
+                disabled=not manual_review_enabled,
+            )
+            st.caption(
+                "Manual feature review decisions apply after screening. Scorecard bin "
+                "overrides are only used by the scorecard model."
+            )
+            feature_review_rows = st.data_editor(
+                workspace_feature_review_frame,
+                key=feature_review_widget_key,
+                num_rows="dynamic",
+                use_container_width=True,
+                hide_index=True,
+                disabled=not manual_review_enabled,
+                column_config={
+                    "feature_name": st.column_config.TextColumn("Feature"),
+                    "decision": st.column_config.SelectboxColumn(
+                        "Decision",
+                        options=SUPPORTED_FEATURE_REVIEW_DECISIONS,
+                    ),
+                    "rationale": st.column_config.TextColumn("Rationale"),
+                },
+            )
+            scorecard_override_rows = st.data_editor(
+                workspace_scorecard_override_frame,
+                key=scorecard_override_widget_key,
+                num_rows="dynamic",
+                use_container_width=True,
+                hide_index=True,
+                disabled=not manual_review_enabled
+                or model_type != ModelType.SCORECARD_LOGISTIC_REGRESSION.value,
+                column_config={
+                    "feature_name": st.column_config.TextColumn("Feature"),
+                    "bin_edges": st.column_config.TextColumn(
+                        "Bin edges",
+                        help="Comma-separated internal bin edges such as 0.2, 0.4, 0.65.",
+                    ),
+                    "rationale": st.column_config.TextColumn("Rationale"),
+                },
+            )
+            store_workspace_frame(feature_review_frame_key, feature_review_rows)
+            store_workspace_frame(scorecard_override_frame_key, scorecard_override_rows)
+
         with st.expander("Explainability & Scenarios", expanded=False):
             explainability_enabled = st.checkbox(
                 "Enable explainability outputs",
@@ -749,6 +1386,21 @@ def main() -> None:
                 "Keep unconfigured columns",
                 value=True,
             )
+            reproducibility_enabled = st.checkbox(
+                "Export reproducibility manifest",
+                value=True,
+            )
+            reproducibility_capture_git = st.checkbox(
+                "Capture git commit metadata",
+                value=True,
+                disabled=not reproducibility_enabled,
+            )
+            reproducibility_packages_text = st.text_input(
+                "Tracked package names",
+                value="quant-pd-framework,pandas,numpy,scikit-learn,statsmodels,xgboost,plotly,streamlit,joblib,openpyxl",
+                disabled=not reproducibility_enabled,
+                help="Comma-separated packages recorded in the reproducibility manifest.",
+            )
             output_root = st.text_input("Artifact root", value="artifacts")
 
         run_clicked = st.button(
@@ -757,14 +1409,31 @@ def main() -> None:
             use_container_width=True,
         )
 
-    edited_schema = render_builder_workspace(
+    workspace_frames = render_builder_workspace(
         dataframe=dataframe,
         data_source_label=data_source_label,
         editor_key=editor_key,
+        schema_state_key=schema_frame_key,
+        feature_dictionary_widget_key=feature_dictionary_widget_key,
+        feature_dictionary_state_key=feature_dictionary_frame_key,
+        transformation_widget_key=transformation_widget_key,
+        transformation_state_key=transformation_frame_key,
+        feature_review_state_key=feature_review_frame_key,
+        scorecard_override_state_key=scorecard_override_frame_key,
+        schema_frame=workspace_schema_frame,
+        feature_dictionary_frame=workspace_feature_dictionary_frame,
+        transformation_frame=workspace_transformation_frame,
+        feature_review_frame=workspace_feature_review_frame,
+        scorecard_override_frame=workspace_scorecard_override_frame,
     )
 
     if run_clicked:
         try:
+            edited_schema = workspace_frames["schema"]
+            feature_dictionary_frame = workspace_frames["feature_dictionary"]
+            transformation_frame = workspace_frames["transformations"]
+            feature_review_frame = feature_review_rows.copy(deep=True)
+            scorecard_override_frame = scorecard_override_rows.copy(deep=True)
             tobit_right_censoring = (
                 float(tobit_right_censoring_text) if tobit_right_censoring_text.strip() else None
             )
@@ -834,6 +1503,42 @@ def main() -> None:
                     monotonic_features=parse_expected_signs(policy_monotonic_features),
                     error_on_violation=policy_error_on_violation,
                 ),
+                feature_dictionary=parse_feature_dictionary_frame(feature_dictionary_frame),
+                transformations=parse_transformation_frame(transformation_frame),
+                manual_review=(
+                    parse_manual_review_frames(
+                        feature_review_frame,
+                        scorecard_override_frame,
+                        reviewer_name=manual_reviewer_name,
+                        require_review_complete=manual_review_required,
+                    )
+                    if manual_review_enabled
+                    else parse_manual_review_frames(
+                        pd.DataFrame(columns=FEATURE_REVIEW_COLUMNS),
+                        pd.DataFrame(columns=SCORECARD_OVERRIDE_COLUMNS),
+                    )
+                ),
+                suitability_checks=SuitabilityCheckConfig(
+                    enabled=suitability_checks_enabled,
+                    min_events_per_feature=float(suitability_min_events_per_feature)
+                    if suitability_checks_enabled
+                    and TargetMode(target_mode) == TargetMode.BINARY
+                    else None,
+                    min_class_rate=float(suitability_min_class_rate)
+                    if suitability_checks_enabled
+                    and TargetMode(target_mode) == TargetMode.BINARY
+                    else None,
+                    max_class_rate=float(suitability_max_class_rate)
+                    if suitability_checks_enabled
+                    and TargetMode(target_mode) == TargetMode.BINARY
+                    else None,
+                    max_dominant_category_share=float(
+                        suitability_max_dominant_category_share
+                    )
+                    if suitability_checks_enabled
+                    else None,
+                    error_on_failure=suitability_error_on_failure,
+                ),
                 explainability=ExplainabilityConfig(
                     enabled=explainability_enabled,
                     permutation_importance=permutation_importance_enabled,
@@ -843,8 +1548,65 @@ def main() -> None:
                     grid_points=int(explainability_grid_points),
                     sample_size=int(explainability_sample_size),
                 ),
+                calibration=calibration_config,
+                scorecard=ScorecardConfig(
+                    monotonicity=ScorecardMonotonicity(scorecard_monotonicity),
+                    min_bin_share=float(scorecard_min_bin_share),
+                    base_score=int(scorecard_base_score),
+                    points_to_double_odds=int(scorecard_pdo),
+                    odds_reference=float(scorecard_odds_reference),
+                    reason_code_count=int(scorecard_reason_code_count),
+                ),
+                scorecard_workbench=scorecard_workbench_config,
+                variable_selection=VariableSelectionConfig(
+                    enabled=variable_selection_enabled,
+                    max_features=int(variable_selection_max_features)
+                    if variable_selection_enabled
+                    else None,
+                    min_univariate_score=float(variable_selection_min_univariate_score)
+                    if variable_selection_enabled
+                    else None,
+                    correlation_threshold=float(variable_selection_correlation_threshold)
+                    if variable_selection_enabled
+                    else None,
+                    locked_include_features=[
+                        value.strip()
+                        for value in variable_selection_locked_include.split(",")
+                        if value.strip()
+                    ],
+                    locked_exclude_features=[
+                        value.strip()
+                        for value in variable_selection_locked_exclude.split(",")
+                        if value.strip()
+                    ],
+                ),
+                documentation=DocumentationConfig(
+                    enabled=documentation_enabled,
+                    model_name=documentation_model_name.strip() or "Quant Studio Model",
+                    model_owner=documentation_model_owner.strip(),
+                    business_purpose=documentation_business_purpose.strip(),
+                    portfolio_name=documentation_portfolio_name.strip(),
+                    segment_name=documentation_segment_name.strip(),
+                    horizon_definition=documentation_horizon_definition.strip(),
+                    target_definition=documentation_target_definition.strip(),
+                    loss_definition=documentation_loss_definition.strip(),
+                    assumptions=parse_multiline_list(documentation_assumptions),
+                    exclusions=parse_multiline_list(documentation_exclusions),
+                    limitations=parse_multiline_list(documentation_limitations),
+                    reviewer_notes=documentation_reviewer_notes.strip(),
+                ),
                 scenario_testing=scenario_testing_config,
                 diagnostics=diagnostic_config,
+                robustness=robustness_config,
+                reproducibility=ReproducibilityConfig(
+                    enabled=reproducibility_enabled,
+                    capture_git_metadata=reproducibility_capture_git,
+                    package_names=[
+                        value.strip()
+                        for value in reproducibility_packages_text.split(",")
+                        if value.strip()
+                    ],
+                ),
                 data_structure=DataStructure(data_structure),
                 train_size=float(train_size),
                 validation_size=float(validation_size),
@@ -1014,23 +1776,43 @@ def render_builder_workspace(
     dataframe: pd.DataFrame,
     data_source_label: str,
     editor_key: str,
-) -> pd.DataFrame:
+    schema_state_key: str,
+    feature_dictionary_widget_key: str,
+    feature_dictionary_state_key: str,
+    transformation_widget_key: str,
+    transformation_state_key: str,
+    feature_review_state_key: str,
+    scorecard_override_state_key: str,
+    schema_frame: pd.DataFrame,
+    feature_dictionary_frame: pd.DataFrame,
+    transformation_frame: pd.DataFrame,
+    feature_review_frame: pd.DataFrame,
+    scorecard_override_frame: pd.DataFrame,
+) -> dict[str, pd.DataFrame]:
     st.markdown(
         """
         <div class="section-intro">
           <span class="section-kicker">Build Workspace</span>
           <h2>Prepare the dataset and schema before execution</h2>
             <p>
-              Use the preview tab to inspect the incoming data and the designer tab
-              to assign roles, data types, missing-value rules, renames, and
-              synthetic columns.
+              Use the grouped tabs to inspect the input, define schema rules,
+              document features, stage governed transformations, and exchange
+              the review workbook offline.
             </p>
         </div>
         """,
         unsafe_allow_html=True,
     )
 
-    preview_tab, schema_tab = st.tabs(["Dataset Preview", "Column Designer"])
+    preview_tab, schema_tab, dictionary_tab, transformation_tab, template_tab = st.tabs(
+        [
+            "Dataset Preview",
+            "Column Designer",
+            "Feature Dictionary",
+            "Transformations",
+            "Template Workbook",
+        ]
+    )
 
     with preview_tab:
         render_dataset_overview(dataframe, data_source_label)
@@ -1038,56 +1820,143 @@ def render_builder_workspace(
         st.dataframe(dataframe.head(50), use_container_width=True, hide_index=True)
 
     with schema_tab:
+        edited_schema = render_schema_editor_panel(schema_frame, editor_key=editor_key)
+
+    with dictionary_tab:
         st.caption(
-            "Mark one enabled row as target_source. Add date and identifier "
-            "roles when using time-series or panel workflows. Missing-value "
-            "policies are fit on the training split and reused downstream."
+            "Document the modeled feature set with business definitions, source lineage, "
+            "expected signs, and inclusion rationale."
         )
-        edited_schema = st.data_editor(
-            build_column_editor_frame(dataframe),
-            key=editor_key,
+        edited_feature_dictionary = st.data_editor(
+            feature_dictionary_frame,
+            key=feature_dictionary_widget_key,
             num_rows="dynamic",
             use_container_width=True,
             hide_index=True,
             column_config={
                 "enabled": st.column_config.CheckboxColumn("Enabled"),
-                "source_name": st.column_config.TextColumn("Input column"),
-                "name": st.column_config.TextColumn("Output column"),
-                "role": st.column_config.SelectboxColumn(
-                    "Role",
-                    options=[role.value for role in ColumnRole],
-                ),
-                "dtype": st.column_config.SelectboxColumn("Dtype", options=SUPPORTED_DTYPES),
-                "missing_value_policy": st.column_config.SelectboxColumn(
-                    "Missing policy",
-                    options=SUPPORTED_MISSING_VALUE_POLICIES,
-                    help=(
-                        "Per-column missing-value treatment. "
-                        "`inherit_default` uses median for numeric features and "
-                        "mode for categorical features."
-                    ),
-                ),
-                "missing_value_fill_value": st.column_config.TextColumn(
-                    "Impute fill value",
-                    help="Used only when the missing policy is `constant`.",
-                ),
-                "create_if_missing": st.column_config.CheckboxColumn("Create if missing"),
-                "default_value": st.column_config.TextColumn("Default value"),
-                "keep_source": st.column_config.CheckboxColumn("Keep input column"),
+                "feature_name": st.column_config.TextColumn("Feature"),
+                "business_name": st.column_config.TextColumn("Business name"),
+                "definition": st.column_config.TextColumn("Definition"),
+                "source_system": st.column_config.TextColumn("Source system"),
+                "unit": st.column_config.TextColumn("Unit"),
+                "allowed_range": st.column_config.TextColumn("Allowed range"),
+                "missingness_meaning": st.column_config.TextColumn("Missingness meaning"),
+                "expected_sign": st.column_config.TextColumn("Expected sign"),
+                "inclusion_rationale": st.column_config.TextColumn("Inclusion rationale"),
+                "notes": st.column_config.TextColumn("Notes"),
             },
         )
-        with st.expander("Schema Guidance", expanded=False):
+
+    with transformation_tab:
+        st.caption(
+            "Governed transformations are fit on the training split and then replayed on "
+            "validation, test, and scored data."
+        )
+        edited_transformations = st.data_editor(
+            transformation_frame,
+            key=transformation_widget_key,
+            num_rows="dynamic",
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "enabled": st.column_config.CheckboxColumn("Enabled"),
+                "transform_type": st.column_config.SelectboxColumn(
+                    "Type",
+                    options=SUPPORTED_TRANSFORMATION_TYPES,
+                ),
+                "source_feature": st.column_config.TextColumn("Source feature"),
+                "secondary_feature": st.column_config.TextColumn("Secondary feature"),
+                "output_feature": st.column_config.TextColumn("Output feature"),
+                "lower_quantile": st.column_config.NumberColumn(
+                    "Lower q",
+                    min_value=0.0,
+                    max_value=1.0,
+                    step=0.01,
+                ),
+                "upper_quantile": st.column_config.NumberColumn(
+                    "Upper q",
+                    min_value=0.0,
+                    max_value=1.0,
+                    step=0.01,
+                ),
+                "bin_edges": st.column_config.TextColumn(
+                    "Bin edges",
+                    help="Comma-separated internal edges for manual_bins transforms.",
+                ),
+                "notes": st.column_config.TextColumn("Notes"),
+            },
+        )
+        with st.expander("Transformation Guidance", expanded=False):
             st.markdown(
                 """
-                - Mark exactly one enabled row as `target_source`.
-                - Mark one enabled row as `date` for time-series or panel runs.
-                - Mark one enabled row as `identifier` for panel runs.
-                - Rename columns in `name`, disable rows with `enabled`, and add
-                  synthetic columns with `create_if_missing`.
+                - `winsorize` clips a numeric feature using train-fit quantiles.
+                - `log1p` applies a log transform to numeric values greater than `-1`.
+                - `ratio` creates `source / secondary`.
+                - `interaction` creates `source * secondary`.
+                - `manual_bins` creates an ordered categorical feature using your internal edges.
                 """
             )
 
-    return edited_schema
+    with template_tab:
+        st.caption(
+            "Download the editable workbook for offline review, then upload a completed "
+            "version to repopulate the workspace tables."
+        )
+        template_payload = build_template_workbook_bytes(
+            schema_frame=edited_schema,
+            feature_dictionary_frame=edited_feature_dictionary,
+            transformation_frame=edited_transformations,
+            feature_review_frame=feature_review_frame,
+            scorecard_override_frame=scorecard_override_frame,
+        )
+        st.download_button(
+            "Download Review Workbook",
+            data=template_payload,
+            file_name="quant_studio_review_workbook.xlsx",
+            mime=(
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            ),
+            use_container_width=True,
+        )
+        uploaded_template = st.file_uploader(
+            "Upload completed workbook",
+            type=["xlsx"],
+            key=f"{editor_key}_template_workbook_upload",
+        )
+        if uploaded_template is not None:
+            template_bytes = uploaded_template.getvalue()
+            upload_hash = hashlib.sha256(template_bytes).hexdigest()
+            upload_state_key = f"{editor_key}_template_workbook_hash"
+            if st.session_state.get(upload_state_key) != upload_hash:
+                workbook_frames = load_template_workbook(BytesIO(template_bytes))
+                st.session_state[schema_state_key] = workbook_frames["schema"]
+                st.session_state[feature_dictionary_state_key] = workbook_frames[
+                    "feature_dictionary"
+                ]
+                st.session_state[transformation_state_key] = workbook_frames[
+                    "transformations"
+                ]
+                st.session_state[feature_review_state_key] = workbook_frames["feature_review"]
+                st.session_state[scorecard_override_state_key] = workbook_frames[
+                    "scorecard_overrides"
+                ]
+                st.session_state[upload_state_key] = upload_hash
+                st.rerun()
+
+    store_workspace_frame(schema_state_key, edited_schema)
+    store_workspace_frame(feature_dictionary_state_key, edited_feature_dictionary)
+    store_workspace_frame(transformation_state_key, edited_transformations)
+    store_workspace_frame(feature_review_state_key, feature_review_frame)
+    store_workspace_frame(scorecard_override_state_key, scorecard_override_frame)
+
+    return {
+        "schema": edited_schema,
+        "feature_dictionary": edited_feature_dictionary,
+        "transformations": edited_transformations,
+        "feature_review": feature_review_frame,
+        "scorecard_overrides": scorecard_override_frame,
+    }
 
 
 def render_run_results(snapshot: dict[str, Any]) -> None:
@@ -1131,6 +2000,7 @@ def render_run_results(snapshot: dict[str, Any]) -> None:
                 snapshot=snapshot,
                 section_id=section_id,
                 section_payload=asset_catalog[section_id],
+                filtered_predictions=filtered_predictions,
                 filter_state=filter_state,
             )
 
@@ -1607,6 +2477,7 @@ def render_section_panel(
     snapshot: dict[str, Any],
     section_id: str,
     section_payload: dict[str, Any],
+    filtered_predictions: pd.DataFrame,
     filter_state: dict[str, Any],
 ) -> None:
     st.markdown(
@@ -1620,6 +2491,14 @@ def render_section_panel(
     )
     display_surfaces = set(filter_state["display_surfaces"])
     view_mode = filter_state["view_mode"]
+
+    if section_id == "scorecard_workbench":
+        render_scorecard_workbench_section(
+            snapshot=snapshot,
+            filtered_predictions=filtered_predictions,
+            filter_state=filter_state,
+        )
+        return
 
     figure_descriptors = choose_descriptors_for_view(section_payload["figures"], view_mode)
     table_descriptors = choose_descriptors_for_view(section_payload["tables"], view_mode)
@@ -1693,6 +2572,321 @@ def filter_table_for_display(
     return filtered
 
 
+def render_scorecard_workbench_section(
+    *,
+    snapshot: dict[str, Any],
+    filtered_predictions: pd.DataFrame,
+    filter_state: dict[str, Any],
+) -> None:
+    diagnostics_tables = snapshot["diagnostics_tables"]
+    feature_summary = diagnostics_tables.get("scorecard_feature_summary", pd.DataFrame())
+    woe_table = diagnostics_tables.get("scorecard_woe_table", pd.DataFrame())
+    points_table = diagnostics_tables.get("scorecard_points_table", pd.DataFrame())
+    scaling_summary = diagnostics_tables.get("scorecard_scaling_summary", pd.DataFrame())
+    if feature_summary.empty or woe_table.empty or points_table.empty:
+        st.info("Scorecard workbench assets are not available for this run.")
+        return
+
+    scaling_map = {
+        str(row["metric"]): row["value"]
+        for _, row in scaling_summary.iterrows()
+        if "metric" in scaling_summary.columns and "value" in scaling_summary.columns
+    }
+    overview_cards = [
+        {"label": "Profiled Features", "value": f"{len(feature_summary):,}"},
+        {
+            "label": "Average Bins",
+            "value": format_metric_value(feature_summary["bin_count"].mean()),
+        },
+        {
+            "label": "Manual Overrides",
+            "value": f"{int(feature_summary['manual_override_applied'].sum()):,}",
+        },
+        {
+            "label": "Base Score",
+            "value": format_metric_value(scaling_map.get("base_score")),
+        },
+        {
+            "label": "PDO",
+            "value": format_metric_value(scaling_map.get("points_to_double_odds")),
+        },
+    ]
+    render_metric_strip(overview_cards, compact=True)
+
+    feature_options = feature_summary["feature_name"].astype(str).tolist()
+    default_feature = (
+        filter_state["selected_feature"]
+        if filter_state["selected_feature"] in feature_options
+        else feature_options[0]
+    )
+    selected_feature = st.selectbox(
+        "Scorecard feature",
+        options=feature_options,
+        index=feature_options.index(default_feature),
+        key=f"{snapshot['run_id']}_scorecard_workbench_feature",
+    )
+
+    selected_summary = (
+        feature_summary.loc[feature_summary["feature_name"] == selected_feature]
+        .head(1)
+        .reset_index(drop=True)
+    )
+    if not selected_summary.empty:
+        summary_row = selected_summary.iloc[0]
+        feature_cards = [
+            {
+                "label": "Information Value",
+                "value": format_metric_value(summary_row["information_value"]),
+            },
+            {
+                "label": "Points Span",
+                "value": format_metric_value(summary_row["points_span"]),
+            },
+            {
+                "label": "Largest Bin Share",
+                "value": format_metric_value(summary_row["largest_bin_share"]),
+            },
+            {
+                "label": "Bad-Rate Trend",
+                "value": str(summary_row["bad_rate_trend"]).replace("_", " ").title(),
+            },
+        ]
+        render_metric_strip(feature_cards, compact=True)
+
+    display_surfaces = set(filter_state["display_surfaces"])
+    if "Charts" in display_surfaces:
+        overview_figures: list[tuple[str, go.Figure]] = []
+        if "scorecard_feature_iv" in snapshot["visualizations"]:
+            overview_figures.append(
+                ("Feature Information Value", snapshot["visualizations"]["scorecard_feature_iv"])
+            )
+        score_distribution = build_scorecard_distribution_figure(
+            snapshot=snapshot,
+            filtered_predictions=filtered_predictions,
+        )
+        if score_distribution is not None:
+            overview_figures.append(("Points Distribution", score_distribution))
+        reason_code_chart = build_scorecard_reason_code_chart(filtered_predictions)
+        if reason_code_chart is not None:
+            overview_figures.append(("Reason Code Frequency", reason_code_chart))
+
+        if overview_figures:
+            columns = st.columns(min(2, len(overview_figures)))
+            for index, (title, figure) in enumerate(overview_figures):
+                with columns[index % len(columns)]:
+                    st.markdown(f"#### {title}")
+                    render_plotly_figure(
+                        figure,
+                        key=build_plotly_key(
+                            snapshot["run_id"],
+                            "scorecard_workbench",
+                            "overview",
+                            title,
+                        ),
+                    )
+
+        selected_woe = (
+            woe_table.loc[woe_table["feature_name"] == selected_feature]
+            .copy(deep=True)
+            .sort_values("bucket_rank")
+        )
+        selected_points = (
+            points_table.loc[points_table["feature_name"] == selected_feature]
+            .copy(deep=True)
+            .sort_values("bucket_rank")
+        )
+        feature_figures = build_scorecard_feature_figures(
+            feature_name=selected_feature,
+            woe_table=selected_woe,
+            points_table=selected_points,
+        )
+        feature_columns = st.columns(3)
+        for index, (title, figure) in enumerate(feature_figures):
+            with feature_columns[index % len(feature_columns)]:
+                st.markdown(f"#### {title}")
+                render_plotly_figure(
+                    figure,
+                    key=build_plotly_key(
+                        snapshot["run_id"],
+                        "scorecard_workbench",
+                        selected_feature,
+                        title,
+                    ),
+                )
+
+    if "Tables" in display_surfaces:
+        st.markdown("### Reference Tables")
+        selected_woe = (
+            woe_table.loc[woe_table["feature_name"] == selected_feature]
+            .copy(deep=True)
+            .sort_values("bucket_rank")
+        )
+        selected_points = (
+            points_table.loc[points_table["feature_name"] == selected_feature]
+            .copy(deep=True)
+            .sort_values("bucket_rank")
+        )
+        reason_code_table = build_scorecard_reason_code_table(filtered_predictions)
+
+        table_payloads = [
+            ("Selected Feature Summary", selected_summary),
+            ("WoE Detail", selected_woe),
+            ("Points Detail", selected_points),
+            ("Scaling Summary", scaling_summary),
+        ]
+        if not reason_code_table.empty:
+            table_payloads.append(("Reason Code Frequency", reason_code_table.head(25)))
+
+        for title, table in table_payloads:
+            if table.empty:
+                continue
+            with st.expander(title, expanded=title == "Selected Feature Summary"):
+                st.dataframe(
+                    prepare_table_for_display(table),
+                    use_container_width=True,
+                    hide_index=True,
+                )
+
+
+def build_scorecard_distribution_figure(
+    *,
+    snapshot: dict[str, Any],
+    filtered_predictions: pd.DataFrame,
+) -> go.Figure | None:
+    if "scorecard_points" not in filtered_predictions.columns or filtered_predictions.empty:
+        return None
+    histogram_frame = sample_frame(filtered_predictions.copy(deep=True), 25000)
+    color_column = None
+    if snapshot["labels_available"] and snapshot["target_column"] in histogram_frame.columns:
+        color_column = snapshot["target_column"]
+        histogram_frame[color_column] = histogram_frame[color_column].astype(str)
+    elif "split" in histogram_frame.columns:
+        color_column = "split"
+    figure = px.histogram(
+        histogram_frame,
+        x="scorecard_points",
+        color=color_column,
+        nbins=40,
+        title="Scorecard Points Distribution",
+        labels={"scorecard_points": "Scorecard Points"},
+    )
+    return apply_fintech_figure_theme(figure, title="Scorecard Points Distribution")
+
+
+def build_scorecard_reason_code_table(filtered_predictions: pd.DataFrame) -> pd.DataFrame:
+    reason_columns = sorted(
+        column for column in filtered_predictions.columns if column.startswith("reason_code_")
+    )
+    if not reason_columns or filtered_predictions.empty:
+        return pd.DataFrame()
+
+    rows: list[dict[str, Any]] = []
+    denominator = max(len(filtered_predictions), 1)
+    for reason_column in reason_columns:
+        rank_text = reason_column.rsplit("_", 1)[-1]
+        rank_value = int(rank_text) if rank_text.isdigit() else reason_column
+        counts = (
+            filtered_predictions[reason_column]
+            .replace("", pd.NA)
+            .dropna()
+            .astype(str)
+            .value_counts()
+        )
+        for feature_name, count in counts.items():
+            rows.append(
+                {
+                    "reason_code_rank": rank_value,
+                    "feature_name": feature_name,
+                    "count": int(count),
+                    "share": float(count / denominator),
+                }
+            )
+    if not rows:
+        return pd.DataFrame()
+    return (
+        pd.DataFrame(rows)
+        .sort_values(["count", "feature_name"], ascending=[False, True])
+        .reset_index(drop=True)
+    )
+
+
+def build_scorecard_reason_code_chart(filtered_predictions: pd.DataFrame) -> go.Figure | None:
+    reason_code_table = build_scorecard_reason_code_table(filtered_predictions)
+    if reason_code_table.empty:
+        return None
+    chart_frame = reason_code_table.head(12)
+    figure = px.bar(
+        chart_frame,
+        x="feature_name",
+        y="count",
+        color="reason_code_rank",
+        barmode="group",
+        title="Reason Code Frequency",
+        labels={
+            "feature_name": "Feature",
+            "count": "Count",
+            "reason_code_rank": "Reason Code Slot",
+        },
+    )
+    return apply_fintech_figure_theme(figure, title="Reason Code Frequency")
+
+
+def build_scorecard_feature_figures(
+    *,
+    feature_name: str,
+    woe_table: pd.DataFrame,
+    points_table: pd.DataFrame,
+) -> list[tuple[str, go.Figure]]:
+    if woe_table.empty or points_table.empty:
+        return []
+    figures = [
+        (
+            "Bad Rate by Bucket",
+            apply_fintech_figure_theme(
+                px.bar(
+                    woe_table,
+                    x="bucket_label",
+                    y="bad_rate",
+                    title=f"{feature_name}: bad rate by bucket",
+                    labels={"bucket_label": "Bucket", "bad_rate": "Bad Rate"},
+                ),
+                title=f"{feature_name}: bad rate by bucket",
+            ),
+        ),
+        (
+            "WoE by Bucket",
+            apply_fintech_figure_theme(
+                px.line(
+                    woe_table,
+                    x="bucket_label",
+                    y="woe",
+                    markers=True,
+                    title=f"{feature_name}: WoE by bucket",
+                    labels={"bucket_label": "Bucket", "woe": "WoE"},
+                ),
+                title=f"{feature_name}: WoE by bucket",
+            ),
+        ),
+        (
+            "Points by Bucket",
+            apply_fintech_figure_theme(
+                px.bar(
+                    points_table,
+                    x="bucket_label",
+                    y="partial_score_points",
+                    title=f"{feature_name}: points by bucket",
+                    labels={
+                        "bucket_label": "Bucket",
+                        "partial_score_points": "Partial Score",
+                    },
+                ),
+                title=f"{feature_name}: points by bucket",
+            ),
+        ),
+    ]
+    return figures
+
+
 def render_governance_tab(snapshot: dict[str, Any], filtered_predictions: pd.DataFrame) -> None:
     left_column, right_column = st.columns([1.1, 0.9], gap="large")
 
@@ -1733,7 +2927,15 @@ def render_governance_tab(snapshot: dict[str, Any], filtered_predictions: pd.Dat
             "run_report.md",
             "text/markdown",
         )
-        for artifact_name in ["interactive_report", "workbook", "predictions"]:
+        for artifact_name in [
+            "interactive_report",
+            "workbook",
+            "predictions",
+            "documentation_pack",
+            "validation_pack",
+            "reproducibility_manifest",
+            "configuration_template",
+        ]:
             artifact_path = snapshot["artifacts"].get(artifact_name)
             if artifact_path and Path(artifact_path).exists():
                 st.download_button(

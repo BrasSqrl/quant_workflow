@@ -1,6 +1,6 @@
 # Engineering Rubric
 
-This rubric defines the standard the Quant PD Framework should meet. It is intentionally opinionated: the goal is not just working code, but maintainable, auditable, production-grade code for quantitative model workflows.
+This rubric defines the standard Quant Studio should meet. It is intentionally opinionated: the goal is not just working code, but maintainable, auditable, production-grade code for quantitative model workflows.
 
 ## 1. Architecture
 

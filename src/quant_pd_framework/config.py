@@ -20,6 +20,7 @@ class ModelType(StrEnum):
     """Supported model families exposed through the framework and GUI."""
 
     LOGISTIC_REGRESSION = "logistic_regression"
+    DISCRETE_TIME_HAZARD_MODEL = "discrete_time_hazard_model"
     ELASTIC_NET_LOGISTIC_REGRESSION = "elastic_net_logistic_regression"
     SCORECARD_LOGISTIC_REGRESSION = "scorecard_logistic_regression"
     PROBIT_REGRESSION = "probit_regression"
@@ -63,6 +64,30 @@ class ScenarioShockOperation(StrEnum):
     SET = "set"
 
 
+class CalibrationStrategy(StrEnum):
+    """Supported binning strategies for calibration diagnostics."""
+
+    QUANTILE = "quantile"
+    UNIFORM = "uniform"
+
+
+class CalibrationRankingMetric(StrEnum):
+    """Supported ranking metrics for choosing a calibration method."""
+
+    BRIER_SCORE = "brier_score"
+    LOG_LOSS = "log_loss"
+    EXPECTED_CALIBRATION_ERROR = "expected_calibration_error"
+
+
+class ScorecardMonotonicity(StrEnum):
+    """Supported monotonic binning directions for scorecard development."""
+
+    NONE = "none"
+    AUTO = "auto"
+    INCREASING = "increasing"
+    DECREASING = "decreasing"
+
+
 class ColumnRole(StrEnum):
     """Roles control how each column is treated across the pipeline."""
 
@@ -84,6 +109,25 @@ class MissingValuePolicy(StrEnum):
     CONSTANT = "constant"
     FORWARD_FILL = "forward_fill"
     BACKWARD_FILL = "backward_fill"
+
+
+class TransformationType(StrEnum):
+    """Supported governed feature-transformation types."""
+
+    WINSORIZE = "winsorize"
+    LOG1P = "log1p"
+    RATIO = "ratio"
+    INTERACTION = "interaction"
+    MANUAL_BINS = "manual_bins"
+
+
+class FeatureReviewDecisionType(StrEnum):
+    """Supported manual-review decisions for feature selection."""
+
+    APPROVE = "approve"
+    REJECT = "reject"
+    FORCE_INCLUDE = "force_include"
+    FORCE_EXCLUDE = "force_exclude"
 
 
 @dataclass(slots=True)
@@ -304,6 +348,7 @@ class ModelConfig:
             raise ValueError(f"{self.model_type.value} is only supported for continuous targets.")
         if target_mode == TargetMode.CONTINUOUS and self.model_type in {
             ModelType.LOGISTIC_REGRESSION,
+            ModelType.DISCRETE_TIME_HAZARD_MODEL,
             ModelType.ELASTIC_NET_LOGISTIC_REGRESSION,
             ModelType.SCORECARD_LOGISTIC_REGRESSION,
             ModelType.PROBIT_REGRESSION,
@@ -405,6 +450,375 @@ class ExplainabilityConfig:
             raise ValueError("ExplainabilityConfig.grid_points must be at least 3.")
         if self.sample_size <= 0:
             raise ValueError("ExplainabilityConfig.sample_size must be greater than 0.")
+
+
+@dataclass(slots=True)
+class CalibrationConfig:
+    """Controls development-grade calibration diagnostics and recalibration methods."""
+
+    bin_count: int = 10
+    strategy: CalibrationStrategy = CalibrationStrategy.QUANTILE
+    platt_scaling: bool = True
+    isotonic_calibration: bool = True
+    ranking_metric: CalibrationRankingMetric = CalibrationRankingMetric.BRIER_SCORE
+
+    def validate(self) -> None:
+        if self.bin_count < 2:
+            raise ValueError("CalibrationConfig.bin_count must be at least 2.")
+
+
+@dataclass(slots=True)
+class ScorecardConfig:
+    """Controls scorecard-specific binning, scaling, and reason-code outputs."""
+
+    monotonicity: ScorecardMonotonicity = ScorecardMonotonicity.AUTO
+    min_bin_share: float = 0.05
+    base_score: int = 600
+    points_to_double_odds: int = 50
+    odds_reference: float = 20.0
+    reason_code_count: int = 3
+
+    def validate(self) -> None:
+        if not 0 < self.min_bin_share < 0.5:
+            raise ValueError("ScorecardConfig.min_bin_share must be in (0, 0.5).")
+        if self.points_to_double_odds <= 0:
+            raise ValueError(
+                "ScorecardConfig.points_to_double_odds must be greater than 0."
+            )
+        if self.odds_reference <= 0:
+            raise ValueError("ScorecardConfig.odds_reference must be greater than 0.")
+        if self.reason_code_count <= 0:
+            raise ValueError("ScorecardConfig.reason_code_count must be greater than 0.")
+
+
+@dataclass(slots=True)
+class ScorecardWorkbenchConfig:
+    """Controls scorecard-specific workbench outputs and visual focus."""
+
+    enabled: bool = True
+    max_features: int = 6
+    include_score_distribution: bool = True
+    include_reason_code_analysis: bool = True
+
+    def validate(self) -> None:
+        if self.max_features <= 0:
+            raise ValueError(
+                "ScorecardWorkbenchConfig.max_features must be greater than 0."
+            )
+
+
+@dataclass(slots=True)
+class RobustnessConfig:
+    """Controls repeated-resample robustness and stability diagnostics."""
+
+    enabled: bool = False
+    resample_count: int = 12
+    sample_fraction: float = 0.8
+    sample_with_replacement: bool = True
+    evaluation_split: str = "test"
+    metric_stability: bool = True
+    coefficient_stability: bool = True
+    random_state: int = 42
+
+    def validate(self) -> None:
+        if self.resample_count < 2:
+            raise ValueError("RobustnessConfig.resample_count must be at least 2.")
+        if not 0 < self.sample_fraction <= 1:
+            raise ValueError("RobustnessConfig.sample_fraction must be in (0, 1].")
+        if self.evaluation_split not in {"train", "validation", "test"}:
+            raise ValueError(
+                "RobustnessConfig.evaluation_split must be train, validation, or test."
+            )
+        if self.enabled and not (self.metric_stability or self.coefficient_stability):
+            raise ValueError(
+                "RobustnessConfig.enabled=True requires at least one output type to be enabled."
+            )
+
+
+@dataclass(slots=True)
+class VariableSelectionConfig:
+    """Controls the optional train-split variable-selection workflow."""
+
+    enabled: bool = False
+    max_features: int | None = None
+    min_univariate_score: float | None = None
+    correlation_threshold: float | None = 0.8
+    locked_include_features: list[str] = field(default_factory=list)
+    locked_exclude_features: list[str] = field(default_factory=list)
+
+    def validate(self) -> None:
+        if self.max_features is not None and self.max_features <= 0:
+            raise ValueError(
+                "VariableSelectionConfig.max_features must be greater than 0 when set."
+            )
+        if self.min_univariate_score is not None and self.min_univariate_score < 0:
+            raise ValueError(
+                "VariableSelectionConfig.min_univariate_score cannot be negative."
+            )
+        if self.correlation_threshold is not None and not 0 < self.correlation_threshold <= 1:
+            raise ValueError(
+                "VariableSelectionConfig.correlation_threshold must be in (0, 1]."
+            )
+
+
+@dataclass(slots=True)
+class FeatureDictionaryEntry:
+    """Business and governance metadata attached to a modeled feature."""
+
+    feature_name: str
+    business_name: str = ""
+    definition: str = ""
+    source_system: str = ""
+    unit: str = ""
+    allowed_range: str = ""
+    missingness_meaning: str = ""
+    expected_sign: str = ""
+    inclusion_rationale: str = ""
+    notes: str = ""
+    enabled: bool = True
+
+    def validate(self) -> None:
+        if not self.feature_name.strip():
+            raise ValueError("FeatureDictionaryEntry.feature_name cannot be blank.")
+
+
+@dataclass(slots=True)
+class FeatureDictionaryConfig:
+    """Controls the optional feature dictionary exported with each run."""
+
+    enabled: bool = False
+    entries: list[FeatureDictionaryEntry] = field(default_factory=list)
+    require_documentation_for_selected_features: bool = False
+
+    def validate(self) -> None:
+        seen_features: set[str] = set()
+        for entry in self.entries:
+            entry.validate()
+            if entry.feature_name in seen_features:
+                raise ValueError(
+                    f"Duplicate feature dictionary entry '{entry.feature_name}'."
+                )
+            seen_features.add(entry.feature_name)
+
+
+@dataclass(slots=True)
+class TransformationSpec:
+    """One governed feature transformation to fit and apply reproducibly."""
+
+    transform_type: TransformationType
+    source_feature: str
+    output_feature: str | None = None
+    secondary_feature: str | None = None
+    lower_quantile: float | None = None
+    upper_quantile: float | None = None
+    bin_edges: list[float] = field(default_factory=list)
+    enabled: bool = True
+    notes: str = ""
+
+    def validate(self) -> None:
+        if not self.source_feature.strip():
+            raise ValueError("TransformationSpec.source_feature cannot be blank.")
+        if self.transform_type == TransformationType.WINSORIZE:
+            lower = 0.01 if self.lower_quantile is None else self.lower_quantile
+            upper = 0.99 if self.upper_quantile is None else self.upper_quantile
+            if not 0 <= lower < upper <= 1:
+                raise ValueError(
+                    "Winsorization quantiles must satisfy 0 <= lower < upper <= 1."
+                )
+        if self.transform_type in {
+            TransformationType.RATIO,
+            TransformationType.INTERACTION,
+        } and not (self.secondary_feature or "").strip():
+            raise ValueError(
+                f"{self.transform_type.value} transformations require secondary_feature."
+            )
+        if self.transform_type == TransformationType.MANUAL_BINS:
+            if not self.bin_edges:
+                raise ValueError("manual_bins transformations require at least one bin edge.")
+            if sorted(self.bin_edges) != list(self.bin_edges):
+                raise ValueError("manual_bins bin_edges must be sorted in ascending order.")
+
+
+@dataclass(slots=True)
+class TransformationConfig:
+    """Controls governed, exportable feature transformations."""
+
+    enabled: bool = False
+    transformations: list[TransformationSpec] = field(default_factory=list)
+    error_on_failure: bool = True
+
+    def validate(self) -> None:
+        seen_outputs: set[str] = set()
+        for transformation in self.transformations:
+            transformation.validate()
+            output_name = self._resolve_output_name(transformation)
+            if output_name in seen_outputs:
+                raise ValueError(
+                    f"Multiple governed transformations write to '{output_name}'."
+                )
+            seen_outputs.add(output_name)
+
+    def _resolve_output_name(self, transformation: TransformationSpec) -> str:
+        configured_output = (transformation.output_feature or "").strip()
+        if configured_output:
+            return configured_output
+        if transformation.transform_type == TransformationType.MANUAL_BINS:
+            return f"{transformation.source_feature}_binned"
+        if transformation.transform_type == TransformationType.RATIO:
+            return f"{transformation.source_feature}_over_{transformation.secondary_feature}"
+        if transformation.transform_type == TransformationType.INTERACTION:
+            return f"{transformation.source_feature}_x_{transformation.secondary_feature}"
+        return transformation.source_feature
+
+
+@dataclass(slots=True)
+class FeatureReviewDecision:
+    """Manual review decision attached to a candidate feature."""
+
+    feature_name: str
+    decision: FeatureReviewDecisionType
+    rationale: str = ""
+
+    def validate(self) -> None:
+        if not self.feature_name.strip():
+            raise ValueError("FeatureReviewDecision.feature_name cannot be blank.")
+
+
+@dataclass(slots=True)
+class ScorecardBinOverride:
+    """Manual scorecard bin override for one numeric feature."""
+
+    feature_name: str
+    bin_edges: list[float] = field(default_factory=list)
+    rationale: str = ""
+
+    def validate(self) -> None:
+        if not self.feature_name.strip():
+            raise ValueError("ScorecardBinOverride.feature_name cannot be blank.")
+        if not self.bin_edges:
+            raise ValueError("ScorecardBinOverride.bin_edges cannot be empty.")
+        if sorted(self.bin_edges) != list(self.bin_edges):
+            raise ValueError("ScorecardBinOverride.bin_edges must be sorted in ascending order.")
+
+
+@dataclass(slots=True)
+class ManualReviewConfig:
+    """Captures human review of selected variables and scorecard bin overrides."""
+
+    enabled: bool = False
+    reviewer_name: str = ""
+    require_review_complete: bool = False
+    feature_decisions: list[FeatureReviewDecision] = field(default_factory=list)
+    scorecard_bin_overrides: list[ScorecardBinOverride] = field(default_factory=list)
+
+    def validate(self) -> None:
+        seen_features: set[str] = set()
+        for decision in self.feature_decisions:
+            decision.validate()
+            if decision.feature_name in seen_features:
+                raise ValueError(
+                    f"Duplicate manual feature review entry '{decision.feature_name}'."
+                )
+            seen_features.add(decision.feature_name)
+
+        seen_overrides: set[str] = set()
+        for override in self.scorecard_bin_overrides:
+            override.validate()
+            if override.feature_name in seen_overrides:
+                raise ValueError(
+                    f"Duplicate scorecard bin override '{override.feature_name}'."
+                )
+            seen_overrides.add(override.feature_name)
+
+
+@dataclass(slots=True)
+class SuitabilityCheckConfig:
+    """Controls pre-fit assumption and model-suitability checks."""
+
+    enabled: bool = True
+    min_events_per_feature: float | None = 10.0
+    min_class_rate: float | None = 0.01
+    max_class_rate: float | None = 0.99
+    max_dominant_category_share: float | None = 0.98
+    min_non_null_target_rows: int = 30
+    error_on_failure: bool = False
+
+    def validate(self) -> None:
+        if self.min_events_per_feature is not None and self.min_events_per_feature <= 0:
+            raise ValueError(
+                "SuitabilityCheckConfig.min_events_per_feature must be greater than 0."
+            )
+        for field_name, value in {
+            "min_class_rate": self.min_class_rate,
+            "max_class_rate": self.max_class_rate,
+            "max_dominant_category_share": self.max_dominant_category_share,
+        }.items():
+            if value is not None and not 0 < value < 1:
+                raise ValueError(f"SuitabilityCheckConfig.{field_name} must be in (0, 1).")
+        if (
+            self.min_class_rate is not None
+            and self.max_class_rate is not None
+            and self.min_class_rate >= self.max_class_rate
+        ):
+            raise ValueError(
+                "SuitabilityCheckConfig.min_class_rate must be less than max_class_rate."
+            )
+        if self.min_non_null_target_rows <= 0:
+            raise ValueError(
+                "SuitabilityCheckConfig.min_non_null_target_rows must be greater than 0."
+            )
+
+
+@dataclass(slots=True)
+class ReproducibilityConfig:
+    """Controls run-manifest metadata used for auditability and reruns."""
+
+    enabled: bool = True
+    capture_git_metadata: bool = True
+    package_names: list[str] = field(
+        default_factory=lambda: [
+            "quant-pd-framework",
+            "pandas",
+            "numpy",
+            "scikit-learn",
+            "statsmodels",
+            "xgboost",
+            "plotly",
+            "streamlit",
+            "joblib",
+            "openpyxl",
+        ]
+    )
+
+    def validate(self) -> None:
+        package_names = [package_name.strip() for package_name in self.package_names]
+        if any(not package_name for package_name in package_names):
+            raise ValueError("ReproducibilityConfig.package_names cannot contain blanks.")
+        if len(package_names) != len(set(package_names)):
+            raise ValueError("ReproducibilityConfig.package_names must be unique.")
+
+
+@dataclass(slots=True)
+class DocumentationConfig:
+    """Captures development metadata for the exported documentation pack."""
+
+    enabled: bool = True
+    model_name: str = "Quant Studio Model"
+    model_owner: str = ""
+    business_purpose: str = ""
+    portfolio_name: str = ""
+    segment_name: str = ""
+    horizon_definition: str = ""
+    target_definition: str = ""
+    loss_definition: str = ""
+    assumptions: list[str] = field(default_factory=list)
+    exclusions: list[str] = field(default_factory=list)
+    limitations: list[str] = field(default_factory=list)
+    reviewer_notes: str = ""
+
+    def validate(self) -> None:
+        if self.enabled and not self.model_name.strip():
+            raise ValueError("DocumentationConfig.model_name cannot be blank.")
 
 
 @dataclass(slots=True)
@@ -534,6 +948,10 @@ class ArtifactConfig:
     model_summary_file_name: str = "model_summary.txt"
     manifest_file_name: str = "artifact_manifest.json"
     step_manifest_file_name: str = "step_manifest.json"
+    documentation_pack_file_name: str = "model_documentation_pack.md"
+    validation_pack_file_name: str = "validation_pack.md"
+    reproducibility_manifest_file_name: str = "reproducibility_manifest.json"
+    template_workbook_file_name: str = "configuration_template.xlsx"
     runner_script_file_name: str = "generated_run.py"
     rerun_readme_file_name: str = "HOW_TO_RERUN.md"
     tables_directory_name: str = "tables"
@@ -557,6 +975,10 @@ class ArtifactConfig:
             "report_file_name": self.report_file_name,
             "interactive_report_file_name": self.interactive_report_file_name,
             "config_file_name": self.config_file_name,
+            "documentation_pack_file_name": self.documentation_pack_file_name,
+            "validation_pack_file_name": self.validation_pack_file_name,
+            "reproducibility_manifest_file_name": self.reproducibility_manifest_file_name,
+            "template_workbook_file_name": self.template_workbook_file_name,
         }
         for field_name, value in required_names.items():
             if not value.strip():
@@ -577,9 +999,22 @@ class FrameworkConfig:
     model: ModelConfig = field(default_factory=ModelConfig)
     comparison: ComparisonConfig = field(default_factory=ComparisonConfig)
     feature_policy: FeaturePolicyConfig = field(default_factory=FeaturePolicyConfig)
+    feature_dictionary: FeatureDictionaryConfig = field(default_factory=FeatureDictionaryConfig)
+    transformations: TransformationConfig = field(default_factory=TransformationConfig)
+    manual_review: ManualReviewConfig = field(default_factory=ManualReviewConfig)
+    suitability_checks: SuitabilityCheckConfig = field(default_factory=SuitabilityCheckConfig)
     explainability: ExplainabilityConfig = field(default_factory=ExplainabilityConfig)
+    calibration: CalibrationConfig = field(default_factory=CalibrationConfig)
+    scorecard: ScorecardConfig = field(default_factory=ScorecardConfig)
+    scorecard_workbench: ScorecardWorkbenchConfig = field(
+        default_factory=ScorecardWorkbenchConfig
+    )
+    variable_selection: VariableSelectionConfig = field(default_factory=VariableSelectionConfig)
+    documentation: DocumentationConfig = field(default_factory=DocumentationConfig)
     scenario_testing: ScenarioTestConfig = field(default_factory=ScenarioTestConfig)
     diagnostics: DiagnosticConfig = field(default_factory=DiagnosticConfig)
+    robustness: RobustnessConfig = field(default_factory=RobustnessConfig)
+    reproducibility: ReproducibilityConfig = field(default_factory=ReproducibilityConfig)
     artifacts: ArtifactConfig = field(default_factory=ArtifactConfig)
 
     def validate(self) -> None:
@@ -591,9 +1026,20 @@ class FrameworkConfig:
         self.model.validate(self.target.mode)
         self.comparison.validate(self.model.model_type, self.target.mode)
         self.feature_policy.validate()
+        self.feature_dictionary.validate()
+        self.transformations.validate()
+        self.manual_review.validate()
+        self.suitability_checks.validate()
         self.explainability.validate()
+        self.calibration.validate()
+        self.scorecard.validate()
+        self.scorecard_workbench.validate()
+        self.variable_selection.validate()
+        self.documentation.validate()
         self.scenario_testing.validate()
         self.diagnostics.validate()
+        self.robustness.validate()
+        self.reproducibility.validate()
         self.artifacts.validate()
 
     def to_dict(self) -> dict[str, Any]:

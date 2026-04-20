@@ -1,33 +1,106 @@
-Quant PD Framework is an application for developing, validating, stress testing,
-and documenting quantitative models built from tabular data delivered in Excel,
-CSV, or pandas dataframes.
+Quant Studio
+=============
 
-At a business level, the application helps a user take raw data through the
-major stages of a controlled quantitative modeling workflow:
+Purpose
+-------
+Quant Studio is a model-development application for building, reviewing,
+testing, and documenting quantitative models from tabular data. It is designed
+to help teams move from raw development data to an auditable model package
+without forcing the work into notebooks or ad hoc scripts.
 
-- standardize and validate incoming data
-- define schema, target, and feature rules
-- train a new model or reuse an existing fitted model
-- compare challenger models during development
-- test feature policies, explainability outputs, and scenario shocks
-- evaluate model quality when realized outcomes are available
-- generate diagnostics, charts, statistical tests, and documentation artifacts
-- export a complete rerunnable package for review, approval, and follow-up work
+Primary Users
+-------------
+Quant Studio is built primarily for:
 
-The application is intentionally focused on model development and documentation,
-not on standing up an ongoing production monitoring platform.
+- model developers who need a governed workflow for PD, LGD, CCAR, and CECL
+  development
+- model validation and risk teams who need transparent diagnostics,
+  reproducible evidence, and structured review artifacts
+- business stakeholders who need understandable summaries of what was built,
+  how it was tested, and what was exported
 
-The current model families support the main target use cases of PD, LGD, CCAR,
-and CECL development. These include logistic, elastic-net logistic, scorecard
-logistic, probit, linear, beta, two-stage LGD, panel, quantile, Tobit, and
-XGBoost workflows.
+Core Workflow
+-------------
+The application accepts a pandas dataframe, CSV file, or Excel file and guides
+the run through the major stages of model development:
 
-The application is designed for three audiences:
+- ingestion and schema control
+- target definition and feature setup
+- imputation, governed transformations, and feature engineering
+- train, validation, and test splitting
+- model-suitability and assumption checks
+- variable selection and manual review
+- model training or existing-model scoring
+- calibration, evaluation, backtesting, and scenario testing
+- robustness and stability testing on repeated train resamples
+- visualization, documentation, and artifact export
 
-- model builders who need a configurable Python and GUI workflow
-- validation and risk teams who need diagnostic evidence and exportable support
-- business stakeholders who need readable summaries and clear visual outputs
+Supported Development Scope
+---------------------------
+Quant Studio is intentionally narrow in scope. It focuses on model
+development, challenger review, scenario analysis, validation support, and
+documentation. It is not positioned as an ongoing production monitoring or
+MLOps platform.
 
-The final output of each run is a structured artifact package that can include
-the fitted model, predictions, metrics, comparison results, scenario outputs,
-diagnostic tables, charts, a written report, and a rerun-ready code bundle.
+The current model-development scope supports probability of default as the
+primary use case while also covering adjacent workflows commonly needed for
+LGD, CCAR, and CECL development.
+
+Model Families
+--------------
+Quant Studio currently supports a range of model families used in credit and
+forecast-development workflows, including:
+
+- logistic regression
+- discrete-time hazard models
+- elastic-net logistic regression
+- scorecard logistic regression
+- probit regression
+- linear regression
+- beta regression
+- two-stage LGD models
+- panel regression
+- quantile regression
+- Tobit regression
+- XGBoost
+
+The platform can also load a previously exported `quant_model.joblib` artifact
+to score new data and rerun documentation, diagnostics, and validation outputs
+without rebuilding the model.
+
+Key Outputs
+-----------
+Each run can produce a structured output package that includes:
+
+- fitted model artifacts and scored outputs
+- metrics, statistical tests, backtests, and validation tables
+- interactive charts and exported HTML reporting
+- challenger-comparison results
+- robustness and stability summaries
+- scorecard binning workbench outputs
+- scenario-testing outputs
+- documentation packs and validation packs
+- reproducibility manifests and rerun-ready code bundles
+- Excel templates and governance workbooks for offline review
+
+Transparency And Auditability
+-----------------------------
+Quant Studio is designed to make modeling decisions visible rather than hiding
+them behind GUI actions or opaque scripts. Current transparency and auditability
+features include:
+
+- feature dictionaries with business definitions, lineage, and rationale
+- governed transformations that are explicitly configured and exported
+- manual feature-review decisions and scorecard bin overrides
+- repeated-resample stability testing for held-out metrics and feature effects
+- model-suitability and assumption checks before fitting
+- reproducibility manifests with hashes, package versions, and environment
+  details
+- structured documentation and validation packs for reviewer handoff
+- deterministic reference workflows for core use cases
+
+Business Value
+--------------
+At an executive level, Quant Studio helps teams standardize model-development
+practice, improve review readiness, and reduce the time required to assemble
+evidence for internal governance, validation, and documentation.

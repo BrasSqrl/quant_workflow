@@ -6,17 +6,24 @@ from copy import deepcopy
 from dataclasses import dataclass
 
 from .config import (
+    CalibrationConfig,
     ComparisonConfig,
     DataStructure,
     DiagnosticConfig,
+    DocumentationConfig,
     ExplainabilityConfig,
     FeatureEngineeringConfig,
     FeaturePolicyConfig,
     ModelConfig,
     ModelType,
     PresetName,
+    RobustnessConfig,
     ScenarioTestConfig,
+    ScorecardConfig,
+    ScorecardMonotonicity,
+    ScorecardWorkbenchConfig,
     TargetMode,
+    VariableSelectionConfig,
 )
 
 
@@ -32,6 +39,12 @@ class PresetDefinition:
     model: ModelConfig
     feature_engineering: FeatureEngineeringConfig
     diagnostics: DiagnosticConfig
+    calibration: CalibrationConfig
+    scorecard: ScorecardConfig
+    scorecard_workbench: ScorecardWorkbenchConfig
+    robustness: RobustnessConfig
+    variable_selection: VariableSelectionConfig
+    documentation: DocumentationConfig
     feature_policy: FeaturePolicyConfig
     explainability: ExplainabilityConfig
     comparison: ComparisonConfig
@@ -53,6 +66,23 @@ PRESET_DEFINITIONS: dict[PresetName, PresetDefinition] = {
         model=ModelConfig(model_type=ModelType.LOGISTIC_REGRESSION, class_weight="balanced"),
         feature_engineering=FeatureEngineeringConfig(),
         diagnostics=DiagnosticConfig(),
+        calibration=CalibrationConfig(),
+        scorecard=ScorecardConfig(
+            monotonicity=ScorecardMonotonicity.AUTO,
+            min_bin_share=0.05,
+        ),
+        scorecard_workbench=ScorecardWorkbenchConfig(enabled=True, max_features=6),
+        robustness=RobustnessConfig(enabled=False),
+        variable_selection=VariableSelectionConfig(
+            enabled=True,
+            max_features=12,
+            correlation_threshold=0.8,
+        ),
+        documentation=DocumentationConfig(
+            model_name="PD Development Model",
+            business_purpose="Probability of default development and challenger review.",
+            target_definition="Binary default flag over the modeled observation horizon.",
+        ),
         feature_policy=FeaturePolicyConfig(
             enabled=True,
             max_missing_pct=25.0,
@@ -83,12 +113,27 @@ PRESET_DEFINITIONS: dict[PresetName, PresetDefinition] = {
         target_mode=TargetMode.BINARY,
         data_structure=DataStructure.PANEL,
         model=ModelConfig(
-            model_type=ModelType.ELASTIC_NET_LOGISTIC_REGRESSION,
+            model_type=ModelType.DISCRETE_TIME_HAZARD_MODEL,
             class_weight="balanced",
             l1_ratio=0.35,
         ),
         feature_engineering=FeatureEngineeringConfig(),
         diagnostics=DiagnosticConfig(quantile_bucket_count=12),
+        calibration=CalibrationConfig(bin_count=12),
+        scorecard=ScorecardConfig(),
+        scorecard_workbench=ScorecardWorkbenchConfig(enabled=True, max_features=6),
+        robustness=RobustnessConfig(enabled=False),
+        variable_selection=VariableSelectionConfig(
+            enabled=True,
+            max_features=15,
+            correlation_threshold=0.75,
+        ),
+        documentation=DocumentationConfig(
+            model_name="Lifetime PD / CECL Model",
+            business_purpose="Lifetime PD development for CECL-style portfolio analysis.",
+            horizon_definition="Lifetime or multi-period panel horizon.",
+            target_definition="Binary default timing indicator by period.",
+        ),
         feature_policy=FeaturePolicyConfig(
             enabled=True,
             max_missing_pct=20.0,
@@ -120,6 +165,21 @@ PRESET_DEFINITIONS: dict[PresetName, PresetDefinition] = {
         model=ModelConfig(model_type=ModelType.TWO_STAGE_LGD_MODEL),
         feature_engineering=FeatureEngineeringConfig(),
         diagnostics=DiagnosticConfig(),
+        calibration=CalibrationConfig(),
+        scorecard=ScorecardConfig(),
+        scorecard_workbench=ScorecardWorkbenchConfig(enabled=True, max_features=6),
+        robustness=RobustnessConfig(enabled=False),
+        variable_selection=VariableSelectionConfig(
+            enabled=True,
+            max_features=12,
+            correlation_threshold=0.8,
+        ),
+        documentation=DocumentationConfig(
+            model_name="LGD Severity Model",
+            business_purpose="LGD development with severity and challenger analysis.",
+            target_definition="Continuous LGD target bounded in the unit interval.",
+            loss_definition="Loss given default severity conditional on default.",
+        ),
         feature_policy=FeaturePolicyConfig(enabled=True, max_missing_pct=20.0, max_vif=10.0),
         explainability=ExplainabilityConfig(top_n_features=6),
         comparison=ComparisonConfig(
@@ -149,6 +209,21 @@ PRESET_DEFINITIONS: dict[PresetName, PresetDefinition] = {
             drop_raw_date_columns=False,
         ),
         diagnostics=DiagnosticConfig(quantile_bucket_count=12),
+        calibration=CalibrationConfig(bin_count=12),
+        scorecard=ScorecardConfig(),
+        scorecard_workbench=ScorecardWorkbenchConfig(enabled=True, max_features=6),
+        robustness=RobustnessConfig(enabled=False),
+        variable_selection=VariableSelectionConfig(
+            enabled=True,
+            max_features=15,
+            correlation_threshold=0.75,
+        ),
+        documentation=DocumentationConfig(
+            model_name="CCAR Forecasting Model",
+            business_purpose="Macro-linked forecasting for CCAR development and documentation.",
+            horizon_definition="Panel forecast horizon across modeled stress periods.",
+            target_definition="Continuous forecast target.",
+        ),
         feature_policy=FeaturePolicyConfig(enabled=True, max_missing_pct=15.0, max_vif=8.0),
         explainability=ExplainabilityConfig(top_n_features=6),
         comparison=ComparisonConfig(

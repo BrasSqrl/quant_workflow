@@ -14,7 +14,7 @@ call "%VENV_PYTHON%" -m quant_pd_framework.gui_launcher
 if errorlevel 1 (
   set "EXIT_CODE=!errorlevel!"
   echo.
-  echo Failed to launch the Quant PD GUI from the local virtual environment.
+  echo Failed to launch the Quant Studio GUI from the local virtual environment.
   echo If dependencies changed, run setup_gui.bat to rebuild .venv.
   pause
   endlocal
@@ -46,12 +46,12 @@ if not exist "%VENV_PYTHON%" (
 )
 
 echo.
-echo Launching Quant PD GUI from .venv...
+echo Launching Quant Studio from .venv...
 call "%VENV_PYTHON%" -m quant_pd_framework.gui_launcher
 if errorlevel 1 (
   set "EXIT_CODE=!errorlevel!"
   echo.
-  echo Failed to launch the Quant PD GUI from the bootstrapped environment.
+  echo Failed to launch the Quant Studio GUI from the bootstrapped environment.
   pause
   endlocal
   exit /b !EXIT_CODE!

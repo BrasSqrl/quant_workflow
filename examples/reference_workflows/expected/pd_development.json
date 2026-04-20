@@ -1,0 +1,68 @@
+{
+  "name": "pd_development",
+  "model_type": "logistic_regression",
+  "target_mode": "binary",
+  "expected_step_count": 17,
+  "required_artifacts": [
+    "model",
+    "metrics",
+    "input_snapshot",
+    "predictions",
+    "feature_importance",
+    "backtest",
+    "report",
+    "documentation_pack",
+    "validation_pack",
+    "interactive_report",
+    "config",
+    "tests",
+    "reproducibility_manifest",
+    "configuration_template",
+    "manifest",
+    "step_manifest",
+    "runner_script",
+    "rerun_readme",
+    "workbook"
+  ],
+  "required_tables": [
+    "assumption_checks",
+    "calibration_summary",
+    "feature_dictionary",
+    "reproducibility_manifest",
+    "variable_selection",
+    "feature_policy_checks",
+    "scenario_summary",
+    "model_comparison",
+    "woe_iv_summary"
+  ],
+  "required_figures": [
+    "calibration_curve",
+    "quantile_backtest",
+    "model_comparison_chart",
+    "scenario_summary_chart",
+    "threshold_analysis"
+  ],
+  "documentation_sections": [
+    "Development Summary",
+    "Purpose",
+    "Target And Horizon",
+    "Data And Features",
+    "Performance Summary"
+  ],
+  "metrics": {
+    "test": {
+      "roc_auc": {
+        "value": 0.6400996264,
+        "tolerance": 0.03
+      },
+      "average_precision": {
+        "value": 0.4047811983,
+        "tolerance": 0.04
+      },
+      "brier_score": {
+        "value": 0.2035245716,
+        "tolerance": 0.03
+      }
+    }
+  }
+}

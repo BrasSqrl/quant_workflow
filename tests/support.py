@@ -13,6 +13,11 @@ import numpy as np
 import pandas as pd
 
 from quant_pd_framework import ColumnRole, ColumnSpec, SchemaConfig
+from quant_pd_framework.reference_workflows import (
+    build_reference_lgd_dataframe,
+    build_reference_lifetime_pd_dataframe,
+    build_reference_pd_dataframe,
+)
 
 
 @contextmanager
@@ -28,47 +33,11 @@ def temporary_artifact_root(prefix: str) -> Iterator[Path]:
 
 
 def build_binary_dataframe(row_count: int = 160) -> pd.DataFrame:
-    rng = np.random.default_rng(seed=11)
-    balance = rng.normal(9000, 2200, size=row_count).clip(500, None)
-    utilization = rng.uniform(0.05, 0.95, size=row_count)
-    delinquencies = rng.poisson(0.7, size=row_count)
-    channel = rng.choice(["branch", "digital", "broker"], size=row_count)
-    latent = -4.2 + 0.00015 * balance + 2.0 * utilization + 0.4 * delinquencies
-    probability = 1 / (1 + np.exp(-latent))
-    target = (rng.uniform(size=row_count) < probability).astype(int)
-    return pd.DataFrame(
-        {
-            "as_of_date": pd.date_range("2024-01-01", periods=row_count, freq="D"),
-            "account_id": [f"B{i:05d}" for i in range(row_count)],
-            "balance": balance,
-            "utilization": utilization,
-            "delinquencies": delinquencies,
-            "channel": channel,
-            "default_status": target,
-        }
-    )
+    return build_reference_pd_dataframe(row_count=row_count)
 
 
 def build_continuous_dataframe(row_count: int = 160) -> pd.DataFrame:
-    rng = np.random.default_rng(seed=23)
-    balance = rng.normal(7000, 1800, size=row_count).clip(500, None)
-    utilization = rng.uniform(0.05, 0.95, size=row_count)
-    delinquencies = rng.poisson(0.5, size=row_count)
-    region = rng.choice(["north", "south", "east", "west"], size=row_count)
-    latent = 0.15 + 0.00003 * balance + 0.45 * utilization + 0.03 * delinquencies
-    noisy = latent + rng.normal(0, 0.08, size=row_count)
-    censored_target = noisy.clip(0.0, 1.0)
-    return pd.DataFrame(
-        {
-            "as_of_date": pd.date_range("2024-06-01", periods=row_count, freq="D"),
-            "loan_id": [f"C{i:05d}" for i in range(row_count)],
-            "balance": balance,
-            "utilization": utilization,
-            "delinquencies": delinquencies,
-            "region": region,
-            "censored_target": censored_target,
-        }
-    )
+    return build_reference_lgd_dataframe(row_count=row_count)
 
 
 def build_panel_forecast_dataframe(
@@ -105,6 +74,16 @@ def build_panel_forecast_dataframe(
                 }
             )
     return pd.DataFrame(rows)
+
+
+def build_lifetime_pd_dataframe(
+    entity_count: int = 20,
+    periods_per_entity: int = 10,
+) -> pd.DataFrame:
+    return build_reference_lifetime_pd_dataframe(
+        entity_count=entity_count,
+        periods_per_entity=periods_per_entity,
+    )
 
 
 def build_common_schema(identifier_name: str, *, include_legacy_drop: bool = False) -> SchemaConfig:
