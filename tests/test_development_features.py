@@ -7,6 +7,7 @@ from quant_pd_framework import (
     CleaningConfig,
     ComparisonConfig,
     DataStructure,
+    DocumentationConfig,
     ExplainabilityConfig,
     FeatureEngineeringConfig,
     FeaturePolicyConfig,
@@ -70,6 +71,12 @@ def test_development_features_produce_expected_outputs() -> None:
                 top_n_features=3,
                 grid_points=5,
                 sample_size=120,
+            ),
+            documentation=DocumentationConfig(
+                enabled=True,
+                model_name="Development Feature Regression",
+                business_purpose="Regression test for development feature outputs.",
+                target_definition="Binary default flag for the synthetic regression test.",
             ),
             scenario_testing=ScenarioTestConfig(
                 enabled=True,

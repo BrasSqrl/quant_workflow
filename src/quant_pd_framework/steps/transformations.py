@@ -3,13 +3,21 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from itertools import combinations
 from typing import Any
 
 import numpy as np
 import pandas as pd
+from scipy.stats import yeojohnson, yeojohnson_normmax
 
 from ..base import BasePipelineStep
-from ..config import TransformationSpec, TransformationType
+from ..config import (
+    DataStructure,
+    ExecutionMode,
+    TransformationConfig,
+    TransformationSpec,
+    TransformationType,
+)
 from ..context import PipelineContext
 
 
@@ -34,35 +42,44 @@ class TransformationStep(BasePipelineStep):
 
     def run(self, context: PipelineContext) -> PipelineContext:
         config = context.config.transformations
-        if not config.enabled or not config.transformations:
-            return context
         if not context.split_frames or context.working_data is None:
             raise ValueError("Governed transformations require split and working dataframes.")
 
         working_splits = {
-            split_name: frame.copy(deep=True)
-            for split_name, frame in context.split_frames.items()
+            split_name: frame.copy(deep=True) for split_name, frame in context.split_frames.items()
         }
         working_dataframe = context.working_data.copy(deep=True)
         resolved_transformations: list[ResolvedTransformation] = []
         audit_rows: list[dict[str, Any]] = []
 
-        for transformation in config.transformations:
+        generated_specs = self._resolve_auto_interactions(
+            context=context,
+            config=config,
+            working_splits=working_splits,
+        )
+        if not config.enabled and not generated_specs:
+            return context
+
+        for transformation in list(config.transformations):
             if not transformation.enabled:
                 continue
             try:
-                train_frame = working_splits["train"]
                 resolved = self._fit_transformation(
                     context=context,
-                    train_frame=train_frame,
+                    train_frame=working_splits["train"],
                     spec=transformation,
                 )
                 for split_name, split_frame in working_splits.items():
                     working_splits[split_name] = self._apply_transformation(
                         split_frame,
                         resolved,
+                        context=context,
                     )
-                working_dataframe = self._apply_transformation(working_dataframe, resolved)
+                working_dataframe = self._apply_transformation(
+                    working_dataframe,
+                    resolved,
+                    context=context,
+                )
                 self._update_feature_contract(context, working_dataframe, resolved.output_feature)
                 resolved_transformations.append(resolved)
                 audit_rows.append(
@@ -70,10 +87,10 @@ class TransformationStep(BasePipelineStep):
                         "transform_type": resolved.spec.transform_type.value,
                         "source_feature": resolved.spec.source_feature,
                         "secondary_feature": resolved.spec.secondary_feature or "",
+                        "categorical_value": resolved.spec.categorical_value or "",
                         "output_feature": resolved.output_feature,
-                        "learned_parameters": self._render_parameters(
-                            resolved.learned_parameters
-                        ),
+                        "learned_parameters": self._render_parameters(resolved.learned_parameters),
+                        "generated_automatically": resolved.spec.generated_automatically,
                         "notes": resolved.spec.notes,
                         "status": "applied",
                     }
@@ -84,8 +101,10 @@ class TransformationStep(BasePipelineStep):
                         "transform_type": transformation.transform_type.value,
                         "source_feature": transformation.source_feature,
                         "secondary_feature": transformation.secondary_feature or "",
+                        "categorical_value": transformation.categorical_value or "",
                         "output_feature": self._resolve_output_feature_name(transformation),
                         "learned_parameters": "",
+                        "generated_automatically": transformation.generated_automatically,
                         "notes": transformation.notes,
                         "status": f"failed: {exc}",
                     }
@@ -106,7 +125,12 @@ class TransformationStep(BasePipelineStep):
         context.metadata["transformation_summary"] = {
             "count": len(resolved_transformations),
             "output_features": [item.output_feature for item in resolved_transformations],
+            "generated_interaction_count": len(generated_specs),
         }
+        if generated_specs:
+            context.metadata["generated_interaction_features"] = [
+                self._resolve_output_feature_name(spec) for spec in generated_specs
+            ]
         context.log(
             "Applied governed transformations to "
             f"{len(resolved_transformations)} configured outputs."
@@ -154,6 +178,19 @@ class TransformationStep(BasePipelineStep):
                     f"log1p requires values greater than -1 for '{spec.source_feature}'."
                 )
             learned_parameters = {"min_train_value": minimum_value}
+        elif spec.transform_type == TransformationType.YEO_JOHNSON:
+            numeric_series = self._numeric_series(source_series, spec.source_feature)
+            learned_parameters = {
+                "lambda": float(yeojohnson_normmax(numeric_series.dropna().to_numpy(dtype=float)))
+            }
+        elif spec.transform_type == TransformationType.CAPPED_ZSCORE:
+            numeric_series = self._numeric_series(source_series, spec.source_feature)
+            std_value = float(numeric_series.std(ddof=0))
+            learned_parameters = {
+                "mean": float(numeric_series.mean()),
+                "std": std_value if np.isfinite(std_value) and std_value > 0 else 0.0,
+                "z_cap": 3.0 if spec.parameter_value is None else float(spec.parameter_value),
+            }
         elif spec.transform_type in {
             TransformationType.RATIO,
             TransformationType.INTERACTION,
@@ -167,7 +204,25 @@ class TransformationStep(BasePipelineStep):
                 raise ValueError(
                     f"Secondary feature '{secondary_feature}' is missing from the train split."
                 )
-            self._numeric_series(train_frame[secondary_feature], secondary_feature)
+            if spec.transform_type == TransformationType.RATIO:
+                self._numeric_series(source_series, spec.source_feature)
+                self._numeric_series(train_frame[secondary_feature], secondary_feature)
+            else:
+                left_role, right_role = self._interaction_roles(train_frame, spec)
+                learned_parameters = {
+                    "left_role": left_role,
+                    "right_role": right_role,
+                }
+        elif spec.transform_type in {
+            TransformationType.LAG,
+            TransformationType.ROLLING_MEAN,
+            TransformationType.PCT_CHANGE,
+        }:
+            self._numeric_series(source_series, spec.source_feature)
+            learned_parameters = {
+                "lag_periods": 1 if spec.lag_periods is None else int(spec.lag_periods),
+                "window_size": 3 if spec.window_size is None else int(spec.window_size),
+            }
         elif spec.transform_type == TransformationType.MANUAL_BINS:
             self._numeric_series(source_series, spec.source_feature)
             learned_parameters = {"bin_edges": list(spec.bin_edges)}
@@ -184,6 +239,8 @@ class TransformationStep(BasePipelineStep):
         self,
         frame: pd.DataFrame,
         resolved: ResolvedTransformation,
+        *,
+        context: PipelineContext,
     ) -> pd.DataFrame:
         working = frame.copy(deep=True)
         spec = resolved.spec
@@ -199,6 +256,27 @@ class TransformationStep(BasePipelineStep):
         elif spec.transform_type == TransformationType.LOG1P:
             values = pd.to_numeric(working[source_name], errors="coerce")
             working[output_name] = np.where(values > -1, np.log1p(values), np.nan)
+        elif spec.transform_type == TransformationType.YEO_JOHNSON:
+            values = pd.to_numeric(working[source_name], errors="coerce")
+            transformed = pd.Series(np.nan, index=working.index, dtype=float)
+            mask = values.notna()
+            if mask.any():
+                transformed.loc[mask] = yeojohnson(
+                    values.loc[mask].to_numpy(dtype=float),
+                    lmbda=float(resolved.learned_parameters["lambda"]),
+                )
+            working[output_name] = transformed
+        elif spec.transform_type == TransformationType.CAPPED_ZSCORE:
+            values = pd.to_numeric(working[source_name], errors="coerce")
+            std_value = float(resolved.learned_parameters["std"])
+            if std_value == 0.0:
+                working[output_name] = 0.0
+            else:
+                z_values = (values - float(resolved.learned_parameters["mean"])) / std_value
+                working[output_name] = z_values.clip(
+                    lower=-float(resolved.learned_parameters["z_cap"]),
+                    upper=float(resolved.learned_parameters["z_cap"]),
+                )
         elif spec.transform_type == TransformationType.RATIO:
             numerator = pd.to_numeric(working[source_name], errors="coerce")
             denominator = pd.to_numeric(
@@ -207,9 +285,32 @@ class TransformationStep(BasePipelineStep):
             )
             working[output_name] = numerator.div(denominator.replace({0: np.nan}))
         elif spec.transform_type == TransformationType.INTERACTION:
-            left = pd.to_numeric(working[source_name], errors="coerce")
-            right = pd.to_numeric(working[spec.secondary_feature or ""], errors="coerce")
+            left = self._interaction_operand(
+                working,
+                spec.source_feature,
+                resolved.learned_parameters.get("left_role", "numeric"),
+                spec.categorical_value,
+            )
+            right = self._interaction_operand(
+                working,
+                spec.secondary_feature or "",
+                resolved.learned_parameters.get("right_role", "numeric"),
+                spec.categorical_value,
+            )
             working[output_name] = left * right
+        elif spec.transform_type in {
+            TransformationType.LAG,
+            TransformationType.ROLLING_MEAN,
+            TransformationType.PCT_CHANGE,
+        }:
+            working[output_name] = self._apply_temporal_numeric_transform(
+                working,
+                source_name,
+                context=context,
+                transform_type=spec.transform_type,
+                lag_periods=int(resolved.learned_parameters["lag_periods"]),
+                window_size=int(resolved.learned_parameters["window_size"]),
+            ).fillna(0.0)
         elif spec.transform_type == TransformationType.MANUAL_BINS:
             values = pd.to_numeric(working[source_name], errors="coerce")
             bin_edges = [-np.inf, *resolved.learned_parameters["bin_edges"], np.inf]
@@ -221,6 +322,297 @@ class TransformationStep(BasePipelineStep):
             ).astype("category")
 
         return working
+
+    def _resolve_auto_interactions(
+        self,
+        *,
+        context: PipelineContext,
+        config: TransformationConfig,
+        working_splits: dict[str, pd.DataFrame],
+    ) -> list[TransformationSpec]:
+        existing_generated_specs = [
+            spec for spec in config.transformations if spec.generated_automatically
+        ]
+        if existing_generated_specs:
+            return existing_generated_specs
+        if not config.auto_interactions_enabled:
+            return []
+        if context.config.execution.mode != ExecutionMode.FIT_NEW_MODEL:
+            context.warn(
+                "Auto interaction generation is skipped for score-existing-model runs. "
+                "Saved generated interactions from the original development run are still applied."
+            )
+            return []
+        train_frame = working_splits.get("train")
+        if train_frame is None or context.target_column not in train_frame.columns:
+            return []
+        target_series = pd.to_numeric(train_frame[context.target_column], errors="coerce")
+        if target_series.dropna().nunique() < 2:
+            return []
+
+        candidate_rows: list[dict[str, Any]] = []
+        if config.include_numeric_numeric_interactions:
+            candidate_rows.extend(
+                self._screen_numeric_interactions(context, train_frame, target_series)
+            )
+        if config.include_categorical_numeric_interactions:
+            candidate_rows.extend(
+                self._screen_categorical_numeric_interactions(context, train_frame, target_series)
+            )
+        if not candidate_rows:
+            return []
+
+        candidate_frame = pd.DataFrame(candidate_rows).sort_values(
+            ["score", "candidate_type"],
+            ascending=[False, True],
+        )
+        candidate_frame = candidate_frame.loc[
+            candidate_frame["score"] >= float(config.min_interaction_score)
+        ].copy(deep=True)
+
+        selected_specs: list[TransformationSpec] = []
+        used_outputs = {self._resolve_output_feature_name(spec) for spec in config.transformations}
+        candidate_frame["selected"] = False
+        for index, row in candidate_frame.iterrows():
+            if len(selected_specs) >= config.max_auto_interactions:
+                break
+            spec = TransformationSpec(
+                transform_type=TransformationType.INTERACTION,
+                source_feature=str(row["source_feature"]),
+                secondary_feature=str(row["secondary_feature"]),
+                categorical_value=(
+                    None
+                    if not str(row.get("categorical_value", "")).strip()
+                    else str(row["categorical_value"]).strip()
+                ),
+                output_feature=str(row["output_feature"]),
+                enabled=True,
+                generated_automatically=True,
+                notes=f"Auto-screened interaction (score={float(row['score']):.4f}).",
+            )
+            output_name = self._resolve_output_feature_name(spec)
+            if output_name in used_outputs:
+                continue
+            used_outputs.add(output_name)
+            selected_specs.append(spec)
+            candidate_frame.loc[index, "selected"] = True
+
+        if selected_specs:
+            config.transformations.extend(selected_specs)
+            config.enabled = True
+            context.diagnostics_tables["interaction_candidates"] = candidate_frame
+        return selected_specs
+
+    def _screen_numeric_interactions(
+        self,
+        context: PipelineContext,
+        train_frame: pd.DataFrame,
+        target_series: pd.Series,
+    ) -> list[dict[str, Any]]:
+        numeric_candidates = [
+            feature_name
+            for feature_name in context.numeric_features
+            if feature_name in train_frame.columns and feature_name != context.target_column
+        ]
+        rows: list[dict[str, Any]] = []
+        for left_feature, right_feature in combinations(numeric_candidates, 2):
+            interaction_series = pd.to_numeric(
+                train_frame[left_feature], errors="coerce"
+            ) * pd.to_numeric(
+                train_frame[right_feature],
+                errors="coerce",
+            )
+            score = self._interaction_score(interaction_series, target_series)
+            if score is None:
+                continue
+            rows.append(
+                {
+                    "candidate_type": "numeric_numeric",
+                    "source_feature": left_feature,
+                    "secondary_feature": right_feature,
+                    "categorical_value": "",
+                    "output_feature": f"{left_feature}_x_{right_feature}",
+                    "score": score,
+                }
+            )
+        return rows
+
+    def _screen_categorical_numeric_interactions(
+        self,
+        context: PipelineContext,
+        train_frame: pd.DataFrame,
+        target_series: pd.Series,
+    ) -> list[dict[str, Any]]:
+        rows: list[dict[str, Any]] = []
+        numeric_candidates = [
+            feature_name
+            for feature_name in context.numeric_features
+            if feature_name in train_frame.columns and feature_name != context.target_column
+        ]
+        categorical_candidates = [
+            feature_name
+            for feature_name in context.categorical_features
+            if feature_name in train_frame.columns
+        ]
+        for categorical_feature in categorical_candidates:
+            levels = (
+                train_frame[categorical_feature]
+                .astype("string")
+                .fillna("Missing")
+                .value_counts(dropna=False)
+                .head(context.config.transformations.max_categorical_levels)
+                .index.tolist()
+            )
+            for level in levels:
+                indicator = (
+                    train_frame[categorical_feature]
+                    .astype("string")
+                    .fillna("Missing")
+                    .eq(level)
+                    .astype(float)
+                )
+                for numeric_feature in numeric_candidates:
+                    interaction_series = indicator * pd.to_numeric(
+                        train_frame[numeric_feature],
+                        errors="coerce",
+                    )
+                    score = self._interaction_score(interaction_series, target_series)
+                    if score is None:
+                        continue
+                    rows.append(
+                        {
+                            "candidate_type": "categorical_numeric",
+                            "source_feature": numeric_feature,
+                            "secondary_feature": categorical_feature,
+                            "categorical_value": str(level),
+                            "output_feature": (
+                                f"{numeric_feature}_x_{categorical_feature}_"
+                                f"{self._sanitize_token(str(level))}"
+                            ),
+                            "score": score,
+                        }
+                    )
+        return rows
+
+    def _interaction_score(
+        self,
+        interaction_series: pd.Series,
+        target_series: pd.Series,
+    ) -> float | None:
+        aligned = pd.DataFrame(
+            {"interaction": interaction_series, "target": target_series}
+        ).dropna()
+        if len(aligned) < 10 or aligned["interaction"].nunique() < 2:
+            return None
+        correlation = aligned["interaction"].corr(aligned["target"])
+        if pd.isna(correlation):
+            return None
+        return float(abs(correlation))
+
+    def _interaction_roles(
+        self,
+        frame: pd.DataFrame,
+        spec: TransformationSpec,
+    ) -> tuple[str, str]:
+        source_is_numeric = self._is_numeric_feature(frame[spec.source_feature])
+        secondary_series = frame[spec.secondary_feature or ""]
+        secondary_is_numeric = self._is_numeric_feature(secondary_series)
+        if source_is_numeric and secondary_is_numeric:
+            return "numeric", "numeric"
+        if (
+            source_is_numeric
+            and not secondary_is_numeric
+            and (spec.categorical_value or "").strip()
+        ):
+            return "numeric", "categorical"
+        if (
+            secondary_is_numeric
+            and not source_is_numeric
+            and (spec.categorical_value or "").strip()
+        ):
+            return "categorical", "numeric"
+        raise ValueError(
+            "interaction transformations support numeric-numeric pairs or one categorical "
+            "feature when categorical_value is provided."
+        )
+
+    def _interaction_operand(
+        self,
+        frame: pd.DataFrame,
+        feature_name: str,
+        role: str,
+        categorical_value: str | None,
+    ) -> pd.Series:
+        if role == "numeric":
+            return pd.to_numeric(frame[feature_name], errors="coerce")
+        category_value = "" if categorical_value is None else categorical_value
+        return (
+            frame[feature_name].astype("string").fillna("Missing").eq(category_value).astype(float)
+        )
+
+    def _apply_temporal_numeric_transform(
+        self,
+        frame: pd.DataFrame,
+        feature_name: str,
+        *,
+        context: PipelineContext,
+        transform_type: TransformationType,
+        lag_periods: int,
+        window_size: int,
+    ) -> pd.Series:
+        ordered = frame.copy(deep=True)
+        ordered["_transform_value"] = pd.to_numeric(frame[feature_name], errors="coerce")
+        ordered["_original_index"] = frame.index
+        ordered = self._sort_temporal_frame(ordered, context)
+        grouped = self._group_temporal_series(ordered, context)
+        if transform_type == TransformationType.LAG:
+            transformed = grouped.shift(lag_periods)
+        elif transform_type == TransformationType.ROLLING_MEAN:
+            transformed = grouped.shift(1).rolling(window_size, min_periods=1).mean()
+        elif transform_type == TransformationType.PCT_CHANGE:
+            transformed = grouped.pct_change(periods=lag_periods).replace(
+                [np.inf, -np.inf],
+                np.nan,
+            )
+        else:
+            raise ValueError(f"Unsupported temporal transformation '{transform_type.value}'.")
+        ordered["_transformed"] = transformed
+        restored = ordered.sort_values("_original_index", kind="mergesort")["_transformed"]
+        restored.index = frame.index
+        return restored
+
+    def _sort_temporal_frame(
+        self,
+        frame: pd.DataFrame,
+        context: PipelineContext,
+    ) -> pd.DataFrame:
+        split_config = context.config.split
+        sort_columns: list[str] = []
+        if (
+            split_config.data_structure == DataStructure.PANEL
+            and split_config.entity_column
+            and split_config.entity_column in frame.columns
+        ):
+            sort_columns.append(split_config.entity_column)
+        if split_config.date_column and split_config.date_column in frame.columns:
+            sort_columns.append(split_config.date_column)
+        if not sort_columns:
+            return frame
+        return frame.sort_values(sort_columns, kind="mergesort")
+
+    def _group_temporal_series(
+        self,
+        frame: pd.DataFrame,
+        context: PipelineContext,
+    ):
+        split_config = context.config.split
+        if (
+            split_config.data_structure == DataStructure.PANEL
+            and split_config.entity_column
+            and split_config.entity_column in frame.columns
+        ):
+            return frame.groupby(split_config.entity_column, sort=False)["_transform_value"]
+        return frame["_transform_value"]
 
     def _update_feature_contract(
         self,
@@ -236,7 +628,7 @@ class TransformationStep(BasePipelineStep):
             if feature_name not in dataframe.columns:
                 continue
             series = dataframe[feature_name]
-            if pd.api.types.is_bool_dtype(series) or pd.api.types.is_numeric_dtype(series):
+            if self._is_numeric_feature(series):
                 context.numeric_features.append(feature_name)
             else:
                 context.categorical_features.append(feature_name)
@@ -255,7 +647,30 @@ class TransformationStep(BasePipelineStep):
         if spec.transform_type == TransformationType.RATIO:
             return f"{spec.source_feature}_over_{spec.secondary_feature}"
         if spec.transform_type == TransformationType.INTERACTION:
+            if (spec.categorical_value or "").strip():
+                return (
+                    f"{spec.source_feature}_x_{spec.secondary_feature}_"
+                    f"{self._sanitize_token(spec.categorical_value)}"
+                )
             return f"{spec.source_feature}_x_{spec.secondary_feature}"
+        if spec.transform_type == TransformationType.YEO_JOHNSON:
+            return f"{spec.source_feature}_yeo_johnson"
+        if spec.transform_type == TransformationType.CAPPED_ZSCORE:
+            return f"{spec.source_feature}_zscore"
+        if spec.transform_type == TransformationType.LAG:
+            return (
+                f"{spec.source_feature}_lag_{1 if spec.lag_periods is None else spec.lag_periods}"
+            )
+        if spec.transform_type == TransformationType.ROLLING_MEAN:
+            return (
+                f"{spec.source_feature}_rollmean_"
+                f"{3 if spec.window_size is None else spec.window_size}"
+            )
+        if spec.transform_type == TransformationType.PCT_CHANGE:
+            return (
+                f"{spec.source_feature}_pct_change_"
+                f"{1 if spec.lag_periods is None else spec.lag_periods}"
+            )
         return spec.source_feature
 
     def _numeric_series(self, series: pd.Series, feature_name: str) -> pd.Series:
@@ -266,6 +681,9 @@ class TransformationStep(BasePipelineStep):
             )
         return numeric_series
 
+    def _is_numeric_feature(self, series: pd.Series) -> bool:
+        return pd.api.types.is_bool_dtype(series) or pd.api.types.is_numeric_dtype(series)
+
     def _render_parameters(self, parameters: dict[str, Any]) -> str:
         rendered: list[str] = []
         for key, value in parameters.items():
@@ -274,3 +692,7 @@ class TransformationStep(BasePipelineStep):
             else:
                 rendered.append(f"{key}={value}")
         return ", ".join(rendered)
+
+    def _sanitize_token(self, value: str) -> str:
+        sanitized = "".join(character if character.isalnum() else "_" for character in value)
+        return sanitized.strip("_").lower() or "value"

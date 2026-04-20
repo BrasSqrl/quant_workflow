@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import warnings
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Any
+from warnings import WarningMessage
 
 import numpy as np
 import pandas as pd
@@ -12,10 +14,12 @@ import statsmodels.api as sm
 from scipy.optimize import minimize
 from scipy.stats import norm
 from sklearn.compose import ColumnTransformer
+from sklearn.exceptions import ConvergenceWarning
 from sklearn.linear_model import LinearRegression, LogisticRegression, QuantileRegressor
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
 from statsmodels.othermod.betareg import BetaModel
+from statsmodels.tools.sm_exceptions import HessianInversionWarning
 from xgboost import XGBClassifier, XGBRegressor
 
 from .config import (
@@ -25,6 +29,15 @@ from .config import (
     ScorecardMonotonicity,
     TargetMode,
 )
+
+ODDS_RATIO_CLIP_BOUND = 40.0
+
+
+def _safe_odds_ratio(values: np.ndarray | list[float] | float) -> np.ndarray:
+    """Exponentiates coefficients without emitting overflow warnings."""
+
+    numeric_values = np.asarray(values, dtype=float)
+    return np.exp(np.clip(numeric_values, -ODDS_RATIO_CLIP_BOUND, ODDS_RATIO_CLIP_BOUND))
 
 
 def build_preprocessor(
@@ -79,6 +92,8 @@ class BaseModelAdapter(ABC):
         self.raw_feature_names_: list[str] = []
         self.raw_numeric_features_: list[str] = []
         self.raw_categorical_features_: list[str] = []
+        self.numerical_warning_records_: list[dict[str, Any]] = []
+        self.numerical_diagnostics_: list[dict[str, Any]] = []
 
     @property
     def is_binary_classifier(self) -> bool:
@@ -116,12 +131,222 @@ class BaseModelAdapter(ABC):
     def get_model_artifacts(self) -> dict[str, pd.DataFrame]:
         """Returns optional model-specific tables that support documentation/export."""
 
-        return {}
+        return self._base_model_artifacts()
 
     def get_prediction_outputs(self, x_frame: pd.DataFrame) -> dict[str, np.ndarray | list[str]]:
         """Returns optional prediction-side outputs such as scorecard points."""
 
         return {}
+
+    def get_numerical_warning_table(self) -> pd.DataFrame:
+        """Returns normalized warning records captured during fitting."""
+
+        if not self.numerical_warning_records_:
+            return pd.DataFrame(
+                columns=[
+                    "source",
+                    "stage",
+                    "warning_code",
+                    "category",
+                    "message",
+                    "occurrence_count",
+                ]
+            )
+        return pd.DataFrame(self.numerical_warning_records_).copy(deep=True)
+
+    def get_numerical_diagnostics_table(self) -> pd.DataFrame:
+        """Returns normalized estimation-health diagnostics captured during fitting."""
+
+        if not self.numerical_diagnostics_:
+            return pd.DataFrame(
+                columns=["source", "diagnostic_name", "value", "status", "detail"]
+            )
+        return pd.DataFrame(self.numerical_diagnostics_).copy(deep=True)
+
+    def _base_model_artifacts(self) -> dict[str, pd.DataFrame]:
+        artifacts: dict[str, pd.DataFrame] = {}
+        warning_table = self.get_numerical_warning_table()
+        if not warning_table.empty:
+            artifacts["numerical_warning_summary"] = warning_table
+        diagnostics_table = self.get_numerical_diagnostics_table()
+        if not diagnostics_table.empty:
+            artifacts["model_numerical_diagnostics"] = diagnostics_table
+        return artifacts
+
+    def _merge_model_artifacts(
+        self, artifacts: dict[str, pd.DataFrame]
+    ) -> dict[str, pd.DataFrame]:
+        return {**self._base_model_artifacts(), **artifacts}
+
+    def _run_with_warning_capture(
+        self,
+        callback,
+        *,
+        source: str,
+        stage: str = "fit",
+    ):
+        with warnings.catch_warnings(record=True) as captured:
+            warnings.simplefilter("always")
+            result = callback()
+        self._record_warning_batch(captured, source=source, stage=stage)
+        return result
+
+    def _record_warning_batch(
+        self,
+        captured: list[WarningMessage],
+        *,
+        source: str,
+        stage: str,
+    ) -> None:
+        grouped: dict[tuple[str, str, str, str, str], int] = {}
+        for record in captured:
+            category = record.category.__name__
+            message = " ".join(str(record.message).split())
+            warning_code = self._normalize_warning_code(category, message)
+            key = (source, stage, warning_code, category, message)
+            grouped[key] = grouped.get(key, 0) + 1
+        for (
+            warning_source,
+            warning_stage,
+            warning_code,
+            category,
+            message,
+        ), count in grouped.items():
+            self.numerical_warning_records_.append(
+                {
+                    "source": warning_source,
+                    "stage": warning_stage,
+                    "warning_code": warning_code,
+                    "category": category,
+                    "message": message,
+                    "occurrence_count": count,
+                }
+            )
+
+    def _normalize_warning_code(self, category: str, message: str) -> str:
+        normalized_message = message.lower()
+        if category == ConvergenceWarning.__name__:
+            return "convergence_max_iter"
+        if category == HessianInversionWarning.__name__:
+            return "hessian_inversion"
+        if "divide by zero" in normalized_message:
+            return "divide_by_zero"
+        if "invalid value" in normalized_message:
+            return "invalid_numeric_value"
+        if "overflow" in normalized_message:
+            return "overflow"
+        return category.lower()
+
+    def _add_numerical_diagnostic(
+        self,
+        *,
+        source: str,
+        diagnostic_name: str,
+        value: Any,
+        status: str = "ok",
+        detail: str = "",
+    ) -> None:
+        if hasattr(value, "item"):
+            value = value.item()
+        self.numerical_diagnostics_.append(
+            {
+                "source": source,
+                "diagnostic_name": diagnostic_name,
+                "value": value,
+                "status": status,
+                "detail": detail,
+            }
+        )
+
+    def _update_sklearn_fit_diagnostics(self, estimator: Any, *, source: str) -> None:
+        solver = getattr(estimator, "solver", None)
+        if solver:
+            self._add_numerical_diagnostic(
+                source=source,
+                diagnostic_name="solver",
+                value=str(solver),
+            )
+
+        configured_max_iter = getattr(estimator, "max_iter", None)
+        if configured_max_iter is not None:
+            self._add_numerical_diagnostic(
+                source=source,
+                diagnostic_name="configured_max_iter",
+                value=int(configured_max_iter),
+            )
+
+        observed_iterations = getattr(estimator, "n_iter_", None)
+        if observed_iterations is not None:
+            max_observed_iterations = int(np.max(np.asarray(observed_iterations, dtype=float)))
+            converged = (
+                configured_max_iter is None or max_observed_iterations < int(configured_max_iter)
+            )
+            self._add_numerical_diagnostic(
+                source=source,
+                diagnostic_name="observed_max_iterations",
+                value=max_observed_iterations,
+                status="ok" if converged else "warn",
+                detail="Maximum iterations observed across fitted classes.",
+            )
+            self._add_numerical_diagnostic(
+                source=source,
+                diagnostic_name="converged_before_max_iter",
+                value=bool(converged),
+                status="ok" if converged else "warn",
+                detail="False indicates the estimator reached the configured iteration cap.",
+            )
+
+    def _update_statsmodels_fit_diagnostics(self, results: Any, *, source: str) -> None:
+        converged = getattr(results, "converged", None)
+        if converged is not None:
+            self._add_numerical_diagnostic(
+                source=source,
+                diagnostic_name="converged",
+                value=bool(converged),
+                status="ok" if converged else "warn",
+            )
+
+        mle_retvals = getattr(results, "mle_retvals", None)
+        if isinstance(mle_retvals, dict):
+            for key in ("iterations", "fopt", "warnflag"):
+                if key in mle_retvals:
+                    self._add_numerical_diagnostic(
+                        source=source,
+                        diagnostic_name=f"mle_{key}",
+                        value=mle_retvals[key],
+                        status="warn" if key == "warnflag" and mle_retvals[key] else "ok",
+                    )
+
+        optimizer_success = getattr(results, "success", None)
+        if optimizer_success is not None:
+            self._add_numerical_diagnostic(
+                source=source,
+                diagnostic_name="optimizer_success",
+                value=bool(optimizer_success),
+                status="ok" if optimizer_success else "warn",
+            )
+
+        optimizer_message = getattr(results, "message", None)
+        if optimizer_message:
+            self._add_numerical_diagnostic(
+                source=source,
+                diagnostic_name="optimizer_message",
+                value=str(optimizer_message),
+                status="ok" if getattr(results, "success", True) else "warn",
+            )
+
+        standard_errors = getattr(results, "bse", None)
+        if standard_errors is not None:
+            finite_standard_errors = bool(
+                np.isfinite(np.asarray(standard_errors, dtype=float)).all()
+            )
+            self._add_numerical_diagnostic(
+                source=source,
+                diagnostic_name="finite_standard_errors",
+                value=finite_standard_errors,
+                status="ok" if finite_standard_errors else "warn",
+                detail="False indicates covariance estimation did not return finite values.",
+            )
 
 
 class SklearnAdapter(BaseModelAdapter):
@@ -157,7 +382,14 @@ class SklearnAdapter(BaseModelAdapter):
         )
         x_matrix = self.preprocessor.fit_transform(x_frame)
         self.feature_names_ = list(self.preprocessor.get_feature_names_out())
-        self.estimator.fit(x_matrix, y_values)
+        self._run_with_warning_capture(
+            lambda: self.estimator.fit(x_matrix, y_values),
+            source=f"{self.model_type.value}.estimator",
+        )
+        self._update_sklearn_fit_diagnostics(
+            self.estimator,
+            source=f"{self.model_type.value}.estimator",
+        )
         return self
 
     def _transform(self, x_frame: pd.DataFrame) -> np.ndarray:
@@ -177,7 +409,9 @@ class SklearnAdapter(BaseModelAdapter):
                     "abs_coefficient": np.abs(coefficients),
                     "std_error": np.nan,
                     "p_value": np.nan,
-                    "odds_ratio": np.exp(coefficients) if self.is_binary_classifier else np.nan,
+                    "odds_ratio": _safe_odds_ratio(coefficients)
+                    if self.is_binary_classifier
+                    else np.nan,
                 }
             )
         else:
@@ -358,7 +592,14 @@ class ScorecardLogisticRegressionAdapter(BaseModelAdapter):
 
         self.feature_specs_ = specs
         self.feature_names_ = list(transformed.columns)
-        self.estimator.fit(transformed.to_numpy(dtype=float), y_values.astype(int))
+        self._run_with_warning_capture(
+            lambda: self.estimator.fit(transformed.to_numpy(dtype=float), y_values.astype(int)),
+            source=f"{self.model_type.value}.estimator",
+        )
+        self._update_sklearn_fit_diagnostics(
+            self.estimator,
+            source=f"{self.model_type.value}.estimator",
+        )
         coefficients = np.ravel(self.estimator.coef_)
         for spec, coefficient in zip(self.feature_specs_, coefficients, strict=False):
             spec.coefficient = float(coefficient)
@@ -638,7 +879,7 @@ class ScorecardLogisticRegressionAdapter(BaseModelAdapter):
                     "abs_coefficient": np.abs(coefficients),
                     "std_error": np.nan,
                     "p_value": np.nan,
-                    "odds_ratio": np.exp(coefficients),
+                    "odds_ratio": _safe_odds_ratio(coefficients),
                 }
             )
             .sort_values("importance_value", ascending=False)
@@ -646,11 +887,13 @@ class ScorecardLogisticRegressionAdapter(BaseModelAdapter):
         )
 
     def get_model_artifacts(self) -> dict[str, pd.DataFrame]:
-        return {
+        return self._merge_model_artifacts(
+            {
             "scorecard_woe_table": self.scorecard_table_.copy(deep=True),
             "scorecard_points_table": self.scorecard_points_table_.copy(deep=True),
             "scorecard_scaling_summary": self.scorecard_scaling_summary_.copy(deep=True),
-        }
+            }
+        )
 
     def _fit_score_scaling(self) -> None:
         self.score_factor_ = self.scorecard_config.points_to_double_odds / np.log(2.0)
@@ -786,9 +1029,16 @@ class BetaRegressionAdapter(BaseModelAdapter):
             self.model_config.beta_clip_epsilon,
             1 - self.model_config.beta_clip_epsilon,
         )
-        self.results = BetaModel(clipped_target, x_with_const).fit(
-            maxiter=self.model_config.max_iter,
-            disp=False,
+        self.results = self._run_with_warning_capture(
+            lambda: BetaModel(clipped_target, x_with_const).fit(
+                maxiter=self.model_config.max_iter,
+                disp=False,
+            ),
+            source=f"{self.model_type.value}.beta_fit",
+        )
+        self._update_statsmodels_fit_diagnostics(
+            self.results,
+            source=f"{self.model_type.value}.beta_fit",
         )
         self.feature_names_ = list(self.results.model.exog_names)
         return self
@@ -826,7 +1076,11 @@ class BetaRegressionAdapter(BaseModelAdapter):
 
     @property
     def summary_text(self) -> str:
-        return self.results.summary().as_text()
+        return self._run_with_warning_capture(
+            lambda: self.results.summary().as_text(),
+            source=f"{self.model_type.value}.summary",
+            stage="summary",
+        )
 
 
 class TwoStageLGDModelAdapter(BaseModelAdapter):
@@ -869,8 +1123,25 @@ class TwoStageLGDModelAdapter(BaseModelAdapter):
         unique_positive_values = np.unique(positive_indicator)
         if len(unique_positive_values) == 1:
             self.constant_positive_probability_ = float(unique_positive_values[0])
+            self._add_numerical_diagnostic(
+                source=f"{self.model_type.value}.stage_one",
+                diagnostic_name="constant_positive_probability",
+                value=self.constant_positive_probability_,
+                status="warn",
+                detail=(
+                    "Stage one collapsed to a constant because the positive-loss "
+                    "flag had one class."
+                ),
+            )
         else:
-            self.stage_one_estimator.fit(x_matrix, positive_indicator)
+            self._run_with_warning_capture(
+                lambda: self.stage_one_estimator.fit(x_matrix, positive_indicator),
+                source=f"{self.model_type.value}.stage_one_logit",
+            )
+            self._update_sklearn_fit_diagnostics(
+                self.stage_one_estimator,
+                source=f"{self.model_type.value}.stage_one_logit",
+            )
 
         positive_mask = positive_indicator == 1
         if positive_mask.sum() < 10:
@@ -882,9 +1153,16 @@ class TwoStageLGDModelAdapter(BaseModelAdapter):
             1 - self.model_config.beta_clip_epsilon,
         )
         x_positive = sm.add_constant(x_matrix[positive_mask], has_constant="add")
-        self.stage_two_results = BetaModel(clipped_positive_target, x_positive).fit(
-            maxiter=self.model_config.max_iter,
-            disp=False,
+        self.stage_two_results = self._run_with_warning_capture(
+            lambda: BetaModel(clipped_positive_target, x_positive).fit(
+                maxiter=self.model_config.max_iter,
+                disp=False,
+            ),
+            source=f"{self.model_type.value}.stage_two_beta",
+        )
+        self._update_statsmodels_fit_diagnostics(
+            self.stage_two_results,
+            source=f"{self.model_type.value}.stage_two_beta",
         )
         return self
 
@@ -925,7 +1203,7 @@ class TwoStageLGDModelAdapter(BaseModelAdapter):
                 "abs_coefficient": np.abs(stage_one_coefficients) + np.abs(stage_two_params),
                 "std_error": np.nan,
                 "p_value": np.nan,
-                "odds_ratio": np.exp(stage_one_coefficients),
+                "odds_ratio": _safe_odds_ratio(stage_one_coefficients),
                 "stage_one_coefficient": stage_one_coefficients,
                 "stage_two_coefficient": stage_two_params,
             }
@@ -939,12 +1217,13 @@ class TwoStageLGDModelAdapter(BaseModelAdapter):
             stage_one_coefficients = np.ravel(self.stage_one_estimator.coef_)
         stage_two_params = np.asarray(self.stage_two_results.params)
         stage_two_names = list(self.stage_two_results.model.exog_names)
-        return {
+        return self._merge_model_artifacts(
+            {
             "lgd_stage_one_coefficients": pd.DataFrame(
                 {
                     "feature_name": self.feature_names_,
                     "coefficient": stage_one_coefficients,
-                    "odds_ratio": np.exp(stage_one_coefficients),
+                    "odds_ratio": _safe_odds_ratio(stage_one_coefficients),
                 }
             ),
             "lgd_stage_two_coefficients": pd.DataFrame(
@@ -953,7 +1232,8 @@ class TwoStageLGDModelAdapter(BaseModelAdapter):
                     "coefficient": stage_two_params,
                 }
             ),
-        }
+            }
+        )
 
     @property
     def summary_text(self) -> str:
@@ -1043,7 +1323,14 @@ class StatsmodelsAdapter(BaseModelAdapter):
         x_matrix = self.preprocessor.fit_transform(x_frame)
         self.feature_names_ = ["const", *self.preprocessor.get_feature_names_out().tolist()]
         x_with_const = sm.add_constant(x_matrix, has_constant="add")
-        self.results = self._fit_statsmodel(x_with_const, y_values.astype(float))
+        self.results = self._run_with_warning_capture(
+            lambda: self._fit_statsmodel(x_with_const, y_values.astype(float)),
+            source=f"{self.model_type.value}.statsmodel_fit",
+        )
+        self._update_statsmodels_fit_diagnostics(
+            self.results,
+            source=f"{self.model_type.value}.statsmodel_fit",
+        )
         return self
 
     def _transform(self, x_frame: pd.DataFrame) -> np.ndarray:
@@ -1070,14 +1357,18 @@ class StatsmodelsAdapter(BaseModelAdapter):
                 "abs_coefficient": np.abs(params),
                 "std_error": bse,
                 "p_value": pvalues,
-                "odds_ratio": np.exp(params) if self.is_binary_classifier else np.nan,
+                "odds_ratio": _safe_odds_ratio(params) if self.is_binary_classifier else np.nan,
             }
         )
         return table.sort_values("importance_value", ascending=False).reset_index(drop=True)
 
     @property
     def summary_text(self) -> str:
-        return self.results.summary().as_text()
+        return self._run_with_warning_capture(
+            lambda: self.results.summary().as_text(),
+            source=f"{self.model_type.value}.summary",
+            stage="summary",
+        )
 
 
 class PanelRegressionAdapter(StatsmodelsAdapter):

@@ -33,6 +33,9 @@ the run through the major stages of model development:
 - model training or existing-model scoring
 - calibration, evaluation, backtesting, and scenario testing
 - robustness and stability testing on repeated train resamples
+- preset-aware workflow guardrails and readiness checks
+- credit-risk-specific development diagnostics such as vintage, migration,
+  recovery, and macro-sensitivity views
 - visualization, documentation, and artifact export
 
 Supported Development Scope
@@ -80,6 +83,12 @@ Each run can produce a structured output package that includes:
 - scorecard binning workbench outputs
 - scenario-testing outputs
 - documentation packs and validation packs
+- committee-ready and validation-ready DOCX/PDF reports
+- normalized numerical warning capture and estimation-health diagnostics
+- polished regulator-ready reports with cover pages, section maps, section
+  summaries, split appendices, and explicit numerical-stability sections
+- structured reference example packs for PD, LGD, CECL/lifetime PD, and CCAR
+  forecasting workflows
 - reproducibility manifests and rerun-ready code bundles
 - Excel templates and governance workbooks for offline review
 
@@ -92,12 +101,15 @@ features include:
 - feature dictionaries with business definitions, lineage, and rationale
 - governed transformations that are explicitly configured and exported
 - manual feature-review decisions and scorecard bin overrides
+- preset-aware workflow guardrails tied to the selected development use case
 - repeated-resample stability testing for held-out metrics and feature effects
 - model-suitability and assumption checks before fitting
 - reproducibility manifests with hashes, package versions, and environment
   details
 - structured documentation and validation packs for reviewer handoff
 - deterministic reference workflows for core use cases
+- walkthrough-style example packs that explain how to read the exported
+  artifact bundles for those reference workflows
 
 Business Value
 --------------

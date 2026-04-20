@@ -310,6 +310,13 @@ Supported policies:
 - `forward_fill`
 - `backward_fill`
 
+Current advanced-imputation support also includes:
+
+- grouped train-fit scalar fills via `ColumnSpec.missing_value_group_columns`
+- generated missingness-indicator features via `ColumnSpec.create_missing_indicator`
+- exported pre-imputation split snapshots for downstream diagnostics
+- optional imputation sensitivity testing through `ImputationSensitivityConfig`
+
 ### Default resolution
 
 `inherit_default` resolves as:
@@ -324,6 +331,10 @@ Scalar fill values are fit on the train split only and then reused across:
 - validation
 - test
 - score-only datasets
+
+When `missing_value_group_columns` is configured, the same train-fit rule
+learns group-specific fill values first and then falls back to the global
+train-fit fill value if a group is not present downstream.
 
 ### Directional fill rules
 
@@ -340,7 +351,10 @@ pipeline fails rather than silently applying a fallback imputer.
 ### Audit evidence
 
 - table `imputation_rules`
+- table `imputation_group_rules` when grouped imputation is enabled
 - metadata `imputation_summary`
+- table `imputation_sensitivity_summary` when sensitivity testing is enabled
+- table `imputation_sensitivity_detail` when sensitivity testing is enabled
 
 ## 10. Governed Transformations
 
@@ -354,13 +368,19 @@ Supported transform families:
 
 - `winsorize`
 - `log1p`
+- `yeo_johnson`
+- `capped_zscore`
 - `ratio`
 - `interaction`
+- `lag`
+- `rolling_mean`
+- `pct_change`
 - `manual_bins`
 
 ### Audit evidence
 
 - table `governed_transformations`
+- table `interaction_candidates` when the interaction engine is enabled
 - metadata `transformation_summary`
 
 ## 11. Variable Selection

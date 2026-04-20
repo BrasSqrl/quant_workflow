@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+import warnings
 from copy import deepcopy
 from typing import Any
 
@@ -12,7 +13,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 import statsmodels.api as sm
 from plotly.subplots import make_subplots
-from scipy.stats import chi2
+from scipy.stats import chi2, chi2_contingency
 from sklearn.isotonic import IsotonicRegression
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import (
@@ -24,15 +25,27 @@ from sklearn.metrics import (
     roc_curve,
 )
 from statsmodels.graphics.gofplots import ProbPlot
-from statsmodels.stats.outliers_influence import variance_inflation_factor
-from statsmodels.tsa.stattools import adfuller
+from statsmodels.stats.diagnostic import acorr_ljungbox, het_arch
+from statsmodels.stats.outliers_influence import OLSInfluence
+from statsmodels.stats.stattools import durbin_watson
+from statsmodels.tsa.stattools import adfuller, coint, grangercausalitytests
 
 from ..base import BasePipelineStep
-from ..config import CalibrationStrategy, DataStructure, ExecutionMode, ModelType, TargetMode
+from ..config import (
+    CalibrationStrategy,
+    DataStructure,
+    ExecutionMode,
+    MissingValuePolicy,
+    ModelType,
+    TargetMode,
+)
 from ..context import PipelineContext
 from ..models import build_model_adapter
 from ..presentation import apply_fintech_figure_theme, friendly_asset_title
+from ..workflow_guardrails import build_guardrail_table, evaluate_workflow_guardrails
 from .evaluation import EvaluationStep
+from .imputation import ImputationStep
+from .transformations import TransformationStep
 
 
 class DiagnosticsStep(BasePipelineStep):
@@ -73,6 +86,8 @@ class DiagnosticsStep(BasePipelineStep):
         self._add_model_artifact_outputs(context)
         if context.config.documentation.enabled:
             self._add_documentation_metadata(context)
+        if context.config.workflow_guardrails.enabled:
+            self._add_workflow_guardrail_outputs(context)
         self._add_feature_dictionary_outputs(context)
         self._add_manual_review_outputs(context)
 
@@ -82,6 +97,8 @@ class DiagnosticsStep(BasePipelineStep):
             self._add_descriptive_statistics(context)
         if diagnostic_config.missingness_analysis:
             self._add_missingness_outputs(context)
+        if context.config.imputation_sensitivity.enabled:
+            self._add_imputation_sensitivity_outputs(context)
         if diagnostic_config.correlation_analysis:
             self._add_correlation_outputs(context, top_features)
         if diagnostic_config.vif_analysis:
@@ -143,6 +160,10 @@ class DiagnosticsStep(BasePipelineStep):
             self._add_segment_outputs(context, labels_available)
         if diagnostic_config.adf_analysis:
             self._add_adf_outputs(context, top_features, labels_available)
+        if diagnostic_config.model_specification_tests and labels_available:
+            self._add_model_specification_outputs(context, top_features)
+        if diagnostic_config.forecasting_statistical_tests:
+            self._add_forecasting_test_outputs(context, top_features, labels_available)
         if context.comparison_results is not None:
             self._add_model_comparison_outputs(context)
         if context.config.robustness.enabled:
@@ -155,6 +176,8 @@ class DiagnosticsStep(BasePipelineStep):
             self._add_scenario_outputs(context)
         if context.config.feature_policy.enabled:
             self._add_feature_policy_outputs(context)
+        if context.config.credit_risk.enabled:
+            self._add_credit_risk_outputs(context, labels_available)
 
         self._apply_visual_theme(context)
         return context
@@ -264,12 +287,24 @@ class DiagnosticsStep(BasePipelineStep):
         ]
         context.diagnostics_tables["documentation_metadata"] = pd.DataFrame(rows)
 
+    def _add_workflow_guardrail_outputs(self, context: PipelineContext) -> None:
+        findings = evaluate_workflow_guardrails(context.config)
+        guardrail_table = build_guardrail_table(findings)
+        context.diagnostics_tables["workflow_guardrails"] = guardrail_table
+        severity_counts = (
+            guardrail_table["severity"].value_counts().to_dict()
+            if "severity" in guardrail_table.columns
+            else {}
+        )
+        context.metadata["workflow_guardrail_summary"] = {
+            "error_count": int(severity_counts.get("error", 0)),
+            "warning_count": int(severity_counts.get("warning", 0)),
+            "pass_count": int(severity_counts.get("pass", 0)),
+        }
+
     def _add_feature_dictionary_outputs(self, context: PipelineContext) -> None:
         feature_dictionary = context.config.feature_dictionary
-        entry_map = {
-            entry.feature_name: entry
-            for entry in feature_dictionary.entries
-        }
+        entry_map = {entry.feature_name: entry for entry in feature_dictionary.entries}
         rows: list[dict[str, Any]] = []
         for feature_name in context.feature_columns:
             entry = entry_map.get(feature_name)
@@ -353,11 +388,32 @@ class DiagnosticsStep(BasePipelineStep):
         context.diagnostics_tables["descriptive_statistics"] = descriptive
 
     def _add_missingness_outputs(self, context: PipelineContext) -> None:
-        dataframe = context.working_data
+        pre_imputation_frames = context.metadata.get("pre_imputation_split_frames", {})
+        combined_rows: list[pd.DataFrame] = []
+        split_rows: list[dict[str, Any]] = []
+        for split_name, split_frame in pre_imputation_frames.items():
+            split_copy = split_frame.copy(deep=True)
+            split_copy["split"] = split_name
+            combined_rows.append(split_copy)
+            split_missingness = (
+                split_frame.isna()
+                .mean()
+                .mul(100)
+                .rename("missing_pct")
+                .rename_axis("column_name")
+                .reset_index()
+            )
+            split_missingness["split"] = split_name
+            split_rows.extend(split_missingness.to_dict(orient="records"))
+
+        dataframe = (
+            pd.concat(combined_rows, ignore_index=True) if combined_rows else context.working_data
+        )
         if dataframe is None:
             return
         missingness = (
-            dataframe.isna()
+            dataframe.drop(columns=["split"], errors="ignore")
+            .isna()
             .mean()
             .mul(100)
             .rename("missing_pct")
@@ -372,6 +428,234 @@ class DiagnosticsStep(BasePipelineStep):
             y="missing_pct",
             title="Missingness by Column",
             labels={"column_name": "Column", "missing_pct": "Missing %"},
+        )
+        if split_rows:
+            missingness_by_split = pd.DataFrame(split_rows).sort_values(
+                ["column_name", "split"],
+                ascending=[True, True],
+            )
+            context.diagnostics_tables["missingness_by_split"] = missingness_by_split
+            chart_data = (
+                missingness_by_split.sort_values("missing_pct", ascending=False)
+                .groupby("column_name", dropna=False)
+                .head(3)
+            )
+            context.visualizations["missingness_by_split"] = px.bar(
+                chart_data,
+                x="column_name",
+                y="missing_pct",
+                color="split",
+                barmode="group",
+                title="Missingness by Split",
+                labels={"column_name": "Column", "missing_pct": "Missing %", "split": "Split"},
+            )
+
+        if (
+            self._labels_available(context)
+            and context.target_column
+            and context.target_column in dataframe.columns
+        ):
+            self._add_missingness_target_association(context, dataframe)
+        self._add_missing_indicator_correlation(context, dataframe)
+
+    def _add_missingness_target_association(
+        self,
+        context: PipelineContext,
+        dataframe: pd.DataFrame,
+    ) -> None:
+        rows: list[dict[str, Any]] = []
+        candidate_columns = [
+            column_name
+            for column_name in context.feature_columns
+            if column_name in dataframe.columns and dataframe[column_name].isna().sum() > 0
+        ]
+        target_series = pd.to_numeric(dataframe[context.target_column], errors="coerce")
+        for column_name in candidate_columns:
+            missing_indicator = dataframe[column_name].isna().astype(int)
+            if missing_indicator.nunique() < 2:
+                continue
+            aligned = pd.DataFrame(
+                {"missing_indicator": missing_indicator, "target": target_series}
+            ).dropna()
+            if len(aligned) < 10:
+                continue
+            row = {
+                "column_name": column_name,
+                "missing_rate_pct": float(aligned["missing_indicator"].mean() * 100),
+                "target_mean_when_missing": float(
+                    aligned.loc[aligned["missing_indicator"] == 1, "target"].mean()
+                ),
+                "target_mean_when_present": float(
+                    aligned.loc[aligned["missing_indicator"] == 0, "target"].mean()
+                ),
+                "target_difference": float(
+                    aligned.loc[aligned["missing_indicator"] == 1, "target"].mean()
+                    - aligned.loc[aligned["missing_indicator"] == 0, "target"].mean()
+                ),
+                "association_score": float(
+                    abs(aligned["missing_indicator"].corr(aligned["target"]))
+                ),
+            }
+            if context.config.target.mode == TargetMode.BINARY:
+                contingency = pd.crosstab(
+                    aligned["missing_indicator"],
+                    aligned["target"].astype(int),
+                )
+                if contingency.shape == (2, 2):
+                    _, p_value, _, _ = chi2_contingency(contingency)
+                    row["p_value"] = float(p_value)
+                else:
+                    row["p_value"] = float("nan")
+            rows.append(row)
+        if rows:
+            association_table = pd.DataFrame(rows).sort_values(
+                "association_score",
+                ascending=False,
+            )
+            context.diagnostics_tables["missingness_target_association"] = association_table
+
+    def _add_missing_indicator_correlation(
+        self,
+        context: PipelineContext,
+        dataframe: pd.DataFrame,
+    ) -> None:
+        indicator_columns: list[str] = []
+        for column_name in context.feature_columns:
+            if column_name not in dataframe.columns:
+                continue
+            if dataframe[column_name].isna().sum() <= 0:
+                continue
+            indicator_name = f"{column_name}__raw_missing"
+            dataframe[indicator_name] = dataframe[column_name].isna().astype(int)
+            indicator_columns.append(indicator_name)
+        if len(indicator_columns) < 2:
+            return
+        indicator_frame = dataframe[indicator_columns].corr(numeric_only=True)
+        renamed_index = [name.removesuffix("__raw_missing") for name in indicator_frame.index]
+        renamed_columns = [name.removesuffix("__raw_missing") for name in indicator_frame.columns]
+        indicator_frame.index = renamed_index
+        indicator_frame.columns = renamed_columns
+        context.diagnostics_tables["missingness_indicator_correlation"] = (
+            indicator_frame.rename_axis("feature_name").reset_index().rename_axis(None, axis=1)
+        )
+        context.visualizations["missingness_indicator_heatmap"] = px.imshow(
+            indicator_frame,
+            title="Missingness Indicator Correlation",
+            color_continuous_scale="Tealrose",
+            origin="lower",
+            aspect="auto",
+        )
+
+    def _add_imputation_sensitivity_outputs(self, context: PipelineContext) -> None:
+        base_frames = context.metadata.get("pre_imputation_split_frames")
+        if not base_frames or context.model is None:
+            return
+        config = context.config.imputation_sensitivity
+        split_name = config.evaluation_split
+        if split_name not in base_frames or split_name not in context.predictions:
+            return
+        rules_by_feature = context.metadata.get("imputation_rules_by_feature", {})
+        candidate_features = self._select_imputation_sensitivity_features(context, rules_by_feature)
+        if not candidate_features:
+            return
+
+        baseline_scores = self._prediction_score_series(context.predictions[split_name], context)
+        baseline_metrics = context.metrics.get(split_name, {})
+        detail_rows: list[dict[str, Any]] = []
+        summary_rows: list[dict[str, Any]] = []
+        detail_feature_limit = config.max_features_with_detail
+
+        for feature_name in candidate_features:
+            rule = rules_by_feature.get(feature_name, {})
+            tested_rows: list[dict[str, Any]] = []
+            for alternative_policy in config.alternative_policies:
+                if alternative_policy.value == rule.get("applied_policy"):
+                    continue
+                try:
+                    scored_frame, metrics = self._score_alternative_imputation_policy(
+                        context=context,
+                        feature_name=feature_name,
+                        policy=alternative_policy,
+                        evaluation_split=split_name,
+                    )
+                except ValueError:
+                    continue
+                if scored_frame is None:
+                    continue
+                alternative_scores = self._prediction_score_series(scored_frame, context)
+                metric_delta = self._primary_metric_delta(
+                    context,
+                    baseline_metrics,
+                    metrics,
+                )
+                row = {
+                    "feature_name": feature_name,
+                    "baseline_policy": rule.get("applied_policy", ""),
+                    "alternative_policy": alternative_policy.value,
+                    "train_missing_count": int(rule.get("train_missing_count", 0)),
+                    "average_score_delta": float(
+                        alternative_scores.mean() - baseline_scores.mean()
+                    ),
+                    "average_abs_score_delta": float(
+                        (alternative_scores - baseline_scores).abs().mean()
+                    ),
+                    "max_abs_score_delta": float(
+                        (alternative_scores - baseline_scores).abs().max()
+                    ),
+                    "primary_metric_delta": metric_delta,
+                }
+                if context.config.target.mode == TargetMode.BINARY:
+                    row["alternative_roc_auc"] = metrics.get("roc_auc")
+                    row["alternative_brier_score"] = metrics.get("brier_score")
+                else:
+                    row["alternative_rmse"] = metrics.get("rmse")
+                    row["alternative_r2"] = metrics.get("r2")
+                detail_rows.append(row)
+                tested_rows.append(row)
+            if tested_rows:
+                feature_frame = pd.DataFrame(tested_rows)
+                summary_rows.append(
+                    {
+                        "feature_name": feature_name,
+                        "baseline_policy": rule.get("applied_policy", ""),
+                        "tested_policy_count": int(len(feature_frame)),
+                        "max_average_abs_score_delta": float(
+                            feature_frame["average_abs_score_delta"].max()
+                        ),
+                        "max_primary_metric_delta": float(
+                            feature_frame["primary_metric_delta"].abs().max()
+                        ),
+                        "materiality_rank": float(
+                            feature_frame["average_abs_score_delta"].max()
+                            + feature_frame["primary_metric_delta"].abs().max()
+                        ),
+                    }
+                )
+        if not detail_rows:
+            return
+        detail_table = pd.DataFrame(detail_rows).sort_values(
+            ["average_abs_score_delta", "max_abs_score_delta"],
+            ascending=[False, False],
+        )
+        context.diagnostics_tables["imputation_sensitivity_detail"] = detail_table
+        summary_table = pd.DataFrame(summary_rows).sort_values(
+            "materiality_rank",
+            ascending=False,
+        )
+        context.diagnostics_tables["imputation_sensitivity_summary"] = summary_table
+        chart_data = detail_table.head(max(1, detail_feature_limit * 3))
+        context.visualizations["imputation_sensitivity_impact"] = px.bar(
+            chart_data,
+            x="feature_name",
+            y="average_abs_score_delta",
+            color="alternative_policy",
+            barmode="group",
+            title="Imputation Sensitivity Impact",
+            labels={
+                "feature_name": "Feature",
+                "average_abs_score_delta": "Average Absolute Score Delta",
+                "alternative_policy": "Alternative Policy",
+            },
         )
 
     def _add_correlation_outputs(
@@ -416,10 +700,7 @@ class DiagnosticsStep(BasePipelineStep):
         vif_rows = []
         matrix = design.to_numpy(dtype=float)
         for index, column in enumerate(numeric_columns):
-            try:
-                vif_value = variance_inflation_factor(matrix, index)
-            except Exception:
-                vif_value = np.nan
+            vif_value = self._compute_vif_value(matrix, index)
             vif_rows.append({"feature_name": column, "vif": float(vif_value)})
 
         vif_table = pd.DataFrame(vif_rows).sort_values("vif", ascending=False)
@@ -431,6 +712,30 @@ class DiagnosticsStep(BasePipelineStep):
             title="Variance Inflation Factor Profile",
             labels={"feature_name": "Feature", "vif": "VIF"},
         )
+
+    def _compute_vif_value(self, matrix: np.ndarray, index: int) -> float:
+        target = matrix[:, index]
+        predictors = np.delete(matrix, index, axis=1)
+        if predictors.size == 0:
+            return float("nan")
+        if np.isclose(float(np.var(target)), 0.0):
+            return float("inf")
+
+        design = np.column_stack([np.ones(len(predictors), dtype=float), predictors])
+        try:
+            coefficients, _, _, _ = np.linalg.lstsq(design, target, rcond=None)
+        except np.linalg.LinAlgError:
+            return float("nan")
+
+        fitted = design @ coefficients
+        total_sum_of_squares = float(np.sum((target - np.mean(target)) ** 2))
+        if total_sum_of_squares <= 1e-12:
+            return float("inf")
+        residual_sum_of_squares = float(np.sum((target - fitted) ** 2))
+        r_squared = 1.0 - (residual_sum_of_squares / total_sum_of_squares)
+        if r_squared >= 1.0 - 1e-10:
+            return float("inf")
+        return float(1.0 / max(1.0 - r_squared, 1e-10))
 
     def _add_quantile_outputs(self, context: PipelineContext, labels_available: bool) -> None:
         backtest = context.backtest_summary.copy(deep=True)
@@ -835,9 +1140,7 @@ class DiagnosticsStep(BasePipelineStep):
             )
             .reset_index()
         )
-        grouped["bucket_label"] = grouped["bucket_index"].map(
-            lambda value: f"Bin {int(value) + 1}"
-        )
+        grouped["bucket_label"] = grouped["bucket_index"].map(lambda value: f"Bin {int(value) + 1}")
         grouped["non_default_count"] = (
             grouped["observation_count"] - grouped["observed_default_count"]
         )
@@ -873,8 +1176,8 @@ class DiagnosticsStep(BasePipelineStep):
             clipped_probability,
         )
         ece, mce = self._calibration_error_metrics(calibration_table)
-        hosmer_lemeshow_statistic, hosmer_lemeshow_p_value = (
-            self._hosmer_lemeshow_statistic(calibration_table)
+        hosmer_lemeshow_statistic, hosmer_lemeshow_p_value = self._hosmer_lemeshow_statistic(
+            calibration_table
         )
         return {
             "method_name": method_payload["method_name"],
@@ -900,7 +1203,9 @@ class DiagnosticsStep(BasePipelineStep):
     ) -> tuple[float, float]:
         try:
             design = sm.add_constant(self._safe_logit(probability), has_constant="add")
-            fit = sm.GLM(y_true, design, family=sm.families.Binomial()).fit()
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore", RuntimeWarning)
+                fit = sm.GLM(y_true, design, family=sm.families.Binomial()).fit()
             intercept = float(fit.params[0])
             slope = float(fit.params[1])
         except Exception:
@@ -933,9 +1238,8 @@ class DiagnosticsStep(BasePipelineStep):
             expected_defaults,
             1e-9,
         )
-        non_default_term = (
-            (observed_non_defaults - expected_non_defaults) ** 2
-            / np.maximum(expected_non_defaults, 1e-9)
+        non_default_term = (observed_non_defaults - expected_non_defaults) ** 2 / np.maximum(
+            expected_non_defaults, 1e-9
         )
         statistic = float(np.sum(default_term + non_default_term))
         degrees_of_freedom = max(int(len(calibration_table) - 2), 1)
@@ -1281,6 +1585,224 @@ class DiagnosticsStep(BasePipelineStep):
                 orient="records"
             )
 
+    def _add_model_specification_outputs(
+        self,
+        context: PipelineContext,
+        top_features: list[str],
+    ) -> None:
+        train_frame = context.split_frames.get("train")
+        if train_frame is None or context.target_column is None:
+            return
+        numeric_features = [
+            feature_name
+            for feature_name in top_features
+            if feature_name in context.numeric_features and feature_name in train_frame.columns
+        ]
+        if not numeric_features:
+            return
+
+        rows: list[dict[str, Any]] = []
+        design = (
+            train_frame[numeric_features]
+            .apply(pd.to_numeric, errors="coerce")
+            .replace([np.inf, -np.inf], np.nan)
+            .dropna()
+        )
+        if len(design) >= 10 and design.shape[1] >= 2:
+            condition_index = self._compute_condition_index(design.to_numpy(dtype=float))
+            rows.append(
+                {
+                    "test_name": "condition_index",
+                    "scope": "numeric_design_matrix",
+                    "statistic": condition_index,
+                    "p_value": np.nan,
+                    "status": "warning" if condition_index >= 30 else "pass",
+                    "detail": "Values above 30 suggest potentially harmful collinearity.",
+                }
+            )
+
+        if context.config.target.mode == TargetMode.BINARY:
+            rows.extend(self._run_box_tidwell_tests(train_frame, context, numeric_features))
+            rows.extend(self._run_link_test(train_frame, context, numeric_features))
+            influence_table = self._run_binary_influence_analysis(
+                train_frame, context, numeric_features
+            )
+        else:
+            influence_table = self._run_continuous_influence_analysis(
+                train_frame,
+                context,
+                numeric_features,
+            )
+
+        if rows:
+            specification_table = pd.DataFrame(rows)
+            context.diagnostics_tables["model_specification_tests"] = specification_table
+            context.statistical_tests["model_specification"] = specification_table.to_dict(
+                orient="records"
+            )
+        if influence_table is not None and not influence_table.empty:
+            context.diagnostics_tables["model_influence_summary"] = influence_table
+            context.visualizations["model_influence_plot"] = px.scatter(
+                influence_table.head(50),
+                x="leverage",
+                y="cooks_distance",
+                size="absolute_residual",
+                hover_name="observation_id",
+                title="Influence Summary",
+                labels={
+                    "leverage": "Leverage",
+                    "cooks_distance": "Cook's Distance",
+                    "absolute_residual": "Absolute Residual",
+                },
+            )
+
+    def _add_forecasting_test_outputs(
+        self,
+        context: PipelineContext,
+        top_features: list[str],
+        labels_available: bool,
+    ) -> None:
+        if context.config.split.data_structure not in {
+            DataStructure.TIME_SERIES,
+            DataStructure.PANEL,
+        }:
+            return
+        date_column = context.config.split.date_column
+        if not date_column:
+            return
+        series_frame: pd.DataFrame | None = None
+        for candidate_split in ("test", "validation", "train"):
+            evaluation_split = context.predictions.get(candidate_split)
+            if evaluation_split is None or date_column not in evaluation_split.columns:
+                continue
+            candidate_series = self._build_forecasting_series_frame(
+                evaluation_split,
+                context=context,
+                top_features=top_features,
+                labels_available=labels_available,
+            )
+            if candidate_series is not None and len(candidate_series) >= 10:
+                series_frame = candidate_series
+                break
+        if series_frame is None:
+            return
+
+        rows: list[dict[str, Any]] = []
+        residual_series = (
+            series_frame["residual"].dropna()
+            if "residual" in series_frame
+            else pd.Series(dtype=float)
+        )
+        if len(residual_series) >= 8:
+            rows.append(
+                {
+                    "test_name": "durbin_watson",
+                    "scope": "residuals",
+                    "statistic": float(durbin_watson(residual_series.to_numpy(dtype=float))),
+                    "p_value": np.nan,
+                    "status": "review",
+                    "detail": "Values near 2 suggest weak residual autocorrelation.",
+                }
+            )
+            try:
+                ljung = acorr_ljungbox(
+                    residual_series.to_numpy(dtype=float),
+                    lags=[min(5, max(1, len(residual_series) // 4))],
+                    return_df=True,
+                )
+                rows.append(
+                    {
+                        "test_name": "ljung_box",
+                        "scope": "residuals",
+                        "statistic": float(ljung["lb_stat"].iloc[0]),
+                        "p_value": float(ljung["lb_pvalue"].iloc[0]),
+                        "status": "pass"
+                        if float(ljung["lb_pvalue"].iloc[0]) >= 0.05
+                        else "warning",
+                        "detail": "Low p-values suggest residual autocorrelation remains.",
+                    }
+                )
+            except Exception:
+                pass
+            try:
+                arch_statistic, arch_p_value, _, _ = het_arch(
+                    residual_series.to_numpy(dtype=float),
+                    nlags=min(5, max(1, len(residual_series) // 5)),
+                )
+                rows.append(
+                    {
+                        "test_name": "arch_lm",
+                        "scope": "residuals",
+                        "statistic": float(arch_statistic),
+                        "p_value": float(arch_p_value),
+                        "status": "pass" if float(arch_p_value) >= 0.05 else "warning",
+                        "detail": "Low p-values suggest conditional heteroskedasticity.",
+                    }
+                )
+            except Exception:
+                pass
+
+        cointegration_rows: list[dict[str, Any]] = []
+        granger_rows: list[dict[str, Any]] = []
+        target_series = (
+            series_frame["target_mean"].dropna()
+            if "target_mean" in series_frame
+            else pd.Series(dtype=float)
+        )
+        for feature_name in top_features[: min(3, len(top_features))]:
+            if feature_name not in series_frame.columns:
+                continue
+            feature_series = pd.to_numeric(series_frame[feature_name], errors="coerce")
+            aligned = pd.DataFrame({"target": target_series, "feature": feature_series}).dropna()
+            if len(aligned) < 12:
+                continue
+            try:
+                statistic, p_value, _ = coint(aligned["target"], aligned["feature"])
+                cointegration_rows.append(
+                    {
+                        "feature_name": feature_name,
+                        "test_name": "cointegration",
+                        "statistic": float(statistic),
+                        "p_value": float(p_value),
+                    }
+                )
+            except Exception:
+                pass
+            try:
+                granger_frame = aligned.rename(
+                    columns={"target": "target", "feature": feature_name}
+                )[["target", feature_name]]
+                granger_result = grangercausalitytests(
+                    granger_frame,
+                    maxlag=min(2, max(1, len(granger_frame) // 6)),
+                    verbose=False,
+                )
+                best_lag, best_p = min(
+                    (
+                        lag,
+                        float(result[0]["ssr_ftest"][1]),
+                    )
+                    for lag, result in granger_result.items()
+                )
+                granger_rows.append(
+                    {
+                        "feature_name": feature_name,
+                        "best_lag": int(best_lag),
+                        "p_value": float(best_p),
+                    }
+                )
+            except Exception:
+                pass
+
+        if rows:
+            forecasting_table = pd.DataFrame(rows)
+            context.diagnostics_tables["forecasting_statistical_tests"] = forecasting_table
+            context.statistical_tests["forecasting"] = forecasting_table.to_dict(orient="records")
+        if cointegration_rows:
+            context.diagnostics_tables["cointegration_tests"] = pd.DataFrame(cointegration_rows)
+        if granger_rows:
+            context.diagnostics_tables["granger_causality_tests"] = pd.DataFrame(granger_rows)
+
     def _add_residual_outputs(self, context: PipelineContext) -> None:
         scored_test = context.predictions["test"].copy(deep=True)
         scored_test["residual"] = (
@@ -1334,9 +1856,9 @@ class DiagnosticsStep(BasePipelineStep):
 
         context.diagnostics_tables["model_comparison"] = comparison_table.copy(deep=True)
         ranking_split = context.config.comparison.ranking_split
-        ranking_frame = comparison_table.loc[
-            comparison_table["split"] == ranking_split
-        ].dropna(subset=["ranking_value"])
+        ranking_frame = comparison_table.loc[comparison_table["split"] == ranking_split].dropna(
+            subset=["ranking_value"]
+        )
         if ranking_frame.empty:
             return
 
@@ -1554,8 +2076,7 @@ class DiagnosticsStep(BasePipelineStep):
             "evaluation_split": robustness.evaluation_split,
         }
         context.log(
-            "Completed robustness testing across "
-            f"{successful_resamples} held-out resamples."
+            f"Completed robustness testing across {successful_resamples} held-out resamples."
         )
 
     def _build_robustness_feature_rows(
@@ -1572,9 +2093,7 @@ class DiagnosticsStep(BasePipelineStep):
         working["source_feature_name"] = working["feature_name"].map(
             lambda value: self._infer_source_feature_name(str(value), context.feature_columns)
         )
-        has_coefficients = (
-            "coefficient" in working.columns and working["coefficient"].notna().any()
-        )
+        has_coefficients = "coefficient" in working.columns and working["coefficient"].notna().any()
         rows: list[dict[str, Any]] = []
         grouped = working.groupby("source_feature_name", dropna=False)
         for feature_name, group in grouped:
@@ -1645,12 +2164,8 @@ class DiagnosticsStep(BasePipelineStep):
                 errors="coerce",
             ).fillna(0.0)
             signed_effect = bool(group["signed_effect"].any())
-            positive_share = (
-                float((effect_values > 0).mean()) if signed_effect else float("nan")
-            )
-            negative_share = (
-                float((effect_values < 0).mean()) if signed_effect else float("nan")
-            )
+            positive_share = float((effect_values > 0).mean()) if signed_effect else float("nan")
+            negative_share = float((effect_values < 0).mean()) if signed_effect else float("nan")
             sign_consistency = (
                 max(positive_share, negative_share) if signed_effect else float("nan")
             )
@@ -1764,9 +2279,9 @@ class DiagnosticsStep(BasePipelineStep):
     ) -> pd.DataFrame:
         rows: list[dict[str, Any]] = []
         for feature_name, woe_feature in woe_detail.groupby("feature_name", dropna=False):
-            points_feature = points_detail.loc[
-                points_detail["feature_name"] == feature_name
-            ].copy(deep=True)
+            points_feature = points_detail.loc[points_detail["feature_name"] == feature_name].copy(
+                deep=True
+            )
             if points_feature.empty:
                 continue
             bad_rates = pd.to_numeric(woe_feature["bad_rate"], errors="coerce").dropna()
@@ -1848,11 +2363,7 @@ class DiagnosticsStep(BasePipelineStep):
             rank_text = reason_column.rsplit("_", 1)[-1]
             rank_value = int(rank_text) if rank_text.isdigit() else reason_column
             counts = (
-                score_split[reason_column]
-                .replace("", np.nan)
-                .dropna()
-                .astype(str)
-                .value_counts()
+                score_split[reason_column].replace("", np.nan).dropna().astype(str).value_counts()
             )
             for feature_name, count in counts.items():
                 rows.append(
@@ -1878,9 +2389,9 @@ class DiagnosticsStep(BasePipelineStep):
         points_detail: pd.DataFrame,
     ) -> None:
         feature_woe = woe_detail.loc[woe_detail["feature_name"] == feature_name].copy(deep=True)
-        feature_points = points_detail.loc[
-            points_detail["feature_name"] == feature_name
-        ].copy(deep=True)
+        feature_points = points_detail.loc[points_detail["feature_name"] == feature_name].copy(
+            deep=True
+        )
         if feature_woe.empty or feature_points.empty:
             return
         feature_woe = feature_woe.sort_values("bucket_rank")
@@ -1915,13 +2426,11 @@ class DiagnosticsStep(BasePipelineStep):
         if len(finite_values) < 2:
             return "not_applicable"
         if all(
-            left <= right
-            for left, right in zip(finite_values, finite_values[1:], strict=False)
+            left <= right for left, right in zip(finite_values, finite_values[1:], strict=False)
         ):
             return "increasing"
         if all(
-            left >= right
-            for left, right in zip(finite_values, finite_values[1:], strict=False)
+            left >= right for left, right in zip(finite_values, finite_values[1:], strict=False)
         ):
             return "decreasing"
         return "non_monotonic"
@@ -2023,7 +2532,9 @@ class DiagnosticsStep(BasePipelineStep):
                             "feature_name": feature_name,
                             "feature_value": float(grid_value),
                             "average_prediction": float(
-                                np.mean(context.model.predict_score(modified[context.feature_columns]))
+                                np.mean(
+                                    context.model.predict_score(modified[context.feature_columns])
+                                )
                             ),
                             "curve_type": "numeric",
                             "score_label": score_label,
@@ -2046,7 +2557,9 @@ class DiagnosticsStep(BasePipelineStep):
                             "feature_name": feature_name,
                             "feature_value": category,
                             "average_prediction": float(
-                                np.mean(context.model.predict_score(modified[context.feature_columns]))
+                                np.mean(
+                                    context.model.predict_score(modified[context.feature_columns])
+                                )
                             ),
                             "curve_type": "categorical",
                             "score_label": score_label,
@@ -2088,10 +2601,14 @@ class DiagnosticsStep(BasePipelineStep):
         rows = []
         for feature_name in top_features[: context.config.explainability.top_n_features]:
             permuted = x_values.copy(deep=True)
-            permuted[feature_name] = permuted[feature_name].sample(
-                frac=1.0,
-                random_state=context.config.split.random_state,
-            ).to_numpy()
+            permuted[feature_name] = (
+                permuted[feature_name]
+                .sample(
+                    frac=1.0,
+                    random_state=context.config.split.random_state,
+                )
+                .to_numpy()
+            )
             permuted_scores = context.model.predict_score(permuted)
             if context.config.target.mode == TargetMode.BINARY:
                 permuted_metric = float(roc_auc_score(y_true.astype(int), permuted_scores))
@@ -2165,9 +2682,7 @@ class DiagnosticsStep(BasePipelineStep):
                     shock.value,
                 )
 
-            scenario_score = context.model.predict_score(
-                scenario_features[context.feature_columns]
-            )
+            scenario_score = context.model.predict_score(scenario_features[context.feature_columns])
             delta = np.asarray(scenario_score) - baseline_score
             summary = {
                 "scenario_name": scenario.name,
@@ -2179,9 +2694,7 @@ class DiagnosticsStep(BasePipelineStep):
             }
             if context.config.target.mode == TargetMode.BINARY:
                 threshold = context.config.model.threshold
-                summary["baseline_positive_rate"] = float(
-                    np.mean(baseline_score >= threshold)
-                )
+                summary["baseline_positive_rate"] = float(np.mean(baseline_score >= threshold))
                 summary["scenario_positive_rate"] = float(
                     np.mean(np.asarray(scenario_score) >= threshold)
                 )
@@ -2369,6 +2882,563 @@ class DiagnosticsStep(BasePipelineStep):
                 )
                 raise ValueError(f"Feature policy violations detected: {failure_preview}.")
 
+    def _add_credit_risk_outputs(
+        self,
+        context: PipelineContext,
+        labels_available: bool,
+    ) -> None:
+        predictions = self._combined_predictions(context)
+        if predictions.empty:
+            return
+
+        date_column = context.config.split.date_column
+        entity_column = context.config.split.entity_column
+        score_column = (
+            "predicted_probability"
+            if context.config.target.mode == TargetMode.BINARY
+            else "predicted_value"
+        )
+        segment_column = context.config.diagnostics.default_segment_column
+        if not segment_column or segment_column not in predictions.columns:
+            segment_column = next(
+                (
+                    column
+                    for column in context.categorical_features
+                    if column in predictions.columns
+                ),
+                None,
+            )
+
+        credit_risk = context.config.credit_risk
+        if credit_risk.vintage_analysis:
+            self._add_vintage_outputs(
+                context=context,
+                predictions=predictions,
+                date_column=date_column,
+                score_column=score_column,
+                labels_available=labels_available,
+            )
+        if credit_risk.cohort_pd_analysis and context.config.target.mode == TargetMode.BINARY:
+            self._add_cohort_outputs(
+                context=context,
+                predictions=predictions,
+                date_column=date_column,
+                entity_column=entity_column,
+                score_column=score_column,
+                labels_available=labels_available,
+            )
+        if credit_risk.migration_analysis or credit_risk.delinquency_transition_analysis:
+            self._add_transition_outputs(
+                context=context,
+                predictions=predictions,
+                date_column=date_column,
+                entity_column=entity_column,
+            )
+        if credit_risk.lgd_segment_analysis and context.config.target.mode == TargetMode.CONTINUOUS:
+            self._add_lgd_segment_outputs(
+                context=context,
+                predictions=predictions,
+                score_column=score_column,
+                segment_column=segment_column,
+                labels_available=labels_available,
+            )
+        if credit_risk.recovery_analysis and context.config.target.mode == TargetMode.CONTINUOUS:
+            self._add_recovery_outputs(
+                context=context,
+                predictions=predictions,
+                score_column=score_column,
+                segment_column=segment_column,
+                labels_available=labels_available,
+            )
+        if credit_risk.macro_sensitivity_analysis:
+            self._add_macro_sensitivity_outputs(context=context, score_column=score_column)
+
+    def _combined_predictions(self, context: PipelineContext) -> pd.DataFrame:
+        if not context.predictions:
+            return pd.DataFrame()
+        return pd.concat(context.predictions.values(), ignore_index=True)
+
+    def _add_vintage_outputs(
+        self,
+        *,
+        context: PipelineContext,
+        predictions: pd.DataFrame,
+        date_column: str | None,
+        score_column: str,
+        labels_available: bool,
+    ) -> None:
+        if not date_column or date_column not in predictions.columns:
+            return
+
+        vintage_frame = predictions.copy(deep=True)
+        vintage_frame[date_column] = pd.to_datetime(vintage_frame[date_column], errors="coerce")
+        vintage_frame = vintage_frame.dropna(subset=[date_column])
+        if vintage_frame.empty:
+            return
+
+        vintage_frame["vintage"] = vintage_frame[date_column].dt.to_period("M").astype(str)
+        aggregations: dict[str, tuple[str, str]] = {
+            "observation_count": (score_column, "size"),
+            "average_score": (score_column, "mean"),
+        }
+        if labels_available and context.target_column in vintage_frame.columns:
+            aggregations["average_actual"] = (context.target_column, "mean")
+        vintage_summary = (
+            vintage_frame.groupby(["split", "vintage"], dropna=False)
+            .agg(**aggregations)
+            .reset_index()
+            .sort_values(["split", "vintage"])
+        )
+        if vintage_summary.empty:
+            return
+        context.diagnostics_tables["vintage_summary"] = vintage_summary
+        value_columns = ["average_score"]
+        if "average_actual" in vintage_summary.columns:
+            value_columns = ["average_actual", "average_score"]
+        vintage_plot = vintage_summary.melt(
+            id_vars=["split", "vintage", "observation_count"],
+            value_vars=value_columns,
+            var_name="metric",
+            value_name="value",
+        )
+        context.visualizations["vintage_curve"] = px.line(
+            vintage_plot,
+            x="vintage",
+            y="value",
+            color="split",
+            facet_row="metric",
+            markers=True,
+            title="Vintage Curve",
+            labels={"vintage": "Vintage", "value": "Average Value", "split": "Split"},
+        )
+
+    def _add_cohort_outputs(
+        self,
+        *,
+        context: PipelineContext,
+        predictions: pd.DataFrame,
+        date_column: str | None,
+        entity_column: str | None,
+        score_column: str,
+        labels_available: bool,
+    ) -> None:
+        if (
+            not date_column
+            or not entity_column
+            or date_column not in predictions.columns
+            or entity_column not in predictions.columns
+        ):
+            return
+
+        cohort_frame = predictions.copy(deep=True)
+        cohort_frame[date_column] = pd.to_datetime(cohort_frame[date_column], errors="coerce")
+        cohort_frame = cohort_frame.dropna(subset=[date_column, entity_column])
+        if cohort_frame.empty:
+            return
+
+        first_dates = cohort_frame.groupby(entity_column, dropna=False)[date_column].transform(
+            "min"
+        )
+        cohort_frame["cohort"] = first_dates.dt.to_period("M").astype(str)
+        aggregations: dict[str, tuple[str, str]] = {
+            "observation_count": (score_column, "size"),
+            "average_score": (score_column, "mean"),
+        }
+        if labels_available and context.target_column in cohort_frame.columns:
+            aggregations["average_actual"] = (context.target_column, "mean")
+        cohort_summary = (
+            cohort_frame.groupby(["split", "cohort"], dropna=False)
+            .agg(**aggregations)
+            .reset_index()
+            .sort_values(["split", "cohort"])
+        )
+        if cohort_summary.empty:
+            return
+        context.diagnostics_tables["cohort_pd_summary"] = cohort_summary
+        value_columns = ["average_score"]
+        if "average_actual" in cohort_summary.columns:
+            value_columns = ["average_actual", "average_score"]
+        cohort_plot = cohort_summary.melt(
+            id_vars=["split", "cohort", "observation_count"],
+            value_vars=value_columns,
+            var_name="metric",
+            value_name="value",
+        )
+        context.visualizations["cohort_pd_curve"] = px.line(
+            cohort_plot,
+            x="cohort",
+            y="value",
+            color="split",
+            facet_row="metric",
+            markers=True,
+            title="Cohort PD Curve",
+            labels={"cohort": "Cohort", "value": "Average Value", "split": "Split"},
+        )
+
+    def _add_transition_outputs(
+        self,
+        *,
+        context: PipelineContext,
+        predictions: pd.DataFrame,
+        date_column: str | None,
+        entity_column: str | None,
+    ) -> None:
+        state_column = self._detect_transition_state_column(predictions, context)
+        if (
+            state_column is None
+            or not date_column
+            or not entity_column
+            or date_column not in predictions.columns
+            or entity_column not in predictions.columns
+        ):
+            return
+
+        transition_frame = predictions[["split", entity_column, date_column, state_column]].copy(
+            deep=True
+        )
+        transition_frame[date_column] = pd.to_datetime(
+            transition_frame[date_column], errors="coerce"
+        )
+        transition_frame = transition_frame.dropna(
+            subset=[entity_column, date_column, state_column]
+        )
+        if transition_frame.empty:
+            return
+
+        transition_frame = transition_frame.sort_values(["split", entity_column, date_column])
+        transition_frame["next_state"] = transition_frame.groupby(
+            ["split", entity_column],
+            dropna=False,
+        )[state_column].shift(-1)
+        transition_frame = transition_frame.dropna(subset=["next_state"])
+        if transition_frame.empty:
+            return
+
+        transition_frame["current_state"] = transition_frame[state_column].astype(str)
+        transition_frame["next_state"] = transition_frame["next_state"].astype(str)
+        grouped = (
+            transition_frame.groupby(["split", "current_state", "next_state"], dropna=False)
+            .size()
+            .rename("transition_count")
+            .reset_index()
+        )
+        grouped["row_total"] = grouped.groupby(["split", "current_state"], dropna=False)[
+            "transition_count"
+        ].transform("sum")
+        grouped["transition_rate"] = grouped["transition_count"] / grouped["row_total"].replace(
+            0, np.nan
+        )
+        context.diagnostics_tables["migration_matrix"] = grouped
+
+        state_order = self._build_state_order(
+            pd.unique(
+                pd.concat(
+                    [
+                        grouped["current_state"].astype(str),
+                        grouped["next_state"].astype(str),
+                    ],
+                    ignore_index=True,
+                )
+            ).tolist()
+        )
+        grouped["transition_direction"] = grouped.apply(
+            lambda row: self._classify_transition_direction(
+                str(row["current_state"]),
+                str(row["next_state"]),
+                state_order,
+            ),
+            axis=1,
+        )
+        roll_rate_summary = (
+            grouped.groupby(["split", "transition_direction"], dropna=False)[
+                ["transition_count", "transition_rate"]
+            ]
+            .sum()
+            .reset_index()
+        )
+        context.diagnostics_tables["roll_rate_summary"] = roll_rate_summary
+
+        heatmap_table = (
+            grouped.groupby(["current_state", "next_state"], dropna=False)["transition_count"]
+            .sum()
+            .unstack(fill_value=0)
+        )
+        if not heatmap_table.empty:
+            context.visualizations["migration_heatmap"] = px.imshow(
+                heatmap_table,
+                text_auto=True,
+                title=f"Migration Heatmap ({state_column})",
+                labels={"x": "Next State", "y": "Current State", "color": "Transitions"},
+                aspect="auto",
+            )
+
+    def _add_lgd_segment_outputs(
+        self,
+        *,
+        context: PipelineContext,
+        predictions: pd.DataFrame,
+        score_column: str,
+        segment_column: str | None,
+        labels_available: bool,
+    ) -> None:
+        if (
+            not labels_available
+            or not segment_column
+            or segment_column not in predictions.columns
+            or context.target_column not in predictions.columns
+        ):
+            return
+
+        lgd_summary = (
+            predictions.assign(_segment=predictions[segment_column].fillna("Missing").astype(str))
+            .groupby(["split", "_segment"], dropna=False)
+            .agg(
+                observation_count=(score_column, "size"),
+                average_actual=(context.target_column, "mean"),
+                average_score=(score_column, "mean"),
+            )
+            .reset_index()
+            .sort_values(["split", "observation_count"], ascending=[True, False])
+        )
+        if lgd_summary.empty:
+            return
+        top_segments = (
+            lgd_summary.groupby("_segment", dropna=False)["observation_count"]
+            .sum()
+            .sort_values(ascending=False)
+            .head(context.config.credit_risk.top_segments)
+            .index
+        )
+        lgd_summary = lgd_summary.loc[lgd_summary["_segment"].isin(top_segments)].copy(deep=True)
+        context.diagnostics_tables["lgd_segment_summary"] = lgd_summary
+        lgd_chart = lgd_summary.melt(
+            id_vars=["split", "_segment", "observation_count"],
+            value_vars=["average_actual", "average_score"],
+            var_name="metric",
+            value_name="value",
+        )
+        context.visualizations["lgd_segment_chart"] = px.bar(
+            lgd_chart,
+            x="_segment",
+            y="value",
+            color="split",
+            barmode="group",
+            facet_row="metric",
+            title=f"LGD by {segment_column}",
+            labels={"_segment": segment_column, "value": "Average Value", "split": "Split"},
+        )
+
+    def _add_recovery_outputs(
+        self,
+        *,
+        context: PipelineContext,
+        predictions: pd.DataFrame,
+        score_column: str,
+        segment_column: str | None,
+        labels_available: bool,
+    ) -> None:
+        if not segment_column or segment_column not in predictions.columns:
+            return
+
+        recovery_frame = predictions.assign(
+            _segment=predictions[segment_column].fillna("Missing").astype(str),
+            predicted_recovery=1.0 - pd.to_numeric(predictions[score_column], errors="coerce"),
+        )
+        aggregations: dict[str, tuple[str, str]] = {
+            "observation_count": ("predicted_recovery", "size"),
+            "average_predicted_recovery": ("predicted_recovery", "mean"),
+        }
+        if labels_available and context.target_column in recovery_frame.columns:
+            recovery_frame["actual_recovery"] = 1.0 - pd.to_numeric(
+                recovery_frame[context.target_column],
+                errors="coerce",
+            )
+            aggregations["average_actual_recovery"] = ("actual_recovery", "mean")
+        recovery_summary = (
+            recovery_frame.groupby(["split", "_segment"], dropna=False)
+            .agg(**aggregations)
+            .reset_index()
+            .sort_values(["split", "observation_count"], ascending=[True, False])
+        )
+        if recovery_summary.empty:
+            return
+        top_segments = (
+            recovery_summary.groupby("_segment", dropna=False)["observation_count"]
+            .sum()
+            .sort_values(ascending=False)
+            .head(context.config.credit_risk.top_segments)
+            .index
+        )
+        recovery_summary = recovery_summary.loc[
+            recovery_summary["_segment"].isin(top_segments)
+        ].copy(deep=True)
+        context.diagnostics_tables["recovery_segmentation"] = recovery_summary
+        value_columns = ["average_predicted_recovery"]
+        if "average_actual_recovery" in recovery_summary.columns:
+            value_columns = ["average_actual_recovery", "average_predicted_recovery"]
+        recovery_chart = recovery_summary.melt(
+            id_vars=["split", "_segment", "observation_count"],
+            value_vars=value_columns,
+            var_name="metric",
+            value_name="value",
+        )
+        context.visualizations["recovery_segment_chart"] = px.bar(
+            recovery_chart,
+            x="_segment",
+            y="value",
+            color="split",
+            barmode="group",
+            facet_row="metric",
+            title=f"Recovery by {segment_column}",
+            labels={"_segment": segment_column, "value": "Average Recovery", "split": "Split"},
+        )
+
+    def _add_macro_sensitivity_outputs(
+        self,
+        *,
+        context: PipelineContext,
+        score_column: str,
+    ) -> None:
+        evaluation_split = context.split_frames.get("test")
+        if evaluation_split is None:
+            evaluation_split = context.split_frames.get("validation")
+        if evaluation_split is None:
+            evaluation_split = context.split_frames.get("train")
+        if evaluation_split is None or context.model is None:
+            return
+
+        macro_features = [
+            feature_name
+            for feature_name in context.numeric_features
+            if self._is_macro_feature(feature_name) and feature_name in evaluation_split.columns
+        ][: context.config.credit_risk.top_macro_features]
+        if not macro_features:
+            return
+
+        x_frame = evaluation_split[context.feature_columns].copy(deep=True)
+        base_scores = pd.Series(context.model.predict_score(x_frame))
+        base_average = float(base_scores.mean()) if not base_scores.empty else float("nan")
+        rows: list[dict[str, Any]] = []
+        for feature_name in macro_features:
+            numeric_series = pd.to_numeric(x_frame[feature_name], errors="coerce")
+            feature_std = float(numeric_series.std(ddof=0))
+            if not np.isfinite(feature_std) or feature_std == 0:
+                continue
+            shock_value = feature_std * context.config.credit_risk.shock_std_multiplier
+            shocked = x_frame.copy(deep=True)
+            shocked[feature_name] = numeric_series + shock_value
+            shocked_scores = pd.Series(context.model.predict_score(shocked))
+            shocked_average = (
+                float(shocked_scores.mean()) if not shocked_scores.empty else float("nan")
+            )
+            rows.append(
+                {
+                    "feature_name": feature_name,
+                    "base_average_score": base_average,
+                    "shocked_average_score": shocked_average,
+                    "score_delta": shocked_average - base_average,
+                    "shock_value": shock_value,
+                }
+            )
+        if not rows:
+            return
+
+        macro_summary = pd.DataFrame(rows).sort_values("score_delta", ascending=False)
+        context.diagnostics_tables["macro_sensitivity"] = macro_summary
+        context.visualizations["macro_sensitivity_chart"] = px.bar(
+            macro_summary,
+            x="feature_name",
+            y="score_delta",
+            color="score_delta",
+            color_continuous_scale="Tealrose",
+            title="Macro Sensitivity",
+            labels={"feature_name": "Macro Feature", "score_delta": "Average Score Delta"},
+        )
+
+    def _detect_transition_state_column(
+        self,
+        predictions: pd.DataFrame,
+        context: PipelineContext,
+    ) -> str | None:
+        excluded = {
+            "split",
+            context.target_column,
+            "predicted_probability",
+            "predicted_value",
+            context.config.split.date_column,
+            context.config.split.entity_column,
+        }
+        candidates = [
+            column
+            for column in predictions.columns
+            if column not in excluded
+            and any(
+                keyword in str(column).lower()
+                for keyword in (
+                    "stage",
+                    "delinq",
+                    "delinquency",
+                    "dpd",
+                    "bucket",
+                    "rating",
+                    "grade",
+                )
+            )
+        ]
+        return candidates[0] if candidates else None
+
+    def _build_state_order(self, states: list[str]) -> dict[str, float]:
+        parsed: list[tuple[str, float]] = []
+        fallback_index = 1.0
+        for state in states:
+            numeric = pd.to_numeric(pd.Series([state]), errors="coerce").iloc[0]
+            if pd.notna(numeric):
+                parsed.append((state, float(numeric)))
+                continue
+            digits = "".join(
+                character for character in state if character.isdigit() or character == "."
+            )
+            if digits:
+                parsed.append((state, float(digits)))
+            else:
+                parsed.append((state, 1000.0 + fallback_index))
+                fallback_index += 1.0
+        return {state: order for state, order in sorted(parsed, key=lambda item: item[1])}
+
+    def _classify_transition_direction(
+        self,
+        current_state: str,
+        next_state: str,
+        state_order: dict[str, float],
+    ) -> str:
+        current_order = state_order.get(current_state, 0.0)
+        next_order = state_order.get(next_state, 0.0)
+        if next_order > current_order:
+            return "worsening"
+        if next_order < current_order:
+            return "improving"
+        return "stable"
+
+    def _is_macro_feature(self, feature_name: str) -> bool:
+        lowered = feature_name.lower()
+        return any(
+            keyword in lowered
+            for keyword in (
+                "macro",
+                "unemployment",
+                "gdp",
+                "inflation",
+                "hpi",
+                "home_price",
+                "spread",
+                "rate",
+                "cpi",
+                "fed",
+                "interest",
+                "stress",
+            )
+        )
+
     def _build_feature_coefficient_map(self, context: PipelineContext) -> dict[str, float]:
         if "coefficient" not in context.feature_importance.columns:
             return {}
@@ -2447,6 +3517,349 @@ class DiagnosticsStep(BasePipelineStep):
             "observed_value": observed_value,
             "threshold": threshold,
         }
+
+    def _select_imputation_sensitivity_features(
+        self,
+        context: PipelineContext,
+        rules_by_feature: dict[str, dict[str, Any]],
+    ) -> list[str]:
+        config = context.config.imputation_sensitivity
+        selected_features = [
+            feature for feature in config.selected_features if feature in rules_by_feature
+        ]
+        if selected_features:
+            return selected_features[: config.max_features]
+        ranked_candidates = sorted(
+            (
+                (feature_name, int(rule.get("train_missing_count", 0)))
+                for feature_name, rule in rules_by_feature.items()
+                if int(rule.get("train_missing_count", 0)) >= config.min_missing_count
+                and rule.get("applied_policy")
+                in {
+                    MissingValuePolicy.MEAN.value,
+                    MissingValuePolicy.MEDIAN.value,
+                    MissingValuePolicy.MODE.value,
+                }
+            ),
+            key=lambda item: item[1],
+            reverse=True,
+        )
+        return [feature_name for feature_name, _ in ranked_candidates[: config.max_features]]
+
+    def _score_alternative_imputation_policy(
+        self,
+        *,
+        context: PipelineContext,
+        feature_name: str,
+        policy: MissingValuePolicy,
+        evaluation_split: str,
+    ) -> tuple[pd.DataFrame | None, dict[str, Any]]:
+        base_frames = context.metadata.get("pre_imputation_split_frames", {})
+        if not base_frames:
+            return None, {}
+        trial_context = deepcopy(context)
+        trial_context.split_frames = {
+            split_name: split_frame.copy(deep=True)
+            for split_name, split_frame in base_frames.items()
+        }
+        trial_context.working_data = pd.concat(
+            trial_context.split_frames.values(),
+            ignore_index=True,
+        )
+        trial_context.feature_columns = list(
+            context.metadata.get("pre_imputation_feature_columns", [])
+        )
+        trial_context.numeric_features = list(
+            context.metadata.get("pre_imputation_numeric_features", [])
+        )
+        trial_context.categorical_features = list(
+            context.metadata.get("pre_imputation_categorical_features", [])
+        )
+        trial_context.predictions = {}
+        trial_context.metrics = {}
+        trial_context.diagnostics_tables = {}
+        trial_context.visualizations = {}
+        trial_context.statistical_tests = {}
+
+        schema_specs = deepcopy(trial_context.config.schema.column_specs)
+        for spec in schema_specs:
+            if spec.name != feature_name:
+                continue
+            spec.missing_value_policy = policy
+            spec.missing_value_group_columns = []
+        trial_context.config.schema.column_specs = schema_specs
+
+        trial_context = ImputationStep().run(trial_context)
+        trial_context = TransformationStep().run(trial_context)
+        evaluation_frame = trial_context.split_frames.get(evaluation_split)
+        if evaluation_frame is None:
+            return None, {}
+
+        metrics: dict[str, Any]
+        if context.config.target.mode == TargetMode.BINARY:
+            scored_frame, metrics = EvaluationStep()._score_binary_split(
+                evaluation_frame,
+                evaluation_split,
+                context.target_column or "",
+                context.feature_columns,
+                context.model,
+                context.config.model.threshold,
+                self._labels_available(context)
+                and context.target_column in evaluation_frame.columns,
+            )
+        else:
+            scored_frame, metrics = EvaluationStep()._score_continuous_split(
+                evaluation_frame,
+                evaluation_split,
+                context.target_column or "",
+                context.feature_columns,
+                context.model,
+                self._labels_available(context)
+                and context.target_column in evaluation_frame.columns,
+            )
+        return scored_frame, metrics
+
+    def _prediction_score_series(
+        self,
+        scored_frame: pd.DataFrame,
+        context: PipelineContext,
+    ) -> pd.Series:
+        score_column = (
+            "predicted_probability"
+            if context.config.target.mode == TargetMode.BINARY
+            else "predicted_value"
+        )
+        return pd.to_numeric(scored_frame[score_column], errors="coerce")
+
+    def _primary_metric_delta(
+        self,
+        context: PipelineContext,
+        baseline_metrics: dict[str, Any],
+        alternative_metrics: dict[str, Any],
+    ) -> float:
+        metric_name = "roc_auc" if context.config.target.mode == TargetMode.BINARY else "rmse"
+        baseline_value = baseline_metrics.get(metric_name)
+        alternative_value = alternative_metrics.get(metric_name)
+        if baseline_value is None or alternative_value is None:
+            return 0.0
+        return float(alternative_value) - float(baseline_value)
+
+    def _compute_condition_index(self, matrix: np.ndarray) -> float:
+        centered = matrix - np.nanmean(matrix, axis=0, keepdims=True)
+        column_std = np.nanstd(centered, axis=0, keepdims=True)
+        column_std[column_std == 0] = 1.0
+        standardized = centered / column_std
+        _, singular_values, _ = np.linalg.svd(standardized, full_matrices=False)
+        if singular_values.size == 0 or float(np.min(singular_values)) == 0.0:
+            return float("inf")
+        return float(np.max(singular_values) / np.min(singular_values))
+
+    def _run_box_tidwell_tests(
+        self,
+        train_frame: pd.DataFrame,
+        context: PipelineContext,
+        numeric_features: list[str],
+    ) -> list[dict[str, Any]]:
+        rows: list[dict[str, Any]] = []
+        target_series = pd.to_numeric(train_frame[context.target_column], errors="coerce")
+        for feature_name in numeric_features[: min(5, len(numeric_features))]:
+            feature_series = pd.to_numeric(train_frame[feature_name], errors="coerce")
+            aligned = pd.DataFrame({"target": target_series, "feature": feature_series}).dropna()
+            if len(aligned) < 30:
+                continue
+            shifted_feature = aligned["feature"] - float(aligned["feature"].min()) + 1.0
+            aligned["feature_log"] = shifted_feature * np.log(shifted_feature)
+            try:
+                fitted = sm.Logit(
+                    aligned["target"].astype(float),
+                    sm.add_constant(aligned[["feature", "feature_log"]], has_constant="add"),
+                ).fit(disp=False)
+            except Exception:
+                continue
+            p_value = float(fitted.pvalues.get("feature_log", np.nan))
+            rows.append(
+                {
+                    "test_name": "box_tidwell",
+                    "scope": feature_name,
+                    "statistic": float(fitted.params.get("feature_log", np.nan)),
+                    "p_value": p_value,
+                    "status": "pass" if np.isnan(p_value) or p_value >= 0.05 else "warning",
+                    "detail": "Low p-values suggest non-linearity in the logit link.",
+                }
+            )
+        return rows
+
+    def _run_link_test(
+        self,
+        train_frame: pd.DataFrame,
+        context: PipelineContext,
+        numeric_features: list[str],
+    ) -> list[dict[str, Any]]:
+        target_series = pd.to_numeric(train_frame[context.target_column], errors="coerce")
+        design = (
+            train_frame[numeric_features]
+            .apply(pd.to_numeric, errors="coerce")
+            .replace([np.inf, -np.inf], np.nan)
+        )
+        aligned = pd.concat([target_series.rename("target"), design], axis=1).dropna()
+        if len(aligned) < 30:
+            return []
+        try:
+            base_model = sm.Logit(
+                aligned["target"].astype(float),
+                sm.add_constant(aligned[numeric_features], has_constant="add"),
+            ).fit(disp=False)
+            fitted_logit = pd.Series(base_model.predict(), index=aligned.index).clip(1e-6, 1 - 1e-6)
+            link_frame = pd.DataFrame(
+                {
+                    "hat": np.log(fitted_logit / (1 - fitted_logit)),
+                    "hatsq": np.square(np.log(fitted_logit / (1 - fitted_logit))),
+                },
+                index=aligned.index,
+            )
+            link_model = sm.Logit(
+                aligned["target"].astype(float),
+                sm.add_constant(link_frame, has_constant="add"),
+            ).fit(disp=False)
+        except Exception:
+            return []
+        p_value = float(link_model.pvalues.get("hatsq", np.nan))
+        return [
+            {
+                "test_name": "link_test",
+                "scope": "model",
+                "statistic": float(link_model.params.get("hatsq", np.nan)),
+                "p_value": p_value,
+                "status": "pass" if np.isnan(p_value) or p_value >= 0.05 else "warning",
+                "detail": "Low p-values on hatsq suggest missing non-linear structure.",
+            }
+        ]
+
+    def _run_binary_influence_analysis(
+        self,
+        train_frame: pd.DataFrame,
+        context: PipelineContext,
+        numeric_features: list[str],
+    ) -> pd.DataFrame | None:
+        target_series = pd.to_numeric(train_frame[context.target_column], errors="coerce")
+        feature_sets = self._candidate_specification_feature_sets(numeric_features)
+        for feature_set in feature_sets:
+            design = (
+                train_frame[feature_set]
+                .apply(pd.to_numeric, errors="coerce")
+                .replace([np.inf, -np.inf], np.nan)
+            )
+            aligned = pd.concat([target_series.rename("target"), design], axis=1).dropna()
+            if len(aligned) < 30:
+                continue
+            try:
+                glm_model = sm.GLM(
+                    aligned["target"].astype(float),
+                    sm.add_constant(aligned[feature_set], has_constant="add"),
+                    family=sm.families.Binomial(),
+                ).fit()
+                influence = glm_model.get_influence(observed=False)
+                leverage = influence.hat_matrix_diag
+                cooks_distance = influence.cooks_distance[0]
+                residual = np.asarray(glm_model.resid_response)
+            except Exception:
+                continue
+            return pd.DataFrame(
+                {
+                    "observation_id": aligned.index.astype(str),
+                    "leverage": leverage,
+                    "cooks_distance": cooks_distance,
+                    "absolute_residual": np.abs(residual),
+                }
+            ).sort_values("cooks_distance", ascending=False)
+        return None
+
+    def _run_continuous_influence_analysis(
+        self,
+        train_frame: pd.DataFrame,
+        context: PipelineContext,
+        numeric_features: list[str],
+    ) -> pd.DataFrame | None:
+        target_series = pd.to_numeric(train_frame[context.target_column], errors="coerce")
+        feature_sets = self._candidate_specification_feature_sets(numeric_features)
+        for feature_set in feature_sets:
+            design = (
+                train_frame[feature_set]
+                .apply(pd.to_numeric, errors="coerce")
+                .replace([np.inf, -np.inf], np.nan)
+            )
+            aligned = pd.concat([target_series.rename("target"), design], axis=1).dropna()
+            if len(aligned) < 30:
+                continue
+            try:
+                ols_model = sm.OLS(
+                    aligned["target"].astype(float),
+                    sm.add_constant(aligned[feature_set], has_constant="add"),
+                ).fit()
+                influence = OLSInfluence(ols_model)
+            except Exception:
+                continue
+            return pd.DataFrame(
+                {
+                    "observation_id": aligned.index.astype(str),
+                    "leverage": influence.hat_matrix_diag,
+                    "cooks_distance": influence.cooks_distance[0],
+                    "absolute_residual": np.abs(np.asarray(ols_model.resid)),
+                }
+            ).sort_values("cooks_distance", ascending=False)
+        return None
+
+    def _candidate_specification_feature_sets(
+        self,
+        numeric_features: list[str],
+    ) -> list[list[str]]:
+        candidate_sets: list[list[str]] = []
+        if numeric_features:
+            candidate_sets.append(list(numeric_features))
+        if len(numeric_features) > 3:
+            candidate_sets.append(list(numeric_features[:3]))
+        if len(numeric_features) > 2:
+            candidate_sets.append(list(numeric_features[:2]))
+        return [feature_set for feature_set in candidate_sets if feature_set]
+
+    def _build_forecasting_series_frame(
+        self,
+        evaluation_split: pd.DataFrame,
+        *,
+        context: PipelineContext,
+        top_features: list[str],
+        labels_available: bool,
+    ) -> pd.DataFrame | None:
+        date_column = context.config.split.date_column
+        if not date_column or date_column not in evaluation_split.columns:
+            return None
+        aggregations: dict[str, tuple[str, str]] = {
+            "prediction_mean": (
+                "predicted_probability"
+                if context.config.target.mode == TargetMode.BINARY
+                else "predicted_value",
+                "mean",
+            ),
+        }
+        if labels_available and context.target_column in evaluation_split.columns:
+            aggregations["target_mean"] = (context.target_column, "mean")
+        for feature_name in top_features[: min(3, len(top_features))]:
+            if feature_name not in evaluation_split.columns:
+                continue
+            try:
+                pd.to_numeric(evaluation_split[feature_name], errors="coerce")
+            except Exception:
+                continue
+            aggregations[feature_name] = (feature_name, "mean")
+        aggregated = (
+            evaluation_split.groupby(date_column, dropna=False)
+            .agg(**aggregations)
+            .sort_index()
+            .reset_index()
+        )
+        if "target_mean" in aggregated.columns:
+            aggregated["residual"] = aggregated["target_mean"] - aggregated["prediction_mean"]
+        return aggregated
 
     def _sample_rows(
         self,

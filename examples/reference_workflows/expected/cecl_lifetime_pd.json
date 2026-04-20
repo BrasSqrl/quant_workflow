@@ -13,6 +13,10 @@
     "report",
     "documentation_pack",
     "validation_pack",
+    "committee_report_docx",
+    "validation_report_docx",
+    "committee_report_pdf",
+    "validation_report_pdf",
     "interactive_report",
     "config",
     "tests",
@@ -22,25 +26,40 @@
     "step_manifest",
     "runner_script",
     "rerun_readme",
-    "workbook"
+    "workbook",
+    "example_pack"
   ],
   "required_tables": [
     "assumption_checks",
     "calibration_summary",
     "feature_dictionary",
     "lifetime_pd_curve",
+    "workflow_guardrails",
     "reproducibility_manifest",
     "variable_selection",
     "feature_policy_checks",
     "scenario_summary",
-    "woe_iv_summary"
+    "woe_iv_summary",
+    "vintage_summary",
+    "cohort_pd_summary",
+    "migration_matrix",
+    "roll_rate_summary",
+    "macro_sensitivity"
   ],
   "required_figures": [
     "lifetime_pd_curve",
     "quantile_backtest",
     "calibration_curve",
     "threshold_analysis",
-    "time_backtest_test"
+    "time_backtest_test",
+    "vintage_curve",
+    "cohort_pd_curve",
+    "migration_heatmap",
+    "macro_sensitivity_chart"
+  ],
+  "html_sections": [
+    "Credit-Risk Development",
+    "Governance / Export Bundle"
   ],
   "documentation_sections": [
     "Development Summary",

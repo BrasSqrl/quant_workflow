@@ -8,22 +8,30 @@ from dataclasses import dataclass
 from .config import (
     CalibrationConfig,
     ComparisonConfig,
+    CreditRiskDiagnosticConfig,
     DataStructure,
     DiagnosticConfig,
     DocumentationConfig,
     ExplainabilityConfig,
+    FeatureDictionaryConfig,
     FeatureEngineeringConfig,
     FeaturePolicyConfig,
+    ImputationSensitivityConfig,
+    ManualReviewConfig,
     ModelConfig,
     ModelType,
     PresetName,
+    RegulatoryReportConfig,
     RobustnessConfig,
     ScenarioTestConfig,
     ScorecardConfig,
     ScorecardMonotonicity,
     ScorecardWorkbenchConfig,
+    SuitabilityCheckConfig,
     TargetMode,
+    TransformationConfig,
     VariableSelectionConfig,
+    WorkflowGuardrailConfig,
 )
 
 
@@ -42,13 +50,21 @@ class PresetDefinition:
     calibration: CalibrationConfig
     scorecard: ScorecardConfig
     scorecard_workbench: ScorecardWorkbenchConfig
+    imputation_sensitivity: ImputationSensitivityConfig
     robustness: RobustnessConfig
     variable_selection: VariableSelectionConfig
     documentation: DocumentationConfig
     feature_policy: FeaturePolicyConfig
+    feature_dictionary: FeatureDictionaryConfig
+    transformations: TransformationConfig
+    manual_review: ManualReviewConfig
+    suitability_checks: SuitabilityCheckConfig
+    workflow_guardrails: WorkflowGuardrailConfig
     explainability: ExplainabilityConfig
     comparison: ComparisonConfig
+    regulatory_reporting: RegulatoryReportConfig
     scenario_testing: ScenarioTestConfig
+    credit_risk: CreditRiskDiagnosticConfig
     target_output_column: str
     positive_values_text: str = ""
 
@@ -72,6 +88,7 @@ PRESET_DEFINITIONS: dict[PresetName, PresetDefinition] = {
             min_bin_share=0.05,
         ),
         scorecard_workbench=ScorecardWorkbenchConfig(enabled=True, max_features=6),
+        imputation_sensitivity=ImputationSensitivityConfig(enabled=False),
         robustness=RobustnessConfig(enabled=False),
         variable_selection=VariableSelectionConfig(
             enabled=True,
@@ -89,6 +106,11 @@ PRESET_DEFINITIONS: dict[PresetName, PresetDefinition] = {
             max_vif=10.0,
             minimum_information_value=0.02,
         ),
+        feature_dictionary=FeatureDictionaryConfig(enabled=False),
+        transformations=TransformationConfig(enabled=False),
+        manual_review=ManualReviewConfig(enabled=False),
+        suitability_checks=SuitabilityCheckConfig(enabled=True),
+        workflow_guardrails=WorkflowGuardrailConfig(enabled=True, fail_on_error=True),
         explainability=ExplainabilityConfig(),
         comparison=ComparisonConfig(
             enabled=True,
@@ -99,7 +121,16 @@ PRESET_DEFINITIONS: dict[PresetName, PresetDefinition] = {
                 ModelType.XGBOOST,
             ],
         ),
+        regulatory_reporting=RegulatoryReportConfig(enabled=True),
         scenario_testing=ScenarioTestConfig(enabled=False),
+        credit_risk=CreditRiskDiagnosticConfig(
+            enabled=True,
+            vintage_analysis=True,
+            migration_analysis=True,
+            delinquency_transition_analysis=True,
+            cohort_pd_analysis=True,
+            macro_sensitivity_analysis=True,
+        ),
         target_output_column="default_flag",
         positive_values_text="1",
     ),
@@ -122,6 +153,7 @@ PRESET_DEFINITIONS: dict[PresetName, PresetDefinition] = {
         calibration=CalibrationConfig(bin_count=12),
         scorecard=ScorecardConfig(),
         scorecard_workbench=ScorecardWorkbenchConfig(enabled=True, max_features=6),
+        imputation_sensitivity=ImputationSensitivityConfig(enabled=False),
         robustness=RobustnessConfig(enabled=False),
         variable_selection=VariableSelectionConfig(
             enabled=True,
@@ -140,6 +172,11 @@ PRESET_DEFINITIONS: dict[PresetName, PresetDefinition] = {
             max_vif=8.0,
             minimum_information_value=0.01,
         ),
+        feature_dictionary=FeatureDictionaryConfig(enabled=False),
+        transformations=TransformationConfig(enabled=False),
+        manual_review=ManualReviewConfig(enabled=False),
+        suitability_checks=SuitabilityCheckConfig(enabled=True),
+        workflow_guardrails=WorkflowGuardrailConfig(enabled=True, fail_on_error=True),
         explainability=ExplainabilityConfig(top_n_features=6),
         comparison=ComparisonConfig(
             enabled=True,
@@ -149,7 +186,16 @@ PRESET_DEFINITIONS: dict[PresetName, PresetDefinition] = {
                 ModelType.XGBOOST,
             ],
         ),
+        regulatory_reporting=RegulatoryReportConfig(enabled=True),
         scenario_testing=ScenarioTestConfig(enabled=False),
+        credit_risk=CreditRiskDiagnosticConfig(
+            enabled=True,
+            vintage_analysis=True,
+            migration_analysis=True,
+            delinquency_transition_analysis=True,
+            cohort_pd_analysis=True,
+            macro_sensitivity_analysis=True,
+        ),
         target_output_column="lifetime_default_flag",
         positive_values_text="1",
     ),
@@ -168,6 +214,7 @@ PRESET_DEFINITIONS: dict[PresetName, PresetDefinition] = {
         calibration=CalibrationConfig(),
         scorecard=ScorecardConfig(),
         scorecard_workbench=ScorecardWorkbenchConfig(enabled=True, max_features=6),
+        imputation_sensitivity=ImputationSensitivityConfig(enabled=False),
         robustness=RobustnessConfig(enabled=False),
         variable_selection=VariableSelectionConfig(
             enabled=True,
@@ -181,6 +228,11 @@ PRESET_DEFINITIONS: dict[PresetName, PresetDefinition] = {
             loss_definition="Loss given default severity conditional on default.",
         ),
         feature_policy=FeaturePolicyConfig(enabled=True, max_missing_pct=20.0, max_vif=10.0),
+        feature_dictionary=FeatureDictionaryConfig(enabled=False),
+        transformations=TransformationConfig(enabled=False),
+        manual_review=ManualReviewConfig(enabled=False),
+        suitability_checks=SuitabilityCheckConfig(enabled=True),
+        workflow_guardrails=WorkflowGuardrailConfig(enabled=True, fail_on_error=True),
         explainability=ExplainabilityConfig(top_n_features=6),
         comparison=ComparisonConfig(
             enabled=True,
@@ -191,7 +243,15 @@ PRESET_DEFINITIONS: dict[PresetName, PresetDefinition] = {
             ],
             ranking_metric="rmse",
         ),
+        regulatory_reporting=RegulatoryReportConfig(enabled=True),
         scenario_testing=ScenarioTestConfig(enabled=False),
+        credit_risk=CreditRiskDiagnosticConfig(
+            enabled=True,
+            vintage_analysis=True,
+            lgd_segment_analysis=True,
+            recovery_analysis=True,
+            macro_sensitivity_analysis=True,
+        ),
         target_output_column="lgd_value",
     ),
     PresetName.CCAR_FORECASTING: PresetDefinition(
@@ -212,6 +272,7 @@ PRESET_DEFINITIONS: dict[PresetName, PresetDefinition] = {
         calibration=CalibrationConfig(bin_count=12),
         scorecard=ScorecardConfig(),
         scorecard_workbench=ScorecardWorkbenchConfig(enabled=True, max_features=6),
+        imputation_sensitivity=ImputationSensitivityConfig(enabled=False),
         robustness=RobustnessConfig(enabled=False),
         variable_selection=VariableSelectionConfig(
             enabled=True,
@@ -225,6 +286,11 @@ PRESET_DEFINITIONS: dict[PresetName, PresetDefinition] = {
             target_definition="Continuous forecast target.",
         ),
         feature_policy=FeaturePolicyConfig(enabled=True, max_missing_pct=15.0, max_vif=8.0),
+        feature_dictionary=FeatureDictionaryConfig(enabled=False),
+        transformations=TransformationConfig(enabled=False),
+        manual_review=ManualReviewConfig(enabled=False),
+        suitability_checks=SuitabilityCheckConfig(enabled=True),
+        workflow_guardrails=WorkflowGuardrailConfig(enabled=True, fail_on_error=True),
         explainability=ExplainabilityConfig(top_n_features=6),
         comparison=ComparisonConfig(
             enabled=True,
@@ -235,7 +301,15 @@ PRESET_DEFINITIONS: dict[PresetName, PresetDefinition] = {
             ],
             ranking_metric="rmse",
         ),
+        regulatory_reporting=RegulatoryReportConfig(enabled=True),
         scenario_testing=ScenarioTestConfig(enabled=False),
+        credit_risk=CreditRiskDiagnosticConfig(
+            enabled=True,
+            vintage_analysis=True,
+            migration_analysis=True,
+            delinquency_transition_analysis=True,
+            macro_sensitivity_analysis=True,
+        ),
         target_output_column="forecast_value",
     ),
 }

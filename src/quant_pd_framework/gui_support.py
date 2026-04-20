@@ -17,6 +17,7 @@ from .config import (
     ColumnRole,
     ColumnSpec,
     ComparisonConfig,
+    CreditRiskDiagnosticConfig,
     DataStructure,
     DiagnosticConfig,
     DocumentationConfig,
@@ -30,11 +31,13 @@ from .config import (
     FeatureReviewDecision,
     FeatureReviewDecisionType,
     FrameworkConfig,
+    ImputationSensitivityConfig,
     ManualReviewConfig,
     MissingValuePolicy,
     ModelConfig,
     ModelType,
     PresetName,
+    RegulatoryReportConfig,
     ReproducibilityConfig,
     RobustnessConfig,
     ScenarioConfig,
@@ -53,6 +56,7 @@ from .config import (
     TransformationSpec,
     TransformationType,
     VariableSelectionConfig,
+    WorkflowGuardrailConfig,
 )
 from .presets import get_preset_definition, list_preset_definitions
 
@@ -64,6 +68,8 @@ EDITOR_COLUMNS = [
     "dtype",
     "missing_value_policy",
     "missing_value_fill_value",
+    "missing_value_group_columns",
+    "create_missing_indicator",
     "create_if_missing",
     "default_value",
     "keep_source",
@@ -86,10 +92,15 @@ TRANSFORMATION_EDITOR_COLUMNS = [
     "transform_type",
     "source_feature",
     "secondary_feature",
+    "categorical_value",
     "output_feature",
     "lower_quantile",
     "upper_quantile",
+    "parameter_value",
+    "window_size",
+    "lag_periods",
     "bin_edges",
+    "generated_automatically",
     "notes",
 ]
 FEATURE_REVIEW_COLUMNS = [
@@ -105,9 +116,7 @@ SCORECARD_OVERRIDE_COLUMNS = [
 SUPPORTED_DTYPES = ["auto", "string", "category", "float", "int", "bool", "datetime"]
 SUPPORTED_MISSING_VALUE_POLICIES = [policy.value for policy in MissingValuePolicy]
 SUPPORTED_TRANSFORMATION_TYPES = [transform_type.value for transform_type in TransformationType]
-SUPPORTED_FEATURE_REVIEW_DECISIONS = [
-    decision.value for decision in FeatureReviewDecisionType
-]
+SUPPORTED_FEATURE_REVIEW_DECISIONS = [decision.value for decision in FeatureReviewDecisionType]
 
 
 @dataclass(slots=True)
@@ -124,16 +133,20 @@ class GUIBuildInputs:
     transformations: TransformationConfig = field(default_factory=TransformationConfig)
     manual_review: ManualReviewConfig = field(default_factory=ManualReviewConfig)
     suitability_checks: SuitabilityCheckConfig = field(default_factory=SuitabilityCheckConfig)
+    workflow_guardrails: WorkflowGuardrailConfig = field(default_factory=WorkflowGuardrailConfig)
     explainability: ExplainabilityConfig = field(default_factory=ExplainabilityConfig)
     calibration: CalibrationConfig = field(default_factory=CalibrationConfig)
     scorecard: ScorecardConfig = field(default_factory=ScorecardConfig)
-    scorecard_workbench: ScorecardWorkbenchConfig = field(
-        default_factory=ScorecardWorkbenchConfig
+    scorecard_workbench: ScorecardWorkbenchConfig = field(default_factory=ScorecardWorkbenchConfig)
+    imputation_sensitivity: ImputationSensitivityConfig = field(
+        default_factory=ImputationSensitivityConfig
     )
     variable_selection: VariableSelectionConfig = field(default_factory=VariableSelectionConfig)
     documentation: DocumentationConfig = field(default_factory=DocumentationConfig)
+    regulatory_reporting: RegulatoryReportConfig = field(default_factory=RegulatoryReportConfig)
     scenario_testing: ScenarioTestConfig = field(default_factory=ScenarioTestConfig)
     diagnostics: DiagnosticConfig = field(default_factory=DiagnosticConfig)
+    credit_risk: CreditRiskDiagnosticConfig = field(default_factory=CreditRiskDiagnosticConfig)
     robustness: RobustnessConfig = field(default_factory=RobustnessConfig)
     reproducibility: ReproducibilityConfig = field(default_factory=ReproducibilityConfig)
     data_structure: DataStructure = DataStructure.CROSS_SECTIONAL
@@ -167,6 +180,8 @@ def build_column_editor_frame(dataframe: pd.DataFrame) -> pd.DataFrame:
                 "dtype": infer_dtype_label(dataframe[column]),
                 "missing_value_policy": MissingValuePolicy.INHERIT_DEFAULT.value,
                 "missing_value_fill_value": "",
+                "missing_value_group_columns": "",
+                "create_missing_indicator": False,
                 "create_if_missing": False,
                 "default_value": "",
                 "keep_source": False,
@@ -190,6 +205,8 @@ def build_column_editor_frame_from_schema(schema: SchemaConfig) -> pd.DataFrame:
             "missing_value_fill_value": (
                 "" if spec.missing_value_fill_value is None else spec.missing_value_fill_value
             ),
+            "missing_value_group_columns": ", ".join(spec.missing_value_group_columns),
+            "create_missing_indicator": spec.create_missing_indicator,
             "create_if_missing": spec.create_if_missing,
             "default_value": "" if spec.default_value is None else spec.default_value,
             "keep_source": spec.keep_source,
@@ -239,6 +256,16 @@ def build_scorecard_override_editor_frame() -> pd.DataFrame:
     return pd.DataFrame(columns=SCORECARD_OVERRIDE_COLUMNS)
 
 
+def frames_equivalent(left: pd.DataFrame, right: pd.DataFrame) -> bool:
+    """Compares editor frames by value while ignoring dtype-only differences."""
+
+    if left.shape != right.shape:
+        return False
+    if list(left.columns) != list(right.columns):
+        return False
+    return _frame_records_for_compare(left) == _frame_records_for_compare(right)
+
+
 def infer_dtype_label(series: pd.Series) -> str:
     """Maps pandas dtypes into the small set of dtypes the framework exposes."""
 
@@ -258,6 +285,8 @@ def infer_dtype_label(series: pd.Series) -> str:
 def build_framework_config_from_editor(
     editor_frame: pd.DataFrame,
     inputs: GUIBuildInputs,
+    *,
+    validate: bool = True,
 ) -> FrameworkConfig:
     """Converts GUI inputs into the core framework configuration."""
 
@@ -342,19 +371,24 @@ def build_framework_config_from_editor(
         transformations=inputs.transformations,
         manual_review=inputs.manual_review,
         suitability_checks=inputs.suitability_checks,
+        workflow_guardrails=inputs.workflow_guardrails,
         explainability=inputs.explainability,
         calibration=inputs.calibration,
         scorecard=inputs.scorecard,
         scorecard_workbench=inputs.scorecard_workbench,
+        imputation_sensitivity=inputs.imputation_sensitivity,
         variable_selection=inputs.variable_selection,
         documentation=inputs.documentation,
+        regulatory_reporting=inputs.regulatory_reporting,
         scenario_testing=inputs.scenario_testing,
         diagnostics=inputs.diagnostics,
+        credit_risk=inputs.credit_risk,
         robustness=inputs.robustness,
         reproducibility=inputs.reproducibility,
         artifacts=ArtifactConfig(output_root=inputs.output_root),
     )
-    config.validate()
+    if validate:
+        config.validate()
     return config
 
 
@@ -365,11 +399,24 @@ def normalize_editor_frame(editor_frame: pd.DataFrame) -> pd.DataFrame:
     for column in EDITOR_COLUMNS:
         if column not in working.columns:
             working[column] = (
-                "" if column not in {"enabled", "create_if_missing", "keep_source"} else False
+                ""
+                if column
+                not in {
+                    "enabled",
+                    "create_if_missing",
+                    "keep_source",
+                    "create_missing_indicator",
+                }
+                else False
             )
 
     working = working.loc[:, EDITOR_COLUMNS].fillna("")
-    for boolean_column in ["enabled", "create_if_missing", "keep_source"]:
+    for boolean_column in [
+        "enabled",
+        "create_if_missing",
+        "keep_source",
+        "create_missing_indicator",
+    ]:
         working[boolean_column] = working[boolean_column].astype(bool)
     return working
 
@@ -403,9 +450,9 @@ def build_column_specs_from_editor(editor_frame: pd.DataFrame) -> list[ColumnSpe
                     str(row["missing_value_policy"]).strip().lower()
                     or MissingValuePolicy.INHERIT_DEFAULT.value
                 ),
-                missing_value_fill_value=_normalize_default_value(
-                    row["missing_value_fill_value"]
-                ),
+                missing_value_fill_value=_normalize_default_value(row["missing_value_fill_value"]),
+                missing_value_group_columns=_parse_text_list(row["missing_value_group_columns"]),
+                create_missing_indicator=bool(row["create_missing_indicator"]),
                 create_if_missing=bool(row["create_if_missing"]),
                 default_value=_normalize_default_value(row["default_value"]),
                 keep_source=bool(row["keep_source"]),
@@ -435,9 +482,10 @@ def normalize_transformation_frame(frame: pd.DataFrame) -> pd.DataFrame:
     working = frame.copy(deep=True)
     for column in TRANSFORMATION_EDITOR_COLUMNS:
         if column not in working.columns:
-            working[column] = False if column == "enabled" else ""
+            working[column] = False if column in {"enabled", "generated_automatically"} else ""
     working = working.loc[:, TRANSFORMATION_EDITOR_COLUMNS].fillna("")
     working["enabled"] = working["enabled"].astype(bool)
+    working["generated_automatically"] = working["generated_automatically"].astype(bool)
     return working
 
 
@@ -506,10 +554,15 @@ def parse_transformation_frame(frame: pd.DataFrame) -> TransformationConfig:
                 transform_type=TransformationType(str(row["transform_type"]).strip()),
                 source_feature=source_feature,
                 secondary_feature=_clean_text(row["secondary_feature"]),
+                categorical_value=_clean_text(row["categorical_value"]),
                 output_feature=_clean_text(row["output_feature"]),
                 lower_quantile=_coerce_optional_float(row["lower_quantile"]),
                 upper_quantile=_coerce_optional_float(row["upper_quantile"]),
+                parameter_value=_coerce_optional_float(row["parameter_value"]),
+                window_size=_coerce_optional_int(row["window_size"]),
+                lag_periods=_coerce_optional_int(row["lag_periods"]),
                 bin_edges=_parse_float_list(row["bin_edges"]),
+                generated_automatically=bool(row["generated_automatically"]),
                 notes=str(row["notes"]).strip(),
             )
         )
@@ -564,6 +617,17 @@ def parse_positive_values(raw_text: str) -> list[str] | None:
     return values or None
 
 
+def _parse_text_list(value: Any) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, list):
+        return [str(item).strip() for item in value if str(item).strip()]
+    text = str(value).strip()
+    if not text:
+        return []
+    return [item.strip() for item in text.split(",") if item.strip()]
+
+
 def _first_role_column(editor_frame: pd.DataFrame, role: ColumnRole) -> str | None:
     matching_rows = editor_frame.loc[
         editor_frame["enabled"]
@@ -603,6 +667,39 @@ def _coerce_optional_float(value: Any) -> float | None:
     return float(value)
 
 
+def _coerce_optional_int(value: Any) -> int | None:
+    if value is None:
+        return None
+    if isinstance(value, str):
+        stripped = value.strip()
+        if not stripped:
+            return None
+        return int(float(stripped))
+    if pd.isna(value):
+        return None
+    return int(value)
+
+
+def _frame_records_for_compare(frame: pd.DataFrame) -> list[tuple[Any, ...]]:
+    return [
+        tuple(_normalize_compare_value(value) for value in row)
+        for row in frame.itertuples(index=False, name=None)
+    ]
+
+
+def _normalize_compare_value(value: Any) -> Any:
+    if isinstance(value, pd.Timestamp):
+        return value.isoformat()
+    if hasattr(value, "item") and not isinstance(value, (str, bytes)):
+        try:
+            value = value.item()
+        except Exception:
+            pass
+    if pd.isna(value):
+        return None
+    return value
+
+
 def _parse_float_list(value: Any) -> list[float]:
     if value is None:
         return []
@@ -626,14 +723,22 @@ def build_gui_inputs_from_preset(preset_name: PresetName) -> GUIBuildInputs:
         feature_engineering=preset.feature_engineering,
         comparison=preset.comparison,
         feature_policy=preset.feature_policy,
+        feature_dictionary=preset.feature_dictionary,
+        transformations=preset.transformations,
+        manual_review=preset.manual_review,
+        suitability_checks=preset.suitability_checks,
+        workflow_guardrails=preset.workflow_guardrails,
         explainability=preset.explainability,
         calibration=preset.calibration,
         scorecard=preset.scorecard,
         scorecard_workbench=preset.scorecard_workbench,
+        imputation_sensitivity=preset.imputation_sensitivity,
         variable_selection=preset.variable_selection,
         documentation=preset.documentation,
+        regulatory_reporting=preset.regulatory_reporting,
         scenario_testing=preset.scenario_testing,
         diagnostics=preset.diagnostics,
+        credit_risk=preset.credit_risk,
         robustness=preset.robustness,
         data_structure=preset.data_structure,
         target_mode=preset.target_mode,
@@ -766,18 +871,25 @@ def build_transformation_frame_from_config(
             "transform_type": transformation.transform_type.value,
             "source_feature": transformation.source_feature,
             "secondary_feature": transformation.secondary_feature or "",
+            "categorical_value": transformation.categorical_value or "",
             "output_feature": transformation.output_feature or "",
             "lower_quantile": (
-                transformation.lower_quantile
-                if transformation.lower_quantile is not None
-                else ""
+                transformation.lower_quantile if transformation.lower_quantile is not None else ""
             ),
             "upper_quantile": (
-                transformation.upper_quantile
-                if transformation.upper_quantile is not None
-                else ""
+                transformation.upper_quantile if transformation.upper_quantile is not None else ""
+            ),
+            "parameter_value": (
+                transformation.parameter_value if transformation.parameter_value is not None else ""
+            ),
+            "window_size": (
+                transformation.window_size if transformation.window_size is not None else ""
+            ),
+            "lag_periods": (
+                transformation.lag_periods if transformation.lag_periods is not None else ""
             ),
             "bin_edges": ", ".join(str(value) for value in transformation.bin_edges),
+            "generated_automatically": transformation.generated_automatically,
             "notes": transformation.notes,
         }
         for transformation in transformation_config.transformations
@@ -840,8 +952,7 @@ def build_template_workbook_bytes(
             {
                 "sheet_name": "feature_dictionary",
                 "purpose": (
-                    "Business definitions, source lineage, expected sign, "
-                    "and inclusion rationale."
+                    "Business definitions, source lineage, expected sign, and inclusion rationale."
                 ),
             },
             {

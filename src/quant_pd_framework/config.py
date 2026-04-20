@@ -116,8 +116,13 @@ class TransformationType(StrEnum):
 
     WINSORIZE = "winsorize"
     LOG1P = "log1p"
+    YEO_JOHNSON = "yeo_johnson"
+    CAPPED_ZSCORE = "capped_zscore"
     RATIO = "ratio"
     INTERACTION = "interaction"
+    LAG = "lag"
+    ROLLING_MEAN = "rolling_mean"
+    PCT_CHANGE = "pct_change"
     MANUAL_BINS = "manual_bins"
 
 
@@ -149,6 +154,8 @@ class ColumnSpec:
     role: ColumnRole = ColumnRole.FEATURE
     missing_value_policy: MissingValuePolicy = MissingValuePolicy.INHERIT_DEFAULT
     missing_value_fill_value: Any = None
+    missing_value_group_columns: list[str] = field(default_factory=list)
+    create_missing_indicator: bool = False
     create_if_missing: bool = False
     default_value: Any = None
     keep_source: bool = False
@@ -180,13 +187,44 @@ class ColumnSpec:
             )
         if (
             self.enabled
-            and
-            self.missing_value_policy == MissingValuePolicy.CONSTANT
+            and self.missing_value_policy == MissingValuePolicy.CONSTANT
             and self.missing_value_fill_value is None
         ):
             raise ValueError(
                 f"Column '{self.name}' uses constant imputation but does not define "
                 "missing_value_fill_value."
+            )
+        normalized_group_columns = [
+            str(column_name).strip()
+            for column_name in self.missing_value_group_columns
+            if str(column_name).strip()
+        ]
+        if len(normalized_group_columns) != len(set(normalized_group_columns)):
+            raise ValueError(
+                f"Column '{self.name}' has duplicate missing_value_group_columns entries."
+            )
+        if (
+            self.enabled
+            and (self.create_missing_indicator or normalized_group_columns)
+            and self.role != ColumnRole.FEATURE
+        ):
+            raise ValueError(
+                f"Column '{self.name}' can only use advanced imputation options when "
+                "its role is 'feature'."
+            )
+        if self.name in normalized_group_columns:
+            raise ValueError(
+                f"Column '{self.name}' cannot use itself as an imputation grouping column."
+            )
+        if normalized_group_columns and self.missing_value_policy in {
+            MissingValuePolicy.NONE,
+            MissingValuePolicy.CONSTANT,
+            MissingValuePolicy.FORWARD_FILL,
+            MissingValuePolicy.BACKWARD_FILL,
+        }:
+            raise ValueError(
+                f"Column '{self.name}' uses missing_value_group_columns with "
+                f"policy '{self.missing_value_policy.value}', which is not supported."
             )
 
 
@@ -404,9 +442,7 @@ class FeaturePolicyConfig:
         if self.max_vif is not None and self.max_vif <= 0:
             raise ValueError("FeaturePolicyConfig.max_vif must be greater than 0.")
         if self.minimum_information_value is not None and self.minimum_information_value < 0:
-            raise ValueError(
-                "FeaturePolicyConfig.minimum_information_value cannot be negative."
-            )
+            raise ValueError("FeaturePolicyConfig.minimum_information_value cannot be negative.")
         allowed_signs = {"positive", "negative", "nonnegative", "nonpositive"}
         invalid_signs = {
             feature: sign
@@ -426,8 +462,7 @@ class FeaturePolicyConfig:
         }
         if invalid_monotonicity:
             raise ValueError(
-                "FeaturePolicyConfig.monotonic_features only supports "
-                "increasing/decreasing."
+                "FeaturePolicyConfig.monotonic_features only supports increasing/decreasing."
             )
 
 
@@ -482,9 +517,7 @@ class ScorecardConfig:
         if not 0 < self.min_bin_share < 0.5:
             raise ValueError("ScorecardConfig.min_bin_share must be in (0, 0.5).")
         if self.points_to_double_odds <= 0:
-            raise ValueError(
-                "ScorecardConfig.points_to_double_odds must be greater than 0."
-            )
+            raise ValueError("ScorecardConfig.points_to_double_odds must be greater than 0.")
         if self.odds_reference <= 0:
             raise ValueError("ScorecardConfig.odds_reference must be greater than 0.")
         if self.reason_code_count <= 0:
@@ -502,8 +535,54 @@ class ScorecardWorkbenchConfig:
 
     def validate(self) -> None:
         if self.max_features <= 0:
+            raise ValueError("ScorecardWorkbenchConfig.max_features must be greater than 0.")
+
+
+@dataclass(slots=True)
+class ImputationSensitivityConfig:
+    """Controls what-if comparisons across alternate missing-value treatments."""
+
+    enabled: bool = False
+    evaluation_split: str = "test"
+    alternative_policies: list[MissingValuePolicy] = field(
+        default_factory=lambda: [
+            MissingValuePolicy.MEAN,
+            MissingValuePolicy.MEDIAN,
+            MissingValuePolicy.MODE,
+        ]
+    )
+    selected_features: list[str] = field(default_factory=list)
+    max_features: int = 5
+    min_missing_count: int = 1
+    max_features_with_detail: int = 3
+
+    def validate(self) -> None:
+        if self.evaluation_split not in {"train", "validation", "test"}:
             raise ValueError(
-                "ScorecardWorkbenchConfig.max_features must be greater than 0."
+                "ImputationSensitivityConfig.evaluation_split must be train, validation, or test."
+            )
+        if self.max_features <= 0:
+            raise ValueError("ImputationSensitivityConfig.max_features must be greater than 0.")
+        if self.min_missing_count <= 0:
+            raise ValueError(
+                "ImputationSensitivityConfig.min_missing_count must be greater than 0."
+            )
+        if self.max_features_with_detail <= 0:
+            raise ValueError(
+                "ImputationSensitivityConfig.max_features_with_detail must be greater than 0."
+            )
+        allowed_policies = {
+            MissingValuePolicy.MEAN,
+            MissingValuePolicy.MEDIAN,
+            MissingValuePolicy.MODE,
+        }
+        unsupported = [
+            policy.value for policy in self.alternative_policies if policy not in allowed_policies
+        ]
+        if unsupported:
+            raise ValueError(
+                "ImputationSensitivityConfig.alternative_policies only supports "
+                f"mean/median/mode. Received: {', '.join(sorted(unsupported))}."
             )
 
 
@@ -552,13 +631,9 @@ class VariableSelectionConfig:
                 "VariableSelectionConfig.max_features must be greater than 0 when set."
             )
         if self.min_univariate_score is not None and self.min_univariate_score < 0:
-            raise ValueError(
-                "VariableSelectionConfig.min_univariate_score cannot be negative."
-            )
+            raise ValueError("VariableSelectionConfig.min_univariate_score cannot be negative.")
         if self.correlation_threshold is not None and not 0 < self.correlation_threshold <= 1:
-            raise ValueError(
-                "VariableSelectionConfig.correlation_threshold must be in (0, 1]."
-            )
+            raise ValueError("VariableSelectionConfig.correlation_threshold must be in (0, 1].")
 
 
 @dataclass(slots=True)
@@ -595,9 +670,7 @@ class FeatureDictionaryConfig:
         for entry in self.entries:
             entry.validate()
             if entry.feature_name in seen_features:
-                raise ValueError(
-                    f"Duplicate feature dictionary entry '{entry.feature_name}'."
-                )
+                raise ValueError(f"Duplicate feature dictionary entry '{entry.feature_name}'.")
             seen_features.add(entry.feature_name)
 
 
@@ -609,10 +682,15 @@ class TransformationSpec:
     source_feature: str
     output_feature: str | None = None
     secondary_feature: str | None = None
+    categorical_value: str | None = None
     lower_quantile: float | None = None
     upper_quantile: float | None = None
+    parameter_value: float | None = None
+    window_size: int | None = None
+    lag_periods: int | None = None
     bin_edges: list[float] = field(default_factory=list)
     enabled: bool = True
+    generated_automatically: bool = False
     notes: str = ""
 
     def validate(self) -> None:
@@ -622,16 +700,35 @@ class TransformationSpec:
             lower = 0.01 if self.lower_quantile is None else self.lower_quantile
             upper = 0.99 if self.upper_quantile is None else self.upper_quantile
             if not 0 <= lower < upper <= 1:
-                raise ValueError(
-                    "Winsorization quantiles must satisfy 0 <= lower < upper <= 1."
-                )
-        if self.transform_type in {
-            TransformationType.RATIO,
-            TransformationType.INTERACTION,
-        } and not (self.secondary_feature or "").strip():
+                raise ValueError("Winsorization quantiles must satisfy 0 <= lower < upper <= 1.")
+        if (
+            self.transform_type
+            in {
+                TransformationType.RATIO,
+                TransformationType.INTERACTION,
+            }
+            and not (self.secondary_feature or "").strip()
+        ):
             raise ValueError(
                 f"{self.transform_type.value} transformations require secondary_feature."
             )
+        if self.transform_type == TransformationType.CAPPED_ZSCORE:
+            z_cap = 3.0 if self.parameter_value is None else self.parameter_value
+            if z_cap <= 0:
+                raise ValueError("capped_zscore parameter_value must be greater than 0.")
+        if self.transform_type in {
+            TransformationType.LAG,
+            TransformationType.PCT_CHANGE,
+        }:
+            lag_periods = 1 if self.lag_periods is None else self.lag_periods
+            if lag_periods <= 0:
+                raise ValueError(
+                    f"{self.transform_type.value} transformations require lag_periods > 0."
+                )
+        if self.transform_type == TransformationType.ROLLING_MEAN:
+            window_size = 3 if self.window_size is None else self.window_size
+            if window_size <= 1:
+                raise ValueError("rolling_mean transformations require window_size >= 2.")
         if self.transform_type == TransformationType.MANUAL_BINS:
             if not self.bin_edges:
                 raise ValueError("manual_bins transformations require at least one bin edge.")
@@ -646,6 +743,12 @@ class TransformationConfig:
     enabled: bool = False
     transformations: list[TransformationSpec] = field(default_factory=list)
     error_on_failure: bool = True
+    auto_interactions_enabled: bool = False
+    include_numeric_numeric_interactions: bool = True
+    include_categorical_numeric_interactions: bool = False
+    max_auto_interactions: int = 5
+    max_categorical_levels: int = 3
+    min_interaction_score: float = 0.0
 
     def validate(self) -> None:
         seen_outputs: set[str] = set()
@@ -653,10 +756,14 @@ class TransformationConfig:
             transformation.validate()
             output_name = self._resolve_output_name(transformation)
             if output_name in seen_outputs:
-                raise ValueError(
-                    f"Multiple governed transformations write to '{output_name}'."
-                )
+                raise ValueError(f"Multiple governed transformations write to '{output_name}'.")
             seen_outputs.add(output_name)
+        if self.max_auto_interactions <= 0:
+            raise ValueError("TransformationConfig.max_auto_interactions must be greater than 0.")
+        if self.max_categorical_levels <= 0:
+            raise ValueError("TransformationConfig.max_categorical_levels must be greater than 0.")
+        if self.min_interaction_score < 0:
+            raise ValueError("TransformationConfig.min_interaction_score cannot be negative.")
 
     def _resolve_output_name(self, transformation: TransformationSpec) -> str:
         configured_output = (transformation.output_feature or "").strip()
@@ -667,7 +774,28 @@ class TransformationConfig:
         if transformation.transform_type == TransformationType.RATIO:
             return f"{transformation.source_feature}_over_{transformation.secondary_feature}"
         if transformation.transform_type == TransformationType.INTERACTION:
+            if (transformation.categorical_value or "").strip():
+                category_token = (
+                    transformation.categorical_value.strip().replace(" ", "_").replace("/", "_")
+                )
+                return (
+                    f"{transformation.source_feature}_x_"
+                    f"{transformation.secondary_feature}_{category_token}"
+                )
             return f"{transformation.source_feature}_x_{transformation.secondary_feature}"
+        if transformation.transform_type == TransformationType.YEO_JOHNSON:
+            return f"{transformation.source_feature}_yeo_johnson"
+        if transformation.transform_type == TransformationType.CAPPED_ZSCORE:
+            return f"{transformation.source_feature}_zscore"
+        if transformation.transform_type == TransformationType.LAG:
+            lag_periods = 1 if transformation.lag_periods is None else transformation.lag_periods
+            return f"{transformation.source_feature}_lag_{lag_periods}"
+        if transformation.transform_type == TransformationType.ROLLING_MEAN:
+            window_size = 3 if transformation.window_size is None else transformation.window_size
+            return f"{transformation.source_feature}_rollmean_{window_size}"
+        if transformation.transform_type == TransformationType.PCT_CHANGE:
+            lag_periods = 1 if transformation.lag_periods is None else transformation.lag_periods
+            return f"{transformation.source_feature}_pct_change_{lag_periods}"
         return transformation.source_feature
 
 
@@ -725,9 +853,7 @@ class ManualReviewConfig:
         for override in self.scorecard_bin_overrides:
             override.validate()
             if override.feature_name in seen_overrides:
-                raise ValueError(
-                    f"Duplicate scorecard bin override '{override.feature_name}'."
-                )
+                raise ValueError(f"Duplicate scorecard bin override '{override.feature_name}'.")
             seen_overrides.add(override.feature_name)
 
 
@@ -767,6 +893,19 @@ class SuitabilityCheckConfig:
             raise ValueError(
                 "SuitabilityCheckConfig.min_non_null_target_rows must be greater than 0."
             )
+
+
+@dataclass(slots=True)
+class WorkflowGuardrailConfig:
+    """Controls preset-aware workflow readiness checks before model execution."""
+
+    enabled: bool = True
+    fail_on_error: bool = True
+    enforce_documentation_requirements: bool = True
+
+    def validate(self) -> None:
+        if self.enabled and not self.fail_on_error and not self.enforce_documentation_requirements:
+            return
 
 
 @dataclass(slots=True)
@@ -822,6 +961,31 @@ class DocumentationConfig:
 
 
 @dataclass(slots=True)
+class RegulatoryReportConfig:
+    """Controls committee-ready and validation-ready report exports."""
+
+    enabled: bool = True
+    export_docx: bool = True
+    export_pdf: bool = True
+    committee_template_name: str = "committee_standard"
+    validation_template_name: str = "validation_standard"
+    include_assumptions_section: bool = True
+    include_challenger_section: bool = True
+    include_scenario_section: bool = True
+    include_appendix_section: bool = True
+
+    def validate(self) -> None:
+        if not self.enabled:
+            return
+        if not (self.export_docx or self.export_pdf):
+            raise ValueError("RegulatoryReportConfig.enabled=True requires DOCX or PDF export.")
+        if not self.committee_template_name.strip():
+            raise ValueError("RegulatoryReportConfig.committee_template_name cannot be blank.")
+        if not self.validation_template_name.strip():
+            raise ValueError("RegulatoryReportConfig.validation_template_name cannot be blank.")
+
+
+@dataclass(slots=True)
 class ScenarioFeatureShock:
     """One feature-level change applied inside a scenario test."""
 
@@ -847,9 +1011,7 @@ class ScenarioConfig:
         if not self.name.strip():
             raise ValueError("ScenarioConfig.name cannot be blank.")
         if self.enabled and not self.feature_shocks:
-            raise ValueError(
-                "ScenarioConfig.enabled=True requires at least one feature shock."
-            )
+            raise ValueError("ScenarioConfig.enabled=True requires at least one feature shock.")
         for shock in self.feature_shocks:
             shock.validate()
 
@@ -902,6 +1064,8 @@ class DiagnosticConfig:
     woe_iv_analysis: bool = True
     psi_analysis: bool = True
     adf_analysis: bool = True
+    model_specification_tests: bool = True
+    forecasting_statistical_tests: bool = True
     calibration_analysis: bool = True
     threshold_analysis: bool = True
     lift_gain_analysis: bool = True
@@ -930,6 +1094,35 @@ class DiagnosticConfig:
 
 
 @dataclass(slots=True)
+class CreditRiskDiagnosticConfig:
+    """Controls credit-risk-specific development diagnostics and plots."""
+
+    enabled: bool = True
+    vintage_analysis: bool = True
+    migration_analysis: bool = True
+    delinquency_transition_analysis: bool = True
+    cohort_pd_analysis: bool = True
+    lgd_segment_analysis: bool = True
+    recovery_analysis: bool = True
+    macro_sensitivity_analysis: bool = True
+    top_macro_features: int = 5
+    top_segments: int = 8
+    shock_std_multiplier: float = 1.0
+
+    def validate(self) -> None:
+        if self.top_macro_features <= 0:
+            raise ValueError(
+                "CreditRiskDiagnosticConfig.top_macro_features must be greater than 0."
+            )
+        if self.top_segments <= 0:
+            raise ValueError("CreditRiskDiagnosticConfig.top_segments must be greater than 0.")
+        if self.shock_std_multiplier <= 0:
+            raise ValueError(
+                "CreditRiskDiagnosticConfig.shock_std_multiplier must be greater than 0."
+            )
+
+
+@dataclass(slots=True)
 class ArtifactConfig:
     """Where pipeline outputs are written."""
 
@@ -950,6 +1143,10 @@ class ArtifactConfig:
     step_manifest_file_name: str = "step_manifest.json"
     documentation_pack_file_name: str = "model_documentation_pack.md"
     validation_pack_file_name: str = "validation_pack.md"
+    committee_report_docx_file_name: str = "committee_report.docx"
+    validation_report_docx_file_name: str = "validation_report.docx"
+    committee_report_pdf_file_name: str = "committee_report.pdf"
+    validation_report_pdf_file_name: str = "validation_report.pdf"
     reproducibility_manifest_file_name: str = "reproducibility_manifest.json"
     template_workbook_file_name: str = "configuration_template.xlsx"
     runner_script_file_name: str = "generated_run.py"
@@ -977,6 +1174,10 @@ class ArtifactConfig:
             "config_file_name": self.config_file_name,
             "documentation_pack_file_name": self.documentation_pack_file_name,
             "validation_pack_file_name": self.validation_pack_file_name,
+            "committee_report_docx_file_name": self.committee_report_docx_file_name,
+            "validation_report_docx_file_name": self.validation_report_docx_file_name,
+            "committee_report_pdf_file_name": self.committee_report_pdf_file_name,
+            "validation_report_pdf_file_name": self.validation_report_pdf_file_name,
             "reproducibility_manifest_file_name": self.reproducibility_manifest_file_name,
             "template_workbook_file_name": self.template_workbook_file_name,
         }
@@ -1003,16 +1204,20 @@ class FrameworkConfig:
     transformations: TransformationConfig = field(default_factory=TransformationConfig)
     manual_review: ManualReviewConfig = field(default_factory=ManualReviewConfig)
     suitability_checks: SuitabilityCheckConfig = field(default_factory=SuitabilityCheckConfig)
+    workflow_guardrails: WorkflowGuardrailConfig = field(default_factory=WorkflowGuardrailConfig)
     explainability: ExplainabilityConfig = field(default_factory=ExplainabilityConfig)
     calibration: CalibrationConfig = field(default_factory=CalibrationConfig)
     scorecard: ScorecardConfig = field(default_factory=ScorecardConfig)
-    scorecard_workbench: ScorecardWorkbenchConfig = field(
-        default_factory=ScorecardWorkbenchConfig
+    scorecard_workbench: ScorecardWorkbenchConfig = field(default_factory=ScorecardWorkbenchConfig)
+    imputation_sensitivity: ImputationSensitivityConfig = field(
+        default_factory=ImputationSensitivityConfig
     )
     variable_selection: VariableSelectionConfig = field(default_factory=VariableSelectionConfig)
     documentation: DocumentationConfig = field(default_factory=DocumentationConfig)
+    regulatory_reporting: RegulatoryReportConfig = field(default_factory=RegulatoryReportConfig)
     scenario_testing: ScenarioTestConfig = field(default_factory=ScenarioTestConfig)
     diagnostics: DiagnosticConfig = field(default_factory=DiagnosticConfig)
+    credit_risk: CreditRiskDiagnosticConfig = field(default_factory=CreditRiskDiagnosticConfig)
     robustness: RobustnessConfig = field(default_factory=RobustnessConfig)
     reproducibility: ReproducibilityConfig = field(default_factory=ReproducibilityConfig)
     artifacts: ArtifactConfig = field(default_factory=ArtifactConfig)
@@ -1030,17 +1235,34 @@ class FrameworkConfig:
         self.transformations.validate()
         self.manual_review.validate()
         self.suitability_checks.validate()
+        self.workflow_guardrails.validate()
         self.explainability.validate()
         self.calibration.validate()
         self.scorecard.validate()
         self.scorecard_workbench.validate()
+        self.imputation_sensitivity.validate()
         self.variable_selection.validate()
         self.documentation.validate()
+        self.regulatory_reporting.validate()
         self.scenario_testing.validate()
         self.diagnostics.validate()
+        self.credit_risk.validate()
         self.robustness.validate()
         self.reproducibility.validate()
         self.artifacts.validate()
+        if self.workflow_guardrails.enabled:
+            from .workflow_guardrails import (
+                evaluate_workflow_guardrails,
+                has_blocking_guardrails,
+                summarize_guardrail_findings,
+            )
+
+            findings = evaluate_workflow_guardrails(self)
+            if self.workflow_guardrails.fail_on_error and has_blocking_guardrails(findings):
+                raise ValueError(
+                    "Workflow guardrails failed for the selected preset:\n"
+                    + summarize_guardrail_findings(findings)
+                )
 
     def to_dict(self) -> dict[str, Any]:
         """Serializes dataclasses, enums, and paths into JSON-friendly objects."""

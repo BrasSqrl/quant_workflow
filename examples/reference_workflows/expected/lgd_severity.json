@@ -13,6 +13,10 @@
     "report",
     "documentation_pack",
     "validation_pack",
+    "committee_report_docx",
+    "validation_report_docx",
+    "committee_report_pdf",
+    "validation_report_pdf",
     "interactive_report",
     "config",
     "tests",
@@ -22,25 +26,37 @@
     "step_manifest",
     "runner_script",
     "rerun_readme",
-    "workbook"
+    "workbook",
+    "example_pack"
   ],
   "required_tables": [
     "assumption_checks",
     "feature_dictionary",
+    "workflow_guardrails",
     "reproducibility_manifest",
     "residual_summary",
     "qq_plot_data",
     "variable_selection",
     "feature_policy_checks",
     "scenario_summary",
-    "lgd_stage_two_coefficients"
+    "lgd_stage_two_coefficients",
+    "vintage_summary",
+    "lgd_segment_summary",
+    "recovery_segmentation"
   ],
   "required_figures": [
     "quantile_backtest",
     "residuals_vs_predicted",
     "qq_plot",
     "scenario_summary_chart",
-    "model_comparison_chart"
+    "model_comparison_chart",
+    "vintage_curve",
+    "lgd_segment_chart",
+    "recovery_segment_chart"
+  ],
+  "html_sections": [
+    "Credit-Risk Development",
+    "Governance / Export Bundle"
   ],
   "documentation_sections": [
     "Development Summary",

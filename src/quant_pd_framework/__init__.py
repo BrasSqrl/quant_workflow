@@ -9,6 +9,7 @@ from .config import (
     ColumnRole,
     ColumnSpec,
     ComparisonConfig,
+    CreditRiskDiagnosticConfig,
     DataStructure,
     DiagnosticConfig,
     DocumentationConfig,
@@ -22,11 +23,13 @@ from .config import (
     FeatureReviewDecision,
     FeatureReviewDecisionType,
     FrameworkConfig,
+    ImputationSensitivityConfig,
     ManualReviewConfig,
     MissingValuePolicy,
     ModelConfig,
     ModelType,
     PresetName,
+    RegulatoryReportConfig,
     ReproducibilityConfig,
     RobustnessConfig,
     ScenarioConfig,
@@ -46,15 +49,18 @@ from .config import (
     TransformationSpec,
     TransformationType,
     VariableSelectionConfig,
+    WorkflowGuardrailConfig,
 )
 from .config_io import load_framework_config
 from .orchestrator import QuantModelOrchestrator
 from .presets import PresetDefinition, get_preset_definition, list_preset_definitions
 from .reference_workflows import (
     ReferenceWorkflowDefinition,
+    build_reference_example_pack_markdown,
     get_reference_workflow_definition,
     list_reference_workflow_definitions,
     run_reference_workflow,
+    write_reference_example_pack_docs,
 )
 from .run import run_saved_config
 from .sample_data import build_sample_pd_dataframe
@@ -68,6 +74,7 @@ __all__ = [
     "ColumnRole",
     "ColumnSpec",
     "ComparisonConfig",
+    "CreditRiskDiagnosticConfig",
     "DataStructure",
     "DiagnosticConfig",
     "DocumentationConfig",
@@ -81,6 +88,7 @@ __all__ = [
     "FeaturePolicyConfig",
     "FeatureEngineeringConfig",
     "FrameworkConfig",
+    "ImputationSensitivityConfig",
     "ManualReviewConfig",
     "MissingValuePolicy",
     "ModelConfig",
@@ -88,6 +96,7 @@ __all__ = [
     "PresetName",
     "PresetDefinition",
     "QuantModelOrchestrator",
+    "RegulatoryReportConfig",
     "ReferenceWorkflowDefinition",
     "ReproducibilityConfig",
     "RobustnessConfig",
@@ -108,6 +117,8 @@ __all__ = [
     "TransformationSpec",
     "TransformationType",
     "VariableSelectionConfig",
+    "WorkflowGuardrailConfig",
+    "build_reference_example_pack_markdown",
     "build_sample_pd_dataframe",
     "get_preset_definition",
     "get_reference_workflow_definition",
@@ -116,4 +127,5 @@ __all__ = [
     "load_framework_config",
     "run_reference_workflow",
     "run_saved_config",
+    "write_reference_example_pack_docs",
 ]

@@ -54,6 +54,8 @@ defines the modeled schema.
 | `dtype` | `ColumnSpec.dtype` | `SchemaManagementStep` |
 | `missing_value_policy` | `ColumnSpec.missing_value_policy` | `ImputationStep` |
 | `missing_value_fill_value` | `ColumnSpec.missing_value_fill_value` | `ImputationStep` |
+| `missing_value_group_columns` | `ColumnSpec.missing_value_group_columns` | `ImputationStep` |
+| `create_missing_indicator` | `ColumnSpec.create_missing_indicator` | `ImputationStep` |
 | `create_if_missing` | `ColumnSpec.create_if_missing` | `SchemaManagementStep` |
 | `default_value` | `ColumnSpec.default_value` | `SchemaManagementStep` |
 | `keep_source` | `ColumnSpec.keep_source` | `SchemaManagementStep` |
@@ -72,7 +74,7 @@ The main workspace now includes dedicated tabs beyond the column designer.
 | Workspace tab | Config field(s) | Main implementation | Export evidence |
 | --- | --- | --- | --- |
 | `Feature Dictionary` | `FeatureDictionaryConfig.entries` | `parse_feature_dictionary_frame(...)`, diagnostics feature-dictionary output | `feature_dictionary`, `validation_pack.md` |
-| `Transformations` | `TransformationConfig.transformations` | `parse_transformation_frame(...)`, `TransformationStep` | `governed_transformations` |
+| `Transformations` | `TransformationConfig.transformations` | `parse_transformation_frame(...)`, `TransformationStep` | `governed_transformations`, `interaction_candidates` |
 | `Template Workbook` | none directly; imports/exports editor tables | `build_template_workbook_bytes(...)`, `load_template_workbook(...)` | `configuration_template.xlsx` |
 
 ## 4. Sidebar Group: Core Setup
@@ -152,6 +154,8 @@ column designer role assignments.
 | `Fit Platt scaling challenger` | `CalibrationConfig.platt_scaling` | calibration workflow |
 | `Fit isotonic challenger` | `CalibrationConfig.isotonic_calibration` | calibration workflow |
 | `Calibration ranking metric` | `CalibrationConfig.ranking_metric` | calibration method recommendation |
+| `Model specification tests` | `DiagnosticConfig.model_specification_tests` | `DiagnosticsStep._add_model_specification_outputs` |
+| `Forecasting statistical tests` | `DiagnosticConfig.forecasting_statistical_tests` | `DiagnosticsStep._add_forecasting_test_outputs` |
 | `Enable robustness testing` | `RobustnessConfig.enabled` | `DiagnosticsStep._add_robustness_outputs` |
 | `Robustness resamples` | `RobustnessConfig.resample_count` | robustness diagnostics |
 | `Robustness sample fraction` | `RobustnessConfig.sample_fraction` | robustness diagnostics |
@@ -163,6 +167,15 @@ column designer role assignments.
 | `Scorecard workbench features` | `ScorecardWorkbenchConfig.max_features` | scorecard workbench asset selection |
 | `Include scorecard points distribution` | `ScorecardWorkbenchConfig.include_score_distribution` | scorecard workbench diagnostics |
 | `Include reason-code frequency view` | `ScorecardWorkbenchConfig.include_reason_code_analysis` | scorecard workbench diagnostics |
+| `Enable credit-risk development diagnostics` | `CreditRiskDiagnosticConfig.enabled` | `DiagnosticsStep._add_credit_risk_outputs` |
+| `Vintage analysis` | `CreditRiskDiagnosticConfig.vintage_analysis` | credit-risk diagnostics |
+| `Migration and delinquency transitions` | `CreditRiskDiagnosticConfig.migration_analysis`, `delinquency_transition_analysis` | credit-risk diagnostics |
+| `Cohort PD analysis` | `CreditRiskDiagnosticConfig.cohort_pd_analysis` | credit-risk diagnostics |
+| `LGD segment and recovery views` | `CreditRiskDiagnosticConfig.lgd_segment_analysis`, `recovery_analysis` | credit-risk diagnostics |
+| `Macro sensitivity` | `CreditRiskDiagnosticConfig.macro_sensitivity_analysis` | credit-risk diagnostics |
+| `Macro features to stress` | `CreditRiskDiagnosticConfig.top_macro_features` | macro sensitivity diagnostics |
+| `Top credit-risk segments` | `CreditRiskDiagnosticConfig.top_segments` | segment-limited credit diagnostics |
+| `Macro shock std multiplier` | `CreditRiskDiagnosticConfig.shock_std_multiplier` | macro sensitivity diagnostics |
 
 ## 9. Sidebar Group: Challengers & Policies
 
@@ -191,8 +204,25 @@ column designer role assignments.
 | `Correlation threshold` | `VariableSelectionConfig.correlation_threshold` | `VariableSelectionStep` |
 | `Locked include features` | `VariableSelectionConfig.locked_include_features` | `VariableSelectionStep` |
 | `Locked exclude features` | `VariableSelectionConfig.locked_exclude_features` | `VariableSelectionStep` |
+| `Auto-screen interaction terms` | `TransformationConfig.auto_interactions_enabled` | `TransformationStep` |
+| `Numeric-numeric interactions` | `TransformationConfig.include_numeric_numeric_interactions` | `TransformationStep` |
+| `Categorical-numeric interactions` | `TransformationConfig.include_categorical_numeric_interactions` | `TransformationStep` |
+| `Max auto interactions` | `TransformationConfig.max_auto_interactions` | `TransformationStep` |
+| `Max categorical levels per feature` | `TransformationConfig.max_categorical_levels` | `TransformationStep` |
+| `Min interaction score` | `TransformationConfig.min_interaction_score` | `TransformationStep` |
+| `Imputation sensitivity testing` | `ImputationSensitivityConfig.enabled` | `DiagnosticsStep._add_imputation_sensitivity_outputs` |
+| `Imputation sensitivity split` | `ImputationSensitivityConfig.evaluation_split` | `DiagnosticsStep._add_imputation_sensitivity_outputs` |
+| `Alternative imputation policies` | `ImputationSensitivityConfig.alternative_policies` | `DiagnosticsStep._add_imputation_sensitivity_outputs` |
+| `Sensitivity features` | `ImputationSensitivityConfig.max_features` | `DiagnosticsStep._add_imputation_sensitivity_outputs` |
+| `Min train missing count` | `ImputationSensitivityConfig.min_missing_count` | `DiagnosticsStep._add_imputation_sensitivity_outputs` |
 | `Export documentation pack` | `DocumentationConfig.enabled` | `ArtifactExportStep` |
 | documentation text fields | `DocumentationConfig.*` | diagnostics metadata and documentation pack |
+| `Export regulator-ready reports` | `RegulatoryReportConfig.enabled` | `ArtifactExportStep`, `reporting.py` |
+| `Export DOCX reports` | `RegulatoryReportConfig.export_docx` | regulator-ready report export |
+| `Export PDF reports` | `RegulatoryReportConfig.export_pdf` | regulator-ready report export |
+| `Committee template name` | `RegulatoryReportConfig.committee_template_name` | committee-ready report export |
+| `Validation template name` | `RegulatoryReportConfig.validation_template_name` | validation-ready report export |
+| report section toggles | `RegulatoryReportConfig.include_*` | regulator-ready report assembly |
 
 ## 11. Sidebar Group: Governance & Review
 
@@ -203,6 +233,9 @@ column designer role assignments.
 | `Min events per feature` | `SuitabilityCheckConfig.min_events_per_feature` | `AssumptionCheckStep` | `assumption_checks` |
 | `Min/Max class rate` | `SuitabilityCheckConfig.min_class_rate`, `max_class_rate` | `AssumptionCheckStep` | `assumption_checks` |
 | `Max dominant category share` | `SuitabilityCheckConfig.max_dominant_category_share` | `AssumptionCheckStep` | `assumption_checks` |
+| `Enable workflow guardrails` | `WorkflowGuardrailConfig.enabled` | `build_framework_config_from_editor(...)`, `FrameworkConfig.validate`, `DiagnosticsStep._add_workflow_guardrail_outputs` | `workflow_guardrails` |
+| `Block run on guardrail errors` | `WorkflowGuardrailConfig.fail_on_error` | `FrameworkConfig.validate` | run failure if violated |
+| `Require preset documentation fields` | `WorkflowGuardrailConfig.enforce_documentation_requirements` | `workflow_guardrails.py` | `workflow_guardrails` |
 | `Enable manual review workflow` | `ManualReviewConfig.enabled` | `VariableSelectionStep`, scorecard training path | `manual_review_feature_decisions` |
 | `Require review decisions ...` | `ManualReviewConfig.require_review_complete` | `VariableSelectionStep` | run failure if incomplete |
 | `Reviewer name` | `ManualReviewConfig.reviewer_name` | `VariableSelectionStep`, diagnostics | review tables |
@@ -239,9 +272,10 @@ The `Run Quant Model Workflow` button performs this chain:
 
 1. collects widget state into `GUIBuildInputs`
 2. converts the schema editor and inputs into `FrameworkConfig`
-3. instantiates `QuantModelOrchestrator`
-4. runs the full pipeline
-5. stores a snapshot for the result viewer
+3. renders the pre-run readiness summary from that same resolved config
+4. instantiates `QuantModelOrchestrator`
+5. runs the full pipeline
+6. stores a snapshot for the result viewer
 
 Relevant code path:
 

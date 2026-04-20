@@ -68,13 +68,18 @@ class QuantModelOrchestrator:
         base_config.transformations = resolved.transformations
         base_config.manual_review = resolved.manual_review
         base_config.suitability_checks = resolved.suitability_checks
+        base_config.workflow_guardrails = resolved.workflow_guardrails
         base_config.explainability = resolved.explainability
         base_config.calibration = resolved.calibration
         base_config.scorecard = resolved.scorecard
+        base_config.scorecard_workbench = resolved.scorecard_workbench
+        base_config.imputation_sensitivity = resolved.imputation_sensitivity
         base_config.variable_selection = resolved.variable_selection
         base_config.documentation = resolved.documentation
+        base_config.regulatory_reporting = resolved.regulatory_reporting
         base_config.scenario_testing = resolved.scenario_testing
         base_config.diagnostics = resolved.diagnostics
+        base_config.credit_risk = resolved.credit_risk
         base_config.reproducibility = resolved.reproducibility
         base_config.artifacts = resolved.artifacts
         return base_config

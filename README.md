@@ -86,8 +86,9 @@ The framework also includes development-focused workflow features:
   git metadata
 - feature dictionary / variable catalog support for business definitions,
   lineage, and inclusion rationale
-- governed transformation layer for winsorization, log transforms, ratio and
-  interaction features, and manual bins
+- governed transformation layer for winsorization, log transforms, Yeo-Johnson,
+  capped z-scores, ratio features, lag and rolling features, percent-change
+  features, interaction features, and manual bins
 - variable-selection workflow with train-split screening and selection rationale
 - manual review workflow for approve/reject decisions and scorecard bin
   overrides
@@ -97,10 +98,20 @@ The framework also includes development-focused workflow features:
 - robustness and stability testing with repeated held-out resamples
 - interactive scorecard workbench outputs for binning, WoE, points, and reason
   code review
+- preset-aware workflow guardrails with pre-run readiness checks
+- credit-risk-specific development diagnostics such as vintage curves,
+  migration views, recovery segmentation, and macro sensitivity
 - calibration workflow with method comparison, recalibration challengers, and
   recommended-method metadata
+- advanced imputation and sensitivity testing with grouped train-fit fill rules,
+  optional missingness-indicator features, and exported imputation-impact
+  comparisons
 - documentation-pack generation for development-ready model summaries
 - structured validation-pack generation for validator-facing review
+- regulator-ready committee and validation report generation in DOCX and PDF
+- normalized numerical warning capture with structured fit-health diagnostics
+- polished regulator-ready reports with cover pages, section maps, section
+  summaries, split appendices, and explicit numerical-stability sections
 - Excel-based template import/export for offline governance edits
 - feature policy checks for required/excluded features, missingness, VIF, IV,
   expected signs, and monotonicity
@@ -152,6 +163,7 @@ intended development use cases:
 - `PD Development`
 - `LGD Severity`
 - `Lifetime PD / CECL`
+- `CCAR Forecasting`
 
 These live under [examples/reference_workflows](./examples/reference_workflows) and
 serve three purposes:
@@ -166,6 +178,10 @@ Each reference workflow has:
 - a canonical config
 - a locked expected-output contract under `examples/reference_workflows/expected`
 - a golden-run regression test in `tests/test_reference_workflows.py`
+- locked regulator-ready report artifacts and interactive-report sections
+- required credit-risk development tables and figures where applicable
+- a structured walkthrough pack under `examples/reference_workflows/packs`
+- a `reference_example_pack.md` guide inside every exported reference run bundle
 
 The repository also includes a GitHub Actions CI workflow at
 [.github/workflows/ci.yml](./.github/workflows/ci.yml) that runs Ruff, the
@@ -196,9 +212,16 @@ quant/
     reference_workflows/
       expected/
         cecl_lifetime_pd.json
+        ccar_forecasting.json
         lgd_severity.json
         pd_development.json
+      packs/
+        cecl_lifetime_pd.md
+        ccar_forecasting.md
+        lgd_severity.md
+        pd_development.md
       cecl_lifetime_pd.py
+      ccar_forecasting.py
       lgd_severity.py
       pd_development.py
       README.md
@@ -217,9 +240,11 @@ quant/
       models.py
       orchestrator.py
       presets.py
+      reporting.py
       reference_workflows.py
       run.py
       sample_data.py
+      workflow_guardrails.py
       steps/
         assumption_checks.py
         comparison.py
@@ -248,6 +273,7 @@ quant/
     test_pipeline_smoke.py
     test_reference_workflows.py
     test_saved_run_bundle.py
+    test_workflow_guardrails.py
     support.py
   EXECUTIVE_SUMMARY.txt
   launch_gui.bat
@@ -288,6 +314,7 @@ To run the canonical reference workflows directly:
 python examples\reference_workflows\pd_development.py
 python examples\reference_workflows\lgd_severity.py
 python examples\reference_workflows\cecl_lifetime_pd.py
+python examples\reference_workflows\ccar_forecasting.py
 ```
 
 Those examples write full artifact bundles under `artifacts/reference_workflows/`.
@@ -770,6 +797,8 @@ You can use it to:
 - assign a column role
 - force a dtype
 - set a per-column missing-value policy
+- optionally group scalar imputation by one or more segment columns
+- optionally create a missingness-indicator feature
 - add a new column if it is missing
 - decide whether the original source column should be retained
 
@@ -780,6 +809,8 @@ Examples:
 - force float dtype: `ColumnSpec(name="balance", dtype="float")`
 - set numeric imputation: `ColumnSpec(name="balance", missing_value_policy=MissingValuePolicy.MEDIAN)`
 - set constant fill: `ColumnSpec(name="channel", missing_value_policy=MissingValuePolicy.CONSTANT, missing_value_fill_value="unknown")`
+- group imputation by segment: `ColumnSpec(name="balance", missing_value_policy=MissingValuePolicy.MEDIAN, missing_value_group_columns=["portfolio"])`
+- create a missingness flag: `ColumnSpec(name="balance", create_missing_indicator=True)`
 - mark a date column: `ColumnSpec(name="as_of_date", dtype="datetime", role=ColumnRole.DATE)`
 - mark an identifier: `ColumnSpec(name="loan_id", role=ColumnRole.IDENTIFIER)`
 - create a new column: `ColumnSpec(name="segment", create_if_missing=True, default_value="retail")`
@@ -801,6 +832,8 @@ Behavior notes:
 
 - `inherit_default` uses median for numeric features and mode for categorical features
 - scalar imputation values are fit on the training split and then reused on validation, test, and score-only data
+- `missing_value_group_columns` lets mean/median/mode-style imputation learn segment-specific fill values on the training split before falling back to the global learned fill value
+- `create_missing_indicator=True` adds a numeric `<feature>__missing_indicator` feature before imputation is applied
 - `forward_fill` and `backward_fill` are only supported for time-series or panel workflows
 - target values are still handled by `drop_rows_with_missing_target`; feature imputation is a separate step
 
@@ -1005,18 +1038,31 @@ Important fields:
 - `enabled`
 - `transformations`
 - `error_on_failure`
+- `auto_interactions_enabled`
+- `include_numeric_numeric_interactions`
+- `include_categorical_numeric_interactions`
+- `max_auto_interactions`
+- `max_categorical_levels`
+- `min_interaction_score`
 
 Supported transformation families:
 
 - `winsorize`
 - `log1p`
+- `yeo_johnson`
+- `capped_zscore`
 - `ratio`
 - `interaction`
+- `lag`
+- `rolling_mean`
+- `pct_change`
 - `manual_bins`
 
 Each `TransformationSpec` defines the source feature, optional secondary
-feature, output feature, and transform-specific parameters such as quantiles or
-manual bin edges.
+feature, output feature, and transform-specific parameters such as quantiles,
+categorical indicator values, lag windows, rolling windows, z-score caps, or
+manual bin edges. Auto-generated screened interactions are persisted back into
+the saved run config so existing-model scoring can replay the same features.
 
 ### `ExplainabilityConfig`
 
@@ -1199,6 +1245,8 @@ Key toggles include:
 - WoE/IV analysis
 - PSI analysis
 - ADF tests
+- model specification tests
+- forecasting statistical tests
 - calibration analysis
 - threshold analysis
 - lift and gain analysis
@@ -1338,18 +1386,38 @@ Fits the configured missing-value rules on the training split and applies them
 consistently to every downstream split. The exported diagnostics bundle includes
 an `imputation_rules` table so the treatment is fully documented.
 
+The current advanced-imputation slice also supports:
+
+- grouped train-fit scalar imputation using user-selected segment columns
+- generated missingness-indicator features that can enter downstream selection
+  and modeling
+- an `imputation_group_rules` table that exports the learned group-specific
+  fill values
+- an `imputation_sensitivity_summary` table that ranks features where alternate
+  fill choices materially change scores or held-out metrics
+- an `imputation_sensitivity_detail` table with policy-by-policy score and
+  metric deltas
+
 ### 10. Governed Transformations
 
 Fits and applies explicit, reproducible feature transformations such as:
 
 - winsorization
 - `log1p`
+- `yeo_johnson`
+- `capped_zscore`
 - ratio features
 - interaction features
+- lag features
+- rolling-mean features
+- percent-change features
 - manual-bin categorical features
 
 These transforms are fit on the training split, replayed on the remaining
-splits, and exported through a `governed_transformations` audit table.
+splits, and exported through a `governed_transformations` audit table. When the
+interaction engine is enabled, train-split screened candidates are exported
+through `interaction_candidates` and the selected interactions are persisted
+into the saved run config.
 
 ### 11. Variable Selection
 
@@ -1434,6 +1502,11 @@ Builds validation tables and interactive Plotly visuals such as:
 - lift and gain charts
 - missingness charts
 - imputation rule tables
+- grouped imputation rule tables when segment-aware imputation is used
+- generated missingness-indicator features when enabled in the column designer
+- imputation sensitivity summary/detail tables
+- interaction candidate tables when the interaction engine is enabled
+- missingness stability, target-association, and indicator-correlation tables
 - correlation heatmaps
 - feature importance charts
 - variable-selection tables
@@ -1447,6 +1520,8 @@ Builds validation tables and interactive Plotly visuals such as:
 - QQ plots
 - segment summaries
 - ADF test tables
+- model specification test tables and influence plots
+- forecasting statistical test tables for time-aware workflows
 - PSI tables
 - WoE/IV summaries
 - feature policy checks
@@ -1484,6 +1559,7 @@ Typical outputs include:
 - backtest summary by risk band
 - diagnostic tables as CSV
 - feature policy check tables
+- model numerical diagnostics and normalized numerical warning tables
 - scenario summary tables and scenario definition tables
 - statistical tests as JSON
 - interactive HTML figures
@@ -1522,6 +1598,11 @@ Each exported run directory is now intended to be portable. A completed run fold
 - `validation_pack.md`
   A validator-facing markdown pack focused on assumptions, review decisions,
   challenger outcomes, and artifact index.
+- `committee_report.docx/.pdf` and `validation_report.docx/.pdf`
+  Polished regulator-ready documents with a cover page, report map, section
+  summaries, split appendices, and estimation-health section.
+- `reference_example_pack.md`
+  A workflow-specific reading guide included in each reference example run.
 - `reproducibility_manifest.json`
   Hashes, package versions, environment metadata, and optional git information.
 - `configuration_template.xlsx`

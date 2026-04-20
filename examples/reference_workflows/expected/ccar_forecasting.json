@@ -1,7 +1,7 @@
 {
-  "name": "pd_development",
-  "model_type": "logistic_regression",
-  "target_mode": "binary",
+  "name": "ccar_forecasting",
+  "model_type": "panel_regression",
+  "target_mode": "continuous",
   "expected_step_count": 17,
   "required_artifacts": [
     "model",
@@ -31,7 +31,6 @@
   ],
   "required_tables": [
     "assumption_checks",
-    "calibration_summary",
     "feature_dictionary",
     "workflow_guardrails",
     "reproducibility_manifest",
@@ -39,16 +38,20 @@
     "feature_policy_checks",
     "scenario_summary",
     "model_comparison",
-    "woe_iv_summary",
-    "vintage_summary"
+    "forecasting_statistical_tests",
+    "macro_sensitivity",
+    "vintage_summary",
+    "migration_matrix",
+    "roll_rate_summary"
   ],
   "required_figures": [
-    "calibration_curve",
     "quantile_backtest",
     "model_comparison_chart",
     "scenario_summary_chart",
-    "threshold_analysis",
-    "vintage_curve"
+    "time_backtest_test",
+    "macro_sensitivity_chart",
+    "vintage_curve",
+    "migration_heatmap"
   ],
   "html_sections": [
     "Credit-Risk Development",
@@ -63,17 +66,17 @@
   ],
   "metrics": {
     "test": {
-      "roc_auc": {
-        "value": 0.6400996264,
-        "tolerance": 0.03
+      "rmse": {
+        "value": 0.0088860264,
+        "tolerance": 0.003
       },
-      "average_precision": {
-        "value": 0.4047811983,
-        "tolerance": 0.04
+      "mae": {
+        "value": 0.0068951804,
+        "tolerance": 0.003
       },
-      "brier_score": {
-        "value": 0.2035245716,
-        "tolerance": 0.03
+      "r2": {
+        "value": 0.7784440405,
+        "tolerance": 0.08
       }
     }
   }

@@ -55,6 +55,16 @@ SECTION_SPECS: OrderedDict[str, dict[str, str]] = OrderedDict(
             },
         ),
         (
+            "credit_risk_development",
+            {
+                "title": "Credit-Risk Development",
+                "description": (
+                    "Vintage curves, migration views, recovery segmentation, and "
+                    "macro-sensitivity diagnostics for credit development workflows."
+                ),
+            },
+        ),
+        (
             "model_performance",
             {
                 "title": "Model Performance",
@@ -119,16 +129,25 @@ TABLE_LABELS = {
     "model_comparison": "Model Comparison Summary",
     "data_quality_summary": "Run Quality Summary",
     "imputation_rules": "Imputation Rules",
+    "imputation_group_rules": "Imputation Group Rules",
+    "imputation_sensitivity_summary": "Imputation Sensitivity Summary",
+    "imputation_sensitivity_detail": "Imputation Sensitivity Detail",
     "assumption_checks": "Suitability And Assumption Checks",
     "feature_dictionary": "Feature Dictionary",
     "governed_transformations": "Governed Transformations",
+    "interaction_candidates": "Interaction Candidates",
     "variable_selection": "Variable Selection",
     "manual_review_feature_decisions": "Manual Feature Review",
     "scorecard_bin_overrides": "Scorecard Bin Overrides",
     "documentation_metadata": "Documentation Metadata",
     "reproducibility_manifest": "Reproducibility Manifest",
+    "model_numerical_diagnostics": "Model Numerical Diagnostics",
+    "numerical_warning_summary": "Numerical Warning Summary",
     "descriptive_statistics": "Descriptive Statistics",
     "missingness": "Missingness Profile",
+    "missingness_by_split": "Missingness By Split",
+    "missingness_target_association": "Missingness Target Association",
+    "missingness_indicator_correlation": "Missingness Indicator Correlation",
     "correlation_matrix": "Correlation Matrix",
     "vif": "Variance Inflation Factors",
     "quantile_summary": "Quantile Performance Table",
@@ -142,7 +161,13 @@ TABLE_LABELS = {
     "woe_iv_detail": "WoE / IV Detail",
     "psi": "Population Stability Index",
     "segment_performance": "Segment Performance",
+    "workflow_guardrails": "Workflow Guardrails",
     "adf_tests": "Augmented Dickey-Fuller Tests",
+    "model_specification_tests": "Model Specification Tests",
+    "model_influence_summary": "Model Influence Summary",
+    "forecasting_statistical_tests": "Forecasting Statistical Tests",
+    "cointegration_tests": "Cointegration Tests",
+    "granger_causality_tests": "Granger-Causality Tests",
     "residual_summary": "Residual Summary",
     "qq_plot_data": "QQ Plot Data",
     "coefficient_breakdown": "Coefficient Breakdown",
@@ -160,6 +185,13 @@ TABLE_LABELS = {
     "lgd_stage_one_coefficients": "LGD Stage-One Coefficients",
     "lgd_stage_two_coefficients": "LGD Stage-Two Coefficients",
     "lifetime_pd_curve": "Lifetime PD Curve Table",
+    "vintage_summary": "Vintage Summary",
+    "cohort_pd_summary": "Cohort PD Summary",
+    "migration_matrix": "Migration Matrix",
+    "roll_rate_summary": "Roll-Rate Summary",
+    "lgd_segment_summary": "LGD Segment Summary",
+    "recovery_segmentation": "Recovery Segmentation",
+    "macro_sensitivity": "Macro Sensitivity Summary",
     "robustness_metric_distribution": "Robustness Metric Distribution",
     "robustness_metric_summary": "Robustness Metric Summary",
     "robustness_feature_distribution": "Robustness Feature Distribution",
@@ -168,6 +200,8 @@ TABLE_LABELS = {
 
 FIGURE_LABELS = {
     "missingness": "Missingness by Column",
+    "missingness_by_split": "Missingness by Split",
+    "missingness_indicator_heatmap": "Missingness Indicator Correlation",
     "correlation_heatmap": "Correlation Heatmap",
     "vif_profile": "VIF Feature Profile",
     "quantile_backtest": "Quantile Backtest",
@@ -183,10 +217,18 @@ FIGURE_LABELS = {
     "score_distribution_overview": "Score Distribution by Split",
     "segment_performance_chart": "Segment Performance",
     "segment_volume": "Segment Observation Mix",
+    "vintage_curve": "Vintage Curve",
+    "cohort_pd_curve": "Cohort PD Curve",
+    "migration_heatmap": "Migration Heatmap",
+    "lgd_segment_chart": "LGD Segment Performance",
+    "recovery_segment_chart": "Recovery Segmentation",
+    "macro_sensitivity_chart": "Macro Sensitivity",
     "psi_profile": "Population Stability Profile",
+    "imputation_sensitivity_impact": "Imputation Sensitivity Impact",
     "residuals_vs_predicted": "Residuals vs Predicted",
     "actual_vs_predicted": "Actual vs Predicted",
     "qq_plot": "Residual QQ Plot",
+    "model_influence_plot": "Influence Summary",
     "model_comparison_chart": "Model Comparison Chart",
     "permutation_importance": "Permutation Importance",
     "scenario_summary_chart": "Scenario Summary",
@@ -203,9 +245,19 @@ FIGURE_LABELS = {
 ASSET_DESCRIPTIONS = {
     "data_quality_summary": "High-level run metadata and feature coverage checks.",
     "imputation_rules": "Training-fit missing-value rules applied to each feature column.",
+    "imputation_group_rules": (
+        "Segment-aware train-fit fill values learned for grouped imputation rules."
+    ),
+    "imputation_sensitivity_summary": (
+        "Feature-level summary of how alternative fill rules changed scores and key metrics."
+    ),
+    "imputation_sensitivity_detail": (
+        "Policy-by-policy imputation sensitivity results on the chosen evaluation split."
+    ),
     "assumption_checks": "Pre-fit suitability checks tied to the chosen model family.",
     "feature_dictionary": "Business definitions and rationale for modeled features.",
     "governed_transformations": "Explicit transformations fit on train and replayed downstream.",
+    "interaction_candidates": "Screened interaction candidates ranked by train-split association.",
     "variable_selection": "Train-split feature screening results and selection rationale.",
     "manual_review_feature_decisions": (
         "Human review decisions that overrode or confirmed feature selection."
@@ -215,7 +267,22 @@ ASSET_DESCRIPTIONS = {
     "reproducibility_manifest": (
         "Run fingerprint metadata for reruns, audits, and package-version traceability."
     ),
+    "model_numerical_diagnostics": (
+        "Structured estimation-health diagnostics such as convergence, iteration counts, "
+        "and optimizer status."
+    ),
+    "numerical_warning_summary": (
+        "Normalized warning records captured during model fitting instead of surfacing as "
+        "raw library warnings."
+    ),
     "missingness": "Null-rate profile for the current modeled dataset.",
+    "missingness_by_split": "Null-rate profile broken out across train, validation, and test.",
+    "missingness_target_association": (
+        "Association between a feature being missing and the observed target outcome."
+    ),
+    "missingness_indicator_correlation": (
+        "Pairwise correlation across raw missingness indicators for the modeled features."
+    ),
     "correlation_heatmap": (
         "Pairwise feature correlation across the most material numeric drivers."
     ),
@@ -239,6 +306,17 @@ ASSET_DESCRIPTIONS = {
     "lift_gain": "Captured defaults by ranked score bucket.",
     "psi": "Population shift between development and current scored populations.",
     "adf_tests": "Stationarity checks for predictions and key time-varying series.",
+    "model_specification_tests": (
+        "Estimator-form diagnostics such as Box-Tidwell, link tests, and condition indices."
+    ),
+    "model_influence_summary": (
+        "Observation-level leverage and Cook's distance for the fitted specification."
+    ),
+    "forecasting_statistical_tests": (
+        "Residual autocorrelation and heteroskedasticity diagnostics for forecasting runs."
+    ),
+    "cointegration_tests": "Cointegration checks between the target series and top drivers.",
+    "granger_causality_tests": "Macro-driver Granger-causality results on the aggregated series.",
     "quantile_backtest": "Observed and predicted performance by ordered risk bucket.",
     "residual_summary": "Regression error distribution summary.",
     "model_comparison": (
@@ -250,14 +328,28 @@ ASSET_DESCRIPTIONS = {
     ),
     "permutation_importance": "Held-out metric degradation when each top feature is shuffled.",
     "feature_policy_checks": (
-        "Governance checks for required, excluded, monotonic, and sign-constrained "
-        "features."
+        "Governance checks for required, excluded, monotonic, and sign-constrained features."
+    ),
+    "workflow_guardrails": (
+        "Preset-aware readiness findings that check model-family, data-structure, and "
+        "documentation expectations before execution."
     ),
     "scenario_summary": "Average score impact for each configured scenario shock.",
     "scenario_segment_impacts": "Scenario deltas broken out by the active review segment.",
     "scorecard_woe_table": "Weight-of-evidence bins used by the scorecard challenger.",
     "scorecard_points_table": "Score contribution by feature bucket for the scorecard model.",
     "scorecard_scaling_summary": "Base-score and points-to-double-odds scaling settings.",
+    "vintage_summary": ("Observed and predicted behavior grouped by booking or reporting vintage."),
+    "cohort_pd_summary": (
+        "Observed and predicted default behavior grouped by first-observed cohort."
+    ),
+    "migration_matrix": "Observed transition counts and rates between ordered delinquency states.",
+    "roll_rate_summary": "Improving, stable, and worsening transition shares for detected states.",
+    "lgd_segment_summary": "Actual versus predicted LGD by the active segment cut.",
+    "recovery_segmentation": "Recovery-rate view derived from LGD actuals or predictions.",
+    "macro_sensitivity": (
+        "Average score change after shocking macro-linked drivers by one standard deviation."
+    ),
     "scorecard_feature_summary": (
         "Feature-level summary of information value, points spread, and monotonicity."
     ),
@@ -269,9 +361,7 @@ ASSET_DESCRIPTIONS = {
     ),
     "lgd_stage_two_coefficients": "Severity-stage coefficients for the LGD two-stage model.",
     "lifetime_pd_curve": "Cumulative lifetime PD implied by the discrete-time hazard model.",
-    "robustness_metric_distribution": (
-        "Held-out metric values across repeated train resamples."
-    ),
+    "robustness_metric_distribution": ("Held-out metric values across repeated train resamples."),
     "robustness_metric_summary": (
         "Mean, spread, and percentile summary for repeated held-out metrics."
     ),
@@ -402,13 +492,21 @@ def infer_asset_section(asset_key: str, *, kind: str) -> str:
     if asset_key in {
         "data_quality_summary",
         "imputation_rules",
+        "imputation_group_rules",
+        "imputation_sensitivity_summary",
+        "imputation_sensitivity_detail",
         "assumption_checks",
         "feature_dictionary",
         "governed_transformations",
+        "interaction_candidates",
         "variable_selection",
         "documentation_metadata",
         "descriptive_statistics",
         "missingness",
+        "missingness_by_split",
+        "missingness_target_association",
+        "missingness_indicator_correlation",
+        "missingness_indicator_heatmap",
         "correlation_matrix",
         "correlation_heatmap",
         "vif",
@@ -421,6 +519,22 @@ def infer_asset_section(asset_key: str, *, kind: str) -> str:
         "segment_volume",
     }:
         return "sample_segmentation"
+    if asset_key in {
+        "vintage_summary",
+        "vintage_curve",
+        "cohort_pd_summary",
+        "cohort_pd_curve",
+        "migration_matrix",
+        "migration_heatmap",
+        "roll_rate_summary",
+        "lgd_segment_summary",
+        "lgd_segment_chart",
+        "recovery_segmentation",
+        "recovery_segment_chart",
+        "macro_sensitivity",
+        "macro_sensitivity_chart",
+    }:
+        return "credit_risk_development"
     if asset_key in {
         "split_metrics",
         "feature_importance",
@@ -438,6 +552,9 @@ def infer_asset_section(asset_key: str, *, kind: str) -> str:
         "actual_vs_predicted",
         "qq_plot_data",
         "qq_plot",
+        "model_specification_tests",
+        "model_influence_summary",
+        "model_influence_plot",
         "coefficient_breakdown",
         "feature_effect_curves",
         "permutation_importance",
@@ -478,6 +595,7 @@ def infer_asset_section(asset_key: str, *, kind: str) -> str:
     if asset_key in {
         "psi",
         "psi_profile",
+        "imputation_sensitivity_impact",
         "robustness_metric_distribution",
         "robustness_metric_summary",
         "robustness_metric_boxplot",
@@ -491,13 +609,19 @@ def infer_asset_section(asset_key: str, *, kind: str) -> str:
         "quantile_summary",
         "quantile_backtest",
         "adf_tests",
+        "forecasting_statistical_tests",
+        "cointegration_tests",
+        "granger_causality_tests",
         "lifetime_pd_curve",
     }:
         return "backtesting_time"
     if asset_key in {
         "feature_policy_checks",
+        "workflow_guardrails",
         "manual_review_feature_decisions",
         "reproducibility_manifest",
+        "model_numerical_diagnostics",
+        "numerical_warning_summary",
     }:
         return "governance_export"
     if asset_key in {"scorecard_bin_overrides"}:
@@ -610,7 +734,14 @@ def apply_fintech_figure_theme(
             if getattr(trace, "line", None) is not None:
                 trace.line.width = max(getattr(trace.line, "width", 0) or 0, 2.8)
             if getattr(trace, "marker", None) is not None:
-                trace.marker.size = max(getattr(trace.marker, "size", 0) or 0, 7)
+                marker_size = getattr(trace.marker, "size", None)
+                if marker_size is None or np.isscalar(marker_size):
+                    trace.marker.size = max(float(marker_size or 0), 7)
+                else:
+                    trace.marker.sizemin = max(
+                        float(getattr(trace.marker, "sizemin", 0) or 0),
+                        7,
+                    )
         elif trace.type == "heatmap" and not trace.colorscale:
             trace.colorscale = [
                 [0.0, "#F2D7A6"],
@@ -1163,6 +1294,11 @@ def _build_governance_section_html(
             "<li><strong>run_config.json</strong> stores the fully resolved configuration.</li>",
             "<li><strong>generated_run.py</strong> reruns the bundle without the GUI.</li>",
             "<li><strong>input_snapshot.csv</strong> preserves the scored input when enabled.</li>",
+            (
+                "<li><strong>committee_report.docx/.pdf</strong> and "
+                "<strong>validation_report.docx/.pdf</strong> package the run for "
+                "committee and validation review.</li>"
+            ),
             (
                 "<li><strong>tables/</strong> and <strong>figures/</strong> "
                 "hold distribution-ready outputs.</li>"

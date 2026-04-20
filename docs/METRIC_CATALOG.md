@@ -14,7 +14,7 @@ Primary implementation files:
 
 ## Metric Families
 
-The framework reports metrics in five broad families:
+The framework reports metrics in seven broad families:
 
 1. split-level model performance metrics
 2. calibration metrics
@@ -22,6 +22,7 @@ The framework reports metrics in five broad families:
 4. regression residual metrics
 5. explainability and governance diagnostics
 6. robustness and scorecard-development diagnostics
+7. credit-risk development diagnostics
 
 ## 1. Split-Level Binary Metrics
 
@@ -258,9 +259,90 @@ The same metric family often appears in more than one place:
 | `interactive_report.html` | grouped visual presentation |
 | `tables/*.csv` | individual diagnostic tables |
 | `run_report.md` | run narrative summary |
-| `model_documentation_pack.md` | development documentation summary |
 
-## 11. Robustness And Stability Metrics
+## 11. Workflow Guardrails And Governance Readiness
+
+Workflow guardrail outputs live in `workflow_guardrails.py` and are exported by
+`DiagnosticsStep._add_workflow_guardrail_outputs(...)`.
+
+Primary fields:
+
+- `severity`
+- `code`
+- `field_path`
+- `message`
+
+This is not a model metric in the usual statistical sense. It is a governed
+readiness output that records whether the selected preset was configured in a
+way that fits its intended development use case.
+
+Primary output:
+
+- `workflow_guardrails`
+
+## 12. Credit-Risk Development Diagnostics
+
+These are calculated in `DiagnosticsStep._add_credit_risk_outputs(...)`.
+
+Primary outputs include:
+
+- `vintage_summary` / `vintage_curve`
+- `cohort_pd_summary` / `cohort_pd_curve`
+- `migration_matrix` / `migration_heatmap`
+- `roll_rate_summary`
+- `lgd_segment_summary` / `lgd_segment_chart`
+- `recovery_segmentation` / `recovery_segment_chart`
+- `macro_sensitivity` / `macro_sensitivity_chart`
+
+These outputs are intended for development and validation review in PD, LGD,
+CCAR, and CECL workflows when the available columns support them.
+
+## 13. Numerical Stability And Estimation Health
+
+These outputs are assembled from normalized warning capture in the model
+adapters and exported through `DiagnosticsStep._add_model_artifact_outputs(...)`.
+
+Primary outputs:
+
+- `numerical_warning_summary`
+- `model_numerical_diagnostics`
+
+Typical fields include:
+
+- `source`
+- `stage`
+- `warning_code`
+- `category`
+- `message`
+- `occurrence_count`
+- `diagnostic_name`
+- `value`
+- `status`
+
+These are governance and auditability outputs rather than business metrics.
+They show whether the underlying estimator reached its iteration cap, returned
+finite standard errors, emitted runtime warnings, or required numerical
+normalization.
+
+## 14. Regulator-Ready Report Exports
+
+Regulator-ready report generation is assembled in `reporting.py` and exported
+by `ArtifactExportStep`.
+
+Primary artifacts:
+
+- `committee_report.docx`
+- `committee_report.pdf`
+- `validation_report.docx`
+- `validation_report.pdf`
+
+These files summarize and package the metrics above into committee-ready and
+validation-ready delivery formats without changing the underlying quantitative
+results. The current report exports include a cover page, a report map, and
+explicit numerical-stability content alongside the existing development and
+validation sections.
+
+## 15. Robustness And Stability Metrics
 
 These are calculated in `DiagnosticsStep._add_robustness_outputs(...)`.
 

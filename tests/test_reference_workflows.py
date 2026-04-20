@@ -12,7 +12,7 @@ from tests.support import temporary_artifact_root
 
 @pytest.mark.parametrize(
     "workflow_name",
-    ["pd_development", "lgd_severity", "cecl_lifetime_pd"],
+    ["pd_development", "lgd_severity", "cecl_lifetime_pd", "ccar_forecasting"],
 )
 def test_reference_workflow_matches_expected_contract(workflow_name: str) -> None:
     definition = get_reference_workflow_definition(workflow_name)
@@ -41,6 +41,26 @@ def test_reference_workflow_matches_expected_contract(workflow_name: str) -> Non
         )
         for section_name in expected["documentation_sections"]:
             assert f"## {section_name}" in documentation_pack
+
+        example_pack = Path(context.artifacts["example_pack"]).read_text(encoding="utf-8")
+        assert "## How To Read The Artifact Bundle" in example_pack
+        assert "## Regression Anchors" in example_pack
+
+        interactive_report = Path(context.artifacts["interactive_report"]).read_text(
+            encoding="utf-8"
+        )
+        for section_name in expected.get("html_sections", []):
+            assert section_name in interactive_report
+
+        for artifact_name in expected["required_artifacts"]:
+            artifact_path = context.artifacts.get(artifact_name)
+            if artifact_path is None:
+                continue
+            artifact_path = Path(artifact_path)
+            if artifact_name.endswith("_docx"):
+                assert artifact_path.read_bytes().startswith(b"PK")
+            if artifact_name.endswith("_pdf"):
+                assert artifact_path.read_bytes().startswith(b"%PDF-")
 
         for split_name, metric_expectations in expected["metrics"].items():
             split_metrics = context.metrics[split_name]

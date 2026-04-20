@@ -29,6 +29,7 @@ from ..gui_support import (
     build_transformation_frame_from_config,
 )
 from ..presentation import build_interactive_report_html
+from ..reporting import build_regulatory_report_bundle
 
 
 class ArtifactExportStep(BasePipelineStep):
@@ -78,6 +79,18 @@ class ArtifactExportStep(BasePipelineStep):
             output_root / context.config.artifacts.documentation_pack_file_name
         )
         validation_pack_path = output_root / context.config.artifacts.validation_pack_file_name
+        committee_report_docx_path = (
+            output_root / context.config.artifacts.committee_report_docx_file_name
+        )
+        validation_report_docx_path = (
+            output_root / context.config.artifacts.validation_report_docx_file_name
+        )
+        committee_report_pdf_path = (
+            output_root / context.config.artifacts.committee_report_pdf_file_name
+        )
+        validation_report_pdf_path = (
+            output_root / context.config.artifacts.validation_report_pdf_file_name
+        )
         reproducibility_manifest_path = (
             output_root / context.config.artifacts.reproducibility_manifest_file_name
         )
@@ -132,6 +145,13 @@ class ArtifactExportStep(BasePipelineStep):
             self._build_validation_pack(context),
             encoding="utf-8",
         )
+        regulatory_report_manifest = self._export_regulatory_reports(
+            context=context,
+            committee_report_docx_path=committee_report_docx_path,
+            validation_report_docx_path=validation_report_docx_path,
+            committee_report_pdf_path=committee_report_pdf_path,
+            validation_report_pdf_path=validation_report_pdf_path,
+        )
         reproducibility_manifest = self._build_reproducibility_manifest(
             context=context,
             model_path=model_path,
@@ -154,6 +174,7 @@ class ArtifactExportStep(BasePipelineStep):
             "interactive_report": str(interactive_report_path),
             "documentation_pack": str(documentation_pack_path),
             "validation_pack": str(validation_pack_path),
+            "regulatory_reports": regulatory_report_manifest,
             "reproducibility_manifest": str(reproducibility_manifest_path),
             "configuration_template": str(template_workbook_path),
             "rerun_bundle": {
@@ -187,6 +208,18 @@ class ArtifactExportStep(BasePipelineStep):
             "report": report_path,
             "documentation_pack": documentation_pack_path,
             "validation_pack": validation_pack_path,
+            "committee_report_docx": (
+                committee_report_docx_path if committee_report_docx_path.exists() else None
+            ),
+            "validation_report_docx": (
+                validation_report_docx_path if validation_report_docx_path.exists() else None
+            ),
+            "committee_report_pdf": (
+                committee_report_pdf_path if committee_report_pdf_path.exists() else None
+            ),
+            "validation_report_pdf": (
+                validation_report_pdf_path if validation_report_pdf_path.exists() else None
+            ),
             "interactive_report": interactive_report_path,
             "config": config_path,
             "tests": tests_path,
@@ -205,6 +238,37 @@ class ArtifactExportStep(BasePipelineStep):
         }
         return context
 
+    def _export_regulatory_reports(
+        self,
+        *,
+        context: PipelineContext,
+        committee_report_docx_path: Path,
+        validation_report_docx_path: Path,
+        committee_report_pdf_path: Path,
+        validation_report_pdf_path: Path,
+    ) -> dict[str, str]:
+        if not context.config.regulatory_reporting.enabled:
+            return {}
+
+        report_bundle = build_regulatory_report_bundle(context)
+        manifest: dict[str, str] = {}
+        committee_report = report_bundle["committee"]
+        validation_report = report_bundle["validation"]
+
+        if committee_report.docx_bytes is not None:
+            committee_report_docx_path.write_bytes(committee_report.docx_bytes)
+            manifest["committee_docx"] = str(committee_report_docx_path)
+        if validation_report.docx_bytes is not None:
+            validation_report_docx_path.write_bytes(validation_report.docx_bytes)
+            manifest["validation_docx"] = str(validation_report_docx_path)
+        if committee_report.pdf_bytes is not None:
+            committee_report_pdf_path.write_bytes(committee_report.pdf_bytes)
+            manifest["committee_pdf"] = str(committee_report_pdf_path)
+        if validation_report.pdf_bytes is not None:
+            validation_report_pdf_path.write_bytes(validation_report.pdf_bytes)
+            manifest["validation_pdf"] = str(validation_report_pdf_path)
+        return manifest
+
     def _write_json(self, path: Path, payload: Any) -> None:
         with path.open("w", encoding="utf-8") as handle:
             json.dump(payload, handle, indent=2, default=self._json_default)
@@ -220,6 +284,7 @@ class ArtifactExportStep(BasePipelineStep):
         split_summary = context.metadata.get("split_summary", {})
         transformation_summary = context.metadata.get("transformation_summary", {})
         assumption_summary = context.metadata.get("assumption_check_summary", {})
+        guardrail_summary = context.metadata.get("workflow_guardrail_summary", {})
 
         lines = [
             "# Quantitative Model Run Report",
@@ -237,6 +302,7 @@ class ArtifactExportStep(BasePipelineStep):
             f"- Features with imputation rules: `{imputation_summary.get('feature_count', 0)}`",
             f"- Governed transformations: `{transformation_summary.get('count', 0)}`",
             f"- Assumption-check failures: `{assumption_summary.get('fail_count', 0)}`",
+            f"- Workflow guardrail warnings: `{guardrail_summary.get('warning_count', 0)}`",
             f"- Execution mode: `{context.config.execution.mode.value}`",
             f"- Labels available: `{bool(context.metadata.get('labels_available', False))}`",
             f"- Model type: `{context.config.model.model_type.value}`",
@@ -323,6 +389,10 @@ class ArtifactExportStep(BasePipelineStep):
                     "- `configuration_template.xlsx` exports the review workbook "
                     "used for offline edits."
                 ),
+                "- `committee_report.docx` and `committee_report.pdf` provide "
+                "committee-ready packaging when regulatory reporting is enabled.",
+                "- `validation_report.docx` and `validation_report.pdf` provide "
+                "validator-ready packaging when regulatory reporting is enabled.",
                 "- `code_snapshot/` stores a Python copy of the framework, GUI, "
                 "tests, and examples for editing.",
                 "",
@@ -347,6 +417,7 @@ class ArtifactExportStep(BasePipelineStep):
         variable_selection = context.diagnostics_tables.get("variable_selection", pd.DataFrame())
         calibration_summary = context.diagnostics_tables.get("calibration_summary", pd.DataFrame())
         comparison_table = context.comparison_results
+        guardrail_table = context.diagnostics_tables.get("workflow_guardrails", pd.DataFrame())
         lines = [
             f"# {documentation.model_name}",
             "",
@@ -386,6 +457,18 @@ class ArtifactExportStep(BasePipelineStep):
                     "",
                     f"- Documented modeled features: `{documented_count}`",
                     f"- Dictionary rows exported: `{len(feature_dictionary)}`",
+                    "",
+                ]
+            )
+
+        if not guardrail_table.empty:
+            warning_count = int((guardrail_table["severity"] == "warning").sum())
+            lines.extend(
+                [
+                    "### Workflow Guardrails",
+                    "",
+                    f"- Guardrail rows exported: `{len(guardrail_table)}`",
+                    f"- Guardrail warnings: `{warning_count}`",
                     "",
                 ]
             )
@@ -471,6 +554,14 @@ class ArtifactExportStep(BasePipelineStep):
         lines.extend(["## Audit Assets", ""])
         lines.append("- `validation_pack.md` provides the validator-facing summary.")
         lines.append(
+            "- `committee_report.docx` / `committee_report.pdf` provide "
+            "committee-ready distribution assets."
+        )
+        lines.append(
+            "- `validation_report.docx` / `validation_report.pdf` provide "
+            "validator-ready distribution assets."
+        )
+        lines.append(
             "- `reproducibility_manifest.json` provides hashes, package versions, "
             "and run fingerprint metadata."
         )
@@ -486,6 +577,7 @@ class ArtifactExportStep(BasePipelineStep):
         documentation = context.config.documentation
         feature_dictionary = context.diagnostics_tables.get("feature_dictionary", pd.DataFrame())
         assumption_checks = context.diagnostics_tables.get("assumption_checks", pd.DataFrame())
+        workflow_guardrails = context.diagnostics_tables.get("workflow_guardrails", pd.DataFrame())
         variable_selection = context.diagnostics_tables.get("variable_selection", pd.DataFrame())
         manual_review = context.diagnostics_tables.get(
             "manual_review_feature_decisions",
@@ -558,6 +650,19 @@ class ArtifactExportStep(BasePipelineStep):
                 ]
             )
 
+        if not workflow_guardrails.empty:
+            error_count = int((workflow_guardrails["severity"] == "error").sum())
+            warning_count = int((workflow_guardrails["severity"] == "warning").sum())
+            rows.extend(
+                [
+                    "## Workflow Guardrails",
+                    "",
+                    f"- Blocking findings: `{error_count}`",
+                    f"- Warning findings: `{warning_count}`",
+                    "",
+                ]
+            )
+
         if not variable_selection.empty:
             selected_count = int(variable_selection["selected"].fillna(False).sum())
             rows.extend(
@@ -626,6 +731,14 @@ class ArtifactExportStep(BasePipelineStep):
                 "- `run_report.md` for the narrative run summary.",
                 "- `model_documentation_pack.md` for the development-facing documentation.",
                 "- `validation_pack.md` for validator-oriented review packaging.",
+                (
+                    "- `committee_report.docx` / `committee_report.pdf` "
+                    "for committee-facing delivery."
+                ),
+                (
+                    "- `validation_report.docx` / `validation_report.pdf` "
+                    "for validator-facing delivery."
+                ),
                 "- `reproducibility_manifest.json` for run fingerprint metadata.",
                 "- `configuration_template.xlsx` for offline governance editing.",
                 "",

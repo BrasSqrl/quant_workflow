@@ -59,6 +59,7 @@ class ModelTrainingStep(BasePipelineStep):
         context.model = model_adapter
         context.model_summary = model_adapter.summary_text
         context.metadata["model_reused"] = False
+        self._publish_model_numerical_findings(context, model_adapter, loaded_model=False)
         return context
 
     def _load_existing_model(self, context: PipelineContext) -> PipelineContext:
@@ -82,7 +83,40 @@ class ModelTrainingStep(BasePipelineStep):
         )
         context.metadata["loaded_model_path"] = str(resolved_path)
         context.metadata["model_reused"] = True
+        self._publish_model_numerical_findings(context, model_adapter, loaded_model=True)
         return context
+
+    def _publish_model_numerical_findings(
+        self,
+        context: PipelineContext,
+        model_adapter,
+        *,
+        loaded_model: bool,
+    ) -> None:
+        warning_table_getter = getattr(model_adapter, "get_numerical_warning_table", None)
+        if not callable(warning_table_getter):
+            return
+        warning_table = warning_table_getter()
+        if warning_table.empty:
+            return
+
+        if loaded_model:
+            context.warn(
+                "Loaded model artifact carries normalized fit-time numerical warnings. "
+                "Review `numerical_warning_summary` in the exported outputs."
+            )
+            return
+
+        for _, row in warning_table.iterrows():
+            count_suffix = (
+                f" ({int(row['occurrence_count'])}x)"
+                if int(row.get("occurrence_count", 1)) > 1
+                else ""
+            )
+            context.warn(
+                f"{row['source']}: {row['message']}{count_suffix}. "
+                "Review `numerical_warning_summary` for the normalized record."
+            )
 
     def _validate_loaded_model(
         self, context: PipelineContext, model_adapter, model_path: Path
@@ -122,7 +156,11 @@ class ModelTrainingStep(BasePipelineStep):
             )
             return
 
-        dataframe = context.working_data
+        dataframe = context.split_frames.get("train")
+        if dataframe is None:
+            dataframe = next(iter(context.split_frames.values()), None)
+        if dataframe is None:
+            dataframe = context.working_data
         if dataframe is None:
             raise ValueError("Feature compatibility checks require a working dataframe.")
 

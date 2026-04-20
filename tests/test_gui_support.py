@@ -24,6 +24,7 @@ from quant_pd_framework.gui_support import (
     build_framework_config_from_editor,
     build_gui_inputs_from_preset,
     default_challengers_for_target_mode,
+    frames_equivalent,
     parse_positive_values,
     parse_scenario_rows,
 )
@@ -54,6 +55,8 @@ def test_build_framework_config_from_editor_maps_roles_and_split_fields() -> Non
         "dtype": "string",
         "missing_value_policy": MissingValuePolicy.CONSTANT.value,
         "missing_value_fill_value": "retail",
+        "missing_value_group_columns": "",
+        "create_missing_indicator": False,
         "create_if_missing": True,
         "default_value": "retail",
         "keep_source": False,
@@ -90,6 +93,29 @@ def test_build_framework_config_from_editor_maps_roles_and_split_fields() -> Non
         and spec.missing_value_fill_value == "retail"
         for spec in config.schema.column_specs
     )
+
+
+def test_build_framework_config_from_editor_parses_advanced_imputation_columns() -> None:
+    dataframe = pd.DataFrame(
+        {
+            "portfolio": ["retail", "retail", "commercial"],
+            "balance": [1.0, None, 3.0],
+            "default_status": [0, 1, 0],
+        }
+    )
+    editor = build_column_editor_frame(dataframe)
+    editor.loc[editor["name"] == "default_status", "role"] = ColumnRole.TARGET_SOURCE.value
+    editor.loc[editor["name"] == "balance", "missing_value_policy"] = (
+        MissingValuePolicy.MEDIAN.value
+    )
+    editor.loc[editor["name"] == "balance", "missing_value_group_columns"] = "portfolio"
+    editor.loc[editor["name"] == "balance", "create_missing_indicator"] = True
+
+    config = build_framework_config_from_editor(editor, GUIBuildInputs())
+    balance_spec = next(spec for spec in config.schema.column_specs if spec.name == "balance")
+
+    assert balance_spec.missing_value_group_columns == ["portfolio"]
+    assert balance_spec.create_missing_indicator is True
 
 
 def test_build_framework_config_from_editor_requires_exactly_one_target() -> None:
@@ -157,3 +183,24 @@ def test_default_challengers_for_target_mode_returns_matching_families() -> None
     assert ModelType.TWO_STAGE_LGD_MODEL in default_challengers_for_target_mode(
         TargetMode.CONTINUOUS
     )
+
+
+def test_frames_equivalent_ignores_dtype_only_differences() -> None:
+    left = pd.DataFrame(
+        {
+            "enabled": [True],
+            "role": [ColumnRole.FEATURE.value],
+            "value": [1],
+            "timestamp": [pd.Timestamp("2024-01-01")],
+        }
+    )
+    right = pd.DataFrame(
+        {
+            "enabled": pd.Series([True], dtype="bool"),
+            "role": [ColumnRole.FEATURE.value],
+            "value": pd.Series([1.0], dtype="float64"),
+            "timestamp": [pd.Timestamp("2024-01-01 00:00:00")],
+        }
+    )
+
+    assert frames_equivalent(left, right) is True

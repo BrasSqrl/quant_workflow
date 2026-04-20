@@ -23,6 +23,9 @@ Primary implementation files:
 | Test or statistic | Primary output(s) | Typical use | Main code path |
 | --- | --- | --- | --- |
 | Augmented Dickey-Fuller (ADF) | `adf_tests` | Time-series or panel stationarity review | `DiagnosticsStep._add_adf_outputs`, `_run_adf_test` |
+| Condition index | `model_specification_tests` | Collinearity severity review | `DiagnosticsStep._compute_condition_index` |
+| Box-Tidwell | `model_specification_tests` | Logistic linearity-in-the-logit review | `DiagnosticsStep._run_box_tidwell_tests` |
+| Link test | `model_specification_tests` | Misspecification review for binary models | `DiagnosticsStep._run_link_test` |
 | Kolmogorov-Smirnov style separation statistic (KS) | split metric `ks_statistic` | Binary discrimination strength | `EvaluationStep._ks_statistic` |
 | Hosmer-Lemeshow statistic | `calibration_summary` | Binary calibration goodness-of-fit by bins | `DiagnosticsStep._hosmer_lemeshow_statistic` |
 | Calibration slope and intercept | `calibration_summary` | Over/under-confidence review | `DiagnosticsStep._calibration_slope_intercept` |
@@ -30,6 +33,11 @@ Primary implementation files:
 | Variance Inflation Factor (VIF) | `vif` | Numeric multicollinearity screening | `DiagnosticsStep._add_vif_outputs` |
 | Weight of Evidence / Information Value (WoE / IV) | `woe_iv_summary`, `woe_iv_detail` | Binary predictor strength and scorecard analysis | `DiagnosticsStep._add_woe_iv_outputs` |
 | Population Stability Index (PSI) | `psi` | Development vs scored-population drift | `DiagnosticsStep._add_psi_outputs`, `_compute_population_stability_index` |
+| Durbin-Watson | `forecasting_statistical_tests` | Residual autocorrelation review | `DiagnosticsStep._add_forecasting_test_outputs` |
+| Ljung-Box | `forecasting_statistical_tests` | Residual serial-correlation review | `DiagnosticsStep._add_forecasting_test_outputs` |
+| ARCH LM | `forecasting_statistical_tests` | Conditional heteroskedasticity review | `DiagnosticsStep._add_forecasting_test_outputs` |
+| Cointegration | `cointegration_tests` | Long-run relationship review for target and drivers | `DiagnosticsStep._add_forecasting_test_outputs` |
+| Granger causality | `granger_causality_tests` | Directional macro-driver exploration | `DiagnosticsStep._add_forecasting_test_outputs` |
 
 ## 1. Augmented Dickey-Fuller (ADF)
 
@@ -432,6 +440,93 @@ return float(psi_value)
 
 - Table: `psi`
 - Figure: `psi_profile`
+
+## 9. Condition Index
+
+### What it tests
+
+Condition index summarizes how close the numeric design matrix is to harmful
+linear dependence.
+
+### When to use it
+
+Use it for interpretable model families such as logistic, probit, panel, or
+linear-style models when coefficient stability matters.
+
+### Output location
+
+- Table: `model_specification_tests`
+
+## 10. Box-Tidwell
+
+### What it tests
+
+Box-Tidwell checks whether a numeric feature appears linear in the logit by
+adding a `feature * log(feature)` term and testing that term.
+
+### When to use it
+
+Use it for binary logistic-style models when you want evidence about whether a
+continuous driver should be transformed or binned.
+
+### Output location
+
+- Table: `model_specification_tests`
+
+## 11. Link Test
+
+### What it tests
+
+The link test regresses the target on the fitted logit and the squared fitted
+logit. A significant squared term suggests missing non-linear structure or
+misspecification.
+
+### When to use it
+
+Use it for binary models when reviewing whether the current feature form is
+adequate.
+
+### Output location
+
+- Table: `model_specification_tests`
+
+## 12. Durbin-Watson, Ljung-Box, and ARCH LM
+
+### What they test
+
+These tests review residual behavior for time-aware workflows:
+
+- Durbin-Watson checks first-order residual autocorrelation.
+- Ljung-Box checks broader serial correlation over selected lags.
+- ARCH LM checks whether residual variance changes over time.
+
+### When to use them
+
+Use them for `time_series` and `panel` workflows, especially CCAR and CECL
+forecasting runs where residual structure matters.
+
+### Output location
+
+- Table: `forecasting_statistical_tests`
+
+## 13. Cointegration and Granger Causality
+
+### What they test
+
+- Cointegration checks whether the aggregated target and a driver appear to
+  move together in a stable long-run relationship.
+- Granger causality checks whether lagged values of a driver improve
+  short-horizon prediction of the aggregated target series.
+
+### When to use them
+
+Use them in macro-linked forecasting workflows when you want a formal check on
+driver relevance beyond simple contemporaneous correlation.
+
+### Output location
+
+- Table: `cointegration_tests`
+- Table: `granger_causality_tests`
 
 ## Related Non-Test Diagnostics
 

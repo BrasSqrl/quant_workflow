@@ -43,6 +43,10 @@ where = ["src"]
 pythonpath = ["src"]
 testpaths = ["tests"]
 addopts = "-p no:cacheprovider"
+filterwarnings = [
+    "ignore:divide by zero encountered in log:RuntimeWarning:statsmodels.regression.linear_model",
+    "ignore:Perfect separation or prediction detected, parameter may not be identified:statsmodels.tools.sm_exceptions.PerfectSeparationWarning:statsmodels.genmod.generalized_linear_model",
+]
 
 [tool.ruff]
 line-length = 100

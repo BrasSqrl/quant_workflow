@@ -20,6 +20,7 @@ from quant_pd_framework import (
     CleaningConfig,
     ColumnRole,
     ComparisonConfig,
+    CreditRiskDiagnosticConfig,
     DataStructure,
     DiagnosticConfig,
     DocumentationConfig,
@@ -27,10 +28,13 @@ from quant_pd_framework import (
     ExplainabilityConfig,
     FeatureEngineeringConfig,
     FeaturePolicyConfig,
+    ImputationSensitivityConfig,
+    MissingValuePolicy,
     ModelConfig,
     ModelType,
     PresetName,
     QuantModelOrchestrator,
+    RegulatoryReportConfig,
     ReproducibilityConfig,
     RobustnessConfig,
     ScenarioShockOperation,
@@ -40,6 +44,7 @@ from quant_pd_framework import (
     SuitabilityCheckConfig,
     TargetMode,
     VariableSelectionConfig,
+    WorkflowGuardrailConfig,
     build_sample_pd_dataframe,
 )
 from quant_pd_framework.gui_support import (
@@ -59,6 +64,7 @@ from quant_pd_framework.gui_support import (
     build_template_workbook_bytes,
     build_transformation_editor_frame,
     default_challengers_for_target_mode,
+    frames_equivalent,
     list_gui_preset_options,
     load_template_workbook,
     parse_expected_signs,
@@ -77,6 +83,11 @@ from quant_pd_framework.presentation import (
     prepare_display_table,
     summarize_run_kpis,
 )
+from quant_pd_framework.workflow_guardrails import (
+    build_guardrail_table,
+    evaluate_workflow_guardrails,
+    summarize_guardrail_counts,
+)
 
 DIAGNOSTIC_SUITE_OPTIONS: list[tuple[str, str]] = [
     ("Data quality", "data_quality"),
@@ -87,6 +98,8 @@ DIAGNOSTIC_SUITE_OPTIONS: list[tuple[str, str]] = [
     ("WoE / IV analysis", "woe_iv_analysis"),
     ("PSI analysis", "psi_analysis"),
     ("ADF tests", "adf_analysis"),
+    ("Model specification tests", "model_specification_tests"),
+    ("Forecasting statistical tests", "forecasting_statistical_tests"),
     ("Calibration analysis", "calibration_analysis"),
     ("Threshold analysis", "threshold_analysis"),
     ("Lift and gain analysis", "lift_gain_analysis"),
@@ -154,20 +167,14 @@ def initialize_preset_state() -> GUIBuildInputs:
     )
     st.session_state["explainability_enabled"] = preset_inputs.explainability.enabled
     st.session_state["explainability_top_n"] = preset_inputs.explainability.top_n_features
-    st.session_state["explainability_grid_points"] = (
-        preset_inputs.explainability.grid_points
-    )
+    st.session_state["explainability_grid_points"] = preset_inputs.explainability.grid_points
     st.session_state["scenario_split"] = preset_inputs.scenario_testing.evaluation_split
     st.session_state["quantile_bucket_count"] = preset_inputs.diagnostics.quantile_bucket_count
     st.session_state["calibration_bin_count"] = preset_inputs.calibration.bin_count
     st.session_state["calibration_strategy"] = preset_inputs.calibration.strategy.value
     st.session_state["calibration_platt_scaling"] = preset_inputs.calibration.platt_scaling
-    st.session_state["calibration_isotonic"] = (
-        preset_inputs.calibration.isotonic_calibration
-    )
-    st.session_state["calibration_ranking_metric"] = (
-        preset_inputs.calibration.ranking_metric.value
-    )
+    st.session_state["calibration_isotonic"] = preset_inputs.calibration.isotonic_calibration
+    st.session_state["calibration_ranking_metric"] = preset_inputs.calibration.ranking_metric.value
     st.session_state["scorecard_monotonicity"] = preset_inputs.scorecard.monotonicity.value
     st.session_state["scorecard_min_bin_share"] = preset_inputs.scorecard.min_bin_share
     st.session_state["scorecard_base_score"] = preset_inputs.scorecard.base_score
@@ -196,9 +203,7 @@ def initialize_preset_state() -> GUIBuildInputs:
     st.session_state["documentation_business_purpose"] = (
         preset_inputs.documentation.business_purpose
     )
-    st.session_state["documentation_portfolio_name"] = (
-        preset_inputs.documentation.portfolio_name
-    )
+    st.session_state["documentation_portfolio_name"] = preset_inputs.documentation.portfolio_name
     st.session_state["documentation_segment_name"] = preset_inputs.documentation.segment_name
     st.session_state["documentation_horizon_definition"] = (
         preset_inputs.documentation.horizon_definition
@@ -206,21 +211,15 @@ def initialize_preset_state() -> GUIBuildInputs:
     st.session_state["documentation_target_definition"] = (
         preset_inputs.documentation.target_definition
     )
-    st.session_state["documentation_loss_definition"] = (
-        preset_inputs.documentation.loss_definition
-    )
+    st.session_state["documentation_loss_definition"] = preset_inputs.documentation.loss_definition
     st.session_state["documentation_assumptions"] = "\n".join(
         preset_inputs.documentation.assumptions
     )
-    st.session_state["documentation_exclusions"] = "\n".join(
-        preset_inputs.documentation.exclusions
-    )
+    st.session_state["documentation_exclusions"] = "\n".join(preset_inputs.documentation.exclusions)
     st.session_state["documentation_limitations"] = "\n".join(
         preset_inputs.documentation.limitations
     )
-    st.session_state["documentation_reviewer_notes"] = (
-        preset_inputs.documentation.reviewer_notes
-    )
+    st.session_state["documentation_reviewer_notes"] = preset_inputs.documentation.reviewer_notes
     st.session_state["_applied_preset"] = selected_value
     return preset_inputs
 
@@ -285,6 +284,20 @@ def schema_editor_column_config() -> dict[str, Any]:
             "Impute fill value",
             help="Used only when the missing policy is `constant`.",
         ),
+        "missing_value_group_columns": st.column_config.TextColumn(
+            "Group columns",
+            help=(
+                "Optional comma-separated columns used for train-fit segment-aware "
+                "imputation before falling back to the global fill value."
+            ),
+        ),
+        "create_missing_indicator": st.column_config.CheckboxColumn(
+            "Missing flag",
+            help=(
+                "Creates a numeric missingness indicator feature for the column "
+                "before imputation is applied."
+            ),
+        ),
         "create_if_missing": st.column_config.CheckboxColumn("Create if missing"),
         "default_value": st.column_config.TextColumn("Default value"),
         "keep_source": st.column_config.CheckboxColumn("Keep input column"),
@@ -300,6 +313,8 @@ def render_schema_guidance() -> None:
             - Mark exactly one enabled row as `target_source`.
             - Mark one enabled row as `date` for time-series or panel runs.
             - Mark one enabled row as `identifier` for panel runs.
+            - Use `Group columns` for train-fit segment-aware mean/median/mode imputation.
+            - Switch on `Missing flag` when missingness itself should become a model feature.
             - Rename columns in `name`, disable rows with `enabled`, and add
               synthetic columns with `create_if_missing`.
             """
@@ -312,7 +327,8 @@ def render_schema_editor_panel(schema_frame: pd.DataFrame, *, editor_key: str) -
     st.caption(
         "Mark one enabled row as target_source. Add date and identifier "
         "roles when using time-series or panel workflows. Missing-value "
-        "policies are fit on the training split and reused downstream."
+        "policies are fit on the training split and reused downstream. "
+        "Group columns and missing flags enable the advanced imputation layer."
     )
     edited_schema = st.data_editor(
         schema_frame,
@@ -441,17 +457,17 @@ def main() -> None:
                 "Model type",
                 options=[model_type.value for model_type in ModelType],
                 format_func=format_model_type,
-                index=[
-                    model_type.value for model_type in ModelType
-                ].index(preset_inputs.model.model_type.value),
+                index=[model_type.value for model_type in ModelType].index(
+                    preset_inputs.model.model_type.value
+                ),
             )
             target_mode = st.selectbox(
                 "Target mode",
                 options=[target_mode.value for target_mode in TargetMode],
                 format_func=lambda value: value.title(),
-                index=[
-                    target_mode.value for target_mode in TargetMode
-                ].index(preset_inputs.target_mode.value),
+                index=[target_mode.value for target_mode in TargetMode].index(
+                    preset_inputs.target_mode.value
+                ),
                 help=(
                     "Binary is the default PD setup. Continuous is intended for "
                     "PD, LGD, and forecast workflows supported by the framework."
@@ -461,9 +477,9 @@ def main() -> None:
                 "Data structure",
                 options=[data_structure.value for data_structure in DataStructure],
                 format_func=format_data_structure,
-                index=[
-                    data_structure.value for data_structure in DataStructure
-                ].index(preset_inputs.data_structure.value),
+                index=[data_structure.value for data_structure in DataStructure].index(
+                    preset_inputs.data_structure.value
+                ),
             )
             target_output_column = st.text_input(
                 "Output target name",
@@ -583,9 +599,9 @@ def main() -> None:
             scorecard_monotonicity = st.selectbox(
                 "Scorecard monotonicity",
                 options=[mode.value for mode in ScorecardMonotonicity],
-                index=[
-                    mode.value for mode in ScorecardMonotonicity
-                ].index(preset_inputs.scorecard.monotonicity.value),
+                index=[mode.value for mode in ScorecardMonotonicity].index(
+                    preset_inputs.scorecard.monotonicity.value
+                ),
                 format_func=lambda value: value.replace("_", " ").title(),
                 disabled=model_type != ModelType.SCORECARD_LOGISTIC_REGRESSION.value,
             )
@@ -797,9 +813,9 @@ def main() -> None:
             calibration_strategy = st.selectbox(
                 "Calibration binning strategy",
                 options=[strategy.value for strategy in CalibrationStrategy],
-                index=[
-                    strategy.value for strategy in CalibrationStrategy
-                ].index(preset_inputs.calibration.strategy.value),
+                index=[strategy.value for strategy in CalibrationStrategy].index(
+                    preset_inputs.calibration.strategy.value
+                ),
                 format_func=lambda value: value.replace("_", " ").title(),
                 disabled=target_mode != TargetMode.BINARY.value,
             )
@@ -816,9 +832,9 @@ def main() -> None:
             calibration_ranking_metric = st.selectbox(
                 "Calibration ranking metric",
                 options=[metric.value for metric in CalibrationRankingMetric],
-                index=[
-                    metric.value for metric in CalibrationRankingMetric
-                ].index(preset_inputs.calibration.ranking_metric.value),
+                index=[metric.value for metric in CalibrationRankingMetric].index(
+                    preset_inputs.calibration.ranking_metric.value
+                ),
                 format_func=lambda value: value.replace("_", " ").title(),
                 disabled=target_mode != TargetMode.BINARY.value,
             )
@@ -910,6 +926,70 @@ def main() -> None:
                     or not scorecard_workbench_enabled
                 ),
             )
+            credit_risk_enabled = st.checkbox(
+                "Enable credit-risk development diagnostics",
+                value=preset_inputs.credit_risk.enabled,
+                help=(
+                    "Publishes vintage curves, migration views, LGD recovery cuts, and "
+                    "macro-sensitivity diagnostics when the data supports them."
+                ),
+            )
+            credit_risk_vintage = st.checkbox(
+                "Vintage analysis",
+                value=preset_inputs.credit_risk.vintage_analysis,
+                disabled=not credit_risk_enabled,
+            )
+            credit_risk_migration = st.checkbox(
+                "Migration and delinquency transitions",
+                value=preset_inputs.credit_risk.migration_analysis,
+                disabled=not credit_risk_enabled,
+            )
+            credit_risk_cohort = st.checkbox(
+                "Cohort PD analysis",
+                value=preset_inputs.credit_risk.cohort_pd_analysis,
+                disabled=not credit_risk_enabled or TargetMode(target_mode) != TargetMode.BINARY,
+            )
+            credit_risk_lgd = st.checkbox(
+                "LGD segment and recovery views",
+                value=preset_inputs.credit_risk.lgd_segment_analysis,
+                disabled=(
+                    not credit_risk_enabled or TargetMode(target_mode) != TargetMode.CONTINUOUS
+                ),
+            )
+            credit_risk_macro = st.checkbox(
+                "Macro sensitivity",
+                value=preset_inputs.credit_risk.macro_sensitivity_analysis,
+                disabled=not credit_risk_enabled,
+            )
+            credit_risk_top_macro_features = int(
+                st.number_input(
+                    "Macro features to stress",
+                    min_value=1,
+                    max_value=10,
+                    value=int(preset_inputs.credit_risk.top_macro_features),
+                    step=1,
+                    disabled=not credit_risk_enabled or not credit_risk_macro,
+                )
+            )
+            credit_risk_top_segments = int(
+                st.number_input(
+                    "Top credit-risk segments",
+                    min_value=3,
+                    max_value=20,
+                    value=int(preset_inputs.credit_risk.top_segments),
+                    step=1,
+                    disabled=not credit_risk_enabled,
+                )
+            )
+            credit_risk_shock_std_multiplier = st.number_input(
+                "Macro shock std multiplier",
+                min_value=0.25,
+                max_value=3.0,
+                value=float(preset_inputs.credit_risk.shock_std_multiplier),
+                step=0.25,
+                format="%.2f",
+                disabled=not credit_risk_enabled or not credit_risk_macro,
+            )
             enabled_diagnostic_flags = {
                 field_name
                 for label, field_name in DIAGNOSTIC_SUITE_OPTIONS
@@ -930,6 +1010,9 @@ def main() -> None:
                 and "woe_iv_analysis" in enabled_diagnostic_flags,
                 psi_analysis="psi_analysis" in enabled_diagnostic_flags,
                 adf_analysis="adf_analysis" in enabled_diagnostic_flags,
+                model_specification_tests="model_specification_tests" in enabled_diagnostic_flags,
+                forecasting_statistical_tests="forecasting_statistical_tests"
+                in enabled_diagnostic_flags,
                 calibration_analysis=target_mode == TargetMode.BINARY.value
                 and "calibration_analysis" in enabled_diagnostic_flags,
                 threshold_analysis=target_mode == TargetMode.BINARY.value
@@ -974,6 +1057,19 @@ def main() -> None:
                 include_score_distribution=scorecard_workbench_score_distribution,
                 include_reason_code_analysis=scorecard_workbench_reason_codes,
             )
+            credit_risk_config = CreditRiskDiagnosticConfig(
+                enabled=credit_risk_enabled,
+                vintage_analysis=credit_risk_vintage,
+                migration_analysis=credit_risk_migration,
+                delinquency_transition_analysis=credit_risk_migration,
+                cohort_pd_analysis=credit_risk_cohort,
+                lgd_segment_analysis=credit_risk_lgd,
+                recovery_analysis=credit_risk_lgd,
+                macro_sensitivity_analysis=credit_risk_macro,
+                top_macro_features=credit_risk_top_macro_features,
+                top_segments=credit_risk_top_segments,
+                shock_std_multiplier=float(credit_risk_shock_std_multiplier),
+            )
 
         with st.expander("Challengers & Policies", expanded=False):
             comparison_enabled = st.checkbox(
@@ -983,9 +1079,7 @@ def main() -> None:
             challenger_model_types = st.multiselect(
                 "Challenger model families",
                 options=[
-                    candidate.value
-                    for candidate in ModelType
-                    if candidate != ModelType(model_type)
+                    candidate.value for candidate in ModelType if candidate != ModelType(model_type)
                 ],
                 default=[
                     candidate.value
@@ -994,9 +1088,7 @@ def main() -> None:
                 ]
                 or [
                     challenger.value
-                    for challenger in default_challengers_for_target_mode(
-                        TargetMode(target_mode)
-                    )
+                    for challenger in default_challengers_for_target_mode(TargetMode(target_mode))
                     if challenger.value != model_type
                 ],
                 format_func=format_model_type,
@@ -1120,6 +1212,102 @@ def main() -> None:
                 disabled=not variable_selection_enabled,
                 help="Comma-separated features that must be excluded before training.",
             )
+            auto_interactions_enabled = st.checkbox(
+                "Auto-screen interaction terms",
+                value=preset_inputs.transformations.auto_interactions_enabled,
+                help=(
+                    "Screens train-split interaction candidates and persists the selected "
+                    "interaction features into the saved run config."
+                ),
+            )
+            include_numeric_numeric_interactions = st.checkbox(
+                "Numeric-numeric interactions",
+                value=preset_inputs.transformations.include_numeric_numeric_interactions,
+                disabled=not auto_interactions_enabled,
+            )
+            include_categorical_numeric_interactions = st.checkbox(
+                "Categorical-numeric interactions",
+                value=preset_inputs.transformations.include_categorical_numeric_interactions,
+                disabled=not auto_interactions_enabled,
+            )
+            max_auto_interactions = int(
+                st.number_input(
+                    "Max auto interactions",
+                    min_value=1,
+                    max_value=20,
+                    value=int(preset_inputs.transformations.max_auto_interactions),
+                    step=1,
+                    disabled=not auto_interactions_enabled,
+                )
+            )
+            max_categorical_levels = int(
+                st.number_input(
+                    "Max categorical levels per feature",
+                    min_value=1,
+                    max_value=10,
+                    value=int(preset_inputs.transformations.max_categorical_levels),
+                    step=1,
+                    disabled=not auto_interactions_enabled,
+                )
+            )
+            min_interaction_score = st.number_input(
+                "Min interaction score",
+                min_value=0.0,
+                max_value=1.0,
+                value=float(preset_inputs.transformations.min_interaction_score),
+                step=0.01,
+                format="%.2f",
+                disabled=not auto_interactions_enabled,
+            )
+            imputation_sensitivity_enabled = st.checkbox(
+                "Imputation sensitivity testing",
+                value=preset_inputs.imputation_sensitivity.enabled,
+                help=(
+                    "Scores the fitted model under alternative mean/median/mode fill rules "
+                    "to show where imputation is materially influencing outputs."
+                ),
+            )
+            imputation_sensitivity_split = st.selectbox(
+                "Imputation sensitivity split",
+                options=["train", "validation", "test"],
+                index=["train", "validation", "test"].index(
+                    preset_inputs.imputation_sensitivity.evaluation_split
+                ),
+                disabled=not imputation_sensitivity_enabled,
+            )
+            imputation_sensitivity_policies = st.multiselect(
+                "Alternative imputation policies",
+                options=[
+                    MissingValuePolicy.MEAN.value,
+                    MissingValuePolicy.MEDIAN.value,
+                    MissingValuePolicy.MODE.value,
+                ],
+                default=[
+                    policy.value
+                    for policy in preset_inputs.imputation_sensitivity.alternative_policies
+                ],
+                disabled=not imputation_sensitivity_enabled,
+            )
+            imputation_sensitivity_max_features = int(
+                st.number_input(
+                    "Sensitivity features",
+                    min_value=1,
+                    max_value=20,
+                    value=int(preset_inputs.imputation_sensitivity.max_features),
+                    step=1,
+                    disabled=not imputation_sensitivity_enabled,
+                )
+            )
+            imputation_sensitivity_min_missing_count = int(
+                st.number_input(
+                    "Min train missing count",
+                    min_value=1,
+                    max_value=5000,
+                    value=int(preset_inputs.imputation_sensitivity.min_missing_count),
+                    step=1,
+                    disabled=not imputation_sensitivity_enabled,
+                )
+            )
             documentation_enabled = st.checkbox(
                 "Export documentation pack",
                 value=preset_inputs.documentation.enabled,
@@ -1191,6 +1379,54 @@ def main() -> None:
                 disabled=not documentation_enabled,
                 height=90,
             )
+            regulatory_reporting_enabled = st.checkbox(
+                "Export regulator-ready reports",
+                value=preset_inputs.regulatory_reporting.enabled,
+                help=(
+                    "Generates committee-ready and validation-ready DOCX/PDF packages "
+                    "from the completed run."
+                ),
+            )
+            regulatory_export_docx = st.checkbox(
+                "Export DOCX reports",
+                value=preset_inputs.regulatory_reporting.export_docx,
+                disabled=not regulatory_reporting_enabled,
+            )
+            regulatory_export_pdf = st.checkbox(
+                "Export PDF reports",
+                value=preset_inputs.regulatory_reporting.export_pdf,
+                disabled=not regulatory_reporting_enabled,
+            )
+            regulatory_committee_template = st.text_input(
+                "Committee template name",
+                value=preset_inputs.regulatory_reporting.committee_template_name,
+                disabled=not regulatory_reporting_enabled,
+            )
+            regulatory_validation_template = st.text_input(
+                "Validation template name",
+                value=preset_inputs.regulatory_reporting.validation_template_name,
+                disabled=not regulatory_reporting_enabled,
+            )
+            regulatory_include_assumptions = st.checkbox(
+                "Include assumptions section",
+                value=preset_inputs.regulatory_reporting.include_assumptions_section,
+                disabled=not regulatory_reporting_enabled,
+            )
+            regulatory_include_challengers = st.checkbox(
+                "Include challenger section",
+                value=preset_inputs.regulatory_reporting.include_challenger_section,
+                disabled=not regulatory_reporting_enabled,
+            )
+            regulatory_include_scenarios = st.checkbox(
+                "Include scenario section",
+                value=preset_inputs.regulatory_reporting.include_scenario_section,
+                disabled=not regulatory_reporting_enabled,
+            )
+            regulatory_include_appendix = st.checkbox(
+                "Include appendix section",
+                value=preset_inputs.regulatory_reporting.include_appendix_section,
+                disabled=not regulatory_reporting_enabled,
+            )
 
         with st.expander("Governance & Review", expanded=False):
             suitability_checks_enabled = st.checkbox(
@@ -1243,6 +1479,24 @@ def main() -> None:
                 step=0.01,
                 format="%.2f",
                 disabled=not suitability_checks_enabled,
+            )
+            workflow_guardrails_enabled = st.checkbox(
+                "Enable workflow guardrails",
+                value=preset_inputs.workflow_guardrails.enabled,
+                help=(
+                    "Checks preset-specific requirements such as target type, data structure, "
+                    "documentation completeness, and model-family fit."
+                ),
+            )
+            workflow_guardrails_fail_on_error = st.checkbox(
+                "Block run on guardrail errors",
+                value=preset_inputs.workflow_guardrails.fail_on_error,
+                disabled=not workflow_guardrails_enabled,
+            )
+            workflow_guardrails_require_docs = st.checkbox(
+                "Require preset documentation fields",
+                value=preset_inputs.workflow_guardrails.enforce_documentation_requirements,
+                disabled=not workflow_guardrails_enabled,
             )
             manual_review_enabled = st.checkbox(
                 "Enable manual review workflow",
@@ -1403,12 +1657,6 @@ def main() -> None:
             )
             output_root = st.text_input("Artifact root", value="artifacts")
 
-        run_clicked = st.button(
-            "Run Quant Model Workflow",
-            type="primary",
-            use_container_width=True,
-        )
-
     workspace_frames = render_builder_workspace(
         dataframe=dataframe,
         data_source_label=data_source_label,
@@ -1427,217 +1675,281 @@ def main() -> None:
         scorecard_override_frame=workspace_scorecard_override_frame,
     )
 
+    edited_schema = workspace_frames["schema"]
+    feature_dictionary_frame = workspace_frames["feature_dictionary"]
+    transformation_frame = workspace_frames["transformations"]
+    feature_review_frame = feature_review_rows.copy(deep=True)
+    scorecard_override_frame = scorecard_override_rows.copy(deep=True)
+    tobit_right_censoring = (
+        float(tobit_right_censoring_text) if tobit_right_censoring_text.strip() else None
+    )
+    scenario_testing_config = parse_scenario_rows(scenario_rows.to_dict(orient="records"))
+    scenario_testing_config.evaluation_split = scenario_split
+    transformation_config = parse_transformation_frame(transformation_frame)
+    transformation_config.auto_interactions_enabled = auto_interactions_enabled
+    transformation_config.include_numeric_numeric_interactions = (
+        include_numeric_numeric_interactions
+    )
+    transformation_config.include_categorical_numeric_interactions = (
+        include_categorical_numeric_interactions
+    )
+    transformation_config.max_auto_interactions = int(max_auto_interactions)
+    transformation_config.max_categorical_levels = int(max_categorical_levels)
+    transformation_config.min_interaction_score = float(min_interaction_score)
+
+    preview_config: dict[str, Any] | None = None
+    preview_error: str | None = None
+    preview_findings: list[Any] = []
+    try:
+        inputs = GUIBuildInputs(
+            preset_name=None
+            if selected_preset_name_value == "custom"
+            else PresetName(selected_preset_name_value),
+            model=ModelConfig(
+                model_type=ModelType(model_type),
+                max_iter=int(max_iter),
+                C=float(inverse_regularization),
+                solver=solver,
+                l1_ratio=float(l1_ratio),
+                class_weight=None if class_weight == "none" else class_weight,
+                threshold=float(threshold),
+                scorecard_bins=int(scorecard_bins),
+                quantile_alpha=float(quantile_alpha),
+                xgboost_n_estimators=int(xgboost_n_estimators),
+                xgboost_learning_rate=float(xgboost_learning_rate),
+                xgboost_max_depth=int(xgboost_max_depth),
+                xgboost_subsample=float(xgboost_subsample),
+                xgboost_colsample_bytree=float(xgboost_colsample_bytree),
+                tobit_left_censoring=float(tobit_left_censoring),
+                tobit_right_censoring=tobit_right_censoring,
+            ),
+            cleaning=CleaningConfig(
+                trim_string_columns=trim_string_columns,
+                blank_strings_as_null=blank_strings_as_null,
+                drop_duplicate_rows=drop_duplicate_rows,
+                drop_rows_with_missing_target=drop_rows_with_missing_target,
+                drop_all_null_feature_columns=drop_all_null_feature_columns,
+            ),
+            feature_engineering=FeatureEngineeringConfig(
+                derive_date_parts=derive_date_parts,
+                drop_raw_date_columns=drop_raw_date_columns,
+                date_parts=date_parts,
+            ),
+            comparison=ComparisonConfig(
+                enabled=comparison_enabled and bool(challenger_model_types),
+                challenger_model_types=[
+                    ModelType(challenger_type) for challenger_type in challenger_model_types
+                ],
+                ranking_metric=None if ranking_metric == "auto" else ranking_metric,
+            ),
+            feature_policy=FeaturePolicyConfig(
+                enabled=feature_policy_enabled,
+                required_features=[
+                    value.strip() for value in policy_required_features.split(",") if value.strip()
+                ],
+                excluded_features=[
+                    value.strip() for value in policy_excluded_features.split(",") if value.strip()
+                ],
+                max_missing_pct=float(policy_max_missing_pct) if feature_policy_enabled else None,
+                max_vif=float(policy_max_vif) if feature_policy_enabled else None,
+                minimum_information_value=float(policy_min_iv)
+                if feature_policy_enabled and TargetMode(target_mode) == TargetMode.BINARY
+                else None,
+                expected_signs=parse_expected_signs(policy_expected_signs),
+                monotonic_features=parse_expected_signs(policy_monotonic_features),
+                error_on_violation=policy_error_on_violation,
+            ),
+            feature_dictionary=parse_feature_dictionary_frame(feature_dictionary_frame),
+            transformations=transformation_config,
+            manual_review=(
+                parse_manual_review_frames(
+                    feature_review_frame,
+                    scorecard_override_frame,
+                    reviewer_name=manual_reviewer_name,
+                    require_review_complete=manual_review_required,
+                )
+                if manual_review_enabled
+                else parse_manual_review_frames(
+                    pd.DataFrame(columns=FEATURE_REVIEW_COLUMNS),
+                    pd.DataFrame(columns=SCORECARD_OVERRIDE_COLUMNS),
+                )
+            ),
+            suitability_checks=SuitabilityCheckConfig(
+                enabled=suitability_checks_enabled,
+                min_events_per_feature=float(suitability_min_events_per_feature)
+                if suitability_checks_enabled and TargetMode(target_mode) == TargetMode.BINARY
+                else None,
+                min_class_rate=float(suitability_min_class_rate)
+                if suitability_checks_enabled and TargetMode(target_mode) == TargetMode.BINARY
+                else None,
+                max_class_rate=float(suitability_max_class_rate)
+                if suitability_checks_enabled and TargetMode(target_mode) == TargetMode.BINARY
+                else None,
+                max_dominant_category_share=float(suitability_max_dominant_category_share)
+                if suitability_checks_enabled
+                else None,
+                error_on_failure=suitability_error_on_failure,
+            ),
+            workflow_guardrails=WorkflowGuardrailConfig(
+                enabled=workflow_guardrails_enabled,
+                fail_on_error=workflow_guardrails_fail_on_error,
+                enforce_documentation_requirements=workflow_guardrails_require_docs,
+            ),
+            explainability=ExplainabilityConfig(
+                enabled=explainability_enabled,
+                permutation_importance=permutation_importance_enabled,
+                feature_effect_curves=feature_effect_curves_enabled,
+                coefficient_breakdown=coefficient_breakdown_enabled,
+                top_n_features=int(explainability_top_n),
+                grid_points=int(explainability_grid_points),
+                sample_size=int(explainability_sample_size),
+            ),
+            calibration=calibration_config,
+            scorecard=ScorecardConfig(
+                monotonicity=ScorecardMonotonicity(scorecard_monotonicity),
+                min_bin_share=float(scorecard_min_bin_share),
+                base_score=int(scorecard_base_score),
+                points_to_double_odds=int(scorecard_pdo),
+                odds_reference=float(scorecard_odds_reference),
+                reason_code_count=int(scorecard_reason_code_count),
+            ),
+            scorecard_workbench=scorecard_workbench_config,
+            imputation_sensitivity=ImputationSensitivityConfig(
+                enabled=imputation_sensitivity_enabled,
+                evaluation_split=imputation_sensitivity_split,
+                alternative_policies=[
+                    MissingValuePolicy(policy) for policy in imputation_sensitivity_policies
+                ]
+                if imputation_sensitivity_enabled
+                else [],
+                max_features=int(imputation_sensitivity_max_features),
+                min_missing_count=int(imputation_sensitivity_min_missing_count),
+            ),
+            variable_selection=VariableSelectionConfig(
+                enabled=variable_selection_enabled,
+                max_features=int(variable_selection_max_features)
+                if variable_selection_enabled
+                else None,
+                min_univariate_score=float(variable_selection_min_univariate_score)
+                if variable_selection_enabled
+                else None,
+                correlation_threshold=float(variable_selection_correlation_threshold)
+                if variable_selection_enabled
+                else None,
+                locked_include_features=[
+                    value.strip()
+                    for value in variable_selection_locked_include.split(",")
+                    if value.strip()
+                ],
+                locked_exclude_features=[
+                    value.strip()
+                    for value in variable_selection_locked_exclude.split(",")
+                    if value.strip()
+                ],
+            ),
+            documentation=DocumentationConfig(
+                enabled=documentation_enabled,
+                model_name=documentation_model_name.strip() or "Quant Studio Model",
+                model_owner=documentation_model_owner.strip(),
+                business_purpose=documentation_business_purpose.strip(),
+                portfolio_name=documentation_portfolio_name.strip(),
+                segment_name=documentation_segment_name.strip(),
+                horizon_definition=documentation_horizon_definition.strip(),
+                target_definition=documentation_target_definition.strip(),
+                loss_definition=documentation_loss_definition.strip(),
+                assumptions=parse_multiline_list(documentation_assumptions),
+                exclusions=parse_multiline_list(documentation_exclusions),
+                limitations=parse_multiline_list(documentation_limitations),
+                reviewer_notes=documentation_reviewer_notes.strip(),
+            ),
+            regulatory_reporting=RegulatoryReportConfig(
+                enabled=regulatory_reporting_enabled,
+                export_docx=regulatory_export_docx,
+                export_pdf=regulatory_export_pdf,
+                committee_template_name=regulatory_committee_template.strip()
+                or "committee_standard",
+                validation_template_name=regulatory_validation_template.strip()
+                or "validation_standard",
+                include_assumptions_section=regulatory_include_assumptions,
+                include_challenger_section=regulatory_include_challengers,
+                include_scenario_section=regulatory_include_scenarios,
+                include_appendix_section=regulatory_include_appendix,
+            ),
+            scenario_testing=scenario_testing_config,
+            diagnostics=diagnostic_config,
+            credit_risk=credit_risk_config,
+            robustness=robustness_config,
+            reproducibility=ReproducibilityConfig(
+                enabled=reproducibility_enabled,
+                capture_git_metadata=reproducibility_capture_git,
+                package_names=[
+                    value.strip()
+                    for value in reproducibility_packages_text.split(",")
+                    if value.strip()
+                ],
+            ),
+            data_structure=DataStructure(data_structure),
+            train_size=float(train_size),
+            validation_size=float(validation_size),
+            test_size=float(test_size),
+            random_state=int(random_state),
+            stratify=stratify,
+            execution_mode=ExecutionMode(execution_mode),
+            existing_model_path=Path(existing_model_path_text.strip())
+            if existing_model_path_text.strip()
+            else None,
+            existing_config_path=Path(existing_config_path_text.strip())
+            if existing_config_path_text.strip()
+            else None,
+            target_mode=TargetMode(target_mode),
+            target_output_column=target_output_column.strip() or "default_flag",
+            positive_values_text=positive_values_text,
+            drop_target_source_column=drop_target_source_column,
+            pass_through_unconfigured_columns=pass_through_unconfigured_columns,
+            output_root=Path(output_root.strip() or "artifacts"),
+        )
+        preview_config = build_framework_config_from_editor(
+            edited_schema,
+            inputs,
+            validate=False,
+        )
+        if preview_config.workflow_guardrails.enabled:
+            preview_findings = evaluate_workflow_guardrails(preview_config)
+        preview_config.validate()
+    except Exception as exc:
+        preview_error = str(exc)
+
+    render_workflow_readiness(
+        preview_config=preview_config,
+        preview_findings=preview_findings,
+        preview_error=preview_error,
+    )
+
+    run_clicked = st.button(
+        "Run Quant Model Workflow",
+        type="primary",
+        use_container_width=True,
+    )
+
     if run_clicked:
-        try:
-            edited_schema = workspace_frames["schema"]
-            feature_dictionary_frame = workspace_frames["feature_dictionary"]
-            transformation_frame = workspace_frames["transformations"]
-            feature_review_frame = feature_review_rows.copy(deep=True)
-            scorecard_override_frame = scorecard_override_rows.copy(deep=True)
-            tobit_right_censoring = (
-                float(tobit_right_censoring_text) if tobit_right_censoring_text.strip() else None
-            )
-            scenario_testing_config = parse_scenario_rows(scenario_rows.to_dict(orient="records"))
-            scenario_testing_config.evaluation_split = scenario_split
-            inputs = GUIBuildInputs(
-                preset_name=None
-                if selected_preset_name_value == "custom"
-                else PresetName(selected_preset_name_value),
-                model=ModelConfig(
-                    model_type=ModelType(model_type),
-                    max_iter=int(max_iter),
-                    C=float(inverse_regularization),
-                    solver=solver,
-                    l1_ratio=float(l1_ratio),
-                    class_weight=None if class_weight == "none" else class_weight,
-                    threshold=float(threshold),
-                    scorecard_bins=int(scorecard_bins),
-                    quantile_alpha=float(quantile_alpha),
-                    xgboost_n_estimators=int(xgboost_n_estimators),
-                    xgboost_learning_rate=float(xgboost_learning_rate),
-                    xgboost_max_depth=int(xgboost_max_depth),
-                    xgboost_subsample=float(xgboost_subsample),
-                    xgboost_colsample_bytree=float(xgboost_colsample_bytree),
-                    tobit_left_censoring=float(tobit_left_censoring),
-                    tobit_right_censoring=tobit_right_censoring,
-                ),
-                cleaning=CleaningConfig(
-                    trim_string_columns=trim_string_columns,
-                    blank_strings_as_null=blank_strings_as_null,
-                    drop_duplicate_rows=drop_duplicate_rows,
-                    drop_rows_with_missing_target=drop_rows_with_missing_target,
-                    drop_all_null_feature_columns=drop_all_null_feature_columns,
-                ),
-                feature_engineering=FeatureEngineeringConfig(
-                    derive_date_parts=derive_date_parts,
-                    drop_raw_date_columns=drop_raw_date_columns,
-                    date_parts=date_parts,
-                ),
-                comparison=ComparisonConfig(
-                    enabled=comparison_enabled and bool(challenger_model_types),
-                    challenger_model_types=[
-                        ModelType(challenger_type) for challenger_type in challenger_model_types
-                    ],
-                    ranking_metric=None if ranking_metric == "auto" else ranking_metric,
-                ),
-                feature_policy=FeaturePolicyConfig(
-                    enabled=feature_policy_enabled,
-                    required_features=[
-                        value.strip()
-                        for value in policy_required_features.split(",")
-                        if value.strip()
-                    ],
-                    excluded_features=[
-                        value.strip()
-                        for value in policy_excluded_features.split(",")
-                        if value.strip()
-                    ],
-                    max_missing_pct=float(policy_max_missing_pct)
-                    if feature_policy_enabled
-                    else None,
-                    max_vif=float(policy_max_vif) if feature_policy_enabled else None,
-                    minimum_information_value=float(policy_min_iv)
-                    if feature_policy_enabled and TargetMode(target_mode) == TargetMode.BINARY
-                    else None,
-                    expected_signs=parse_expected_signs(policy_expected_signs),
-                    monotonic_features=parse_expected_signs(policy_monotonic_features),
-                    error_on_violation=policy_error_on_violation,
-                ),
-                feature_dictionary=parse_feature_dictionary_frame(feature_dictionary_frame),
-                transformations=parse_transformation_frame(transformation_frame),
-                manual_review=(
-                    parse_manual_review_frames(
-                        feature_review_frame,
-                        scorecard_override_frame,
-                        reviewer_name=manual_reviewer_name,
-                        require_review_complete=manual_review_required,
-                    )
-                    if manual_review_enabled
-                    else parse_manual_review_frames(
-                        pd.DataFrame(columns=FEATURE_REVIEW_COLUMNS),
-                        pd.DataFrame(columns=SCORECARD_OVERRIDE_COLUMNS),
-                    )
-                ),
-                suitability_checks=SuitabilityCheckConfig(
-                    enabled=suitability_checks_enabled,
-                    min_events_per_feature=float(suitability_min_events_per_feature)
-                    if suitability_checks_enabled
-                    and TargetMode(target_mode) == TargetMode.BINARY
-                    else None,
-                    min_class_rate=float(suitability_min_class_rate)
-                    if suitability_checks_enabled
-                    and TargetMode(target_mode) == TargetMode.BINARY
-                    else None,
-                    max_class_rate=float(suitability_max_class_rate)
-                    if suitability_checks_enabled
-                    and TargetMode(target_mode) == TargetMode.BINARY
-                    else None,
-                    max_dominant_category_share=float(
-                        suitability_max_dominant_category_share
-                    )
-                    if suitability_checks_enabled
-                    else None,
-                    error_on_failure=suitability_error_on_failure,
-                ),
-                explainability=ExplainabilityConfig(
-                    enabled=explainability_enabled,
-                    permutation_importance=permutation_importance_enabled,
-                    feature_effect_curves=feature_effect_curves_enabled,
-                    coefficient_breakdown=coefficient_breakdown_enabled,
-                    top_n_features=int(explainability_top_n),
-                    grid_points=int(explainability_grid_points),
-                    sample_size=int(explainability_sample_size),
-                ),
-                calibration=calibration_config,
-                scorecard=ScorecardConfig(
-                    monotonicity=ScorecardMonotonicity(scorecard_monotonicity),
-                    min_bin_share=float(scorecard_min_bin_share),
-                    base_score=int(scorecard_base_score),
-                    points_to_double_odds=int(scorecard_pdo),
-                    odds_reference=float(scorecard_odds_reference),
-                    reason_code_count=int(scorecard_reason_code_count),
-                ),
-                scorecard_workbench=scorecard_workbench_config,
-                variable_selection=VariableSelectionConfig(
-                    enabled=variable_selection_enabled,
-                    max_features=int(variable_selection_max_features)
-                    if variable_selection_enabled
-                    else None,
-                    min_univariate_score=float(variable_selection_min_univariate_score)
-                    if variable_selection_enabled
-                    else None,
-                    correlation_threshold=float(variable_selection_correlation_threshold)
-                    if variable_selection_enabled
-                    else None,
-                    locked_include_features=[
-                        value.strip()
-                        for value in variable_selection_locked_include.split(",")
-                        if value.strip()
-                    ],
-                    locked_exclude_features=[
-                        value.strip()
-                        for value in variable_selection_locked_exclude.split(",")
-                        if value.strip()
-                    ],
-                ),
-                documentation=DocumentationConfig(
-                    enabled=documentation_enabled,
-                    model_name=documentation_model_name.strip() or "Quant Studio Model",
-                    model_owner=documentation_model_owner.strip(),
-                    business_purpose=documentation_business_purpose.strip(),
-                    portfolio_name=documentation_portfolio_name.strip(),
-                    segment_name=documentation_segment_name.strip(),
-                    horizon_definition=documentation_horizon_definition.strip(),
-                    target_definition=documentation_target_definition.strip(),
-                    loss_definition=documentation_loss_definition.strip(),
-                    assumptions=parse_multiline_list(documentation_assumptions),
-                    exclusions=parse_multiline_list(documentation_exclusions),
-                    limitations=parse_multiline_list(documentation_limitations),
-                    reviewer_notes=documentation_reviewer_notes.strip(),
-                ),
-                scenario_testing=scenario_testing_config,
-                diagnostics=diagnostic_config,
-                robustness=robustness_config,
-                reproducibility=ReproducibilityConfig(
-                    enabled=reproducibility_enabled,
-                    capture_git_metadata=reproducibility_capture_git,
-                    package_names=[
-                        value.strip()
-                        for value in reproducibility_packages_text.split(",")
-                        if value.strip()
-                    ],
-                ),
-                data_structure=DataStructure(data_structure),
-                train_size=float(train_size),
-                validation_size=float(validation_size),
-                test_size=float(test_size),
-                random_state=int(random_state),
-                stratify=stratify,
-                execution_mode=ExecutionMode(execution_mode),
-                existing_model_path=Path(existing_model_path_text.strip())
-                if existing_model_path_text.strip()
-                else None,
-                existing_config_path=Path(existing_config_path_text.strip())
-                if existing_config_path_text.strip()
-                else None,
-                target_mode=TargetMode(target_mode),
-                target_output_column=target_output_column.strip() or "default_flag",
-                positive_values_text=positive_values_text,
-                drop_target_source_column=drop_target_source_column,
-                pass_through_unconfigured_columns=pass_through_unconfigured_columns,
-                output_root=Path(output_root.strip() or "artifacts"),
-            )
-            config = build_framework_config_from_editor(edited_schema, inputs)
-            orchestrator = QuantModelOrchestrator(config=config)
-            with st.spinner(
-                "Running the model, diagnostics, visualizations, and export package..."
-            ):
-                context = orchestrator.run(dataframe)
-            st.session_state["last_run_snapshot"] = build_run_snapshot(context, config.to_dict())
-            st.success(f"Completed run `{context.run_id}`.")
-        except Exception as exc:
-            st.error(str(exc))
+        if preview_error or preview_config is None:
+            st.error(preview_error or "Resolve the readiness issues before running the workflow.")
             st.session_state["last_run_snapshot"] = None
+        else:
+            try:
+                orchestrator = QuantModelOrchestrator(config=preview_config)
+                with st.spinner(
+                    "Running the model, diagnostics, visualizations, and export package..."
+                ):
+                    context = orchestrator.run(dataframe)
+                st.session_state["last_run_snapshot"] = build_run_snapshot(
+                    context,
+                    preview_config.to_dict(),
+                )
+                st.success(f"Completed run `{context.run_id}`.")
+            except Exception as exc:
+                st.error(str(exc))
+                st.session_state["last_run_snapshot"] = None
 
     if st.session_state.get("last_run_snapshot"):
         render_run_results(st.session_state["last_run_snapshot"])
@@ -1867,6 +2179,13 @@ def render_builder_workspace(
                 ),
                 "source_feature": st.column_config.TextColumn("Source feature"),
                 "secondary_feature": st.column_config.TextColumn("Secondary feature"),
+                "categorical_value": st.column_config.TextColumn(
+                    "Categorical value",
+                    help=(
+                        "Use for categorical-numeric interactions. The categorical side becomes "
+                        "an indicator for this value before multiplying."
+                    ),
+                ),
                 "output_feature": st.column_config.TextColumn("Output feature"),
                 "lower_quantile": st.column_config.NumberColumn(
                     "Lower q",
@@ -1880,10 +2199,27 @@ def render_builder_workspace(
                     max_value=1.0,
                     step=0.01,
                 ),
+                "parameter_value": st.column_config.NumberColumn(
+                    "Parameter",
+                    help="Used by capped_zscore for the z-cap.",
+                ),
+                "window_size": st.column_config.NumberColumn(
+                    "Window",
+                    min_value=1,
+                    step=1,
+                    help="Used by rolling_mean transforms.",
+                ),
+                "lag_periods": st.column_config.NumberColumn(
+                    "Lag periods",
+                    min_value=1,
+                    step=1,
+                    help="Used by lag and pct_change transforms.",
+                ),
                 "bin_edges": st.column_config.TextColumn(
                     "Bin edges",
                     help="Comma-separated internal edges for manual_bins transforms.",
                 ),
+                "generated_automatically": st.column_config.CheckboxColumn("Generated"),
                 "notes": st.column_config.TextColumn("Notes"),
             },
         )
@@ -1892,8 +2228,17 @@ def render_builder_workspace(
                 """
                 - `winsorize` clips a numeric feature using train-fit quantiles.
                 - `log1p` applies a log transform to numeric values greater than `-1`.
+                - `yeo_johnson` fits a train-based power transform that can handle
+                  zero and negative values.
+                - `capped_zscore` standardizes a numeric feature and clips it at
+                  the configured z-cap.
                 - `ratio` creates `source / secondary`.
-                - `interaction` creates `source * secondary`.
+                - `interaction` creates `source * secondary`, or an
+                  indicator-times-numeric interaction when `categorical_value`
+                  is supplied.
+                - `lag` creates a prior-period feature.
+                - `rolling_mean` creates a prior rolling average.
+                - `pct_change` creates a lagged percent-change feature.
                 - `manual_bins` creates an ordered categorical feature using your internal edges.
                 """
             )
@@ -1914,9 +2259,7 @@ def render_builder_workspace(
             "Download Review Workbook",
             data=template_payload,
             file_name="quant_studio_review_workbook.xlsx",
-            mime=(
-                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            ),
+            mime=("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
             use_container_width=True,
         )
         uploaded_template = st.file_uploader(
@@ -1934,9 +2277,7 @@ def render_builder_workspace(
                 st.session_state[feature_dictionary_state_key] = workbook_frames[
                     "feature_dictionary"
                 ]
-                st.session_state[transformation_state_key] = workbook_frames[
-                    "transformations"
-                ]
+                st.session_state[transformation_state_key] = workbook_frames["transformations"]
                 st.session_state[feature_review_state_key] = workbook_frames["feature_review"]
                 st.session_state[scorecard_override_state_key] = workbook_frames[
                     "scorecard_overrides"
@@ -1944,11 +2285,15 @@ def render_builder_workspace(
                 st.session_state[upload_state_key] = upload_hash
                 st.rerun()
 
+    schema_changed = not frames_equivalent(schema_frame, edited_schema)
     store_workspace_frame(schema_state_key, edited_schema)
     store_workspace_frame(feature_dictionary_state_key, edited_feature_dictionary)
     store_workspace_frame(transformation_state_key, edited_transformations)
     store_workspace_frame(feature_review_state_key, feature_review_frame)
     store_workspace_frame(scorecard_override_state_key, scorecard_override_frame)
+
+    if schema_changed:
+        st.rerun()
 
     return {
         "schema": edited_schema,
@@ -1957,6 +2302,78 @@ def render_builder_workspace(
         "feature_review": feature_review_frame,
         "scorecard_overrides": scorecard_override_frame,
     }
+
+
+def render_workflow_readiness(
+    *,
+    preview_config: Any,
+    preview_findings: list[Any],
+    preview_error: str | None,
+) -> None:
+    st.markdown(
+        """
+        <div class="section-intro">
+          <span class="section-kicker">Readiness Check</span>
+          <h2>Validate the configured workflow before execution</h2>
+          <p>
+            This summary uses the same typed configuration build that will be used at run time,
+            including preset-specific guardrails and documentation requirements.
+          </p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    if preview_config is None:
+        if preview_error:
+            st.error(preview_error)
+        st.info("Readiness details will appear after the current configuration resolves cleanly.")
+        return
+    preset_value = preview_config.preset_name.value if preview_config.preset_name else "custom"
+    model_family = preview_config.model.model_type.value.replace("_", " ").title()
+    data_structure = preview_config.split.data_structure.value.replace("_", " ").title()
+
+    if not preview_config.workflow_guardrails.enabled:
+        if preview_error:
+            st.error(preview_error)
+        render_metric_strip(
+            [
+                {"label": "Preset", "value": preset_value},
+                {"label": "Guardrails", "value": "Disabled"},
+                {"label": "Model Family", "value": model_family},
+                {"label": "Data Structure", "value": data_structure},
+            ],
+            compact=True,
+        )
+        st.info("Workflow guardrails are currently disabled for this run.")
+        return
+
+    counts = summarize_guardrail_counts(preview_findings)
+    render_metric_strip(
+        [
+            {"label": "Preset", "value": preset_value},
+            {"label": "Errors", "value": f"{counts.get('error', 0):,}"},
+            {"label": "Warnings", "value": f"{counts.get('warning', 0):,}"},
+            {"label": "Model Family", "value": model_family},
+            {"label": "Data Structure", "value": data_structure},
+        ],
+        compact=True,
+    )
+    if preview_error:
+        st.error(preview_error)
+    if not preview_findings:
+        st.success("The current preset-specific readiness checks passed.")
+        return
+
+    readiness_table = build_guardrail_table(preview_findings)
+    if counts.get("error", 0):
+        st.error("Resolve the blocking guardrail findings before running the workflow.")
+    elif counts.get("warning", 0):
+        st.warning("The run is allowed, but review the preset warnings before execution.")
+    st.dataframe(
+        prepare_display_table(readiness_table),
+        use_container_width=True,
+        hide_index=True,
+    )
 
 
 def render_run_results(snapshot: dict[str, Any]) -> None:
@@ -2933,6 +3350,10 @@ def render_governance_tab(snapshot: dict[str, Any], filtered_predictions: pd.Dat
             "predictions",
             "documentation_pack",
             "validation_pack",
+            "committee_report_docx",
+            "validation_report_docx",
+            "committee_report_pdf",
+            "validation_report_pdf",
             "reproducibility_manifest",
             "configuration_template",
         ]:

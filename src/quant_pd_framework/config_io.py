@@ -15,6 +15,7 @@ from .config import (
     ColumnRole,
     ColumnSpec,
     ComparisonConfig,
+    CreditRiskDiagnosticConfig,
     DataStructure,
     DiagnosticConfig,
     DocumentationConfig,
@@ -28,11 +29,13 @@ from .config import (
     FeatureReviewDecision,
     FeatureReviewDecisionType,
     FrameworkConfig,
+    ImputationSensitivityConfig,
     ManualReviewConfig,
     MissingValuePolicy,
     ModelConfig,
     ModelType,
     PresetName,
+    RegulatoryReportConfig,
     ReproducibilityConfig,
     RobustnessConfig,
     ScenarioConfig,
@@ -52,6 +55,7 @@ from .config import (
     TransformationSpec,
     TransformationType,
     VariableSelectionConfig,
+    WorkflowGuardrailConfig,
 )
 
 
@@ -70,13 +74,12 @@ def load_framework_config(source: str | Path | dict[str, Any]) -> FrameworkConfi
         model=_build_model_config(payload.get("model", {})),
         comparison=_build_comparison_config(payload.get("comparison", {})),
         feature_policy=_build_feature_policy_config(payload.get("feature_policy", {})),
-        feature_dictionary=_build_feature_dictionary_config(
-            payload.get("feature_dictionary", {})
-        ),
+        feature_dictionary=_build_feature_dictionary_config(payload.get("feature_dictionary", {})),
         transformations=_build_transformation_config(payload.get("transformations", {})),
         manual_review=_build_manual_review_config(payload.get("manual_review", {})),
-        suitability_checks=_build_suitability_check_config(
-            payload.get("suitability_checks", {})
+        suitability_checks=_build_suitability_check_config(payload.get("suitability_checks", {})),
+        workflow_guardrails=_build_workflow_guardrail_config(
+            payload.get("workflow_guardrails", {})
         ),
         explainability=_build_explainability_config(payload.get("explainability", {})),
         calibration=_build_calibration_config(payload.get("calibration", {})),
@@ -84,12 +87,17 @@ def load_framework_config(source: str | Path | dict[str, Any]) -> FrameworkConfi
         scorecard_workbench=_build_scorecard_workbench_config(
             payload.get("scorecard_workbench", {})
         ),
-        variable_selection=_build_variable_selection_config(
-            payload.get("variable_selection", {})
+        imputation_sensitivity=_build_imputation_sensitivity_config(
+            payload.get("imputation_sensitivity", {})
         ),
+        variable_selection=_build_variable_selection_config(payload.get("variable_selection", {})),
         documentation=_build_documentation_config(payload.get("documentation", {})),
+        regulatory_reporting=_build_regulatory_report_config(
+            payload.get("regulatory_reporting", {})
+        ),
         scenario_testing=_build_scenario_test_config(payload.get("scenario_testing", {})),
         diagnostics=_build_diagnostic_config(payload.get("diagnostics", {})),
+        credit_risk=_build_credit_risk_diagnostic_config(payload.get("credit_risk", {})),
         robustness=_build_robustness_config(payload.get("robustness", {})),
         reproducibility=_build_reproducibility_config(payload.get("reproducibility", {})),
         artifacts=_build_artifact_config(payload.get("artifacts", {})),
@@ -119,6 +127,8 @@ def _build_schema_config(payload: dict[str, Any]) -> SchemaConfig:
                 spec.get("missing_value_policy", MissingValuePolicy.INHERIT_DEFAULT.value)
             ),
             missing_value_fill_value=spec.get("missing_value_fill_value"),
+            missing_value_group_columns=spec.get("missing_value_group_columns", []),
+            create_missing_indicator=spec.get("create_missing_indicator", False),
             create_if_missing=spec.get("create_if_missing", False),
             default_value=spec.get("default_value"),
             keep_source=spec.get("keep_source", False),
@@ -247,6 +257,18 @@ def _build_transformation_config(payload: dict[str, Any]) -> TransformationConfi
     return TransformationConfig(
         enabled=payload.get("enabled", False),
         error_on_failure=payload.get("error_on_failure", True),
+        auto_interactions_enabled=payload.get("auto_interactions_enabled", False),
+        include_numeric_numeric_interactions=payload.get(
+            "include_numeric_numeric_interactions",
+            True,
+        ),
+        include_categorical_numeric_interactions=payload.get(
+            "include_categorical_numeric_interactions",
+            False,
+        ),
+        max_auto_interactions=payload.get("max_auto_interactions", 5),
+        max_categorical_levels=payload.get("max_categorical_levels", 3),
+        min_interaction_score=payload.get("min_interaction_score", 0.0),
         transformations=[
             TransformationSpec(
                 transform_type=TransformationType(
@@ -255,10 +277,15 @@ def _build_transformation_config(payload: dict[str, Any]) -> TransformationConfi
                 source_feature=entry.get("source_feature", ""),
                 output_feature=entry.get("output_feature"),
                 secondary_feature=entry.get("secondary_feature"),
+                categorical_value=entry.get("categorical_value"),
                 lower_quantile=entry.get("lower_quantile"),
                 upper_quantile=entry.get("upper_quantile"),
+                parameter_value=entry.get("parameter_value"),
+                window_size=entry.get("window_size"),
+                lag_periods=entry.get("lag_periods"),
                 bin_edges=[float(value) for value in entry.get("bin_edges", [])],
                 enabled=entry.get("enabled", True),
+                generated_automatically=entry.get("generated_automatically", False),
                 notes=entry.get("notes", ""),
             )
             for entry in payload.get("transformations", [])
@@ -301,6 +328,17 @@ def _build_suitability_check_config(payload: dict[str, Any]) -> SuitabilityCheck
         max_dominant_category_share=payload.get("max_dominant_category_share", 0.98),
         min_non_null_target_rows=payload.get("min_non_null_target_rows", 30),
         error_on_failure=payload.get("error_on_failure", False),
+    )
+
+
+def _build_workflow_guardrail_config(payload: dict[str, Any]) -> WorkflowGuardrailConfig:
+    return WorkflowGuardrailConfig(
+        enabled=payload.get("enabled", True),
+        fail_on_error=payload.get("fail_on_error", True),
+        enforce_documentation_requirements=payload.get(
+            "enforce_documentation_requirements",
+            True,
+        ),
     )
 
 
@@ -378,6 +416,24 @@ def _build_scorecard_workbench_config(payload: dict[str, Any]) -> ScorecardWorkb
     )
 
 
+def _build_imputation_sensitivity_config(payload: dict[str, Any]) -> ImputationSensitivityConfig:
+    return ImputationSensitivityConfig(
+        enabled=payload.get("enabled", False),
+        evaluation_split=payload.get("evaluation_split", "test"),
+        alternative_policies=[
+            MissingValuePolicy(policy)
+            for policy in payload.get(
+                "alternative_policies",
+                [policy.value for policy in ImputationSensitivityConfig().alternative_policies],
+            )
+        ],
+        selected_features=payload.get("selected_features", []),
+        max_features=payload.get("max_features", 5),
+        min_missing_count=payload.get("min_missing_count", 1),
+        max_features_with_detail=payload.get("max_features_with_detail", 3),
+    )
+
+
 def _build_variable_selection_config(payload: dict[str, Any]) -> VariableSelectionConfig:
     return VariableSelectionConfig(
         enabled=payload.get("enabled", False),
@@ -407,6 +463,23 @@ def _build_documentation_config(payload: dict[str, Any]) -> DocumentationConfig:
     )
 
 
+def _build_regulatory_report_config(payload: dict[str, Any]) -> RegulatoryReportConfig:
+    return RegulatoryReportConfig(
+        enabled=payload.get("enabled", True),
+        export_docx=payload.get("export_docx", True),
+        export_pdf=payload.get("export_pdf", True),
+        committee_template_name=payload.get("committee_template_name", "committee_standard"),
+        validation_template_name=payload.get(
+            "validation_template_name",
+            "validation_standard",
+        ),
+        include_assumptions_section=payload.get("include_assumptions_section", True),
+        include_challenger_section=payload.get("include_challenger_section", True),
+        include_scenario_section=payload.get("include_scenario_section", True),
+        include_appendix_section=payload.get("include_appendix_section", True),
+    )
+
+
 def _build_diagnostic_config(payload: dict[str, Any]) -> DiagnosticConfig:
     return DiagnosticConfig(
         data_quality=payload.get("data_quality", True),
@@ -417,6 +490,8 @@ def _build_diagnostic_config(payload: dict[str, Any]) -> DiagnosticConfig:
         woe_iv_analysis=payload.get("woe_iv_analysis", True),
         psi_analysis=payload.get("psi_analysis", True),
         adf_analysis=payload.get("adf_analysis", True),
+        model_specification_tests=payload.get("model_specification_tests", True),
+        forecasting_statistical_tests=payload.get("forecasting_statistical_tests", True),
         calibration_analysis=payload.get("calibration_analysis", True),
         threshold_analysis=payload.get("threshold_analysis", True),
         lift_gain_analysis=payload.get("lift_gain_analysis", True),
@@ -432,6 +507,25 @@ def _build_diagnostic_config(payload: dict[str, Any]) -> DiagnosticConfig:
         max_plot_rows=payload.get("max_plot_rows", 20000),
         quantile_bucket_count=payload.get("quantile_bucket_count", 10),
         default_segment_column=payload.get("default_segment_column"),
+    )
+
+
+def _build_credit_risk_diagnostic_config(payload: dict[str, Any]) -> CreditRiskDiagnosticConfig:
+    return CreditRiskDiagnosticConfig(
+        enabled=payload.get("enabled", True),
+        vintage_analysis=payload.get("vintage_analysis", True),
+        migration_analysis=payload.get("migration_analysis", True),
+        delinquency_transition_analysis=payload.get(
+            "delinquency_transition_analysis",
+            True,
+        ),
+        cohort_pd_analysis=payload.get("cohort_pd_analysis", True),
+        lgd_segment_analysis=payload.get("lgd_segment_analysis", True),
+        recovery_analysis=payload.get("recovery_analysis", True),
+        macro_sensitivity_analysis=payload.get("macro_sensitivity_analysis", True),
+        top_macro_features=payload.get("top_macro_features", 5),
+        top_segments=payload.get("top_segments", 8),
+        shock_std_multiplier=payload.get("shock_std_multiplier", 1.0),
     )
 
 
@@ -487,6 +581,22 @@ def _build_artifact_config(payload: dict[str, Any]) -> ArtifactConfig:
             "model_documentation_pack.md",
         ),
         validation_pack_file_name=payload.get("validation_pack_file_name", "validation_pack.md"),
+        committee_report_docx_file_name=payload.get(
+            "committee_report_docx_file_name",
+            "committee_report.docx",
+        ),
+        validation_report_docx_file_name=payload.get(
+            "validation_report_docx_file_name",
+            "validation_report.docx",
+        ),
+        committee_report_pdf_file_name=payload.get(
+            "committee_report_pdf_file_name",
+            "committee_report.pdf",
+        ),
+        validation_report_pdf_file_name=payload.get(
+            "validation_report_pdf_file_name",
+            "validation_report.pdf",
+        ),
         reproducibility_manifest_file_name=payload.get(
             "reproducibility_manifest_file_name",
             "reproducibility_manifest.json",
