@@ -64,6 +64,7 @@ from quant_pd_framework.gui_support import (
     build_framework_config_from_editor,
     build_gui_inputs_from_preset,
     build_scorecard_override_editor_frame,
+    build_subset_search_feature_options,
     build_template_workbook_bytes,
     build_transformation_editor_frame,
     default_challengers_for_target_mode,
@@ -393,21 +394,9 @@ def main() -> None:
         scorecard_override_frame_key,
         build_scorecard_override_editor_frame,
     )
-    subset_search_feature_options = (
-        workspace_schema_frame.loc[
-            workspace_schema_frame["enabled"]
-            & (
-                workspace_schema_frame["role"].astype(str).str.strip().str.lower()
-                == ColumnRole.FEATURE.value
-            ),
-            "name",
-        ]
-        .astype(str)
-        .str.strip()
-        .replace("", pd.NA)
-        .dropna()
-        .drop_duplicates()
-        .tolist()
+    subset_search_feature_options = build_subset_search_feature_options(
+        workspace_schema_frame,
+        workspace_transformation_frame,
     )
     categorical_like_columns = dataframe.select_dtypes(
         include=["object", "string", "category"]

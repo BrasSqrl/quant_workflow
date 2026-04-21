@@ -171,7 +171,7 @@ These controls only matter when `ExecutionConfig.mode` is
 
 | GUI control | Config field(s) | Main implementation | Export evidence |
 | --- | --- | --- | --- |
-| `Candidate features` | `FeatureSubsetSearchConfig.candidate_feature_names` | `FeatureSubsetSearchStep` | `subset_search_scope`, `subset_search_candidates` |
+| `Candidate features` | `FeatureSubsetSearchConfig.candidate_feature_names` | `build_subset_search_feature_options(...)`, `FeatureSubsetSearchStep` | `subset_search_scope`, `subset_search_candidates` |
 | `Locked include features` | `FeatureSubsetSearchConfig.locked_include_features` | `FeatureSubsetSearchStep` | `subset_search_candidates` |
 | `Locked exclude features` | `FeatureSubsetSearchConfig.locked_exclude_features` | `FeatureSubsetSearchStep` | `subset_search_candidates` |
 | `Minimum subset size` | `FeatureSubsetSearchConfig.min_subset_size` | `FeatureSubsetSearchStep` | `subset_search_scope` |

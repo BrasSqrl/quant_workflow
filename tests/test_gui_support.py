@@ -23,6 +23,7 @@ from quant_pd_framework.gui_support import (
     build_column_editor_frame,
     build_framework_config_from_editor,
     build_gui_inputs_from_preset,
+    build_subset_search_feature_options,
     default_challengers_for_target_mode,
     frames_equivalent,
     parse_positive_values,
@@ -204,3 +205,63 @@ def test_frames_equivalent_ignores_dtype_only_differences() -> None:
     )
 
     assert frames_equivalent(left, right) is True
+
+
+def test_build_subset_search_feature_options_includes_transformation_outputs() -> None:
+    dataframe = pd.DataFrame(
+        {
+            "balance": [100.0, 150.0, 225.0],
+            "utilization": [0.2, 0.5, 0.7],
+            "default_status": [0, 1, 0],
+        }
+    )
+    schema_frame = build_column_editor_frame(dataframe)
+    schema_frame.loc[
+        schema_frame["name"] == "default_status",
+        "role",
+    ] = ColumnRole.TARGET_SOURCE.value
+    transformation_frame = pd.DataFrame(
+        [
+            {
+                "enabled": True,
+                "transform_type": "manual_bins",
+                "source_feature": "balance",
+                "secondary_feature": "",
+                "categorical_value": "",
+                "output_feature": "",
+                "lower_quantile": "",
+                "upper_quantile": "",
+                "parameter_value": "",
+                "window_size": "",
+                "lag_periods": "",
+                "bin_edges": "125, 200",
+                "generated_automatically": False,
+                "notes": "",
+            },
+            {
+                "enabled": True,
+                "transform_type": "natural_spline",
+                "source_feature": "utilization",
+                "secondary_feature": "",
+                "categorical_value": "",
+                "output_feature": "",
+                "lower_quantile": "",
+                "upper_quantile": "",
+                "parameter_value": 3,
+                "window_size": "",
+                "lag_periods": "",
+                "bin_edges": "",
+                "generated_automatically": False,
+                "notes": "",
+            },
+        ]
+    )
+
+    options = build_subset_search_feature_options(schema_frame, transformation_frame)
+
+    assert "balance" in options
+    assert "utilization" in options
+    assert "balance_binned" in options
+    assert "utilization_spline_df_3_basis_1" in options
+    assert "utilization_spline_df_3_basis_2" in options
+    assert "utilization_spline_df_3_basis_3" in options

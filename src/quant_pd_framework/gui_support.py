@@ -498,6 +498,33 @@ def normalize_transformation_frame(frame: pd.DataFrame) -> pd.DataFrame:
     return working
 
 
+def build_subset_search_feature_options(
+    schema_frame: pd.DataFrame,
+    transformation_frame: pd.DataFrame,
+) -> list[str]:
+    """Returns feature-subset-search options including governed transformation outputs."""
+
+    schema_features = (
+        schema_frame.loc[
+            schema_frame["enabled"]
+            & (
+                schema_frame["role"].astype(str).str.strip().str.lower()
+                == ColumnRole.FEATURE.value
+            ),
+            "name",
+        ]
+        .astype(str)
+        .str.strip()
+        .replace("", pd.NA)
+        .dropna()
+        .tolist()
+    )
+    transformed_features = _resolve_subset_search_transformation_outputs(
+        transformation_frame,
+    )
+    return list(dict.fromkeys([*schema_features, *transformed_features]))
+
+
 def normalize_feature_review_frame(frame: pd.DataFrame) -> pd.DataFrame:
     """Normalizes the manual feature-review editor into a predictable shape."""
 
@@ -720,6 +747,104 @@ def _parse_float_list(value: Any) -> list[float]:
     if not text:
         return []
     return [float(item.strip()) for item in text.split(",") if item.strip()]
+
+
+def _resolve_subset_search_transformation_outputs(frame: pd.DataFrame) -> list[str]:
+    normalized = normalize_transformation_frame(frame)
+    output_names: list[str] = []
+    for _, row in normalized.iterrows():
+        if not bool(row["enabled"]):
+            continue
+        source_feature = str(row["source_feature"]).strip()
+        if not source_feature:
+            continue
+        transform_name = str(row["transform_type"]).strip()
+        if not transform_name:
+            continue
+        try:
+            transform_type = TransformationType(transform_name)
+        except ValueError:
+            continue
+        configured_output = _clean_text(row["output_feature"])
+        resolved_output = configured_output or _resolve_transformation_output_name_for_ui(
+            transform_type=transform_type,
+            source_feature=source_feature,
+            secondary_feature=_clean_text(row["secondary_feature"]),
+            categorical_value=_clean_text(row["categorical_value"]),
+            parameter_value=_coerce_optional_float(row["parameter_value"]),
+            window_size=_coerce_optional_int(row["window_size"]),
+            lag_periods=_coerce_optional_int(row["lag_periods"]),
+        )
+        if transform_type == TransformationType.NATURAL_SPLINE:
+            spline_df = 4 if _coerce_optional_float(row["parameter_value"]) is None else int(
+                _coerce_optional_float(row["parameter_value"])
+            )
+            output_names.extend(
+                f"{resolved_output}_basis_{index + 1}" for index in range(spline_df)
+            )
+            continue
+        if resolved_output:
+            output_names.append(resolved_output)
+    return output_names
+
+
+def _resolve_transformation_output_name_for_ui(
+    *,
+    transform_type: TransformationType,
+    source_feature: str,
+    secondary_feature: str | None,
+    categorical_value: str | None,
+    parameter_value: float | None,
+    window_size: int | None,
+    lag_periods: int | None,
+) -> str:
+    if transform_type == TransformationType.MANUAL_BINS:
+        return f"{source_feature}_binned"
+    if transform_type == TransformationType.RATIO:
+        return f"{source_feature}_over_{secondary_feature}"
+    if transform_type == TransformationType.INTERACTION:
+        if (categorical_value or "").strip():
+            return (
+                f"{source_feature}_x_{secondary_feature}_"
+                f"{_sanitize_transformation_token(categorical_value or '')}"
+            )
+        return f"{source_feature}_x_{secondary_feature}"
+    if transform_type == TransformationType.YEO_JOHNSON:
+        return f"{source_feature}_yeo_johnson"
+    if transform_type == TransformationType.BOX_COX:
+        return f"{source_feature}_box_cox"
+    if transform_type == TransformationType.NATURAL_SPLINE:
+        spline_df = 4 if parameter_value is None else int(parameter_value)
+        return f"{source_feature}_spline_df_{spline_df}"
+    if transform_type == TransformationType.CAPPED_ZSCORE:
+        return f"{source_feature}_zscore"
+    if transform_type == TransformationType.PIECEWISE_LINEAR:
+        hinge_value = "hinge" if parameter_value is None else str(parameter_value)
+        return f"{source_feature}_piecewise_{_sanitize_transformation_token(hinge_value)}"
+    if transform_type == TransformationType.LAG:
+        return f"{source_feature}_lag_{1 if lag_periods is None else lag_periods}"
+    if transform_type == TransformationType.DIFFERENCE:
+        return f"{source_feature}_diff_{1 if lag_periods is None else lag_periods}"
+    if transform_type == TransformationType.EWMA:
+        return f"{source_feature}_ewma_{3 if window_size is None else window_size}"
+    if transform_type == TransformationType.ROLLING_MEAN:
+        return f"{source_feature}_rollmean_{3 if window_size is None else window_size}"
+    if transform_type == TransformationType.ROLLING_MEDIAN:
+        return f"{source_feature}_rollmedian_{3 if window_size is None else window_size}"
+    if transform_type == TransformationType.ROLLING_MIN:
+        return f"{source_feature}_rollmin_{3 if window_size is None else window_size}"
+    if transform_type == TransformationType.ROLLING_MAX:
+        return f"{source_feature}_rollmax_{3 if window_size is None else window_size}"
+    if transform_type == TransformationType.ROLLING_STD:
+        return f"{source_feature}_rollstd_{3 if window_size is None else window_size}"
+    if transform_type == TransformationType.PCT_CHANGE:
+        return f"{source_feature}_pct_change_{1 if lag_periods is None else lag_periods}"
+    return source_feature
+
+
+def _sanitize_transformation_token(value: str) -> str:
+    sanitized = "".join(character if character.isalnum() else "_" for character in value)
+    return sanitized.strip("_").lower() or "value"
 
 
 def build_gui_inputs_from_preset(preset_name: PresetName) -> GUIBuildInputs:
