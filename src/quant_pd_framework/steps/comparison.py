@@ -43,6 +43,7 @@ class ModelComparisonStep(BasePipelineStep):
             "roc_auc" if target_mode == TargetMode.BINARY else "rmse"
         )
         rows: list[dict[str, object]] = []
+        prediction_snapshots: dict[str, pd.DataFrame] = {}
 
         for split_name in ["validation", "test"]:
             if split_name in context.metrics:
@@ -54,6 +55,11 @@ class ModelComparisonStep(BasePipelineStep):
                         **context.metrics[split_name],
                     }
                 )
+        primary_snapshot = context.predictions.get(comparison_config.ranking_split)
+        if primary_snapshot is not None:
+            prediction_snapshots[context.config.model.model_type.value] = primary_snapshot.copy(
+                deep=True
+            )
 
         x_train = train_frame[context.feature_columns]
         y_train = train_frame[context.target_column]
@@ -79,7 +85,7 @@ class ModelComparisonStep(BasePipelineStep):
                 if split_name not in {"validation", "test"}:
                     continue
                 if target_mode == TargetMode.BINARY:
-                    _, metrics = evaluator._score_binary_split(
+                    scored_frame, metrics = evaluator._score_binary_split(
                         frame,
                         split_name,
                         context.target_column,
@@ -89,7 +95,7 @@ class ModelComparisonStep(BasePipelineStep):
                         True,
                     )
                 else:
-                    _, metrics = evaluator._score_continuous_split(
+                    scored_frame, metrics = evaluator._score_continuous_split(
                         frame,
                         split_name,
                         context.target_column,
@@ -97,6 +103,8 @@ class ModelComparisonStep(BasePipelineStep):
                         challenger,
                         True,
                     )
+                if split_name == comparison_config.ranking_split:
+                    prediction_snapshots[challenger_type.value] = scored_frame.copy(deep=True)
                 rows.append(
                     {
                         "model_type": challenger_type.value,
@@ -132,4 +140,6 @@ class ModelComparisonStep(BasePipelineStep):
                 )
 
         context.comparison_results = comparison_table
+        if prediction_snapshots:
+            context.metadata["comparison_prediction_snapshots"] = prediction_snapshots
         return context

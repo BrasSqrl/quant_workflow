@@ -9,6 +9,7 @@ import pandas as pd
 from .config import (
     ColumnRole,
     DataStructure,
+    ExecutionMode,
     FrameworkConfig,
     ModelType,
     PresetName,
@@ -353,7 +354,10 @@ def _check_documentation_requirements(
     require_horizon: bool,
     require_loss: bool = False,
 ) -> None:
-    if not config.workflow_guardrails.enforce_documentation_requirements:
+    if (
+        not config.workflow_guardrails.enforce_documentation_requirements
+        or config.execution.mode == ExecutionMode.SEARCH_FEATURE_SUBSETS
+    ):
         return
 
     documentation = config.documentation

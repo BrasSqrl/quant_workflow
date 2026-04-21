@@ -8,7 +8,8 @@ from typing import Any
 
 import numpy as np
 import pandas as pd
-from scipy.stats import yeojohnson, yeojohnson_normmax
+from patsy import build_design_matrices, dmatrix
+from scipy.stats import boxcox, boxcox_normmax, yeojohnson, yeojohnson_normmax
 
 from ..base import BasePipelineStep
 from ..config import (
@@ -80,7 +81,14 @@ class TransformationStep(BasePipelineStep):
                     resolved,
                     context=context,
                 )
-                self._update_feature_contract(context, working_dataframe, resolved.output_feature)
+                resolved_output_features = list(
+                    resolved.learned_parameters.get("output_features", [resolved.output_feature])
+                )
+                self._update_feature_contract(
+                    context,
+                    working_dataframe,
+                    resolved_output_features,
+                )
                 resolved_transformations.append(resolved)
                 audit_rows.append(
                     {
@@ -88,7 +96,7 @@ class TransformationStep(BasePipelineStep):
                         "source_feature": resolved.spec.source_feature,
                         "secondary_feature": resolved.spec.secondary_feature or "",
                         "categorical_value": resolved.spec.categorical_value or "",
-                        "output_feature": resolved.output_feature,
+                        "output_feature": ", ".join(resolved_output_features),
                         "learned_parameters": self._render_parameters(resolved.learned_parameters),
                         "generated_automatically": resolved.spec.generated_automatically,
                         "notes": resolved.spec.notes,
@@ -124,7 +132,14 @@ class TransformationStep(BasePipelineStep):
         context.diagnostics_tables["governed_transformations"] = pd.DataFrame(audit_rows)
         context.metadata["transformation_summary"] = {
             "count": len(resolved_transformations),
-            "output_features": [item.output_feature for item in resolved_transformations],
+            "output_features": [
+                output_feature
+                for item in resolved_transformations
+                for output_feature in item.learned_parameters.get(
+                    "output_features",
+                    [item.output_feature],
+                )
+            ],
             "generated_interaction_count": len(generated_specs),
         }
         if generated_specs:
@@ -178,6 +193,38 @@ class TransformationStep(BasePipelineStep):
                     f"log1p requires values greater than -1 for '{spec.source_feature}'."
                 )
             learned_parameters = {"min_train_value": minimum_value}
+        elif spec.transform_type == TransformationType.BOX_COX:
+            numeric_series = self._numeric_series(source_series, spec.source_feature)
+            minimum_value = float(numeric_series.min())
+            if minimum_value <= 0.0:
+                raise ValueError(
+                    f"box_cox requires strictly positive values for '{spec.source_feature}'."
+                )
+            learned_parameters = {
+                "lambda": float(boxcox_normmax(numeric_series.dropna().to_numpy(dtype=float)))
+            }
+        elif spec.transform_type == TransformationType.NATURAL_SPLINE:
+            numeric_series = self._numeric_series(source_series, spec.source_feature)
+            spline_df = 4 if spec.parameter_value is None else int(spec.parameter_value)
+            non_null = numeric_series.dropna()
+            if len(non_null) < max(spline_df + 1, 8):
+                raise ValueError(
+                    f"natural_spline requires at least {max(spline_df + 1, 8)} usable "
+                    f"rows for '{spec.source_feature}'."
+                )
+            spline_design = dmatrix(
+                f"cr(x, df={spline_df}) - 1",
+                {"x": non_null.to_numpy(dtype=float)},
+                return_type="dataframe",
+            )
+            output_features = tuple(
+                f"{output_feature}_basis_{index + 1}" for index in range(spline_design.shape[1])
+            )
+            learned_parameters = {
+                "degrees_of_freedom": spline_df,
+                "design_info": spline_design.design_info,
+                "output_features": output_features,
+            }
         elif spec.transform_type == TransformationType.YEO_JOHNSON:
             numeric_series = self._numeric_series(source_series, spec.source_feature)
             learned_parameters = {
@@ -190,6 +237,11 @@ class TransformationStep(BasePipelineStep):
                 "mean": float(numeric_series.mean()),
                 "std": std_value if np.isfinite(std_value) and std_value > 0 else 0.0,
                 "z_cap": 3.0 if spec.parameter_value is None else float(spec.parameter_value),
+            }
+        elif spec.transform_type == TransformationType.PIECEWISE_LINEAR:
+            self._numeric_series(source_series, spec.source_feature)
+            learned_parameters = {
+                "hinge_point": float(spec.parameter_value),
             }
         elif spec.transform_type in {
             TransformationType.RATIO,
@@ -215,7 +267,13 @@ class TransformationStep(BasePipelineStep):
                 }
         elif spec.transform_type in {
             TransformationType.LAG,
+            TransformationType.DIFFERENCE,
+            TransformationType.EWMA,
             TransformationType.ROLLING_MEAN,
+            TransformationType.ROLLING_MEDIAN,
+            TransformationType.ROLLING_MIN,
+            TransformationType.ROLLING_MAX,
+            TransformationType.ROLLING_STD,
             TransformationType.PCT_CHANGE,
         }:
             self._numeric_series(source_series, spec.source_feature)
@@ -256,6 +314,37 @@ class TransformationStep(BasePipelineStep):
         elif spec.transform_type == TransformationType.LOG1P:
             values = pd.to_numeric(working[source_name], errors="coerce")
             working[output_name] = np.where(values > -1, np.log1p(values), np.nan)
+        elif spec.transform_type == TransformationType.BOX_COX:
+            values = pd.to_numeric(working[source_name], errors="coerce")
+            transformed = pd.Series(np.nan, index=working.index, dtype=float)
+            mask = values.notna() & values.gt(0)
+            if mask.any():
+                transformed.loc[mask] = boxcox(
+                    values.loc[mask].to_numpy(dtype=float),
+                    lmbda=float(resolved.learned_parameters["lambda"]),
+                )
+            working[output_name] = transformed
+        elif spec.transform_type == TransformationType.NATURAL_SPLINE:
+            values = pd.to_numeric(working[source_name], errors="coerce")
+            output_features = list(resolved.learned_parameters["output_features"])
+            transformed = pd.DataFrame(
+                np.nan,
+                index=working.index,
+                columns=output_features,
+                dtype=float,
+            )
+            mask = values.notna()
+            if mask.any():
+                design_matrix = build_design_matrices(
+                    [resolved.learned_parameters["design_info"]],
+                    {"x": values.loc[mask].to_numpy(dtype=float)},
+                )[0]
+                transformed.loc[mask, output_features] = np.asarray(
+                    design_matrix,
+                    dtype=float,
+                )
+            for feature_name in output_features:
+                working[feature_name] = transformed[feature_name]
         elif spec.transform_type == TransformationType.YEO_JOHNSON:
             values = pd.to_numeric(working[source_name], errors="coerce")
             transformed = pd.Series(np.nan, index=working.index, dtype=float)
@@ -277,6 +366,10 @@ class TransformationStep(BasePipelineStep):
                     lower=-float(resolved.learned_parameters["z_cap"]),
                     upper=float(resolved.learned_parameters["z_cap"]),
                 )
+        elif spec.transform_type == TransformationType.PIECEWISE_LINEAR:
+            values = pd.to_numeric(working[source_name], errors="coerce")
+            hinge_point = float(resolved.learned_parameters["hinge_point"])
+            working[output_name] = np.maximum(values - hinge_point, 0.0)
         elif spec.transform_type == TransformationType.RATIO:
             numerator = pd.to_numeric(working[source_name], errors="coerce")
             denominator = pd.to_numeric(
@@ -300,7 +393,13 @@ class TransformationStep(BasePipelineStep):
             working[output_name] = left * right
         elif spec.transform_type in {
             TransformationType.LAG,
+            TransformationType.DIFFERENCE,
+            TransformationType.EWMA,
             TransformationType.ROLLING_MEAN,
+            TransformationType.ROLLING_MEDIAN,
+            TransformationType.ROLLING_MIN,
+            TransformationType.ROLLING_MAX,
+            TransformationType.ROLLING_STD,
             TransformationType.PCT_CHANGE,
         }:
             working[output_name] = self._apply_temporal_numeric_transform(
@@ -567,8 +666,24 @@ class TransformationStep(BasePipelineStep):
         grouped = self._group_temporal_series(ordered, context)
         if transform_type == TransformationType.LAG:
             transformed = grouped.shift(lag_periods)
+        elif transform_type == TransformationType.DIFFERENCE:
+            transformed = grouped.diff(periods=lag_periods)
+        elif transform_type == TransformationType.EWMA:
+            transformed = grouped.shift(1).ewm(
+                span=window_size,
+                adjust=False,
+                min_periods=1,
+            ).mean()
         elif transform_type == TransformationType.ROLLING_MEAN:
             transformed = grouped.shift(1).rolling(window_size, min_periods=1).mean()
+        elif transform_type == TransformationType.ROLLING_MEDIAN:
+            transformed = grouped.shift(1).rolling(window_size, min_periods=1).median()
+        elif transform_type == TransformationType.ROLLING_MIN:
+            transformed = grouped.shift(1).rolling(window_size, min_periods=1).min()
+        elif transform_type == TransformationType.ROLLING_MAX:
+            transformed = grouped.shift(1).rolling(window_size, min_periods=1).max()
+        elif transform_type == TransformationType.ROLLING_STD:
+            transformed = grouped.shift(1).rolling(window_size, min_periods=1).std(ddof=0)
         elif transform_type == TransformationType.PCT_CHANGE:
             transformed = grouped.pct_change(periods=lag_periods).replace(
                 [np.inf, -np.inf],
@@ -618,10 +733,16 @@ class TransformationStep(BasePipelineStep):
         self,
         context: PipelineContext,
         dataframe: pd.DataFrame,
-        output_feature: str,
+        output_feature: str | list[str] | tuple[str, ...],
     ) -> None:
-        if output_feature not in context.feature_columns:
-            context.feature_columns.append(output_feature)
+        output_features = (
+            [output_feature]
+            if isinstance(output_feature, str)
+            else list(output_feature)
+        )
+        for feature_name in output_features:
+            if feature_name not in context.feature_columns:
+                context.feature_columns.append(feature_name)
         context.numeric_features = []
         context.categorical_features = []
         for feature_name in context.feature_columns:
@@ -655,15 +776,51 @@ class TransformationStep(BasePipelineStep):
             return f"{spec.source_feature}_x_{spec.secondary_feature}"
         if spec.transform_type == TransformationType.YEO_JOHNSON:
             return f"{spec.source_feature}_yeo_johnson"
+        if spec.transform_type == TransformationType.BOX_COX:
+            return f"{spec.source_feature}_box_cox"
+        if spec.transform_type == TransformationType.NATURAL_SPLINE:
+            spline_df = 4 if spec.parameter_value is None else int(spec.parameter_value)
+            return f"{spec.source_feature}_spline_df_{spline_df}"
         if spec.transform_type == TransformationType.CAPPED_ZSCORE:
             return f"{spec.source_feature}_zscore"
+        if spec.transform_type == TransformationType.PIECEWISE_LINEAR:
+            hinge_value = "hinge" if spec.parameter_value is None else str(spec.parameter_value)
+            return f"{spec.source_feature}_piecewise_{self._sanitize_token(hinge_value)}"
         if spec.transform_type == TransformationType.LAG:
             return (
                 f"{spec.source_feature}_lag_{1 if spec.lag_periods is None else spec.lag_periods}"
             )
+        if spec.transform_type == TransformationType.DIFFERENCE:
+            return (
+                f"{spec.source_feature}_diff_{1 if spec.lag_periods is None else spec.lag_periods}"
+            )
+        if spec.transform_type == TransformationType.EWMA:
+            return (
+                f"{spec.source_feature}_ewma_{3 if spec.window_size is None else spec.window_size}"
+            )
         if spec.transform_type == TransformationType.ROLLING_MEAN:
             return (
                 f"{spec.source_feature}_rollmean_"
+                f"{3 if spec.window_size is None else spec.window_size}"
+            )
+        if spec.transform_type == TransformationType.ROLLING_MEDIAN:
+            return (
+                f"{spec.source_feature}_rollmedian_"
+                f"{3 if spec.window_size is None else spec.window_size}"
+            )
+        if spec.transform_type == TransformationType.ROLLING_MIN:
+            return (
+                f"{spec.source_feature}_rollmin_"
+                f"{3 if spec.window_size is None else spec.window_size}"
+            )
+        if spec.transform_type == TransformationType.ROLLING_MAX:
+            return (
+                f"{spec.source_feature}_rollmax_"
+                f"{3 if spec.window_size is None else spec.window_size}"
+            )
+        if spec.transform_type == TransformationType.ROLLING_STD:
+            return (
+                f"{spec.source_feature}_rollstd_"
                 f"{3 if spec.window_size is None else spec.window_size}"
             )
         if spec.transform_type == TransformationType.PCT_CHANGE:
@@ -687,6 +844,11 @@ class TransformationStep(BasePipelineStep):
     def _render_parameters(self, parameters: dict[str, Any]) -> str:
         rendered: list[str] = []
         for key, value in parameters.items():
+            if key == "design_info":
+                continue
+            if key == "output_features":
+                rendered.append(f"{key}={', '.join(str(item) for item in value)}")
+                continue
             if isinstance(value, float):
                 rendered.append(f"{key}={value:.6g}")
             else:

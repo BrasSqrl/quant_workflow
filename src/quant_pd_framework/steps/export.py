@@ -101,6 +101,25 @@ class ArtifactExportStep(BasePipelineStep):
         rerun_readme_path = output_root / context.config.artifacts.rerun_readme_file_name
         code_snapshot_dir = output_root / context.config.artifacts.code_snapshot_directory_name
 
+        if context.config.execution.mode == ExecutionMode.SEARCH_FEATURE_SUBSETS:
+            return self._run_subset_search_export(
+                context=context,
+                output_root=output_root,
+                tables_dir=tables_dir,
+                figures_dir=figures_dir,
+                html_dir=html_dir,
+                png_dir=png_dir,
+                json_dir=json_dir,
+                metrics_path=metrics_path,
+                input_snapshot_path=input_snapshot_path,
+                report_path=report_path,
+                interactive_report_path=interactive_report_path,
+                config_path=config_path,
+                tests_path=tests_path,
+                manifest_path=manifest_path,
+                step_manifest_path=step_manifest_path,
+            )
+
         if context.model is None:
             raise ValueError("Cannot export artifacts without a fitted model.")
         if (
@@ -170,6 +189,25 @@ class ArtifactExportStep(BasePipelineStep):
         step_manifest = self._build_step_manifest(context)
         self._write_json(step_manifest_path, step_manifest)
         manifest = {
+            "core_artifacts": {
+                "output_root": str(output_root),
+                "model": str(model_path),
+                "metrics": str(metrics_path),
+                "predictions": str(predictions_path),
+                "feature_importance": str(feature_importance_path),
+                "backtest": str(backtest_path),
+                "report": str(report_path),
+                "config": str(config_path),
+                "tests": str(tests_path),
+                "step_manifest": str(step_manifest_path),
+                "artifact_manifest": str(manifest_path),
+            },
+            "directories": {
+                "tables": str(tables_dir),
+                "figures": str(figures_dir),
+                "figures_html": str(html_dir),
+                "json": str(json_dir),
+            },
             **visualization_manifest,
             "interactive_report": str(interactive_report_path),
             "documentation_pack": str(documentation_pack_path),
@@ -183,6 +221,8 @@ class ArtifactExportStep(BasePipelineStep):
                 "rerun_readme": str(rerun_readme_path),
             },
         }
+        if context.config.diagnostics.export_excel_workbook:
+            manifest["core_artifacts"]["analysis_workbook"] = str(workbook_path)
         if context.config.artifacts.export_input_snapshot and input_snapshot_path.exists():
             manifest["rerun_bundle"]["input_snapshot"] = str(input_snapshot_path)
         self._write_json(manifest_path, manifest)
@@ -235,6 +275,84 @@ class ArtifactExportStep(BasePipelineStep):
             "code_snapshot_dir": code_snapshot_dir
             if context.config.artifacts.export_code_snapshot
             else None,
+        }
+        return context
+
+    def _run_subset_search_export(
+        self,
+        *,
+        context: PipelineContext,
+        output_root: Path,
+        tables_dir: Path,
+        figures_dir: Path,
+        html_dir: Path,
+        png_dir: Path,
+        json_dir: Path,
+        metrics_path: Path,
+        input_snapshot_path: Path,
+        report_path: Path,
+        interactive_report_path: Path,
+        config_path: Path,
+        tests_path: Path,
+        manifest_path: Path,
+        step_manifest_path: Path,
+    ) -> PipelineContext:
+        if not context.diagnostics_tables:
+            raise ValueError("Feature subset search requires comparison tables before export.")
+
+        self._write_json(metrics_path, context.metrics)
+        self._write_json(config_path, context.config.to_dict())
+        self._write_json(tests_path, context.statistical_tests)
+        if context.config.artifacts.export_input_snapshot and context.raw_data is not None:
+            context.raw_data.to_csv(input_snapshot_path, index=False)
+
+        for table_name, table in context.diagnostics_tables.items():
+            table.to_csv(tables_dir / f"{self._sanitize_name(table_name)}.csv", index=False)
+
+        visualization_manifest = self._export_visualizations(context, html_dir, png_dir)
+        report_path.write_text(self._build_subset_search_report(context), encoding="utf-8")
+        interactive_report_path.write_text(
+            self._build_interactive_report(context),
+            encoding="utf-8",
+        )
+        step_manifest = self._build_step_manifest(context)
+        self._write_json(step_manifest_path, step_manifest)
+
+        manifest = {
+            "core_artifacts": {
+                "output_root": str(output_root),
+                "metrics": str(metrics_path),
+                "report": str(report_path),
+                "interactive_report": str(interactive_report_path),
+                "config": str(config_path),
+                "tests": str(tests_path),
+                "step_manifest": str(step_manifest_path),
+                "artifact_manifest": str(manifest_path),
+            },
+            "directories": {
+                "tables": str(tables_dir),
+                "figures": str(figures_dir),
+                "figures_html": str(html_dir),
+                "json": str(json_dir),
+            },
+            **visualization_manifest,
+        }
+        if context.config.artifacts.export_input_snapshot and input_snapshot_path.exists():
+            manifest["core_artifacts"]["input_snapshot"] = str(input_snapshot_path)
+        self._write_json(manifest_path, manifest)
+
+        context.artifacts = {
+            "output_root": output_root,
+            "metrics": metrics_path,
+            "input_snapshot": input_snapshot_path if input_snapshot_path.exists() else None,
+            "report": report_path,
+            "interactive_report": interactive_report_path,
+            "config": config_path,
+            "tests": tests_path,
+            "tables_dir": tables_dir,
+            "figures_dir": figures_dir,
+            "manifest": manifest_path,
+            "step_manifest": step_manifest_path,
         }
         return context
 
@@ -410,6 +528,86 @@ class ArtifactExportStep(BasePipelineStep):
             lines.append(f"- {event}")
 
         return "\n".join(lines) + "\n"
+
+    def _build_subset_search_report(self, context: PipelineContext) -> str:
+        summary = context.metrics.get("subset_search", {})
+        best_candidate = context.metadata.get("subset_search_best_candidate", {})
+        selected_coefficients = context.diagnostics_tables.get(
+            "subset_search_selected_coefficients",
+            pd.DataFrame(),
+        )
+        nonwinning_candidates = context.diagnostics_tables.get(
+            "subset_search_nonwinning_candidates",
+            pd.DataFrame(),
+        )
+        lines = [
+            "# Feature Subset Search Report",
+            "",
+            f"- Run ID: `{context.run_id}`",
+            f"- Execution mode: `{context.config.execution.mode.value}`",
+            f"- Model family: `{context.config.model.model_type.value}`",
+            f"- Ranking split: `{context.config.subset_search.ranking_split}`",
+            f"- Ranking metric: `{context.config.subset_search.ranking_metric}`",
+            f"- Candidate feature count: `{summary.get('candidate_feature_count', 'n/a')}`",
+            f"- Enumerated subsets: `{summary.get('enumerated_subsets', 'n/a')}`",
+            f"- Successful subsets: `{summary.get('successful_subsets', 'n/a')}`",
+            f"- Failed subsets: `{summary.get('failed_subsets', 'n/a')}`",
+            "",
+            "## Best Candidate",
+            "",
+            f"- Candidate ID: `{best_candidate.get('candidate_id', 'n/a')}`",
+            f"- Feature count: `{best_candidate.get('feature_count', 'n/a')}`",
+            f"- Feature set: `{best_candidate.get('feature_set', 'n/a')}`",
+            f"- Validation ROC AUC: `{best_candidate.get('ranking_roc_auc', 'n/a')}`",
+            f"- Validation KS: `{best_candidate.get('ranking_ks_statistic', 'n/a')}`",
+            f"- Test ROC AUC: `{best_candidate.get('test_roc_auc', 'n/a')}`",
+            f"- Test KS: `{best_candidate.get('test_ks_statistic', 'n/a')}`",
+            "",
+        ]
+        if not selected_coefficients.empty:
+            lines.extend(
+                [
+                    "## Selected Candidate Coefficients",
+                    "",
+                ]
+            )
+            for _, row in selected_coefficients.head(15).iterrows():
+                magnitude = row.get("abs_coefficient", row.get("importance_value", "n/a"))
+                lines.append(
+                    f"- `{row.get('feature_name', 'n/a')}`: "
+                    f"`{row.get('coefficient', row.get('importance_value', 'n/a'))}` "
+                    f"(magnitude `{magnitude}`)"
+                )
+            lines.append("")
+        if not nonwinning_candidates.empty:
+            lines.extend(
+                [
+                    "## Ranked Non-Winning Candidates",
+                    "",
+                    f"- Exported non-winning candidates: `{len(nonwinning_candidates)}`",
+                    "- Review `subset_search_nonwinning_candidates.csv` for the full ranked table.",
+                    "",
+                ]
+            )
+        lines.extend(
+            [
+            "## Comparison Assets",
+            "",
+            ]
+        )
+        for table_name in sorted(context.diagnostics_tables):
+            lines.append(f"- Table: `{table_name}`")
+        for figure_name in sorted(context.visualizations):
+            lines.append(f"- Figure: `{figure_name}`")
+        lines.extend(["", "## Pipeline Events", ""])
+        for event in context.events:
+            lines.append(f"- {event}")
+        if context.warnings:
+            lines.extend(["", "## Warnings", ""])
+            for warning in context.warnings:
+                lines.append(f"- {warning}")
+        lines.append("")
+        return "\n".join(lines)
 
     def _build_documentation_pack(self, context: PipelineContext) -> str:
         documentation = context.config.documentation
@@ -830,6 +1028,7 @@ class ArtifactExportStep(BasePipelineStep):
         input_shape = context.metadata.get("input_shape", {})
         feature_summary = context.metadata.get("feature_summary", {})
         split_summary = context.metadata.get("split_summary", {})
+        performance = context.config.performance
         return build_interactive_report_html(
             run_id=context.run_id,
             model_type=context.config.model.model_type.value,
@@ -845,6 +1044,9 @@ class ArtifactExportStep(BasePipelineStep):
             events=context.events,
             diagnostics_tables=context.diagnostics_tables,
             visualizations=context.visualizations,
+            table_preview_rows=performance.html_table_preview_rows,
+            max_figures_per_section=performance.html_max_figures_per_section,
+            max_tables_per_section=performance.html_max_tables_per_section,
         )
 
     def _export_excel_workbook(

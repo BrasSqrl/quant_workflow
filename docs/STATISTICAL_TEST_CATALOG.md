@@ -17,6 +17,7 @@ Primary implementation files:
 - `src/quant_pd_framework/steps/evaluation.py`
 - `src/quant_pd_framework/steps/diagnostics.py`
 - `src/quant_pd_framework/steps/backtesting.py`
+- `src/quant_pd_framework/diagnostic_frameworks.py`
 
 ## Quick Index
 
@@ -26,18 +27,40 @@ Primary implementation files:
 | Condition index | `model_specification_tests` | Collinearity severity review | `DiagnosticsStep._compute_condition_index` |
 | Box-Tidwell | `model_specification_tests` | Logistic linearity-in-the-logit review | `DiagnosticsStep._run_box_tidwell_tests` |
 | Link test | `model_specification_tests` | Misspecification review for binary models | `DiagnosticsStep._run_link_test` |
+| DeLong ROC-AUC difference test | `model_comparison_significance_tests` | Binary champion-vs-challenger significance review | `_add_model_comparison_framework_outputs`, `_run_delong_test` |
+| McNemar test | `model_comparison_significance_tests` | Paired thresholded-classification difference review | `_add_model_comparison_framework_outputs`, `_run_mcnemar_test` |
+| Diebold-Mariano test | `model_comparison_significance_tests` | Paired forecast-error difference review | `_add_model_comparison_framework_outputs`, `_run_diebold_mariano_test` |
+| Ramsey RESET | `model_specification_tests` | Functional-form misspecification review | `_add_specification_framework_extensions` |
+| White test | `model_specification_tests` | Heteroskedasticity review on a surrogate specification | `_add_specification_framework_extensions` |
+| DFBETAs / DFFITS | `model_dfbetas_summary`, `model_dffits_summary` | Observation-level influence review | `_add_specification_framework_extensions` |
 | Kolmogorov-Smirnov style separation statistic (KS) | split metric `ks_statistic` | Binary discrimination strength | `EvaluationStep._ks_statistic` |
+| Kolmogorov-Smirnov distribution shift test | `distribution_shift_tests` | Train-vs-scored feature-distribution drift review | `_add_distribution_framework_outputs` |
+| D’Agostino-Pearson normality test | `distribution_tests` | Numeric feature shape review | `_add_distribution_framework_outputs` |
 | Hosmer-Lemeshow statistic | `calibration_summary` | Binary calibration goodness-of-fit by bins | `DiagnosticsStep._hosmer_lemeshow_statistic` |
 | Calibration slope and intercept | `calibration_summary` | Over/under-confidence review | `DiagnosticsStep._calibration_slope_intercept` |
 | Expected / Maximum Calibration Error (ECE / MCE) | `calibration_summary` | Bin-level calibration gap review | `DiagnosticsStep._calibration_error_metrics` |
 | Variance Inflation Factor (VIF) | `vif` | Numeric multicollinearity screening | `DiagnosticsStep._add_vif_outputs` |
 | Weight of Evidence / Information Value (WoE / IV) | `woe_iv_summary`, `woe_iv_detail` | Binary predictor strength and scorecard analysis | `DiagnosticsStep._add_woe_iv_outputs` |
 | Population Stability Index (PSI) | `psi` | Development vs scored-population drift | `DiagnosticsStep._add_psi_outputs`, `_compute_population_stability_index` |
+| Breusch-Pagan | `residual_diagnostics` | Heteroskedasticity review on scored residuals | `_add_residual_framework_outputs` |
 | Durbin-Watson | `forecasting_statistical_tests` | Residual autocorrelation review | `DiagnosticsStep._add_forecasting_test_outputs` |
 | Ljung-Box | `forecasting_statistical_tests` | Residual serial-correlation review | `DiagnosticsStep._add_forecasting_test_outputs` |
 | ARCH LM | `forecasting_statistical_tests` | Conditional heteroskedasticity review | `DiagnosticsStep._add_forecasting_test_outputs` |
 | Cointegration | `cointegration_tests` | Long-run relationship review for target and drivers | `DiagnosticsStep._add_forecasting_test_outputs` |
 | Granger causality | `granger_causality_tests` | Directional macro-driver exploration | `DiagnosticsStep._add_forecasting_test_outputs` |
+| KPSS | `time_series_extension_tests` | Stationarity review that complements ADF | `_run_extended_stationarity_tests` |
+| Phillips-Perron | `time_series_extension_tests` | Unit-root review with long-run variance adjustment | `_run_extended_stationarity_tests`, `_phillips_perron_test` |
+| Breusch-Godfrey | `time_series_extension_tests` | Higher-order residual autocorrelation review | `_add_time_series_framework_outputs` |
+| Seasonal-strength statistic | `time_series_extension_tests` | Repeating seasonality review on aggregate residuals | `_add_time_series_framework_outputs` |
+| CUSUM | `structural_break_tests` | Global parameter-stability review | `_run_cusum_stability_tests` |
+| CUSUM squares | `structural_break_tests` | Residual-instability / variance-shift review | `_run_cusum_stability_tests` |
+| Chow-style structural-break review | `structural_break_tests` | Regime-shift review in time-aware workflows | `_add_structural_break_framework_outputs` |
+| Little's MCAR test | `littles_mcar_test` | Missing-completely-at-random review | `_build_littles_mcar_output` |
+
+The newer framework-style diagnostics are implemented in
+`src/quant_pd_framework/diagnostic_frameworks.py`. They extend the original
+`DiagnosticsStep` without changing the high-level pipeline order, so the tests
+still run after evaluation/backtesting and before export.
 
 ## 1. Augmented Dickey-Fuller (ADF)
 
@@ -527,6 +550,126 @@ driver relevance beyond simple contemporaneous correlation.
 
 - Table: `cointegration_tests`
 - Table: `granger_causality_tests`
+
+## 14. DeLong, McNemar, and Diebold-Mariano
+
+### What they test
+
+These paired challenger tests are used only when `ComparisonConfig.enabled`
+produces held-out champion-versus-challenger predictions.
+
+- DeLong tests whether two paired ROC AUC values differ materially.
+- McNemar tests whether two thresholded binary classifiers disagree in a way
+  that is unlikely to be random.
+- Diebold-Mariano tests whether two paired forecast-error series have the same
+  expected loss.
+
+### When to use them
+
+Use these tests when a reviewer asks whether a challenger is meaningfully
+different from the incumbent rather than only numerically ahead on a point
+estimate.
+
+### Output location
+
+- Table: `model_comparison_significance_tests`
+
+### Implemented code
+
+Source excerpt from `src/quant_pd_framework/diagnostic_frameworks.py`:
+
+```python
+def _run_diebold_mariano_test(
+    *,
+    y_true: np.ndarray,
+    baseline_scores: np.ndarray,
+    challenger_scores: np.ndarray,
+    target_mode: TargetMode,
+) -> dict[str, Any] | None:
+    baseline_loss = np.square(y_true - baseline_scores)
+    challenger_loss = np.square(y_true - challenger_scores)
+    differential = baseline_loss - challenger_loss
+    statistic, p_value = _diebold_mariano_statistic(differential)
+    ...
+```
+
+## 15. Ramsey RESET, White Test, DFBETAs, and DFFITS
+
+### What they test
+
+These tests extend the existing specification review:
+
+- RESET checks for broad functional-form misspecification.
+- White checks for heteroskedasticity.
+- DFBETAs and DFFITS identify observations that materially move coefficients or
+  fitted values.
+
+### When to use them
+
+Use them when an interpretable model is being challenged on functional form,
+residual behavior, or observation-level influence.
+
+### Output location
+
+- Table: `model_specification_tests`
+- Table: `model_dfbetas_summary`
+- Table: `model_dffits_summary`
+
+## 16. KPSS and Phillips-Perron
+
+### What they test
+
+These tests complement ADF by attacking stationarity from a different angle:
+
+- KPSS treats stationarity as the null.
+- Phillips-Perron uses a long-run variance correction rather than explicit lag
+  augmentation.
+
+### When to use them
+
+Use them alongside ADF in time-aware workflows when unit-root evidence should
+not hinge on a single stationarity test.
+
+### Output location
+
+- Table: `time_series_extension_tests`
+
+## 17. CUSUM and CUSUM Squares
+
+### What they test
+
+These statistics review global parameter stability on an aggregate time-series
+surrogate:
+
+- CUSUM checks cumulative residual drift.
+- CUSUM squares checks cumulative squared-recursive-residual drift.
+
+### When to use them
+
+Use them in CCAR, CECL, and other time-aware development runs where regime
+changes or stability breaks are a concern.
+
+### Output location
+
+- Table: `structural_break_tests`
+
+## 18. Little's MCAR Test
+
+### What it tests
+
+Little's MCAR test asks whether the observed missingness pattern is consistent
+with missing completely at random. The current implementation uses an
+approximate pairwise-covariance moment version on the pre-imputation numeric
+surface.
+
+### When to use it
+
+Use it when the missing-data treatment itself is under review and the user
+needs evidence about whether "completely random" is a defensible assumption.
+
+### Output location
+
+- Table: `littles_mcar_test`
 
 ## Related Non-Test Diagnostics
 

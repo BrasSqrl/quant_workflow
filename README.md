@@ -17,10 +17,11 @@ The project supports two working modes:
 1. A Python API for developers who want to configure and run the pipeline in code.
 2. A Streamlit GUI, branded in the app as `Quant Studio`, for users who want to load a dataframe, define schema rules, and run the workflow visually.
 
-Inside those interfaces, the framework supports two execution modes:
+Inside those interfaces, the framework supports three execution modes:
 
 1. `fit_new_model`
 2. `score_existing_model`
+3. `search_feature_subsets`
 
 ## What The Framework Does
 
@@ -53,6 +54,15 @@ When `score_existing_model` is used, the training stage becomes a
 model-loading stage and the remaining steps run on newly scored data so the
 existing model can still be documented, validated, stress tested, and exported
 without refitting.
+
+When `search_feature_subsets` is used, the normal training/evaluation/backtest
+packaging path is replaced with a comparison-only workflow that:
+
+- enumerates candidate feature subsets for the selected model family
+- ranks them on held-out performance
+- exports ROC/AUC, KS, feature-frequency, frontier, and significance-test views
+- avoids writing full development artifacts such as a fitted model bundle or
+  committee-ready report pack
 
 The framework now supports:
 
@@ -87,8 +97,10 @@ The framework also includes development-focused workflow features:
 - feature dictionary / variable catalog support for business definitions,
   lineage, and inclusion rationale
 - governed transformation layer for winsorization, log transforms, Yeo-Johnson,
-  capped z-scores, ratio features, lag and rolling features, percent-change
-  features, interaction features, and manual bins
+  Box-Cox, natural splines, capped z-scores, piecewise-linear hinges, ratio
+  features, lag and differencing features, EWMA and rolling features, rolling
+  volatility features, percent-change features, interaction features, and
+  manual bins
 - variable-selection workflow with train-split screening and selection rationale
 - manual review workflow for approve/reject decisions and scorecard bin
   overrides
@@ -104,8 +116,15 @@ The framework also includes development-focused workflow features:
 - calibration workflow with method comparison, recalibration challengers, and
   recommended-method metadata
 - advanced imputation and sensitivity testing with grouped train-fit fill rules,
-  optional missingness-indicator features, and exported imputation-impact
-  comparisons
+  optional missingness-indicator features, KNN and iterative model-based
+  imputation, multiple imputation with pooled surrogate summaries, Little's
+  MCAR testing, and exported imputation-impact comparisons
+- expanded statistical-test frameworks for distribution shifts, residual bias,
+  outliers, dependency clustering, paired model-comparison significance,
+  expanded specification testing, time-series econometrics, and structural
+  breaks including CUSUM-style stability review
+- feature-construction workbench outputs and preset recommendation tables for
+  imputation, transformations, and tests
 - documentation-pack generation for development-ready model summaries
 - structured validation-pack generation for validator-facing review
 - regulator-ready committee and validation report generation in DOCX and PDF
@@ -185,7 +204,8 @@ Each reference workflow has:
 
 The repository also includes a GitHub Actions CI workflow at
 [.github/workflows/ci.yml](./.github/workflows/ci.yml) that runs Ruff, the
-golden reference checks, and the full test suite on push and pull request.
+golden reference checks, the Streamlit regression tests, and the full test
+suite on push and pull request.
 
 ## Repository Layout
 
@@ -254,6 +274,7 @@ quant/
         validation.py
         cleaning.py
         feature_engineering.py
+        feature_subset_search.py
         splitting.py
         transformations.py
         variable_selection.py
@@ -263,16 +284,21 @@ quant/
         diagnostics.py
         export.py
   tests/
+    test_artifact_contracts.py
     test_calibration_workflow.py
     test_existing_model_scoring.py
+    test_feature_subset_search_mode.py
     test_development_features.py
     test_governance_extensions.py
     test_gui_launcher.py
     test_gui_support.py
+    test_numerical_hardening_and_reporting.py
+    test_performance_controls.py
     test_roadmap_features.py
     test_pipeline_smoke.py
     test_reference_workflows.py
     test_saved_run_bundle.py
+    test_streamlit_app_e2e.py
     test_workflow_guardrails.py
     support.py
   EXECUTIVE_SUMMARY.txt
@@ -435,6 +461,7 @@ That standard drives both the live GUI and the exported standalone HTML report. 
 
 The GUI exposes the following decision areas:
 
+- workspace mode (`guided` vs `advanced`)
 - workflow preset
 - execution mode
 - file upload with a configured 50 GB per-file Streamlit limit
@@ -474,6 +501,12 @@ The GUI exposes the following decision areas:
 - diagnostics and export toggles
 - artifact output root
 - schema editor for column-level configuration
+
+The workspace mode is intended to keep standard model-development runs compact:
+
+- `guided` mode keeps advanced comparison, review, explainability, and
+  documentation surfaces on the preset defaults
+- `advanced` mode unlocks the full tuning and governance surface
 
 ### Workflow Presets
 
@@ -521,6 +554,15 @@ When `score_existing_model` is selected:
 - provide an exported `quant_model.joblib` path
 - optionally provide the matching prior `run_config.json`
 - if the prior run config is supplied, its schema, target, feature, split, and model settings override the current GUI editor so the scoring run stays aligned with the original model contract
+
+When `search_feature_subsets` is selected:
+
+- choose one currently supported model family
+- optionally narrow the candidate-feature pool
+- set minimum and maximum subset size bounds
+- choose the held-out ranking split and ranking metric
+- review a comparison-only result surface centered on candidate ranking, ROC,
+  KS, feature frequency, frontier charts, and paired significance tests
 
 ### GUI Relationship To The Python Code
 
@@ -916,6 +958,7 @@ Supported modes:
 
 - `fit_new_model`
 - `score_existing_model`
+- `search_feature_subsets`
 
 Recommended scoring pattern:
 
@@ -924,6 +967,12 @@ Recommended scoring pattern:
 - let the framework reuse the prior schema, feature, target, split, and model settings so the new scoring run stays aligned with the original model contract
 
 If `mode="score_existing_model"`, `existing_model_path` is required.
+
+If `mode="search_feature_subsets"`, the run must use a binary target and a
+supported binary model family. The subset-search workflow exports
+comparison-only evidence rather than a fitted-model artifact bundle, with a
+selected-candidate coefficient summary, selected-candidate ROC / KS visuals,
+and ranked non-winning candidate tables for side-by-side comparison.
 
 ### `ModelConfig`
 
@@ -1049,12 +1098,21 @@ Supported transformation families:
 
 - `winsorize`
 - `log1p`
+- `box_cox`
+- `natural_spline`
 - `yeo_johnson`
 - `capped_zscore`
+- `piecewise_linear`
 - `ratio`
 - `interaction`
 - `lag`
+- `difference`
+- `ewma`
 - `rolling_mean`
+- `rolling_median`
+- `rolling_min`
+- `rolling_max`
+- `rolling_std`
 - `pct_change`
 - `manual_bins`
 
@@ -1063,6 +1121,26 @@ feature, output feature, and transform-specific parameters such as quantiles,
 categorical indicator values, lag windows, rolling windows, z-score caps, or
 manual bin edges. Auto-generated screened interactions are persisted back into
 the saved run config so existing-model scoring can replay the same features.
+
+### `AdvancedImputationConfig` And Expanded Diagnostic Framework Configs
+
+The framework now also exposes typed config objects for the newer roadmap
+frameworks. The most important ones are:
+
+- `AdvancedImputationConfig`
+- `DistributionDiagnosticConfig`
+- `ResidualDiagnosticConfig`
+- `OutlierDiagnosticConfig`
+- `DependencyDiagnosticConfig`
+- `TimeSeriesDiagnosticConfig`
+- `StructuralBreakConfig`
+- `FeatureWorkbenchConfig`
+- `PresetRecommendationConfig`
+
+These configs control the deeper review surfaces added in the latest roadmap
+phase, including model-based imputation, distribution and dependency testing,
+residual and outlier analysis, structural-break review, engineered-feature
+workbench outputs, and preset-aligned recommendation tables.
 
 ### `ExplainabilityConfig`
 
@@ -1314,6 +1392,8 @@ Default artifact files:
 - `statistical_tests.json`
 - `analysis_workbook.xlsx`
 - `artifact_manifest.json`
+  This now indexes the core run artifacts, export directories, figures, and
+  rerun bundle in one file.
 - `step_manifest.json`
 - `model_documentation_pack.md`
 - `validation_pack.md`
@@ -1391,12 +1471,25 @@ The current advanced-imputation slice also supports:
 - grouped train-fit scalar imputation using user-selected segment columns
 - generated missingness-indicator features that can enter downstream selection
   and modeling
+- KNN and iterative model-based numeric imputation with train-fit auxiliary
+  feature selection and scalar fallback behavior
+- multiple imputation with pooled surrogate coefficient and metric summaries
+- approximate Little's MCAR testing for missing-completely-at-random review
+- an `advanced_imputation_summary` table that exports the model-based
+  imputation surface
+- a `multiple_imputation_pooling_summary` table that exports pooled metric
+  results
+- a `multiple_imputation_pooled_coefficients` table that exports pooled
+  coefficient estimates
+- a `littles_mcar_test` table for missingness-randomness review
 - an `imputation_group_rules` table that exports the learned group-specific
   fill values
 - an `imputation_sensitivity_summary` table that ranks features where alternate
   fill choices materially change scores or held-out metrics
 - an `imputation_sensitivity_detail` table with policy-by-policy score and
   metric deltas
+- a `performance_hardening_actions` table when the framework samples or limits
+  expensive large-run diagnostics
 
 ### 10. Governed Transformations
 
@@ -1404,12 +1497,21 @@ Fits and applies explicit, reproducible feature transformations such as:
 
 - winsorization
 - `log1p`
+- `box_cox`
+- `natural_spline`
 - `yeo_johnson`
 - `capped_zscore`
+- `piecewise_linear`
 - ratio features
 - interaction features
 - lag features
+- difference features
+- EWMA features
 - rolling-mean features
+- rolling-median features
+- rolling-min features
+- rolling-max features
+- rolling-standard-deviation features
 - percent-change features
 - manual-bin categorical features
 
@@ -1448,6 +1550,11 @@ Fits the selected model family through a common adapter interface. Depending on 
 - XGBoost
 
 When `execution.mode="score_existing_model"`, this stage instead loads a previously exported fitted model artifact and validates that the newly prepared dataframe still satisfies that model's raw feature contract.
+
+When `execution.mode="search_feature_subsets"`, the normal training and
+downstream final-model packaging path is replaced by the dedicated
+`FeatureSubsetSearchStep`, which fits the selected model family across
+candidate feature subsets and exports only comparison-ready evidence.
 
 When scorecard development is active, this stage can also apply manual numeric
 bin overrides supplied through the review workflow.
@@ -1608,6 +1715,9 @@ Each exported run directory is now intended to be portable. A completed run fold
 - `configuration_template.xlsx`
   The editable workbook for schema, feature dictionary, transformations, and
   review tables.
+- `artifact_manifest.json`
+  A machine-readable index of the core artifacts, export directories, figures,
+  regulator-ready reports, and rerun-bundle assets.
 - `HOW_TO_RERUN.md`
   A short runbook describing the rerun path and the main editable files.
 - `code_snapshot/`
@@ -1740,6 +1850,14 @@ That limit is not the same as a guaranteed practical ingest size. Very large CSV
 and Excel files can still fail if the machine does not have enough memory for
 upload buffering and pandas parsing.
 
+To keep large runs usable, the framework now also applies lightweight
+performance safeguards through `PerformanceConfig`, including:
+
+- dataset-size warnings in the GUI
+- smaller dataset previews in the builder workspace
+- capped multiple-imputation surrogate sampling for expensive diagnostics
+- truncated HTML report table and figure previews so standalone reports remain usable
+
 ### Time-Series Or Panel Runs Fail Validation
 
 Check that:
@@ -1770,7 +1888,7 @@ The current implementation includes:
 - dataframe, CSV, and Excel inputs
 - configurable schema and dtype handling
 - cross-sectional, time-series, and panel split modes
-- fresh-model and existing-model execution modes
+- fresh-model, existing-model, and feature-subset-search execution modes
 - binary and continuous target modes
 - workflow presets for PD, CECL, LGD, and CCAR development
 - logistic, discrete-time hazard, elastic-net logistic, scorecard logistic,
@@ -1785,6 +1903,7 @@ The current implementation includes:
 - labeled and score-only documentation paths when an existing model is reused
 - interactive visualizations and richer exports
 - workbook export
+- feature subset search mode for comparison-only feature-set selection with selected-candidate and ranked non-winning comparison outputs
 - rerun-ready code bundles with saved config, input snapshot, step manifest, generated launcher, and code snapshot
 - explicit configuration validation and engineering-rubric documentation
 - Streamlit GUI

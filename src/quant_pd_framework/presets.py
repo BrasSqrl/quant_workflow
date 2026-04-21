@@ -6,6 +6,7 @@ from copy import deepcopy
 from dataclasses import dataclass
 
 from .config import (
+    AdvancedImputationConfig,
     CalibrationConfig,
     ComparisonConfig,
     CreditRiskDiagnosticConfig,
@@ -16,10 +17,12 @@ from .config import (
     FeatureDictionaryConfig,
     FeatureEngineeringConfig,
     FeaturePolicyConfig,
+    FeatureSubsetSearchConfig,
     ImputationSensitivityConfig,
     ManualReviewConfig,
     ModelConfig,
     ModelType,
+    PerformanceConfig,
     PresetName,
     RegulatoryReportConfig,
     RobustnessConfig,
@@ -56,15 +59,18 @@ class PresetDefinition:
     documentation: DocumentationConfig
     feature_policy: FeaturePolicyConfig
     feature_dictionary: FeatureDictionaryConfig
+    advanced_imputation: AdvancedImputationConfig
     transformations: TransformationConfig
     manual_review: ManualReviewConfig
     suitability_checks: SuitabilityCheckConfig
     workflow_guardrails: WorkflowGuardrailConfig
     explainability: ExplainabilityConfig
     comparison: ComparisonConfig
+    subset_search: FeatureSubsetSearchConfig
     regulatory_reporting: RegulatoryReportConfig
     scenario_testing: ScenarioTestConfig
     credit_risk: CreditRiskDiagnosticConfig
+    performance: PerformanceConfig
     target_output_column: str
     positive_values_text: str = ""
 
@@ -107,6 +113,7 @@ PRESET_DEFINITIONS: dict[PresetName, PresetDefinition] = {
             minimum_information_value=0.02,
         ),
         feature_dictionary=FeatureDictionaryConfig(enabled=False),
+        advanced_imputation=AdvancedImputationConfig(enabled=True),
         transformations=TransformationConfig(enabled=False),
         manual_review=ManualReviewConfig(enabled=False),
         suitability_checks=SuitabilityCheckConfig(enabled=True),
@@ -121,6 +128,7 @@ PRESET_DEFINITIONS: dict[PresetName, PresetDefinition] = {
                 ModelType.XGBOOST,
             ],
         ),
+        subset_search=FeatureSubsetSearchConfig(enabled=False),
         regulatory_reporting=RegulatoryReportConfig(enabled=True),
         scenario_testing=ScenarioTestConfig(enabled=False),
         credit_risk=CreditRiskDiagnosticConfig(
@@ -131,6 +139,7 @@ PRESET_DEFINITIONS: dict[PresetName, PresetDefinition] = {
             cohort_pd_analysis=True,
             macro_sensitivity_analysis=True,
         ),
+        performance=PerformanceConfig(),
         target_output_column="default_flag",
         positive_values_text="1",
     ),
@@ -173,6 +182,7 @@ PRESET_DEFINITIONS: dict[PresetName, PresetDefinition] = {
             minimum_information_value=0.01,
         ),
         feature_dictionary=FeatureDictionaryConfig(enabled=False),
+        advanced_imputation=AdvancedImputationConfig(enabled=True),
         transformations=TransformationConfig(enabled=False),
         manual_review=ManualReviewConfig(enabled=False),
         suitability_checks=SuitabilityCheckConfig(enabled=True),
@@ -186,6 +196,7 @@ PRESET_DEFINITIONS: dict[PresetName, PresetDefinition] = {
                 ModelType.XGBOOST,
             ],
         ),
+        subset_search=FeatureSubsetSearchConfig(enabled=False),
         regulatory_reporting=RegulatoryReportConfig(enabled=True),
         scenario_testing=ScenarioTestConfig(enabled=False),
         credit_risk=CreditRiskDiagnosticConfig(
@@ -196,6 +207,7 @@ PRESET_DEFINITIONS: dict[PresetName, PresetDefinition] = {
             cohort_pd_analysis=True,
             macro_sensitivity_analysis=True,
         ),
+        performance=PerformanceConfig(),
         target_output_column="lifetime_default_flag",
         positive_values_text="1",
     ),
@@ -229,6 +241,7 @@ PRESET_DEFINITIONS: dict[PresetName, PresetDefinition] = {
         ),
         feature_policy=FeaturePolicyConfig(enabled=True, max_missing_pct=20.0, max_vif=10.0),
         feature_dictionary=FeatureDictionaryConfig(enabled=False),
+        advanced_imputation=AdvancedImputationConfig(enabled=True),
         transformations=TransformationConfig(enabled=False),
         manual_review=ManualReviewConfig(enabled=False),
         suitability_checks=SuitabilityCheckConfig(enabled=True),
@@ -243,6 +256,7 @@ PRESET_DEFINITIONS: dict[PresetName, PresetDefinition] = {
             ],
             ranking_metric="rmse",
         ),
+        subset_search=FeatureSubsetSearchConfig(enabled=False),
         regulatory_reporting=RegulatoryReportConfig(enabled=True),
         scenario_testing=ScenarioTestConfig(enabled=False),
         credit_risk=CreditRiskDiagnosticConfig(
@@ -252,6 +266,7 @@ PRESET_DEFINITIONS: dict[PresetName, PresetDefinition] = {
             recovery_analysis=True,
             macro_sensitivity_analysis=True,
         ),
+        performance=PerformanceConfig(),
         target_output_column="lgd_value",
     ),
     PresetName.CCAR_FORECASTING: PresetDefinition(
@@ -287,6 +302,7 @@ PRESET_DEFINITIONS: dict[PresetName, PresetDefinition] = {
         ),
         feature_policy=FeaturePolicyConfig(enabled=True, max_missing_pct=15.0, max_vif=8.0),
         feature_dictionary=FeatureDictionaryConfig(enabled=False),
+        advanced_imputation=AdvancedImputationConfig(enabled=True),
         transformations=TransformationConfig(enabled=False),
         manual_review=ManualReviewConfig(enabled=False),
         suitability_checks=SuitabilityCheckConfig(enabled=True),
@@ -301,6 +317,7 @@ PRESET_DEFINITIONS: dict[PresetName, PresetDefinition] = {
             ],
             ranking_metric="rmse",
         ),
+        subset_search=FeatureSubsetSearchConfig(enabled=False),
         regulatory_reporting=RegulatoryReportConfig(enabled=True),
         scenario_testing=ScenarioTestConfig(enabled=False),
         credit_risk=CreditRiskDiagnosticConfig(
@@ -310,6 +327,7 @@ PRESET_DEFINITIONS: dict[PresetName, PresetDefinition] = {
             delinquency_transition_analysis=True,
             macro_sensitivity_analysis=True,
         ),
+        performance=PerformanceConfig(),
         target_output_column="forecast_value",
     ),
 }

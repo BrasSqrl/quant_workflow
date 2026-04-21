@@ -28,6 +28,7 @@ from statsmodels.graphics.gofplots import ProbPlot
 from statsmodels.stats.diagnostic import acorr_ljungbox, het_arch
 from statsmodels.stats.outliers_influence import OLSInfluence
 from statsmodels.stats.stattools import durbin_watson
+from statsmodels.tools.sm_exceptions import ConvergenceWarning
 from statsmodels.tsa.stattools import adfuller, coint, grangercausalitytests
 
 from ..base import BasePipelineStep
@@ -40,6 +41,7 @@ from ..config import (
     TargetMode,
 )
 from ..context import PipelineContext
+from ..diagnostic_frameworks import add_expanded_framework_outputs
 from ..models import build_model_adapter
 from ..presentation import apply_fintech_figure_theme, friendly_asset_title
 from ..workflow_guardrails import build_guardrail_table, evaluate_workflow_guardrails
@@ -178,6 +180,11 @@ class DiagnosticsStep(BasePipelineStep):
             self._add_feature_policy_outputs(context)
         if context.config.credit_risk.enabled:
             self._add_credit_risk_outputs(context, labels_available)
+        add_expanded_framework_outputs(
+            context=context,
+            top_features=top_features,
+            labels_available=labels_available,
+        )
 
         self._apply_visual_theme(context)
         return context
@@ -1205,6 +1212,7 @@ class DiagnosticsStep(BasePipelineStep):
             design = sm.add_constant(self._safe_logit(probability), has_constant="add")
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore", RuntimeWarning)
+                warnings.simplefilter("ignore", ConvergenceWarning)
                 fit = sm.GLM(y_true, design, family=sm.families.Binomial()).fit()
             intercept = float(fit.params[0])
             slope = float(fit.params[1])
@@ -1772,11 +1780,13 @@ class DiagnosticsStep(BasePipelineStep):
                 granger_frame = aligned.rename(
                     columns={"target": "target", "feature": feature_name}
                 )[["target", feature_name]]
-                granger_result = grangercausalitytests(
-                    granger_frame,
-                    maxlag=min(2, max(1, len(granger_frame) // 6)),
-                    verbose=False,
-                )
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore", FutureWarning)
+                    granger_result = grangercausalitytests(
+                        granger_frame,
+                        maxlag=min(2, max(1, len(granger_frame) // 6)),
+                        verbose=False,
+                    )
                 best_lag, best_p = min(
                     (
                         lag,

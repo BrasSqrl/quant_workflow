@@ -11,6 +11,7 @@ import pandas as pd
 from pandas import CategoricalDtype
 
 from .config import (
+    AdvancedImputationConfig,
     ArtifactConfig,
     CalibrationConfig,
     CleaningConfig,
@@ -30,12 +31,14 @@ from .config import (
     FeaturePolicyConfig,
     FeatureReviewDecision,
     FeatureReviewDecisionType,
+    FeatureSubsetSearchConfig,
     FrameworkConfig,
     ImputationSensitivityConfig,
     ManualReviewConfig,
     MissingValuePolicy,
     ModelConfig,
     ModelType,
+    PerformanceConfig,
     PresetName,
     RegulatoryReportConfig,
     ReproducibilityConfig,
@@ -128,8 +131,10 @@ class GUIBuildInputs:
     cleaning: CleaningConfig = field(default_factory=CleaningConfig)
     feature_engineering: FeatureEngineeringConfig = field(default_factory=FeatureEngineeringConfig)
     comparison: ComparisonConfig = field(default_factory=ComparisonConfig)
+    subset_search: FeatureSubsetSearchConfig = field(default_factory=FeatureSubsetSearchConfig)
     feature_policy: FeaturePolicyConfig = field(default_factory=FeaturePolicyConfig)
     feature_dictionary: FeatureDictionaryConfig = field(default_factory=FeatureDictionaryConfig)
+    advanced_imputation: AdvancedImputationConfig = field(default_factory=AdvancedImputationConfig)
     transformations: TransformationConfig = field(default_factory=TransformationConfig)
     manual_review: ManualReviewConfig = field(default_factory=ManualReviewConfig)
     suitability_checks: SuitabilityCheckConfig = field(default_factory=SuitabilityCheckConfig)
@@ -149,6 +154,7 @@ class GUIBuildInputs:
     credit_risk: CreditRiskDiagnosticConfig = field(default_factory=CreditRiskDiagnosticConfig)
     robustness: RobustnessConfig = field(default_factory=RobustnessConfig)
     reproducibility: ReproducibilityConfig = field(default_factory=ReproducibilityConfig)
+    performance: PerformanceConfig = field(default_factory=PerformanceConfig)
     data_structure: DataStructure = DataStructure.CROSS_SECTIONAL
     train_size: float = 0.6
     validation_size: float = 0.2
@@ -366,8 +372,10 @@ def build_framework_config_from_editor(
         ),
         model=inputs.model,
         comparison=inputs.comparison,
+        subset_search=inputs.subset_search,
         feature_policy=inputs.feature_policy,
         feature_dictionary=inputs.feature_dictionary,
+        advanced_imputation=inputs.advanced_imputation,
         transformations=inputs.transformations,
         manual_review=inputs.manual_review,
         suitability_checks=inputs.suitability_checks,
@@ -385,6 +393,7 @@ def build_framework_config_from_editor(
         credit_risk=inputs.credit_risk,
         robustness=inputs.robustness,
         reproducibility=inputs.reproducibility,
+        performance=inputs.performance,
         artifacts=ArtifactConfig(output_root=inputs.output_root),
     )
     if validate:
@@ -722,8 +731,10 @@ def build_gui_inputs_from_preset(preset_name: PresetName) -> GUIBuildInputs:
         model=preset.model,
         feature_engineering=preset.feature_engineering,
         comparison=preset.comparison,
+        subset_search=preset.subset_search,
         feature_policy=preset.feature_policy,
         feature_dictionary=preset.feature_dictionary,
+        advanced_imputation=preset.advanced_imputation,
         transformations=preset.transformations,
         manual_review=preset.manual_review,
         suitability_checks=preset.suitability_checks,
@@ -740,6 +751,7 @@ def build_gui_inputs_from_preset(preset_name: PresetName) -> GUIBuildInputs:
         diagnostics=preset.diagnostics,
         credit_risk=preset.credit_risk,
         robustness=preset.robustness,
+        performance=preset.performance,
         data_structure=preset.data_structure,
         target_mode=preset.target_mode,
         target_output_column=preset.target_output_column,

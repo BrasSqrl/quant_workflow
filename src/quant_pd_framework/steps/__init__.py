@@ -8,6 +8,7 @@ from .diagnostics import DiagnosticsStep
 from .evaluation import EvaluationStep
 from .export import ArtifactExportStep
 from .feature_engineering import FeatureEngineeringStep
+from .feature_subset_search import FeatureSubsetSearchStep
 from .imputation import ImputationStep
 from .ingestion import IngestionStep
 from .schema import SchemaManagementStep
@@ -27,6 +28,7 @@ __all__ = [
     "DiagnosticsStep",
     "EvaluationStep",
     "FeatureEngineeringStep",
+    "FeatureSubsetSearchStep",
     "IngestionStep",
     "ImputationStep",
     "ModelTrainingStep",

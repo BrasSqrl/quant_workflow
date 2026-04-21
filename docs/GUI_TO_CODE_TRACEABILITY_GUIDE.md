@@ -67,6 +67,13 @@ Main builder functions:
 - `build_column_specs_from_editor(...)`
 - `build_framework_config_from_editor(...)`
 
+Current notable option families:
+
+- `missing_value_policy` now includes `knn` and `iterative` in addition to the
+  scalar and directional options
+- the same column-designer surface still drives grouped scalar imputation and
+  missingness-indicator generation
+
 ## 3. Build-Workspace Editors
 
 The main workspace now includes dedicated tabs beyond the column designer.
@@ -77,7 +84,29 @@ The main workspace now includes dedicated tabs beyond the column designer.
 | `Transformations` | `TransformationConfig.transformations` | `parse_transformation_frame(...)`, `TransformationStep` | `governed_transformations`, `interaction_candidates` |
 | `Template Workbook` | none directly; imports/exports editor tables | `build_template_workbook_bytes(...)`, `load_template_workbook(...)` | `configuration_template.xlsx` |
 
-## 4. Sidebar Group: Core Setup
+The transformation editor now supports the expanded roadmap families as values
+of `TransformationSpec.transform_type`, including `box_cox`,
+`natural_spline`, `piecewise_linear`, `difference`, `ewma`,
+`rolling_median`, `rolling_min`, `rolling_max`, and `rolling_std`.
+
+## 4. Workspace Mode
+
+The GUI now includes a workspace-mode toggle that changes how much of the
+configuration surface is editable.
+
+| GUI control | Config or runtime target | Main implementation | Audit surface |
+| --- | --- | --- | --- |
+| `Workspace mode` | runtime-only UI state | `app/streamlit_app.py` sidebar control gating advanced expanders | indirect; preserved by the resolved preset-backed `run_config.json` |
+
+Notes:
+
+- `guided` mode keeps advanced controls on the current preset defaults.
+- `advanced` mode unlocks comparison, review, explainability, and documentation
+  controls directly in the sidebar.
+- The authoritative audit surface is still the resolved `FrameworkConfig`,
+  not the UI mode itself.
+
+## 5. Sidebar Group: Core Setup
 
 | GUI control | Config field(s) | Main implementation |
 | --- | --- | --- |
@@ -91,7 +120,17 @@ The main workspace now includes dedicated tabs beyond the column designer.
 | `Positive target values` | `TargetConfig.positive_values` | `TargetConstructionStep` |
 | `Drop source target column` | `TargetConfig.drop_source_column` | `TargetConstructionStep` |
 
-## 5. Sidebar Group: Split Strategy
+Execution-mode meaning:
+
+- `fit_new_model`
+  Runs the standard development workflow.
+- `score_existing_model`
+  Loads a prior exported model artifact and scores new data.
+- `search_feature_subsets`
+  Runs the dedicated feature-subset-search workflow and exports only
+  comparison-ready ranking evidence.
+
+## 6. Sidebar Group: Split Strategy
 
 | GUI control | Config field(s) | Main implementation | Export evidence |
 | --- | --- | --- | --- |
@@ -104,7 +143,7 @@ The main workspace now includes dedicated tabs beyond the column designer.
 Date and identifier columns are not collected here. They are derived from the
 column designer role assignments.
 
-## 6. Sidebar Group: Model Settings
+## 7. Sidebar Group: Model Settings
 
 | GUI control | Config field(s) | Main implementation |
 | --- | --- | --- |
@@ -125,7 +164,25 @@ column designer role assignments.
 | `XGBoost ...` controls | `ModelConfig.xgboost_*` | `XGBoostAdapter` |
 | `Tobit ...` controls | `ModelConfig.tobit_*` | `TobitRegressionAdapter` |
 
-## 7. Sidebar Group: Data Preparation
+## 8. Sidebar Group: Feature Subset Search
+
+These controls only matter when `ExecutionConfig.mode` is
+`search_feature_subsets`.
+
+| GUI control | Config field(s) | Main implementation | Export evidence |
+| --- | --- | --- | --- |
+| `Candidate features` | `FeatureSubsetSearchConfig.candidate_feature_names` | `FeatureSubsetSearchStep` | `subset_search_scope`, `subset_search_candidates` |
+| `Locked include features` | `FeatureSubsetSearchConfig.locked_include_features` | `FeatureSubsetSearchStep` | `subset_search_candidates` |
+| `Locked exclude features` | `FeatureSubsetSearchConfig.locked_exclude_features` | `FeatureSubsetSearchStep` | `subset_search_candidates` |
+| `Minimum subset size` | `FeatureSubsetSearchConfig.min_subset_size` | `FeatureSubsetSearchStep` | `subset_search_scope` |
+| `Maximum subset size` | `FeatureSubsetSearchConfig.max_subset_size` | `FeatureSubsetSearchStep` | `subset_search_scope` |
+| `Maximum candidate features` | `FeatureSubsetSearchConfig.max_candidate_features` | `FeatureSubsetSearchStep` | `subset_search_scope` |
+| `Ranking split` | `FeatureSubsetSearchConfig.ranking_split` | `FeatureSubsetSearchStep` | `subset_search_candidates`, `subset_search_frontier` |
+| `Ranking metric` | `FeatureSubsetSearchConfig.ranking_metric` | `FeatureSubsetSearchStep` | `subset_search_candidates`, `subset_search_frontier` |
+| `Top candidates to retain` | `FeatureSubsetSearchConfig.top_candidate_count` | `FeatureSubsetSearchStep` | `subset_search_candidates`, `subset_search_feature_frequency`, `subset_search_significance_tests` |
+| `Include paired significance tests ...` | `FeatureSubsetSearchConfig.include_significance_tests` | `FeatureSubsetSearchStep` | `subset_search_significance_tests` |
+
+## 9. Sidebar Group: Data Preparation
 
 | GUI control | Config field(s) | Main implementation |
 | --- | --- | --- |
@@ -138,7 +195,7 @@ column designer role assignments.
 | `Drop raw date columns ...` | `FeatureEngineeringConfig.drop_raw_date_columns` | `FeatureEngineeringStep` |
 | `Date parts` | `FeatureEngineeringConfig.date_parts` | `FeatureEngineeringStep` |
 
-## 8. Sidebar Group: Diagnostics & Exports
+## 10. Sidebar Group: Diagnostics & Exports
 
 | GUI control | Config field(s) | Main implementation |
 | --- | --- | --- |
@@ -177,13 +234,13 @@ column designer role assignments.
 | `Top credit-risk segments` | `CreditRiskDiagnosticConfig.top_segments` | segment-limited credit diagnostics |
 | `Macro shock std multiplier` | `CreditRiskDiagnosticConfig.shock_std_multiplier` | macro sensitivity diagnostics |
 
-## 9. Sidebar Group: Challengers & Policies
+## 11. Sidebar Group: Challengers & Policies
 
 | GUI control | Config field(s) | Main implementation | Export evidence |
 | --- | --- | --- | --- |
-| `Enable model comparison mode` | `ComparisonConfig.enabled` | `ModelComparisonStep` | `model_comparison` |
-| `Challenger model families` | `ComparisonConfig.challenger_model_types` | `ModelComparisonStep` | `model_comparison` |
-| `Comparison ranking metric` | `ComparisonConfig.ranking_metric` | `ModelComparisonStep` | `model_comparison` |
+| `Enable model comparison mode` | `ComparisonConfig.enabled` | `ModelComparisonStep` | `model_comparison`, `model_comparison_significance_tests` |
+| `Challenger model families` | `ComparisonConfig.challenger_model_types` | `ModelComparisonStep` | `model_comparison`, `model_comparison_significance_tests` |
+| `Comparison ranking metric` | `ComparisonConfig.ranking_metric` | `ModelComparisonStep` | `model_comparison`, `model_comparison_significance_tests` |
 | `Enable feature policy checks` | `FeaturePolicyConfig.enabled` | `DiagnosticsStep._add_feature_policy_outputs` | `feature_policy_checks` |
 | `Required features` | `FeaturePolicyConfig.required_features` | policy checks | `feature_policy_checks` |
 | `Excluded features` | `FeaturePolicyConfig.excluded_features` | policy checks | `feature_policy_checks` |
@@ -194,7 +251,7 @@ column designer role assignments.
 | `Minimum IV` | `FeaturePolicyConfig.minimum_information_value` | policy checks | `feature_policy_checks` |
 | `Fail run on policy violation` | `FeaturePolicyConfig.error_on_violation` | policy checks | run failure if violated |
 
-## 10. Sidebar Group: Selection & Documentation
+## 12. Sidebar Group: Selection & Documentation
 
 | GUI control | Config field(s) | Main implementation |
 | --- | --- | --- |
@@ -215,6 +272,10 @@ column designer role assignments.
 | `Alternative imputation policies` | `ImputationSensitivityConfig.alternative_policies` | `DiagnosticsStep._add_imputation_sensitivity_outputs` |
 | `Sensitivity features` | `ImputationSensitivityConfig.max_features` | `DiagnosticsStep._add_imputation_sensitivity_outputs` |
 | `Min train missing count` | `ImputationSensitivityConfig.min_missing_count` | `DiagnosticsStep._add_imputation_sensitivity_outputs` |
+| `Multiple imputation with pooling` | `AdvancedImputationConfig.multiple_imputation_enabled` | `diagnostic_frameworks._add_imputation_framework_extensions` |
+| `Multiple-imputation datasets` | `AdvancedImputationConfig.multiple_imputation_datasets` | `diagnostic_frameworks._add_imputation_framework_extensions` |
+| `Multiple-imputation evaluation split` | `AdvancedImputationConfig.multiple_imputation_evaluation_split` | `diagnostic_frameworks._add_imputation_framework_extensions` |
+| `Multiple-imputation feature cap` | `AdvancedImputationConfig.multiple_imputation_top_features` | `diagnostic_frameworks._add_imputation_framework_extensions` |
 | `Export documentation pack` | `DocumentationConfig.enabled` | `ArtifactExportStep` |
 | documentation text fields | `DocumentationConfig.*` | diagnostics metadata and documentation pack |
 | `Export regulator-ready reports` | `RegulatoryReportConfig.enabled` | `ArtifactExportStep`, `reporting.py` |
@@ -224,7 +285,7 @@ column designer role assignments.
 | `Validation template name` | `RegulatoryReportConfig.validation_template_name` | validation-ready report export |
 | report section toggles | `RegulatoryReportConfig.include_*` | regulator-ready report assembly |
 
-## 11. Sidebar Group: Governance & Review
+## 13. Sidebar Group: Governance & Review
 
 | GUI control | Config field(s) | Main implementation | Export evidence |
 | --- | --- | --- | --- |
@@ -242,7 +303,7 @@ column designer role assignments.
 | feature review editor rows | `ManualReviewConfig.feature_decisions` | `parse_manual_review_frames(...)`, `VariableSelectionStep` | `manual_review_feature_decisions` |
 | scorecard override rows | `ManualReviewConfig.scorecard_bin_overrides` | `parse_manual_review_frames(...)`, `ScorecardLogisticRegressionAdapter` | `scorecard_bin_overrides` |
 
-## 12. Sidebar Group: Explainability & Scenarios
+## 14. Sidebar Group: Explainability & Scenarios
 
 | GUI control | Config field(s) | Main implementation |
 | --- | --- | --- |
@@ -256,7 +317,7 @@ column designer role assignments.
 | `Scenario evaluation split` | `ScenarioTestConfig.evaluation_split` | scenario testing |
 | scenario editor rows | `ScenarioTestConfig.scenarios` | scenario testing |
 
-## 13. Sidebar Group: Output Options
+## 15. Sidebar Group: Output Options
 
 | GUI control | Config field(s) | Main implementation |
 | --- | --- | --- |
@@ -266,7 +327,12 @@ column designer role assignments.
 | `Tracked package names` | `ReproducibilityConfig.package_names` | `ArtifactExportStep` |
 | `Artifact root` | `ArtifactConfig.output_root` | `ArtifactExportStep` |
 
-## 14. Run Button
+The current performance safeguards are preset-backed and serialized through
+`PerformanceConfig`, but they are not directly edited in the sidebar yet.
+Their main audit surface is `run_config.json`, plus the exported
+`performance_hardening_actions` table when large-run limits are applied.
+
+## 16. Run Button
 
 The `Run Quant Model Workflow` button performs this chain:
 
@@ -283,10 +349,14 @@ Relevant code path:
 - `QuantModelOrchestrator(config=config).run(dataframe)`
 - `build_run_snapshot(...)`
 
-## 15. Result-Viewer Filters
+## 17. Result-Viewer Filters
 
 The controls under `Interactive Filters` do not change the model or rerun the
 pipeline. They only change the live display of exported run outputs.
+
+Feature-subset-search runs intentionally use a different result viewer. That
+viewer emphasizes candidate ranking, ROC/KS comparison, frontier charts, and
+comparison-only governance exports rather than prediction filtering.
 
 Examples:
 
@@ -298,13 +368,15 @@ Examples:
 
 These are presentation controls, not modeling controls.
 
-## 16. Authoritative Export Files for Traceability
+## 18. Authoritative Export Files for Traceability
 
 For an audit review, the most important files are:
 
 - `run_config.json`
 - `step_manifest.json`
 - `artifact_manifest.json`
+  This now includes `core_artifacts`, `directories`, interactive figure paths,
+  regulator-ready report paths, and the rerun bundle map.
 - `metrics.json`
 - `run_report.md`
 - `model_documentation_pack.md`
@@ -312,6 +384,9 @@ For an audit review, the most important files are:
 - `reproducibility_manifest.json`
 - `configuration_template.xlsx`
 - `interactive_report.html`
+- `subset_search_candidates.csv`, `subset_search_frontier.csv`,
+  `subset_search_feature_frequency.csv`, and
+  `subset_search_significance_tests.csv` when the third execution mode is used
 
 Together these create the formal record of what the GUI settings actually
 became in code.

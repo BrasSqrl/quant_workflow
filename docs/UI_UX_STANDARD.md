@@ -47,6 +47,11 @@ Each section should include:
 - grouped charts first
 - supporting tables second
 
+The live GUI should also support two operator modes:
+
+- `guided` for compact preset-led runs with advanced controls held to defaults
+- `advanced` for specialist tuning, governance edits, and deeper challenger work
+
 Summary views should prioritize featured charts and compact tables. Technical views should expose the full diagnostic inventory.
 
 ## 3. Chart Standard

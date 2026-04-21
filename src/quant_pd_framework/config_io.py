@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from .config import (
+    AdvancedImputationConfig,
     ArtifactConfig,
     CalibrationConfig,
     CalibrationRankingMetric,
@@ -17,7 +18,9 @@ from .config import (
     ComparisonConfig,
     CreditRiskDiagnosticConfig,
     DataStructure,
+    DependencyDiagnosticConfig,
     DiagnosticConfig,
+    DistributionDiagnosticConfig,
     DocumentationConfig,
     ExecutionConfig,
     ExecutionMode,
@@ -28,15 +31,21 @@ from .config import (
     FeaturePolicyConfig,
     FeatureReviewDecision,
     FeatureReviewDecisionType,
+    FeatureSubsetSearchConfig,
+    FeatureWorkbenchConfig,
     FrameworkConfig,
     ImputationSensitivityConfig,
     ManualReviewConfig,
     MissingValuePolicy,
     ModelConfig,
     ModelType,
+    OutlierDiagnosticConfig,
+    PerformanceConfig,
     PresetName,
+    PresetRecommendationConfig,
     RegulatoryReportConfig,
     ReproducibilityConfig,
+    ResidualDiagnosticConfig,
     RobustnessConfig,
     ScenarioConfig,
     ScenarioFeatureShock,
@@ -48,9 +57,11 @@ from .config import (
     ScorecardMonotonicity,
     ScorecardWorkbenchConfig,
     SplitConfig,
+    StructuralBreakConfig,
     SuitabilityCheckConfig,
     TargetConfig,
     TargetMode,
+    TimeSeriesDiagnosticConfig,
     TransformationConfig,
     TransformationSpec,
     TransformationType,
@@ -73,8 +84,12 @@ def load_framework_config(source: str | Path | dict[str, Any]) -> FrameworkConfi
         execution=_build_execution_config(payload.get("execution", {}), base_path),
         model=_build_model_config(payload.get("model", {})),
         comparison=_build_comparison_config(payload.get("comparison", {})),
+        subset_search=_build_feature_subset_search_config(payload.get("subset_search", {})),
         feature_policy=_build_feature_policy_config(payload.get("feature_policy", {})),
         feature_dictionary=_build_feature_dictionary_config(payload.get("feature_dictionary", {})),
+        advanced_imputation=_build_advanced_imputation_config(
+            payload.get("advanced_imputation", {})
+        ),
         transformations=_build_transformation_config(payload.get("transformations", {})),
         manual_review=_build_manual_review_config(payload.get("manual_review", {})),
         suitability_checks=_build_suitability_check_config(payload.get("suitability_checks", {})),
@@ -97,9 +112,30 @@ def load_framework_config(source: str | Path | dict[str, Any]) -> FrameworkConfi
         ),
         scenario_testing=_build_scenario_test_config(payload.get("scenario_testing", {})),
         diagnostics=_build_diagnostic_config(payload.get("diagnostics", {})),
+        distribution_diagnostics=_build_distribution_diagnostic_config(
+            payload.get("distribution_diagnostics", {})
+        ),
+        residual_diagnostics=_build_residual_diagnostic_config(
+            payload.get("residual_diagnostics", {})
+        ),
+        outlier_diagnostics=_build_outlier_diagnostic_config(
+            payload.get("outlier_diagnostics", {})
+        ),
+        dependency_diagnostics=_build_dependency_diagnostic_config(
+            payload.get("dependency_diagnostics", {})
+        ),
+        time_series_diagnostics=_build_time_series_diagnostic_config(
+            payload.get("time_series_diagnostics", {})
+        ),
+        structural_breaks=_build_structural_break_config(payload.get("structural_breaks", {})),
+        feature_workbench=_build_feature_workbench_config(payload.get("feature_workbench", {})),
+        preset_recommendations=_build_preset_recommendation_config(
+            payload.get("preset_recommendations", {})
+        ),
         credit_risk=_build_credit_risk_diagnostic_config(payload.get("credit_risk", {})),
         robustness=_build_robustness_config(payload.get("robustness", {})),
         reproducibility=_build_reproducibility_config(payload.get("reproducibility", {})),
+        performance=_build_performance_config(payload.get("performance", {})),
         artifacts=_build_artifact_config(payload.get("artifacts", {})),
     )
     config.validate()
@@ -214,6 +250,25 @@ def _build_comparison_config(payload: dict[str, Any]) -> ComparisonConfig:
     )
 
 
+def _build_feature_subset_search_config(
+    payload: dict[str, Any],
+) -> FeatureSubsetSearchConfig:
+    return FeatureSubsetSearchConfig(
+        enabled=payload.get("enabled", False),
+        candidate_feature_names=payload.get("candidate_feature_names", []),
+        locked_include_features=payload.get("locked_include_features", []),
+        locked_exclude_features=payload.get("locked_exclude_features", []),
+        min_subset_size=payload.get("min_subset_size", 1),
+        max_subset_size=payload.get("max_subset_size", 4),
+        max_candidate_features=payload.get("max_candidate_features", 12),
+        ranking_split=payload.get("ranking_split", "validation"),
+        ranking_metric=payload.get("ranking_metric", "roc_auc"),
+        top_candidate_count=payload.get("top_candidate_count", 25),
+        top_curve_count=payload.get("top_curve_count", 5),
+        include_significance_tests=payload.get("include_significance_tests", True),
+    )
+
+
 def _build_feature_policy_config(payload: dict[str, Any]) -> FeaturePolicyConfig:
     return FeaturePolicyConfig(
         enabled=payload.get("enabled", False),
@@ -250,6 +305,25 @@ def _build_feature_dictionary_config(payload: dict[str, Any]) -> FeatureDictiona
             )
             for entry in payload.get("entries", [])
         ],
+    )
+
+
+def _build_advanced_imputation_config(payload: dict[str, Any]) -> AdvancedImputationConfig:
+    return AdvancedImputationConfig(
+        enabled=payload.get("enabled", True),
+        knn_neighbors=payload.get("knn_neighbors", 5),
+        iterative_max_iter=payload.get("iterative_max_iter", 10),
+        iterative_random_state=payload.get("iterative_random_state", 42),
+        iterative_sample_posterior=payload.get("iterative_sample_posterior", False),
+        max_auxiliary_numeric_features=payload.get("max_auxiliary_numeric_features", 25),
+        minimum_complete_rows=payload.get("minimum_complete_rows", 20),
+        multiple_imputation_enabled=payload.get("multiple_imputation_enabled", False),
+        multiple_imputation_datasets=payload.get("multiple_imputation_datasets", 5),
+        multiple_imputation_evaluation_split=payload.get(
+            "multiple_imputation_evaluation_split",
+            "test",
+        ),
+        multiple_imputation_top_features=payload.get("multiple_imputation_top_features", 20),
     )
 
 
@@ -510,6 +584,89 @@ def _build_diagnostic_config(payload: dict[str, Any]) -> DiagnosticConfig:
     )
 
 
+def _build_distribution_diagnostic_config(
+    payload: dict[str, Any],
+) -> DistributionDiagnosticConfig:
+    return DistributionDiagnosticConfig(
+        enabled=payload.get("enabled", True),
+        include_normality_tests=payload.get("include_normality_tests", True),
+        include_shift_tests=payload.get("include_shift_tests", True),
+        top_features=payload.get("top_features", 8),
+        minimum_rows=payload.get("minimum_rows", 30),
+    )
+
+
+def _build_residual_diagnostic_config(payload: dict[str, Any]) -> ResidualDiagnosticConfig:
+    return ResidualDiagnosticConfig(
+        enabled=payload.get("enabled", True),
+        heteroskedasticity_tests=payload.get("heteroskedasticity_tests", True),
+        segment_bias_analysis=payload.get("segment_bias_analysis", True),
+        autocorrelation_tests=payload.get("autocorrelation_tests", True),
+        minimum_rows=payload.get("minimum_rows", 30),
+    )
+
+
+def _build_outlier_diagnostic_config(payload: dict[str, Any]) -> OutlierDiagnosticConfig:
+    return OutlierDiagnosticConfig(
+        enabled=payload.get("enabled", True),
+        zscore_threshold=payload.get("zscore_threshold", 3.0),
+        leverage_multiplier=payload.get("leverage_multiplier", 2.0),
+        cooks_distance_multiplier=payload.get("cooks_distance_multiplier", 4.0),
+        max_rows=payload.get("max_rows", 50),
+    )
+
+
+def _build_dependency_diagnostic_config(payload: dict[str, Any]) -> DependencyDiagnosticConfig:
+    return DependencyDiagnosticConfig(
+        enabled=payload.get("enabled", True),
+        clustering_correlation_threshold=payload.get("clustering_correlation_threshold", 0.7),
+        maximum_features=payload.get("maximum_features", 12),
+        condition_index_warning=payload.get("condition_index_warning", 30.0),
+    )
+
+
+def _build_time_series_diagnostic_config(payload: dict[str, Any]) -> TimeSeriesDiagnosticConfig:
+    return TimeSeriesDiagnosticConfig(
+        enabled=payload.get("enabled", True),
+        maximum_lag=payload.get("maximum_lag", 5),
+        seasonal_period=payload.get("seasonal_period", 4),
+        minimum_series_length=payload.get("minimum_series_length", 12),
+    )
+
+
+def _build_structural_break_config(payload: dict[str, Any]) -> StructuralBreakConfig:
+    return StructuralBreakConfig(
+        enabled=payload.get("enabled", True),
+        candidate_break_count=payload.get("candidate_break_count", 3),
+        minimum_segment_size=payload.get("minimum_segment_size", 12),
+        rolling_window_fraction=payload.get("rolling_window_fraction", 0.25),
+    )
+
+
+def _build_feature_workbench_config(payload: dict[str, Any]) -> FeatureWorkbenchConfig:
+    return FeatureWorkbenchConfig(
+        enabled=payload.get("enabled", True),
+        max_features=payload.get("max_features", 12),
+        include_preview_statistics=payload.get("include_preview_statistics", True),
+        include_target_association=payload.get("include_target_association", True),
+    )
+
+
+def _build_preset_recommendation_config(
+    payload: dict[str, Any],
+) -> PresetRecommendationConfig:
+    return PresetRecommendationConfig(
+        enabled=payload.get("enabled", True),
+        include_imputation_recommendations=payload.get(
+            "include_imputation_recommendations", True
+        ),
+        include_transformation_recommendations=payload.get(
+            "include_transformation_recommendations", True
+        ),
+        include_test_recommendations=payload.get("include_test_recommendations", True),
+    )
+
+
 def _build_credit_risk_diagnostic_config(payload: dict[str, Any]) -> CreditRiskDiagnosticConfig:
     return CreditRiskDiagnosticConfig(
         enabled=payload.get("enabled", True),
@@ -550,6 +707,20 @@ def _build_reproducibility_config(payload: dict[str, Any]) -> ReproducibilityCon
             "package_names",
             ReproducibilityConfig().package_names,
         ),
+    )
+
+
+def _build_performance_config(payload: dict[str, Any]) -> PerformanceConfig:
+    return PerformanceConfig(
+        enabled=payload.get("enabled", True),
+        upload_warning_mb=payload.get("upload_warning_mb", 250),
+        dataframe_warning_rows=payload.get("dataframe_warning_rows", 200000),
+        dataframe_warning_columns=payload.get("dataframe_warning_columns", 150),
+        ui_preview_rows=payload.get("ui_preview_rows", 50),
+        html_table_preview_rows=payload.get("html_table_preview_rows", 12),
+        html_max_figures_per_section=payload.get("html_max_figures_per_section", 6),
+        html_max_tables_per_section=payload.get("html_max_tables_per_section", 6),
+        multiple_imputation_row_cap=payload.get("multiple_imputation_row_cap", 25000),
     )
 
 

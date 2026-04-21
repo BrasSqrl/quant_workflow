@@ -27,11 +27,16 @@ the run through the major stages of model development:
 - ingestion and schema control
 - target definition and feature setup
 - imputation, governed transformations, and feature engineering
+- advanced imputation, governed transformations, interaction screening, and
+  feature-construction workbench review
 - train, validation, and test splitting
 - model-suitability and assumption checks
 - variable selection and manual review
-- model training or existing-model scoring
+- model training, existing-model scoring, or feature-subset comparison
 - calibration, evaluation, backtesting, and scenario testing
+- expanded statistical-review frameworks for distribution shifts, residual
+  bias, outliers, dependency clustering, econometric checks, and structural
+  breaks
 - robustness and stability testing on repeated train resamples
 - preset-aware workflow guardrails and readiness checks
 - credit-risk-specific development diagnostics such as vintage, migration,
@@ -71,16 +76,29 @@ The platform can also load a previously exported `quant_model.joblib` artifact
 to score new data and rerun documentation, diagnostics, and validation outputs
 without rebuilding the model.
 
+It also includes a separate feature-subset-search mode that compares candidate
+feature sets for a selected model family before a final development run is
+chosen.
+
 Key Outputs
 -----------
 Each run can produce a structured output package that includes:
 
 - fitted model artifacts and scored outputs
+- comparison-only subset-search bundles focused on candidate ranking, ROC/AUC,
+  KS, feature frequency, frontier charts, and paired significance tests
 - metrics, statistical tests, backtests, and validation tables
 - interactive charts and exported HTML reporting
+- a guided-versus-advanced GUI workflow so standard runs stay compact while
+  specialist controls remain available when needed
 - challenger-comparison results
 - robustness and stability summaries
+- advanced imputation summaries and sensitivity comparisons
+- multiple-imputation pooling summaries and Little's MCAR evidence
 - scorecard binning workbench outputs
+- feature-construction workbench outputs
+- preset-aligned recommendation tables for imputation, transformations, and
+  statistical tests
 - scenario-testing outputs
 - documentation packs and validation packs
 - committee-ready and validation-ready DOCX/PDF reports
@@ -90,6 +108,7 @@ Each run can produce a structured output package that includes:
 - structured reference example packs for PD, LGD, CECL/lifetime PD, and CCAR
   forecasting workflows
 - reproducibility manifests and rerun-ready code bundles
+- machine-readable artifact manifests that index the full output package
 - Excel templates and governance workbooks for offline review
 
 Transparency And Auditability
@@ -100,9 +119,16 @@ features include:
 
 - feature dictionaries with business definitions, lineage, and rationale
 - governed transformations that are explicitly configured and exported
+- advanced imputation rules that are explicitly configured, fitted on the
+  training split, and exported
+- lightweight performance safeguards that keep large-run previews and exported
+  HTML reports usable
 - manual feature-review decisions and scorecard bin overrides
 - preset-aware workflow guardrails tied to the selected development use case
 - repeated-resample stability testing for held-out metrics and feature effects
+- deeper statistical-review frameworks for distributional, residual,
+  dependency, paired model-comparison, stationarity, and structural-break
+  analysis
 - model-suitability and assumption checks before fitting
 - reproducibility manifests with hashes, package versions, and environment
   details

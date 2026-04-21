@@ -11,10 +11,11 @@ Primary implementation files:
 - `src/quant_pd_framework/steps/evaluation.py`
 - `src/quant_pd_framework/steps/backtesting.py`
 - `src/quant_pd_framework/steps/diagnostics.py`
+- `src/quant_pd_framework/diagnostic_frameworks.py`
 
 ## Metric Families
 
-The framework reports metrics in seven broad families:
+The framework reports metrics in nine broad families:
 
 1. split-level model performance metrics
 2. calibration metrics
@@ -23,6 +24,8 @@ The framework reports metrics in seven broad families:
 5. explainability and governance diagnostics
 6. robustness and scorecard-development diagnostics
 7. credit-risk development diagnostics
+8. distribution, dependency, and outlier diagnostics
+9. time-series, econometric, and structural-break diagnostics
 
 ## 1. Split-Level Binary Metrics
 
@@ -218,10 +221,72 @@ Potential policy types include:
 - `max_missing_pct`
 - `max_vif`
 - `minimum_information_value`
-- `expected_sign`
-- `monotonicity`
 
-## 9. Segment and Scenario Metrics
+## 9. Distribution, Dependency, and Outlier Outputs
+
+The expanded roadmap added several framework-level diagnostics that are not
+single model-performance metrics but are still exported as first-class review
+tables.
+
+Common outputs now include:
+
+- `distribution_tests`
+- `distribution_shift_tests`
+- `missingness_predictive_power`
+- `littles_mcar_test`
+- `dependency_cluster_summary`
+- `condition_index_detail`
+- `outlier_flags`
+- `multiple_imputation_pooling_summary`
+- `multiple_imputation_pooled_coefficients`
+
+These are useful when a reviewer is asking:
+
+- whether feature distributions are stable across splits
+- whether missingness itself is predictive
+- whether the numeric design is redundant or clustered
+- whether a small set of observations is dominating the fit
+
+## 10. Time-Series, Econometric, and Structural-Break Outputs
+
+Time-aware workflows can now export:
+
+- `time_series_extension_tests`
+- `structural_break_tests`
+- `seasonality_profile`
+- `structural_break_profile`
+
+These complement the existing:
+
+- `adf_tests`
+- `forecasting_statistical_tests`
+- `cointegration_tests`
+- `granger_causality_tests`
+
+The intent is to give CECL and CCAR users a broader econometric review surface
+without changing the narrow scope of the application away from model
+development and documentation.
+
+Newer rows inside those exports include:
+
+- `kpss`
+- `phillips_perron`
+- `cusum`
+- `cusum_squares`
+
+## 11. Comparison-Significance Outputs
+
+Challenger runs can now export:
+
+- `model_comparison_significance_tests`
+
+Typical rows include:
+
+- `delong_auc_difference`
+- `mcnemar_threshold_difference`
+- `diebold_mariano`
+
+## 12. Segment and Scenario Metrics
 
 ### Segment metrics
 
@@ -248,7 +313,7 @@ Typical fields:
 These are not classical model metrics, but they are important development
 artifacts for stress-style documentation.
 
-## 10. Where Metrics Are Exported
+## 13. Where Metrics Are Exported
 
 The same metric family often appears in more than one place:
 
@@ -260,7 +325,7 @@ The same metric family often appears in more than one place:
 | `tables/*.csv` | individual diagnostic tables |
 | `run_report.md` | run narrative summary |
 
-## 11. Workflow Guardrails And Governance Readiness
+## 14. Workflow Guardrails And Governance Readiness
 
 Workflow guardrail outputs live in `workflow_guardrails.py` and are exported by
 `DiagnosticsStep._add_workflow_guardrail_outputs(...)`.
@@ -280,7 +345,7 @@ Primary output:
 
 - `workflow_guardrails`
 
-## 12. Credit-Risk Development Diagnostics
+## 15. Credit-Risk Development Diagnostics
 
 These are calculated in `DiagnosticsStep._add_credit_risk_outputs(...)`.
 
@@ -297,7 +362,7 @@ Primary outputs include:
 These outputs are intended for development and validation review in PD, LGD,
 CCAR, and CECL workflows when the available columns support them.
 
-## 13. Numerical Stability And Estimation Health
+## 15. Numerical Stability And Estimation Health
 
 These outputs are assembled from normalized warning capture in the model
 adapters and exported through `DiagnosticsStep._add_model_artifact_outputs(...)`.
@@ -324,7 +389,7 @@ They show whether the underlying estimator reached its iteration cap, returned
 finite standard errors, emitted runtime warnings, or required numerical
 normalization.
 
-## 14. Regulator-Ready Report Exports
+## 16. Regulator-Ready Report Exports
 
 Regulator-ready report generation is assembled in `reporting.py` and exported
 by `ArtifactExportStep`.
@@ -342,7 +407,7 @@ results. The current report exports include a cover page, a report map, and
 explicit numerical-stability content alongside the existing development and
 validation sections.
 
-## 15. Robustness And Stability Metrics
+## 17. Robustness And Stability Metrics
 
 These are calculated in `DiagnosticsStep._add_robustness_outputs(...)`.
 
@@ -380,7 +445,7 @@ Primary figures:
 - `robustness_metric_summary_chart`
 - `robustness_feature_stability`
 
-## 12. Scorecard Workbench Outputs
+## 18. Scorecard Workbench Outputs
 
 These are calculated in `DiagnosticsStep._add_scorecard_workbench_outputs(...)`
 for `scorecard_logistic_regression` runs.

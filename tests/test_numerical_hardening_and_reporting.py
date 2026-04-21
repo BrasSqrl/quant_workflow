@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+import warnings
 from pathlib import Path
 from zipfile import ZipFile
 
+import numpy as np
+import pandas as pd
 import pytest
+from statsmodels.tools.sm_exceptions import InterpolationWarning
 
 from quant_pd_framework import (
     ArtifactConfig,
@@ -19,6 +23,10 @@ from quant_pd_framework import (
     SplitConfig,
     TargetConfig,
     TargetMode,
+)
+from quant_pd_framework.diagnostic_frameworks import (
+    _run_extended_stationarity_tests,
+    _run_mcnemar_test,
 )
 from quant_pd_framework.reference_workflows import get_reference_workflow_definition
 from tests.support import (
@@ -187,3 +195,37 @@ def test_regulatory_reports_include_cover_map_and_numerical_sections() -> None:
     assert "Numerical Stability And Estimation Health" in validation_pdf_text
     assert "Section Summary:" in validation_pdf_text
     assert "Page 1 of" in validation_pdf_text
+
+
+def test_mcnemar_handles_no_discordant_pairs_without_runtime_warning() -> None:
+    with warnings.catch_warnings(record=True) as captured:
+        result = _run_mcnemar_test(
+            y_true=np.array([1, 0, 1, 0], dtype=int),
+            baseline_class=np.array([1, 0, 1, 0], dtype=int),
+            challenger_class=np.array([1, 0, 1, 0], dtype=int),
+        )
+
+    assert not captured
+    assert result["status"] == "review"
+    assert np.isnan(result["p_value"])
+    assert "no discordant correctness outcomes" in result["detail"].lower()
+
+
+def test_kpss_interpolation_warning_is_absorbed_into_detail(monkeypatch) -> None:
+    def fake_kpss(*args, **kwargs):
+        warnings.warn("boundary lookup", InterpolationWarning, stacklevel=2)
+        return 0.42, 0.01, 1, {"10%": 0.347}
+
+    monkeypatch.setattr("quant_pd_framework.diagnostic_frameworks.kpss", fake_kpss)
+
+    with warnings.catch_warnings(record=True) as captured:
+        rows = _run_extended_stationarity_tests(
+            pd.Series(np.linspace(0.0, 1.0, 40)),
+            scope="synthetic",
+            maximum_lag=3,
+        )
+
+    assert not captured
+    assert rows
+    assert rows[0]["test_name"] == "kpss"
+    assert "lookup-table range" in rows[0]["detail"]

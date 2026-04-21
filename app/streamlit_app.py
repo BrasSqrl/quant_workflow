@@ -14,6 +14,7 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from quant_pd_framework import (
+    AdvancedImputationConfig,
     CalibrationConfig,
     CalibrationRankingMetric,
     CalibrationStrategy,
@@ -28,10 +29,12 @@ from quant_pd_framework import (
     ExplainabilityConfig,
     FeatureEngineeringConfig,
     FeaturePolicyConfig,
+    FeatureSubsetSearchConfig,
     ImputationSensitivityConfig,
     MissingValuePolicy,
     ModelConfig,
     ModelType,
+    PerformanceConfig,
     PresetName,
     QuantModelOrchestrator,
     RegulatoryReportConfig,
@@ -81,6 +84,7 @@ from quant_pd_framework.presentation import (
     friendly_asset_title,
     plotly_display_config,
     prepare_display_table,
+    prune_subset_search_highlight_assets,
     summarize_run_kpis,
 )
 from quant_pd_framework.workflow_guardrails import (
@@ -124,6 +128,7 @@ SCENARIO_EDITOR_COLUMNS = [
     "value",
 ]
 MAX_UPLOAD_SIZE_MB = 51_200
+DEFAULT_PERFORMANCE_CONFIG = PerformanceConfig()
 
 
 def initialize_preset_state() -> GUIBuildInputs:
@@ -334,7 +339,7 @@ def render_schema_editor_panel(schema_frame: pd.DataFrame, *, editor_key: str) -
         schema_frame,
         key=editor_key,
         num_rows="dynamic",
-        use_container_width=True,
+        width="stretch",
         hide_index=True,
         column_config=schema_editor_column_config(),
     )
@@ -356,6 +361,7 @@ def main() -> None:
     if dataframe is None:
         st.info("Upload a CSV/Excel file or switch on the bundled sample dataset to begin.")
         return
+    render_input_performance_notice(dataframe)
 
     editor_key = build_editor_key(dataframe, data_source_label)
     schema_frame_key = f"{editor_key}_schema_frame"
@@ -387,6 +393,22 @@ def main() -> None:
         scorecard_override_frame_key,
         build_scorecard_override_editor_frame,
     )
+    subset_search_feature_options = (
+        workspace_schema_frame.loc[
+            workspace_schema_frame["enabled"]
+            & (
+                workspace_schema_frame["role"].astype(str).str.strip().str.lower()
+                == ColumnRole.FEATURE.value
+            ),
+            "name",
+        ]
+        .astype(str)
+        .str.strip()
+        .replace("", pd.NA)
+        .dropna()
+        .drop_duplicates()
+        .tolist()
+    )
     categorical_like_columns = dataframe.select_dtypes(
         include=["object", "string", "category"]
     ).columns.tolist()
@@ -414,6 +436,19 @@ def main() -> None:
             format_func=lambda value: preset_lookup[value]["label"],
         )
         st.caption(preset_lookup[selected_preset_name_value]["description"])
+        workspace_mode = st.radio(
+            "Workspace mode",
+            options=["guided", "advanced"],
+            horizontal=True,
+            format_func=lambda value: "Guided" if value == "guided" else "Advanced",
+        )
+        advanced_workspace = workspace_mode == "advanced"
+        if not advanced_workspace:
+            st.caption(
+                "Guided mode keeps comparison, governance, explainability, and "
+                "documentation tuning on preset defaults until you explicitly switch "
+                "to Advanced."
+            )
         preset_inputs = (
             build_gui_inputs_from_preset(PresetName(selected_preset_name_value))
             if selected_preset_name_value != "custom"
@@ -426,8 +461,9 @@ def main() -> None:
                 options=[mode.value for mode in ExecutionMode],
                 format_func=lambda value: value.replace("_", " ").title(),
                 help=(
-                    "Fit a new model or reuse an existing exported joblib artifact "
-                    "for scoring and diagnostics."
+                    "Fit a new model, reuse an existing exported joblib artifact "
+                    "for scoring and diagnostics, or run feature subset search "
+                    "to compare candidate feature sets for one model family."
                 ),
             )
             existing_model_path_text = ""
@@ -452,6 +488,11 @@ def main() -> None:
                     "When an existing run config is provided, the prior run's "
                     "schema and modeling settings take precedence over the "
                     "current GUI column editor."
+                )
+            elif execution_mode == ExecutionMode.SEARCH_FEATURE_SUBSETS.value:
+                st.caption(
+                    "Feature subset search compares candidate feature sets for the "
+                    "currently selected model family and exports comparison-only outputs."
                 )
             model_type = st.selectbox(
                 "Model type",
@@ -717,6 +758,137 @@ def main() -> None:
                 else str(preset_inputs.model.tobit_right_censoring),
                 disabled=model_type != ModelType.TOBIT_REGRESSION.value,
                 help="Leave blank for one-sided Tobit.",
+            )
+
+        subset_search_enabled = execution_mode == ExecutionMode.SEARCH_FEATURE_SUBSETS.value
+        with st.expander("Feature Subset Search", expanded=subset_search_enabled):
+            st.caption(
+                "Use this mode to compare candidate feature sets for the selected model "
+                "family before a normal development run. The exported bundle contains "
+                "only subset-comparison evidence."
+            )
+            subset_search_candidate_features = st.multiselect(
+                "Candidate features",
+                options=subset_search_feature_options,
+                default=[
+                    feature_name
+                    for feature_name in preset_inputs.subset_search.candidate_feature_names
+                    if feature_name in subset_search_feature_options
+                ],
+                disabled=not subset_search_enabled,
+                help=(
+                    "Leave empty to search across every enabled schema row marked as a feature."
+                ),
+            )
+            subset_search_locked_include = st.multiselect(
+                "Locked include features",
+                options=subset_search_feature_options,
+                default=[
+                    feature_name
+                    for feature_name in preset_inputs.subset_search.locked_include_features
+                    if feature_name in subset_search_feature_options
+                ],
+                disabled=not subset_search_enabled,
+            )
+            subset_search_locked_exclude = st.multiselect(
+                "Locked exclude features",
+                options=subset_search_feature_options,
+                default=[
+                    feature_name
+                    for feature_name in preset_inputs.subset_search.locked_exclude_features
+                    if feature_name in subset_search_feature_options
+                ],
+                disabled=not subset_search_enabled,
+            )
+            subset_search_min_subset_size = int(
+                st.number_input(
+                    "Minimum subset size",
+                    min_value=1,
+                    max_value=max(1, len(subset_search_feature_options) or 1),
+                    value=int(preset_inputs.subset_search.min_subset_size),
+                    step=1,
+                    disabled=not subset_search_enabled,
+                )
+            )
+            subset_search_max_subset_size = int(
+                st.number_input(
+                    "Maximum subset size",
+                    min_value=1,
+                    max_value=max(1, len(subset_search_feature_options) or 1),
+                    value=int(
+                        preset_inputs.subset_search.max_subset_size
+                        or min(4, max(1, len(subset_search_feature_options) or 1))
+                    ),
+                    step=1,
+                    disabled=not subset_search_enabled,
+                )
+            )
+            subset_search_max_candidate_features = int(
+                st.number_input(
+                    "Maximum candidate features",
+                    min_value=2,
+                    max_value=max(2, len(subset_search_feature_options) or 2),
+                    value=int(
+                        min(
+                            preset_inputs.subset_search.max_candidate_features,
+                            max(2, len(subset_search_feature_options) or 2),
+                        )
+                    ),
+                    step=1,
+                    disabled=not subset_search_enabled,
+                )
+            )
+            subset_search_ranking_split = st.selectbox(
+                "Ranking split",
+                options=["validation", "test"],
+                index=["validation", "test"].index(
+                    preset_inputs.subset_search.ranking_split
+                ),
+                disabled=not subset_search_enabled,
+            )
+            subset_search_ranking_metric = st.selectbox(
+                "Ranking metric",
+                options=[
+                    "roc_auc",
+                    "ks_statistic",
+                    "average_precision",
+                    "brier_score",
+                    "log_loss",
+                ],
+                index=[
+                    "roc_auc",
+                    "ks_statistic",
+                    "average_precision",
+                    "brier_score",
+                    "log_loss",
+                ].index(preset_inputs.subset_search.ranking_metric),
+                format_func=lambda value: value.replace("_", " ").title(),
+                disabled=not subset_search_enabled,
+            )
+            subset_search_top_candidate_count = int(
+                st.number_input(
+                    "Top candidates to retain",
+                    min_value=5,
+                    max_value=100,
+                    value=int(preset_inputs.subset_search.top_candidate_count),
+                    step=5,
+                    disabled=not subset_search_enabled,
+                )
+            )
+            subset_search_top_curve_count = int(
+                st.number_input(
+                    "Top candidates in ROC/KS charts",
+                    min_value=2,
+                    max_value=10,
+                    value=int(preset_inputs.subset_search.top_curve_count),
+                    step=1,
+                    disabled=not subset_search_enabled,
+                )
+            )
+            subset_search_include_significance_tests = st.checkbox(
+                "Include paired significance tests for top candidates",
+                value=preset_inputs.subset_search.include_significance_tests,
+                disabled=not subset_search_enabled,
             )
 
         with st.expander("Data Preparation", expanded=False):
@@ -1071,106 +1243,252 @@ def main() -> None:
                 shock_std_multiplier=float(credit_risk_shock_std_multiplier),
             )
 
-        with st.expander("Challengers & Policies", expanded=False):
-            comparison_enabled = st.checkbox(
-                "Enable model comparison mode",
-                value=preset_inputs.comparison.enabled,
-            )
-            challenger_model_types = st.multiselect(
-                "Challenger model families",
-                options=[
-                    candidate.value for candidate in ModelType if candidate != ModelType(model_type)
-                ],
-                default=[
-                    candidate.value
-                    for candidate in preset_inputs.comparison.challenger_model_types
-                    if candidate.value != model_type
-                ]
-                or [
-                    challenger.value
-                    for challenger in default_challengers_for_target_mode(TargetMode(target_mode))
-                    if challenger.value != model_type
-                ],
-                format_func=format_model_type,
-                disabled=not comparison_enabled,
-            )
-            ranking_metric = st.selectbox(
-                "Comparison ranking metric",
-                options=[
-                    "auto",
-                    "roc_auc",
-                    "average_precision",
-                    "ks_statistic",
-                    "brier_score",
-                    "rmse",
-                    "mae",
-                    "r2",
-                ],
-                index=0,
-                disabled=not comparison_enabled,
-            )
-            feature_policy_enabled = st.checkbox(
-                "Enable feature policy checks",
-                value=preset_inputs.feature_policy.enabled,
-            )
-            policy_required_features = st.text_input(
-                "Required features",
-                value=",".join(preset_inputs.feature_policy.required_features),
-                help="Comma-separated feature names expected in the modeled feature set.",
-                disabled=not feature_policy_enabled,
-            )
-            policy_excluded_features = st.text_input(
-                "Excluded features",
-                value=",".join(preset_inputs.feature_policy.excluded_features),
-                help="Comma-separated feature names that must not enter the model.",
-                disabled=not feature_policy_enabled,
-            )
-            policy_expected_signs = st.text_input(
-                "Expected signs",
-                value=format_mapping_text(preset_inputs.feature_policy.expected_signs),
-                help="Enter feature:direction pairs, e.g. balance:negative.",
-                disabled=not feature_policy_enabled,
-            )
-            policy_monotonic_features = st.text_input(
-                "Monotonic features",
-                value=format_mapping_text(preset_inputs.feature_policy.monotonic_features),
-                help="Enter feature:direction pairs, e.g. utilization:increasing.",
-                disabled=not feature_policy_enabled,
-            )
-            policy_max_missing_pct = st.number_input(
-                "Max missing %",
-                min_value=0.0,
-                max_value=100.0,
-                value=float(preset_inputs.feature_policy.max_missing_pct or 25.0),
-                step=1.0,
-                disabled=not feature_policy_enabled,
-            )
-            policy_max_vif = st.number_input(
-                "Max VIF",
-                min_value=1.0,
-                max_value=50.0,
-                value=float(preset_inputs.feature_policy.max_vif or 10.0),
-                step=0.5,
-                disabled=not feature_policy_enabled,
-            )
-            policy_min_iv = st.number_input(
-                "Minimum IV",
-                min_value=0.0,
-                max_value=1.0,
-                value=float(preset_inputs.feature_policy.minimum_information_value or 0.0),
-                step=0.01,
-                disabled=not feature_policy_enabled,
-            )
-            policy_error_on_violation = st.checkbox(
-                "Fail run on policy violation",
-                value=preset_inputs.feature_policy.error_on_violation,
-                disabled=not feature_policy_enabled,
-            )
+        comparison_enabled = preset_inputs.comparison.enabled
+        challenger_model_types = [
+            candidate.value
+            for candidate in preset_inputs.comparison.challenger_model_types
+            if candidate.value != model_type
+        ] or [
+            challenger.value
+            for challenger in default_challengers_for_target_mode(TargetMode(target_mode))
+            if challenger.value != model_type
+        ]
+        ranking_metric = preset_inputs.comparison.ranking_metric or "auto"
+        feature_policy_enabled = preset_inputs.feature_policy.enabled
+        policy_required_features = ",".join(preset_inputs.feature_policy.required_features)
+        policy_excluded_features = ",".join(preset_inputs.feature_policy.excluded_features)
+        policy_expected_signs = format_mapping_text(preset_inputs.feature_policy.expected_signs)
+        policy_monotonic_features = format_mapping_text(
+            preset_inputs.feature_policy.monotonic_features
+        )
+        policy_max_missing_pct = float(preset_inputs.feature_policy.max_missing_pct or 25.0)
+        policy_max_vif = float(preset_inputs.feature_policy.max_vif or 10.0)
+        policy_min_iv = float(preset_inputs.feature_policy.minimum_information_value or 0.0)
+        policy_error_on_violation = preset_inputs.feature_policy.error_on_violation
+        variable_selection_enabled = preset_inputs.variable_selection.enabled
+        variable_selection_max_features = int(preset_inputs.variable_selection.max_features or 15)
+        variable_selection_min_univariate_score = float(
+            preset_inputs.variable_selection.min_univariate_score or 0.0
+        )
+        variable_selection_correlation_threshold = float(
+            preset_inputs.variable_selection.correlation_threshold or 0.8
+        )
+        variable_selection_locked_include = ",".join(
+            preset_inputs.variable_selection.locked_include_features
+        )
+        variable_selection_locked_exclude = ",".join(
+            preset_inputs.variable_selection.locked_exclude_features
+        )
+        auto_interactions_enabled = preset_inputs.transformations.auto_interactions_enabled
+        include_numeric_numeric_interactions = (
+            preset_inputs.transformations.include_numeric_numeric_interactions
+        )
+        include_categorical_numeric_interactions = (
+            preset_inputs.transformations.include_categorical_numeric_interactions
+        )
+        max_auto_interactions = int(preset_inputs.transformations.max_auto_interactions)
+        max_categorical_levels = int(preset_inputs.transformations.max_categorical_levels)
+        min_interaction_score = float(preset_inputs.transformations.min_interaction_score)
+        imputation_sensitivity_enabled = preset_inputs.imputation_sensitivity.enabled
+        imputation_sensitivity_split = preset_inputs.imputation_sensitivity.evaluation_split
+        imputation_sensitivity_policies = [
+            policy.value for policy in preset_inputs.imputation_sensitivity.alternative_policies
+        ]
+        imputation_sensitivity_max_features = int(preset_inputs.imputation_sensitivity.max_features)
+        imputation_sensitivity_min_missing_count = int(
+            preset_inputs.imputation_sensitivity.min_missing_count
+        )
+        multiple_imputation_enabled = preset_inputs.advanced_imputation.multiple_imputation_enabled
+        multiple_imputation_datasets = int(
+            preset_inputs.advanced_imputation.multiple_imputation_datasets
+        )
+        multiple_imputation_split = (
+            preset_inputs.advanced_imputation.multiple_imputation_evaluation_split
+        )
+        multiple_imputation_top_features = int(
+            preset_inputs.advanced_imputation.multiple_imputation_top_features
+        )
+        documentation_enabled = preset_inputs.documentation.enabled
+        documentation_model_name = preset_inputs.documentation.model_name
+        documentation_model_owner = preset_inputs.documentation.model_owner
+        documentation_business_purpose = preset_inputs.documentation.business_purpose
+        documentation_portfolio_name = preset_inputs.documentation.portfolio_name
+        documentation_segment_name = preset_inputs.documentation.segment_name
+        documentation_horizon_definition = preset_inputs.documentation.horizon_definition
+        documentation_target_definition = preset_inputs.documentation.target_definition
+        documentation_loss_definition = preset_inputs.documentation.loss_definition
+        documentation_assumptions = "\n".join(preset_inputs.documentation.assumptions)
+        documentation_exclusions = "\n".join(preset_inputs.documentation.exclusions)
+        documentation_limitations = "\n".join(preset_inputs.documentation.limitations)
+        documentation_reviewer_notes = preset_inputs.documentation.reviewer_notes
+        regulatory_reporting_enabled = preset_inputs.regulatory_reporting.enabled
+        regulatory_export_docx = preset_inputs.regulatory_reporting.export_docx
+        regulatory_export_pdf = preset_inputs.regulatory_reporting.export_pdf
+        regulatory_committee_template = (
+            preset_inputs.regulatory_reporting.committee_template_name
+        )
+        regulatory_validation_template = (
+            preset_inputs.regulatory_reporting.validation_template_name
+        )
+        regulatory_include_assumptions = (
+            preset_inputs.regulatory_reporting.include_assumptions_section
+        )
+        regulatory_include_challengers = (
+            preset_inputs.regulatory_reporting.include_challenger_section
+        )
+        regulatory_include_scenarios = (
+            preset_inputs.regulatory_reporting.include_scenario_section
+        )
+        regulatory_include_appendix = (
+            preset_inputs.regulatory_reporting.include_appendix_section
+        )
+        suitability_checks_enabled = preset_inputs.suitability_checks.enabled
+        suitability_error_on_failure = preset_inputs.suitability_checks.error_on_failure
+        suitability_min_events_per_feature = float(
+            preset_inputs.suitability_checks.min_events_per_feature or 10.0
+        )
+        suitability_min_class_rate = float(preset_inputs.suitability_checks.min_class_rate or 0.01)
+        suitability_max_class_rate = float(preset_inputs.suitability_checks.max_class_rate or 0.99)
+        suitability_max_dominant_category_share = float(
+            preset_inputs.suitability_checks.max_dominant_category_share or 0.98
+        )
+        workflow_guardrails_enabled = preset_inputs.workflow_guardrails.enabled
+        workflow_guardrails_fail_on_error = preset_inputs.workflow_guardrails.fail_on_error
+        workflow_guardrails_require_docs = (
+            preset_inputs.workflow_guardrails.enforce_documentation_requirements
+        )
+        manual_review_enabled = preset_inputs.manual_review.enabled
+        manual_review_required = preset_inputs.manual_review.require_review_complete
+        manual_reviewer_name = preset_inputs.manual_review.reviewer_name
+        feature_review_rows = workspace_feature_review_frame.copy(deep=True)
+        scorecard_override_rows = workspace_scorecard_override_frame.copy(deep=True)
+        explainability_enabled = preset_inputs.explainability.enabled
+        permutation_importance_enabled = preset_inputs.explainability.permutation_importance
+        feature_effect_curves_enabled = preset_inputs.explainability.feature_effect_curves
+        coefficient_breakdown_enabled = preset_inputs.explainability.coefficient_breakdown
+        explainability_top_n = int(preset_inputs.explainability.top_n_features)
+        explainability_grid_points = int(preset_inputs.explainability.grid_points)
+        explainability_sample_size = int(preset_inputs.explainability.sample_size)
+        scenario_split = preset_inputs.scenario_testing.evaluation_split
+        scenario_rows = default_scenario_editor_frame()
+
+        if advanced_workspace:
+            with st.expander("Challengers & Policies", expanded=False):
+                comparison_enabled = st.checkbox(
+                    "Enable model comparison mode",
+                    value=preset_inputs.comparison.enabled,
+                )
+                challenger_model_types = st.multiselect(
+                    "Challenger model families",
+                    options=[
+                        candidate.value
+                        for candidate in ModelType
+                        if candidate != ModelType(model_type)
+                    ],
+                    default=[
+                        candidate.value
+                        for candidate in preset_inputs.comparison.challenger_model_types
+                        if candidate.value != model_type
+                    ]
+                    or [
+                        challenger.value
+                        for challenger in default_challengers_for_target_mode(
+                            TargetMode(target_mode)
+                        )
+                        if challenger.value != model_type
+                    ],
+                    format_func=format_model_type,
+                    disabled=not comparison_enabled,
+                )
+                ranking_metric = st.selectbox(
+                    "Comparison ranking metric",
+                    options=[
+                        "auto",
+                        "roc_auc",
+                        "average_precision",
+                        "ks_statistic",
+                        "brier_score",
+                        "rmse",
+                        "mae",
+                        "r2",
+                    ],
+                    index=0,
+                    disabled=not comparison_enabled,
+                )
+                feature_policy_enabled = st.checkbox(
+                    "Enable feature policy checks",
+                    value=preset_inputs.feature_policy.enabled,
+                )
+                policy_required_features = st.text_input(
+                    "Required features",
+                    value=",".join(preset_inputs.feature_policy.required_features),
+                    help="Comma-separated feature names expected in the modeled feature set.",
+                    disabled=not feature_policy_enabled,
+                )
+                policy_excluded_features = st.text_input(
+                    "Excluded features",
+                    value=",".join(preset_inputs.feature_policy.excluded_features),
+                    help="Comma-separated feature names that must not enter the model.",
+                    disabled=not feature_policy_enabled,
+                )
+                policy_expected_signs = st.text_input(
+                    "Expected signs",
+                    value=format_mapping_text(preset_inputs.feature_policy.expected_signs),
+                    help="Enter feature:direction pairs, e.g. balance:negative.",
+                    disabled=not feature_policy_enabled,
+                )
+                policy_monotonic_features = st.text_input(
+                    "Monotonic features",
+                    value=format_mapping_text(preset_inputs.feature_policy.monotonic_features),
+                    help="Enter feature:direction pairs, e.g. utilization:increasing.",
+                    disabled=not feature_policy_enabled,
+                )
+                policy_max_missing_pct = st.number_input(
+                    "Max missing %",
+                    min_value=0.0,
+                    max_value=100.0,
+                    value=float(preset_inputs.feature_policy.max_missing_pct or 25.0),
+                    step=1.0,
+                    disabled=not feature_policy_enabled,
+                )
+                policy_max_vif = st.number_input(
+                    "Max VIF",
+                    min_value=1.0,
+                    max_value=50.0,
+                    value=float(preset_inputs.feature_policy.max_vif or 10.0),
+                    step=0.5,
+                    disabled=not feature_policy_enabled,
+                )
+                policy_min_iv = st.number_input(
+                    "Minimum IV",
+                    min_value=0.0,
+                    max_value=1.0,
+                    value=float(preset_inputs.feature_policy.minimum_information_value or 0.0),
+                    step=0.01,
+                    disabled=not feature_policy_enabled,
+                )
+                policy_error_on_violation = st.checkbox(
+                    "Fail run on policy violation",
+                    value=preset_inputs.feature_policy.error_on_violation,
+                    disabled=not feature_policy_enabled,
+                )
+        else:
+            with st.expander("Challengers & Policies", expanded=False):
+                st.caption(
+                    "Guided mode keeps comparison and feature-policy settings on the "
+                    "preset defaults. Switch to Advanced to edit them."
+                )
 
         with st.expander("Selection & Documentation", expanded=False):
+            if not advanced_workspace:
+                st.caption(
+                    "Guided mode keeps these controls on the preset defaults. Switch "
+                    "to Advanced to edit them."
+                )
             variable_selection_enabled = st.checkbox(
                 "Enable variable selection",
                 value=preset_inputs.variable_selection.enabled,
+                disabled=not advanced_workspace,
             )
             variable_selection_max_features = int(
                 st.number_input(
@@ -1219,6 +1537,7 @@ def main() -> None:
                     "Screens train-split interaction candidates and persists the selected "
                     "interaction features into the saved run config."
                 ),
+                disabled=not advanced_workspace,
             )
             include_numeric_numeric_interactions = st.checkbox(
                 "Numeric-numeric interactions",
@@ -1263,9 +1582,11 @@ def main() -> None:
                 "Imputation sensitivity testing",
                 value=preset_inputs.imputation_sensitivity.enabled,
                 help=(
-                    "Scores the fitted model under alternative mean/median/mode fill rules "
-                    "to show where imputation is materially influencing outputs."
+                    "Scores the fitted model under alternative mean/median/mode/knn/"
+                    "iterative fill rules to show where imputation is materially "
+                    "influencing outputs."
                 ),
+                disabled=not advanced_workspace,
             )
             imputation_sensitivity_split = st.selectbox(
                 "Imputation sensitivity split",
@@ -1281,6 +1602,8 @@ def main() -> None:
                     MissingValuePolicy.MEAN.value,
                     MissingValuePolicy.MEDIAN.value,
                     MissingValuePolicy.MODE.value,
+                    MissingValuePolicy.KNN.value,
+                    MissingValuePolicy.ITERATIVE.value,
                 ],
                 default=[
                     policy.value
@@ -1308,9 +1631,47 @@ def main() -> None:
                     disabled=not imputation_sensitivity_enabled,
                 )
             )
+            multiple_imputation_enabled = st.checkbox(
+                "Multiple imputation with pooling",
+                value=preset_inputs.advanced_imputation.multiple_imputation_enabled,
+                help=(
+                    "Fits repeated posterior-draw imputations and exports pooled surrogate "
+                    "coefficient and metric summaries for audit review."
+                ),
+                disabled=not advanced_workspace,
+            )
+            multiple_imputation_datasets = int(
+                st.number_input(
+                    "Multiple-imputation datasets",
+                    min_value=2,
+                    max_value=20,
+                    value=int(preset_inputs.advanced_imputation.multiple_imputation_datasets),
+                    step=1,
+                    disabled=not multiple_imputation_enabled,
+                )
+            )
+            multiple_imputation_split = st.selectbox(
+                "Multiple-imputation evaluation split",
+                options=["train", "validation", "test"],
+                index=["train", "validation", "test"].index(
+                    preset_inputs.advanced_imputation.multiple_imputation_evaluation_split
+                ),
+                disabled=not multiple_imputation_enabled,
+            )
+            multiple_imputation_top_features = int(
+                st.number_input(
+                    "Multiple-imputation feature cap",
+                    min_value=3,
+                    max_value=40,
+                    value=int(preset_inputs.advanced_imputation.multiple_imputation_top_features),
+                    step=1,
+                    disabled=not multiple_imputation_enabled,
+                )
+            )
             documentation_enabled = st.checkbox(
                 "Export documentation pack",
                 value=preset_inputs.documentation.enabled,
+                disabled=not advanced_workspace,
             )
             documentation_model_name = st.text_input(
                 "Model name",
@@ -1386,6 +1747,7 @@ def main() -> None:
                     "Generates committee-ready and validation-ready DOCX/PDF packages "
                     "from the completed run."
                 ),
+                disabled=not advanced_workspace,
             )
             regulatory_export_docx = st.checkbox(
                 "Export DOCX reports",
@@ -1429,17 +1791,23 @@ def main() -> None:
             )
 
         with st.expander("Governance & Review", expanded=False):
+            if not advanced_workspace:
+                st.caption(
+                    "Guided mode keeps governance and review controls on the preset "
+                    "defaults. Switch to Advanced to edit them."
+                )
             suitability_checks_enabled = st.checkbox(
                 "Enable suitability checks",
-                value=True,
+                value=preset_inputs.suitability_checks.enabled,
                 help=(
                     "Runs pre-fit assumption checks such as class balance, events per "
                     "feature, category dominance, and panel/date integrity."
                 ),
+                disabled=not advanced_workspace,
             )
             suitability_error_on_failure = st.checkbox(
                 "Fail run on suitability failure",
-                value=False,
+                value=preset_inputs.suitability_checks.error_on_failure,
                 disabled=not suitability_checks_enabled,
             )
             suitability_min_events_per_feature = st.number_input(
@@ -1487,6 +1855,7 @@ def main() -> None:
                     "Checks preset-specific requirements such as target type, data structure, "
                     "documentation completeness, and model-family fit."
                 ),
+                disabled=not advanced_workspace,
             )
             workflow_guardrails_fail_on_error = st.checkbox(
                 "Block run on guardrail errors",
@@ -1500,20 +1869,21 @@ def main() -> None:
             )
             manual_review_enabled = st.checkbox(
                 "Enable manual review workflow",
-                value=False,
+                value=preset_inputs.manual_review.enabled,
                 help=(
                     "Allows human approve/reject decisions on features and manual "
                     "scorecard bin overrides."
                 ),
+                disabled=not advanced_workspace,
             )
             manual_review_required = st.checkbox(
                 "Require review decisions for all screened features",
-                value=False,
+                value=preset_inputs.manual_review.require_review_complete,
                 disabled=not manual_review_enabled,
             )
             manual_reviewer_name = st.text_input(
                 "Reviewer name",
-                value="",
+                value=preset_inputs.manual_review.reviewer_name,
                 disabled=not manual_review_enabled,
             )
             st.caption(
@@ -1524,7 +1894,7 @@ def main() -> None:
                 workspace_feature_review_frame,
                 key=feature_review_widget_key,
                 num_rows="dynamic",
-                use_container_width=True,
+                width="stretch",
                 hide_index=True,
                 disabled=not manual_review_enabled,
                 column_config={
@@ -1540,7 +1910,7 @@ def main() -> None:
                 workspace_scorecard_override_frame,
                 key=scorecard_override_widget_key,
                 num_rows="dynamic",
-                use_container_width=True,
+                width="stretch",
                 hide_index=True,
                 disabled=not manual_review_enabled
                 or model_type != ModelType.SCORECARD_LOGISTIC_REGRESSION.value,
@@ -1557,9 +1927,15 @@ def main() -> None:
             store_workspace_frame(scorecard_override_frame_key, scorecard_override_rows)
 
         with st.expander("Explainability & Scenarios", expanded=False):
+            if not advanced_workspace:
+                st.caption(
+                    "Guided mode keeps explainability and scenario settings on the preset "
+                    "defaults. Switch to Advanced to edit them."
+                )
             explainability_enabled = st.checkbox(
                 "Enable explainability outputs",
                 value=preset_inputs.explainability.enabled,
+                disabled=not advanced_workspace,
             )
             permutation_importance_enabled = st.checkbox(
                 "Permutation importance",
@@ -1612,6 +1988,7 @@ def main() -> None:
                 index=["train", "validation", "test"].index(
                     preset_inputs.scenario_testing.evaluation_split
                 ),
+                disabled=not advanced_workspace,
             )
             st.caption(
                 "Scenario rows define a name, a feature, an operation, and a value. "
@@ -1620,8 +1997,9 @@ def main() -> None:
             scenario_rows = st.data_editor(
                 default_scenario_editor_frame(),
                 num_rows="dynamic",
-                use_container_width=True,
+                width="stretch",
                 hide_index=True,
+                disabled=not advanced_workspace,
                 column_config={
                     "enabled": st.column_config.CheckboxColumn("Enabled"),
                     "scenario_name": st.column_config.TextColumn("Scenario"),
@@ -1736,11 +2114,29 @@ def main() -> None:
                 date_parts=date_parts,
             ),
             comparison=ComparisonConfig(
-                enabled=comparison_enabled and bool(challenger_model_types),
+                enabled=(
+                    execution_mode != ExecutionMode.SEARCH_FEATURE_SUBSETS.value
+                    and comparison_enabled
+                    and bool(challenger_model_types)
+                ),
                 challenger_model_types=[
                     ModelType(challenger_type) for challenger_type in challenger_model_types
                 ],
                 ranking_metric=None if ranking_metric == "auto" else ranking_metric,
+            ),
+            subset_search=FeatureSubsetSearchConfig(
+                enabled=execution_mode == ExecutionMode.SEARCH_FEATURE_SUBSETS.value,
+                candidate_feature_names=subset_search_candidate_features,
+                locked_include_features=subset_search_locked_include,
+                locked_exclude_features=subset_search_locked_exclude,
+                min_subset_size=int(subset_search_min_subset_size),
+                max_subset_size=int(subset_search_max_subset_size),
+                max_candidate_features=int(subset_search_max_candidate_features),
+                ranking_split=subset_search_ranking_split,
+                ranking_metric=subset_search_ranking_metric,
+                top_candidate_count=int(subset_search_top_candidate_count),
+                top_curve_count=int(subset_search_top_curve_count),
+                include_significance_tests=subset_search_include_significance_tests,
             ),
             feature_policy=FeaturePolicyConfig(
                 enabled=feature_policy_enabled,
@@ -1760,6 +2156,24 @@ def main() -> None:
                 error_on_violation=policy_error_on_violation,
             ),
             feature_dictionary=parse_feature_dictionary_frame(feature_dictionary_frame),
+            advanced_imputation=AdvancedImputationConfig(
+                enabled=True,
+                knn_neighbors=int(preset_inputs.advanced_imputation.knn_neighbors),
+                iterative_max_iter=int(preset_inputs.advanced_imputation.iterative_max_iter),
+                iterative_random_state=int(random_state),
+                iterative_sample_posterior=(
+                    bool(preset_inputs.advanced_imputation.iterative_sample_posterior)
+                    or multiple_imputation_enabled
+                ),
+                max_auxiliary_numeric_features=int(
+                    preset_inputs.advanced_imputation.max_auxiliary_numeric_features
+                ),
+                minimum_complete_rows=int(preset_inputs.advanced_imputation.minimum_complete_rows),
+                multiple_imputation_enabled=multiple_imputation_enabled,
+                multiple_imputation_datasets=int(multiple_imputation_datasets),
+                multiple_imputation_evaluation_split=multiple_imputation_split,
+                multiple_imputation_top_features=int(multiple_imputation_top_features),
+            ),
             transformations=transformation_config,
             manual_review=(
                 parse_manual_review_frames(
@@ -1888,6 +2302,7 @@ def main() -> None:
                     if value.strip()
                 ],
             ),
+            performance=preset_inputs.performance,
             data_structure=DataStructure(data_structure),
             train_size=float(train_size),
             validation_size=float(validation_size),
@@ -1926,9 +2341,11 @@ def main() -> None:
     )
 
     run_clicked = st.button(
-        "Run Quant Model Workflow",
+        "Run Feature Subset Search"
+        if execution_mode == ExecutionMode.SEARCH_FEATURE_SUBSETS.value
+        else "Run Quant Model Workflow",
         type="primary",
-        use_container_width=True,
+        width="stretch",
     )
 
     if run_clicked:
@@ -1939,7 +2356,9 @@ def main() -> None:
             try:
                 orchestrator = QuantModelOrchestrator(config=preview_config)
                 with st.spinner(
-                    "Running the model, diagnostics, visualizations, and export package..."
+                    "Running feature subset search, comparison visuals, and export package..."
+                    if execution_mode == ExecutionMode.SEARCH_FEATURE_SUBSETS.value
+                    else "Running the model, diagnostics, visualizations, and export package..."
                 ):
                     context = orchestrator.run(dataframe)
                 st.session_state["last_run_snapshot"] = build_run_snapshot(
@@ -1969,6 +2388,15 @@ def select_input_dataframe() -> tuple[pd.DataFrame | None, str]:
                     "parses large CSV or Excel files."
                 ),
             )
+            if (
+                uploaded_file is not None
+                and getattr(uploaded_file, "size", 0)
+                > DEFAULT_PERFORMANCE_CONFIG.upload_warning_mb * 1024 * 1024
+            ):
+                st.warning(
+                    "Large upload detected. The file is within the configured limit, but "
+                    "practical runtime still depends on local memory and pandas parsing cost."
+                )
 
     if uploaded_file is not None:
         return load_uploaded_dataframe(uploaded_file), uploaded_file.name
@@ -2013,7 +2441,7 @@ def render_plotly_figure(figure: go.Figure, *, key: str) -> None:
 
     st.plotly_chart(
         figure,
-        use_container_width=True,
+        width="stretch",
         config=plotly_display_config(),
         key=key,
     )
@@ -2024,8 +2452,16 @@ def build_run_snapshot(context, config_dict: dict[str, Any]) -> dict[str, Any]:
     return {
         "run_id": context.run_id,
         "metrics": context.metrics,
-        "feature_importance": context.feature_importance.copy(deep=True),
-        "backtest_summary": context.backtest_summary.copy(deep=True),
+        "feature_importance": (
+            context.feature_importance.copy(deep=True)
+            if context.feature_importance is not None
+            else pd.DataFrame()
+        ),
+        "backtest_summary": (
+            context.backtest_summary.copy(deep=True)
+            if context.backtest_summary is not None
+            else pd.DataFrame()
+        ),
         "predictions": {key: value.copy(deep=True) for key, value in context.predictions.items()},
         "warnings": list(context.warnings),
         "events": list(context.events),
@@ -2051,6 +2487,12 @@ def build_run_snapshot(context, config_dict: dict[str, Any]) -> dict[str, Any]:
         "input_shape": dict(context.metadata.get("input_shape", {})),
         "feature_summary": dict(context.metadata.get("feature_summary", {})),
         "split_summary": dict(context.metadata.get("split_summary", {})),
+        "subset_search_best_candidate": dict(
+            context.metadata.get("subset_search_best_candidate", {})
+        ),
+        "subset_search_top_candidates": list(
+            context.metadata.get("subset_search_top_candidates", [])
+        ),
         "threshold": context.config.model.threshold,
         "date_column": context.config.split.date_column,
         "default_segment_column": context.config.diagnostics.default_segment_column,
@@ -2081,6 +2523,18 @@ def render_dataset_overview(dataframe: pd.DataFrame, data_source_label: str) -> 
         f"Source: {format_data_source_label(data_source_label)}"
     )
     st.caption(summary)
+
+
+def render_input_performance_notice(dataframe: pd.DataFrame) -> None:
+    performance = DEFAULT_PERFORMANCE_CONFIG
+    if (
+        len(dataframe) >= performance.dataframe_warning_rows
+        or dataframe.shape[1] >= performance.dataframe_warning_columns
+    ):
+        st.warning(
+            "Large input detected. Quant Studio will sample heavy diagnostics and report "
+            "previews where needed, but full runtime still depends on local memory."
+        )
 
 
 def render_builder_workspace(
@@ -2128,8 +2582,9 @@ def render_builder_workspace(
 
     with preview_tab:
         render_dataset_overview(dataframe, data_source_label)
-        st.caption("Showing the first 50 rows of the raw input dataframe.")
-        st.dataframe(dataframe.head(50), use_container_width=True, hide_index=True)
+        preview_rows = DEFAULT_PERFORMANCE_CONFIG.ui_preview_rows
+        st.caption(f"Showing the first {preview_rows} rows of the raw input dataframe.")
+        st.dataframe(dataframe.head(preview_rows), width="stretch", hide_index=True)
 
     with schema_tab:
         edited_schema = render_schema_editor_panel(schema_frame, editor_key=editor_key)
@@ -2143,7 +2598,7 @@ def render_builder_workspace(
             feature_dictionary_frame,
             key=feature_dictionary_widget_key,
             num_rows="dynamic",
-            use_container_width=True,
+            width="stretch",
             hide_index=True,
             column_config={
                 "enabled": st.column_config.CheckboxColumn("Enabled"),
@@ -2169,7 +2624,7 @@ def render_builder_workspace(
             transformation_frame,
             key=transformation_widget_key,
             num_rows="dynamic",
-            use_container_width=True,
+            width="stretch",
             hide_index=True,
             column_config={
                 "enabled": st.column_config.CheckboxColumn("Enabled"),
@@ -2228,16 +2683,25 @@ def render_builder_workspace(
                 """
                 - `winsorize` clips a numeric feature using train-fit quantiles.
                 - `log1p` applies a log transform to numeric values greater than `-1`.
+                - `box_cox` applies a train-fit power transform for strictly positive values.
+                - `natural_spline` expands a numeric feature into a train-fit natural cubic
+                  spline basis using the configured degrees of freedom.
                 - `yeo_johnson` fits a train-based power transform that can handle
                   zero and negative values.
                 - `capped_zscore` standardizes a numeric feature and clips it at
                   the configured z-cap.
+                - `piecewise_linear` creates a positive hinge term above the configured cut point.
                 - `ratio` creates `source / secondary`.
                 - `interaction` creates `source * secondary`, or an
                   indicator-times-numeric interaction when `categorical_value`
                   is supplied.
                 - `lag` creates a prior-period feature.
+                - `difference` creates a lagged first-difference feature.
+                - `ewma` creates an exponentially weighted moving average.
                 - `rolling_mean` creates a prior rolling average.
+                - `rolling_median`, `rolling_min`, and `rolling_max` create prior
+                  rolling summary features.
+                - `rolling_std` creates a rolling volatility-style feature.
                 - `pct_change` creates a lagged percent-change feature.
                 - `manual_bins` creates an ordered categorical feature using your internal edges.
                 """
@@ -2260,7 +2724,7 @@ def render_builder_workspace(
             data=template_payload,
             file_name="quant_studio_review_workbook.xlsx",
             mime=("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
-            use_container_width=True,
+            width="stretch",
         )
         uploaded_template = st.file_uploader(
             "Upload completed workbook",
@@ -2371,12 +2835,16 @@ def render_workflow_readiness(
         st.warning("The run is allowed, but review the preset warnings before execution.")
     st.dataframe(
         prepare_display_table(readiness_table),
-        use_container_width=True,
+        width="stretch",
         hide_index=True,
     )
 
 
 def render_run_results(snapshot: dict[str, Any]) -> None:
+    if snapshot["execution_mode"] == ExecutionMode.SEARCH_FEATURE_SUBSETS.value:
+        render_subset_search_results(snapshot)
+        return
+
     st.markdown(
         """
         <div class="section-intro">
@@ -2391,7 +2859,9 @@ def render_run_results(snapshot: dict[str, Any]) -> None:
         unsafe_allow_html=True,
     )
 
-    asset_catalog = build_asset_catalog(snapshot["diagnostics_tables"], snapshot["visualizations"])
+    asset_catalog = prune_subset_search_highlight_assets(
+        build_asset_catalog(snapshot["diagnostics_tables"], snapshot["visualizations"])
+    )
     all_predictions = pd.concat(snapshot["predictions"].values(), ignore_index=True)
     filter_state = render_result_filters(snapshot, all_predictions)
     filtered_predictions = apply_prediction_filters(snapshot, all_predictions, filter_state)
@@ -2423,6 +2893,277 @@ def render_run_results(snapshot: dict[str, Any]) -> None:
 
     with tabs[-1]:
         render_governance_tab(snapshot, filtered_predictions)
+
+
+def render_subset_search_results(snapshot: dict[str, Any]) -> None:
+    st.markdown(
+        """
+        <div class="section-intro">
+          <span class="section-kicker">Subset Search Studio</span>
+          <h2>Compare candidate feature sets before full model development</h2>
+          <p>
+            This execution mode is intentionally separate from normal development.
+            The outputs below focus only on subset ranking, ROC and KS comparison,
+            significance tests, and performance-versus-parsimony evidence.
+          </p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    asset_catalog = build_asset_catalog(snapshot["diagnostics_tables"], snapshot["visualizations"])
+    available_sections = [
+        section_id
+        for section_id, payload in asset_catalog.items()
+        if payload["figures"] or payload["tables"]
+    ]
+    tab_labels = ["Overview"] + [
+        SECTION_SPECS[section_id]["title"] for section_id in available_sections
+    ] + ["Governance"]
+    tabs = st.tabs(tab_labels)
+
+    with tabs[0]:
+        render_subset_search_overview(snapshot)
+
+    for tab_index, section_id in enumerate(available_sections, start=1):
+        with tabs[tab_index]:
+            render_subset_search_section(
+                snapshot=snapshot,
+                section_id=section_id,
+                section_payload=asset_catalog[section_id],
+            )
+
+    with tabs[-1]:
+        render_subset_search_governance(snapshot)
+
+
+def render_subset_search_overview(snapshot: dict[str, Any]) -> None:
+    kpis = summarize_run_kpis(
+        metrics=snapshot["metrics"],
+        input_rows=snapshot["input_shape"].get("rows"),
+        feature_count=int(snapshot["feature_summary"].get("feature_count", 0)),
+        labels_available=snapshot["labels_available"],
+        execution_mode=snapshot["execution_mode"],
+        model_type=snapshot["model_type"],
+        target_mode=snapshot["target_mode"],
+        warning_count=len(snapshot["warnings"]),
+    )
+    render_metric_strip(kpis)
+
+    best_candidate = snapshot.get("subset_search_best_candidate", {})
+    if best_candidate:
+        st.markdown("### Best Candidate Snapshot")
+        render_metric_strip(
+            [
+                {"label": "Candidate ID", "value": best_candidate.get("candidate_id", "N/A")},
+                {
+                    "label": "Feature Count",
+                    "value": format_metric_value(best_candidate.get("feature_count")),
+                },
+                {
+                    "label": "Validation ROC AUC",
+                    "value": format_metric_value(best_candidate.get("ranking_roc_auc")),
+                },
+                {
+                    "label": "Validation KS",
+                    "value": format_metric_value(best_candidate.get("ranking_ks_statistic")),
+                },
+                {
+                    "label": "Test ROC AUC",
+                    "value": format_metric_value(best_candidate.get("test_roc_auc")),
+                },
+                {
+                    "label": "Test KS",
+                    "value": format_metric_value(best_candidate.get("test_ks_statistic")),
+                },
+            ],
+            compact=True,
+        )
+        st.caption(f"Feature set: {best_candidate.get('feature_set', 'N/A')}")
+
+    selected_candidate_table = snapshot["diagnostics_tables"].get(
+        "subset_search_selected_candidate",
+        pd.DataFrame(),
+    )
+    selected_coefficient_table = snapshot["diagnostics_tables"].get(
+        "subset_search_selected_coefficients",
+        pd.DataFrame(),
+    )
+    if not selected_candidate_table.empty or not selected_coefficient_table.empty:
+        left_column, right_column = st.columns([0.95, 1.05], gap="large")
+        with left_column:
+            if not selected_candidate_table.empty:
+                st.markdown("### Selected Candidate")
+                st.dataframe(
+                    prepare_table_for_display(selected_candidate_table),
+                    width="stretch",
+                    hide_index=True,
+                )
+        with right_column:
+            if not selected_coefficient_table.empty:
+                st.markdown("### Selected Candidate Coefficients")
+                st.dataframe(
+                    prepare_table_for_display(selected_coefficient_table),
+                    width="stretch",
+                    hide_index=True,
+                )
+
+    if snapshot["warnings"]:
+        for warning in snapshot["warnings"]:
+            st.warning(warning)
+
+    overview_figure_keys = [
+        "subset_search_selected_roc_curve",
+        "subset_search_selected_ks_curve",
+        "subset_search_metric_frontier",
+        "subset_search_auc_frontier",
+        "subset_search_ks_frontier",
+        "subset_search_feature_frequency_chart",
+    ]
+    figures = [
+        (friendly_asset_title(figure_key, kind="figure"), snapshot["visualizations"][figure_key])
+        for figure_key in overview_figure_keys
+        if figure_key in snapshot["visualizations"]
+    ]
+    if figures:
+        columns = st.columns(2)
+        for index, (title, figure) in enumerate(figures):
+            with columns[index % 2]:
+                st.markdown(f"#### {title}")
+                render_plotly_figure(
+                    figure,
+                    key=build_plotly_key(snapshot["run_id"], "subset_search_overview", title),
+                )
+
+    candidate_table = snapshot["diagnostics_tables"].get(
+        "subset_search_nonwinning_candidates", pd.DataFrame()
+    )
+    if not candidate_table.empty:
+        st.markdown("### Ranked Non-Winning Candidates")
+        leading_candidates = candidate_table.head(25)
+        st.dataframe(
+            prepare_table_for_display(leading_candidates),
+            width="stretch",
+            hide_index=True,
+        )
+
+
+def render_subset_search_section(
+    *,
+    snapshot: dict[str, Any],
+    section_id: str,
+    section_payload: dict[str, Any],
+) -> None:
+    st.markdown(
+        f"""
+        <div class="section-subheader">
+          <span class="section-kicker">{section_payload["title"]}</span>
+          <p>{section_payload["description"]}</p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    figure_descriptors = choose_descriptors_for_view(section_payload["figures"], "Technical")
+    table_descriptors = choose_descriptors_for_view(section_payload["tables"], "Technical")
+
+    if figure_descriptors:
+        columns = st.columns(2)
+        for index, descriptor in enumerate(figure_descriptors):
+            figure = snapshot["visualizations"].get(descriptor.key)
+            if figure is None:
+                continue
+            with columns[index % 2]:
+                st.markdown(f"#### {descriptor.title}")
+                if descriptor.description:
+                    st.caption(descriptor.description)
+                render_plotly_figure(
+                    figure,
+                    key=build_plotly_key(
+                        snapshot["run_id"],
+                        "subset_search_section",
+                        section_id,
+                        descriptor.key,
+                    ),
+                )
+
+    if table_descriptors:
+        st.markdown("### Reference Tables")
+        for descriptor in table_descriptors:
+            table = snapshot["diagnostics_tables"].get(descriptor.key)
+            if table is None or table.empty:
+                continue
+            with st.expander(descriptor.title, expanded=descriptor.featured):
+                if descriptor.description:
+                    st.caption(descriptor.description)
+                st.dataframe(
+                    prepare_table_for_display(table),
+                    width="stretch",
+                    hide_index=True,
+                )
+
+
+def render_subset_search_governance(snapshot: dict[str, Any]) -> None:
+    left_column, right_column = st.columns([1.1, 0.9], gap="large")
+
+    with left_column:
+        st.markdown("### Narrative Report")
+        st.text_area(
+            "Run report",
+            value=snapshot["report_text"],
+            height=320,
+            label_visibility="collapsed",
+        )
+
+        candidate_table = snapshot["diagnostics_tables"].get(
+            "subset_search_candidates", pd.DataFrame()
+        )
+        if not candidate_table.empty:
+            st.markdown("### Candidate Ranking Preview")
+            st.dataframe(
+                prepare_table_for_display(candidate_table.head(100)),
+                width="stretch",
+                hide_index=True,
+            )
+
+    with right_column:
+        if snapshot["warnings"]:
+            st.markdown("### Warnings")
+            for warning in snapshot["warnings"]:
+                st.warning(warning)
+
+        st.markdown("### Artifact Paths")
+        st.code(json.dumps(snapshot["artifacts"], indent=2), language="json")
+
+        render_download_button(
+            "Download Run Config",
+            snapshot["config"],
+            "run_config.json",
+            "application/json",
+        )
+        render_download_button(
+            "Download Markdown Report",
+            snapshot["report_text"],
+            "run_report.md",
+            "text/markdown",
+        )
+        for artifact_name in [
+            "interactive_report",
+            "tests",
+            "input_snapshot",
+        ]:
+            artifact_path = snapshot["artifacts"].get(artifact_name)
+            if artifact_path and Path(artifact_path).exists():
+                st.download_button(
+                    f"Download {artifact_name.replace('_', ' ').title()}",
+                    data=Path(artifact_path).read_bytes(),
+                    file_name=Path(artifact_path).name,
+                    mime="application/octet-stream",
+                )
+
+        if snapshot["events"]:
+            st.markdown("### Pipeline Events")
+            for event in snapshot["events"]:
+                st.caption(f"- {event}")
 
 
 def render_result_filters(
@@ -2673,7 +3414,7 @@ def render_overview_tab(
                 with st.expander(descriptor.title, expanded=False):
                     st.dataframe(
                         prepare_table_for_display(table.head(20)),
-                        use_container_width=True,
+                        width="stretch",
                         hide_index=True,
                     )
 
@@ -2955,7 +3696,7 @@ def render_section_panel(
                 preview = table if view_mode == "Technical" else table.head(25)
                 st.dataframe(
                     prepare_table_for_display(preview),
-                    use_container_width=True,
+                    width="stretch",
                     hide_index=True,
                 )
                 if len(table) > len(preview):
@@ -3160,7 +3901,7 @@ def render_scorecard_workbench_section(
             with st.expander(title, expanded=title == "Selected Feature Summary"):
                 st.dataframe(
                     prepare_table_for_display(table),
-                    use_container_width=True,
+                    width="stretch",
                     hide_index=True,
                 )
 
@@ -3319,7 +4060,7 @@ def render_governance_tab(snapshot: dict[str, Any], filtered_predictions: pd.Dat
         st.markdown("### Predictions Preview")
         st.dataframe(
             prepare_table_for_display(filtered_predictions.head(250)),
-            use_container_width=True,
+            width="stretch",
             hide_index=True,
         )
 
@@ -3581,7 +4322,7 @@ def render_feature_drilldown(
         )
         st.dataframe(
             prepare_table_for_display(categorical_summary),
-            use_container_width=True,
+            width="stretch",
             hide_index=True,
         )
 
@@ -3618,7 +4359,25 @@ def render_metric_strip(cards: list[dict[str, str]], *, compact: bool = False) -
 
 
 def prepare_table_for_display(table: pd.DataFrame) -> pd.DataFrame:
-    return prepare_display_table(table)
+    display_table = prepare_display_table(table).copy(deep=True)
+    for column_name in display_table.columns:
+        series = display_table[column_name]
+        if pd.api.types.is_object_dtype(series) or pd.api.types.is_string_dtype(series):
+            display_table[column_name] = series.map(_coerce_streamlit_cell_value)
+    return display_table
+
+
+def _coerce_streamlit_cell_value(value: Any) -> Any:
+    if value is None:
+        return ""
+    try:
+        if pd.isna(value):
+            return ""
+    except TypeError:
+        pass
+    if isinstance(value, (list, tuple, set, dict)):
+        return json.dumps(value, default=str)
+    return str(value)
 
 
 def pick_overview_figure_keys(snapshot: dict[str, Any]) -> list[str]:

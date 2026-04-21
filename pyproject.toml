@@ -46,6 +46,7 @@ addopts = "-p no:cacheprovider"
 filterwarnings = [
     "ignore:divide by zero encountered in log:RuntimeWarning:statsmodels.regression.linear_model",
     "ignore:Perfect separation or prediction detected, parameter may not be identified:statsmodels.tools.sm_exceptions.PerfectSeparationWarning:statsmodels.genmod.generalized_linear_model",
+    "ignore:Maximum Likelihood optimization failed to converge. Check mle_retvals:statsmodels.tools.sm_exceptions.ConvergenceWarning:statsmodels.base.model",
 ]
 
 [tool.ruff]

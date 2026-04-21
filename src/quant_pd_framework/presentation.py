@@ -74,6 +74,16 @@ SECTION_SPECS: OrderedDict[str, dict[str, str]] = OrderedDict(
             },
         ),
         (
+            "feature_subset_search",
+            {
+                "title": "Feature Subset Search",
+                "description": (
+                    "Candidate feature-set ranking, ROC and KS comparison, significance "
+                    "tests, and parsimony tradeoffs."
+                ),
+            },
+        ),
+        (
             "scorecard_workbench",
             {
                 "title": "Scorecard / Binning Workbench",
@@ -130,17 +140,30 @@ TABLE_LABELS = {
     "data_quality_summary": "Run Quality Summary",
     "imputation_rules": "Imputation Rules",
     "imputation_group_rules": "Imputation Group Rules",
+    "advanced_imputation_summary": "Advanced Imputation Summary",
+    "multiple_imputation_metric_paths": "Multiple-Imputation Metric Paths",
+    "multiple_imputation_pooled_coefficients": "Multiple-Imputation Pooled Coefficients",
+    "multiple_imputation_pooling_summary": "Multiple-Imputation Pooling Summary",
     "imputation_sensitivity_summary": "Imputation Sensitivity Summary",
     "imputation_sensitivity_detail": "Imputation Sensitivity Detail",
     "assumption_checks": "Suitability And Assumption Checks",
     "feature_dictionary": "Feature Dictionary",
     "governed_transformations": "Governed Transformations",
     "interaction_candidates": "Interaction Candidates",
+    "subset_search_scope": "Subset Search Scope",
+    "subset_search_candidates": "Subset Search Candidate Ranking",
+    "subset_search_frontier": "Subset Search Frontier",
+    "subset_search_feature_frequency": "Subset Search Feature Frequency",
+    "subset_search_significance_tests": "Subset Search Significance Tests",
+    "subset_search_selected_candidate": "Selected Candidate Snapshot",
+    "subset_search_selected_coefficients": "Selected Candidate Coefficients",
+    "subset_search_nonwinning_candidates": "Non-Winning Candidate Ranking",
     "variable_selection": "Variable Selection",
     "manual_review_feature_decisions": "Manual Feature Review",
     "scorecard_bin_overrides": "Scorecard Bin Overrides",
     "documentation_metadata": "Documentation Metadata",
     "reproducibility_manifest": "Reproducibility Manifest",
+    "performance_hardening_actions": "Performance Hardening Actions",
     "model_numerical_diagnostics": "Model Numerical Diagnostics",
     "numerical_warning_summary": "Numerical Warning Summary",
     "descriptive_statistics": "Descriptive Statistics",
@@ -148,8 +171,14 @@ TABLE_LABELS = {
     "missingness_by_split": "Missingness By Split",
     "missingness_target_association": "Missingness Target Association",
     "missingness_indicator_correlation": "Missingness Indicator Correlation",
+    "missingness_predictive_power": "Missingness Predictive Power",
+    "littles_mcar_test": "Little's MCAR Test",
+    "distribution_tests": "Distribution Tests",
+    "distribution_shift_tests": "Distribution Shift Tests",
     "correlation_matrix": "Correlation Matrix",
     "vif": "Variance Inflation Factors",
+    "dependency_cluster_summary": "Dependency Cluster Summary",
+    "condition_index_detail": "Condition Index Detail",
     "quantile_summary": "Quantile Performance Table",
     "threshold_analysis": "Threshold Sweep Table",
     "calibration": "Calibration Table",
@@ -165,10 +194,18 @@ TABLE_LABELS = {
     "adf_tests": "Augmented Dickey-Fuller Tests",
     "model_specification_tests": "Model Specification Tests",
     "model_influence_summary": "Model Influence Summary",
+    "model_dfbetas_summary": "DFBETAs Summary",
+    "model_dffits_summary": "DFFITS Summary",
+    "model_comparison_significance_tests": "Model Comparison Significance Tests",
     "forecasting_statistical_tests": "Forecasting Statistical Tests",
     "cointegration_tests": "Cointegration Tests",
     "granger_causality_tests": "Granger-Causality Tests",
+    "time_series_extension_tests": "Time-Series Extension Tests",
+    "structural_break_tests": "Structural Break Tests",
     "residual_summary": "Residual Summary",
+    "residual_diagnostics": "Residual Diagnostics",
+    "residual_segment_bias": "Residual Segment Bias",
+    "outlier_flags": "Outlier Flags",
     "qq_plot_data": "QQ Plot Data",
     "coefficient_breakdown": "Coefficient Breakdown",
     "feature_effect_curves": "Feature Effect Curves",
@@ -182,6 +219,8 @@ TABLE_LABELS = {
     "scorecard_scaling_summary": "Scorecard Scaling Summary",
     "scorecard_feature_summary": "Scorecard Feature Summary",
     "scorecard_reason_code_frequency": "Scorecard Reason Code Frequency",
+    "binning_framework_summary": "Binning Framework Summary",
+    "manual_binning_profile": "Manual Binning Profile",
     "lgd_stage_one_coefficients": "LGD Stage-One Coefficients",
     "lgd_stage_two_coefficients": "LGD Stage-Two Coefficients",
     "lifetime_pd_curve": "Lifetime PD Curve Table",
@@ -196,14 +235,21 @@ TABLE_LABELS = {
     "robustness_metric_summary": "Robustness Metric Summary",
     "robustness_feature_distribution": "Robustness Feature Distribution",
     "robustness_feature_stability": "Robustness Feature Stability",
+    "robustness_framework_summary": "Robustness Framework Summary",
+    "feature_construction_workbench": "Feature Construction Workbench",
+    "preset_imputation_recommendations": "Preset Imputation Recommendations",
+    "preset_transformation_recommendations": "Preset Transformation Recommendations",
+    "preset_test_recommendations": "Preset Test Recommendations",
 }
 
 FIGURE_LABELS = {
     "missingness": "Missingness by Column",
     "missingness_by_split": "Missingness by Split",
     "missingness_indicator_heatmap": "Missingness Indicator Correlation",
+    "distribution_shift_overview": "Distribution Shift Overview",
     "correlation_heatmap": "Correlation Heatmap",
     "vif_profile": "VIF Feature Profile",
+    "dependency_cluster_heatmap": "Dependency Cluster Heatmap",
     "quantile_backtest": "Quantile Backtest",
     "threshold_analysis": "Threshold Performance Sweep",
     "calibration_curve": "Calibration Curve",
@@ -213,6 +259,12 @@ FIGURE_LABELS = {
     "gain_chart": "Cumulative Gain",
     "lift_chart": "Lift by Quantile",
     "feature_importance_overview": "Feature Importance Overview",
+    "subset_search_auc_frontier": "Subset Search ROC AUC Frontier",
+    "subset_search_ks_frontier": "Subset Search KS Frontier",
+    "subset_search_metric_frontier": "Subset Search Performance Frontier",
+    "subset_search_selected_roc_curve": "Selected Candidate ROC Curve",
+    "subset_search_selected_ks_curve": "Selected Candidate KS Curve",
+    "subset_search_feature_frequency_chart": "Subset Search Feature Frequency",
     "split_metric_overview": "Metric Comparison by Split",
     "score_distribution_overview": "Score Distribution by Split",
     "segment_performance_chart": "Segment Performance",
@@ -227,8 +279,10 @@ FIGURE_LABELS = {
     "imputation_sensitivity_impact": "Imputation Sensitivity Impact",
     "residuals_vs_predicted": "Residuals vs Predicted",
     "actual_vs_predicted": "Actual vs Predicted",
+    "residual_segment_bias": "Residual Bias by Segment",
     "qq_plot": "Residual QQ Plot",
     "model_influence_plot": "Influence Summary",
+    "outlier_influence_map": "Outlier / Influence Map",
     "model_comparison_chart": "Model Comparison Chart",
     "permutation_importance": "Permutation Importance",
     "scenario_summary_chart": "Scenario Summary",
@@ -237,6 +291,10 @@ FIGURE_LABELS = {
     "robustness_metric_boxplot": "Robustness Metric Distribution",
     "robustness_metric_summary_chart": "Robustness Metric Summary",
     "robustness_feature_stability": "Feature Stability Profile",
+    "feature_construction_association": "Constructed Feature Association",
+    "manual_binning_distribution": "Manual Binning Distribution",
+    "seasonality_profile": "Seasonality Profile",
+    "structural_break_profile": "Structural Break / Regime Profile",
     "scorecard_feature_iv": "Scorecard Feature Information Value",
     "scorecard_score_distribution": "Scorecard Points Distribution",
     "scorecard_reason_code_frequency_chart": "Reason Code Frequency",
@@ -248,6 +306,20 @@ ASSET_DESCRIPTIONS = {
     "imputation_group_rules": (
         "Segment-aware train-fit fill values learned for grouped imputation rules."
     ),
+    "advanced_imputation_summary": (
+        "Model-based imputation settings, auxiliary features, and fallback behavior "
+        "for KNN and iterative fills."
+    ),
+    "multiple_imputation_metric_paths": (
+        "Metric values across repeated stochastic imputations used in the pooling framework."
+    ),
+    "multiple_imputation_pooled_coefficients": (
+        "Rubin-style pooled surrogate coefficients and uncertainty summary across "
+        "multiply imputed datasets."
+    ),
+    "multiple_imputation_pooling_summary": (
+        "Pooled metric summary across the multiply imputed surrogate-model runs."
+    ),
     "imputation_sensitivity_summary": (
         "Feature-level summary of how alternative fill rules changed scores and key metrics."
     ),
@@ -258,6 +330,32 @@ ASSET_DESCRIPTIONS = {
     "feature_dictionary": "Business definitions and rationale for modeled features.",
     "governed_transformations": "Explicit transformations fit on train and replayed downstream.",
     "interaction_candidates": "Screened interaction candidates ranked by train-split association.",
+    "subset_search_scope": (
+        "Search-scope metadata including the candidate feature pool, subset limits, "
+        "ranking metric, and success/failure counts."
+    ),
+    "subset_search_candidates": (
+        "Candidate subset leaderboard ranked on the chosen held-out split."
+    ),
+    "subset_search_frontier": (
+        "Best-performing subset by feature-count bucket to show parsimony versus performance."
+    ),
+    "subset_search_feature_frequency": (
+        "How often each feature appears across the top-ranked candidate subsets."
+    ),
+    "subset_search_significance_tests": (
+        "Paired comparison tests between the leading candidate subsets."
+    ),
+    "subset_search_selected_candidate": (
+        "Winning candidate snapshot chosen to move forward into the main development workflow."
+    ),
+    "subset_search_selected_coefficients": (
+        "Feature-level coefficients or fallback importance values for the selected "
+        "candidate subset."
+    ),
+    "subset_search_nonwinning_candidates": (
+        "Ranked non-winning candidate subsets for side-by-side ROC AUC, KS, and parsimony review."
+    ),
     "variable_selection": "Train-split feature screening results and selection rationale.",
     "manual_review_feature_decisions": (
         "Human review decisions that overrode or confirmed feature selection."
@@ -266,6 +364,9 @@ ASSET_DESCRIPTIONS = {
     "documentation_metadata": "Captured model-purpose and governance metadata.",
     "reproducibility_manifest": (
         "Run fingerprint metadata for reruns, audits, and package-version traceability."
+    ),
+    "performance_hardening_actions": (
+        "Large-run safeguards applied automatically to keep diagnostics and exports usable."
     ),
     "model_numerical_diagnostics": (
         "Structured estimation-health diagnostics such as convergence, iteration counts, "
@@ -283,10 +384,37 @@ ASSET_DESCRIPTIONS = {
     "missingness_indicator_correlation": (
         "Pairwise correlation across raw missingness indicators for the modeled features."
     ),
+    "missingness_predictive_power": (
+        "Ranked summary of where missingness itself is materially associated with the target."
+    ),
+    "littles_mcar_test": (
+        "Approximate Little's MCAR test for whether the observed missingness pattern is "
+        "consistent with missing completely at random."
+    ),
+    "distribution_tests": (
+        "Split-level distribution shape diagnostics including skewness, kurtosis, and "
+        "normality tests for the top numeric features."
+    ),
+    "distribution_shift_tests": (
+        "Kolmogorov-Smirnov shift checks comparing train to validation and test feature "
+        "distributions."
+    ),
+    "distribution_shift_overview": (
+        "Boxplot overview of train-versus-test distribution movement for leading features."
+    ),
     "correlation_heatmap": (
         "Pairwise feature correlation across the most material numeric drivers."
     ),
     "vif": "Collinearity pressure among top numeric features.",
+    "dependency_cluster_summary": (
+        "Correlation-based dependency clusters among the most material numeric features."
+    ),
+    "condition_index_detail": (
+        "Singular-value breakdown behind the condition-index multicollinearity review."
+    ),
+    "dependency_cluster_heatmap": (
+        "Heatmap view of the correlation structure used for dependency clustering."
+    ),
     "segment_performance": (
         "Observed and predicted behavior across the current default segment cut."
     ),
@@ -312,15 +440,50 @@ ASSET_DESCRIPTIONS = {
     "model_influence_summary": (
         "Observation-level leverage and Cook's distance for the fitted specification."
     ),
+    "model_dfbetas_summary": (
+        "Largest per-observation coefficient perturbations from the surrogate influence review."
+    ),
+    "model_dffits_summary": (
+        "Observation-level fitted-value influence summary from the surrogate specification review."
+    ),
     "forecasting_statistical_tests": (
         "Residual autocorrelation and heteroskedasticity diagnostics for forecasting runs."
     ),
     "cointegration_tests": "Cointegration checks between the target series and top drivers.",
     "granger_causality_tests": "Macro-driver Granger-causality results on the aggregated series.",
+    "time_series_extension_tests": (
+        "Extended econometric checks such as Breusch-Godfrey, KPSS, and "
+        "Phillips-Perron diagnostics."
+    ),
+    "seasonality_profile": (
+        "Average residual profile by repeating seasonal bucket on the aggregated time series."
+    ),
+    "structural_break_tests": (
+        "Candidate breakpoint table for Chow-style, CUSUM, and CUSUM-squares "
+        "stability review."
+    ),
+    "structural_break_profile": (
+        "Rolling regime signal used to visualize potential structural breaks over time."
+    ),
     "quantile_backtest": "Observed and predicted performance by ordered risk bucket.",
     "residual_summary": "Regression error distribution summary.",
+    "residual_diagnostics": (
+        "Residual-bias, heteroskedasticity, and autocorrelation checks on the scored split."
+    ),
+    "residual_segment_bias": (
+        "Average residual bias broken out by the current default segment cut."
+    ),
+    "outlier_flags": (
+        "Flagged observations from leverage, Cook's distance, and residual z-score screening."
+    ),
+    "outlier_influence_map": (
+        "Influence-map view for spotting high-leverage and high-residual observations."
+    ),
     "model_comparison": (
         "Primary-versus-challenger comparison across held-out development splits."
+    ),
+    "model_comparison_significance_tests": (
+        "Paired significance tests for champion-versus-challenger performance differences."
     ),
     "coefficient_breakdown": "Signed coefficient summary for interpretable model review.",
     "feature_effect_curves": (
@@ -356,6 +519,15 @@ ASSET_DESCRIPTIONS = {
     "scorecard_reason_code_frequency": (
         "Frequency with which each feature appears in the exported reason-code slots."
     ),
+    "binning_framework_summary": (
+        "Feature-level summary of scorecard binning quality and monotonicity review."
+    ),
+    "manual_binning_profile": (
+        "Bucket counts and target averages for explicitly configured manual-bin features."
+    ),
+    "manual_binning_distribution": (
+        "Observation mix across manually configured binning features and buckets."
+    ),
     "lgd_stage_one_coefficients": (
         "Probability-of-loss stage coefficients for the LGD two-stage model."
     ),
@@ -371,10 +543,47 @@ ASSET_DESCRIPTIONS = {
     "robustness_feature_stability": (
         "Feature-level stability summary across repeated train resamples."
     ),
+    "robustness_framework_summary": (
+        "Coefficient-of-variation summary for the robustness framework's metric outputs."
+    ),
+    "feature_construction_workbench": (
+        "Constructed-feature preview covering engineered feature types, coverage, and "
+        "target association."
+    ),
+    "feature_construction_association": (
+        "Absolute target association across constructed features in the workbench."
+    ),
+    "preset_imputation_recommendations": (
+        "Preset-aligned imputation framework recommendations compared with the current run."
+    ),
+    "preset_transformation_recommendations": (
+        "Preset-aligned transformation framework recommendations compared with the current run."
+    ),
+    "preset_test_recommendations": (
+        "Preset-aligned testing framework recommendations compared with the current run."
+    ),
     "split_metric_overview": (
         "Comparison of the primary metrics across train, validation, and test."
     ),
     "feature_importance_overview": "Top drivers highlighted for executive scanning.",
+    "subset_search_auc_frontier": (
+        "Relationship between held-out ROC AUC and subset size for the top-ranked candidates."
+    ),
+    "subset_search_ks_frontier": (
+        "Relationship between held-out KS and subset size for the top-ranked candidates."
+    ),
+    "subset_search_metric_frontier": (
+        "Performance-versus-parsimony scatter used to choose a candidate subset to carry forward."
+    ),
+    "subset_search_selected_roc_curve": (
+        "Held-out ROC curve for the winning candidate subset."
+    ),
+    "subset_search_selected_ks_curve": (
+        "Held-out KS curve for the winning candidate subset."
+    ),
+    "subset_search_feature_frequency_chart": (
+        "Frequency with which each feature appears across the top-ranked candidates."
+    ),
     "score_distribution_overview": "Modeled score density across available splits.",
     "segment_performance_chart": ("Observed and predicted rates across the selected segment view."),
     "segment_volume": "Relative concentration of observations by segment.",
@@ -414,6 +623,13 @@ FEATURED_ASSETS = {
     "split_metrics",
     "feature_importance",
     "feature_importance_overview",
+    "subset_search_candidates",
+    "subset_search_frontier",
+    "subset_search_auc_frontier",
+    "subset_search_ks_frontier",
+    "subset_search_selected_candidate",
+    "subset_search_selected_coefficients",
+    "subset_search_selected_roc_curve",
     "roc_curve_chart",
     "calibration_curve",
     "calibration_summary",
@@ -438,6 +654,17 @@ class AssetDescriptor:
     section: str
     description: str
     featured: bool
+
+
+SUBSET_SEARCH_HIGHLIGHT_TABLE_KEYS = {
+    "subset_search_selected_candidate",
+    "subset_search_selected_coefficients",
+    "subset_search_nonwinning_candidates",
+}
+SUBSET_SEARCH_HIGHLIGHT_FIGURE_KEYS = {
+    "subset_search_selected_roc_curve",
+    "subset_search_selected_ks_curve",
+}
 
 
 def build_asset_catalog(
@@ -486,6 +713,29 @@ def build_asset_catalog(
     return catalog
 
 
+def prune_subset_search_highlight_assets(
+    catalog: OrderedDict[str, dict[str, list[AssetDescriptor]]],
+) -> OrderedDict[str, dict[str, list[AssetDescriptor]]]:
+    """Removes the dedicated selected-candidate assets from generic section rendering."""
+
+    filtered: OrderedDict[str, dict[str, list[AssetDescriptor]]] = OrderedDict()
+    for section_id, payload in catalog.items():
+        filtered[section_id] = {
+            **payload,
+            "tables": [
+                descriptor
+                for descriptor in payload["tables"]
+                if descriptor.key not in SUBSET_SEARCH_HIGHLIGHT_TABLE_KEYS
+            ],
+            "figures": [
+                descriptor
+                for descriptor in payload["figures"]
+                if descriptor.key not in SUBSET_SEARCH_HIGHLIGHT_FIGURE_KEYS
+            ],
+        }
+    return filtered
+
+
 def infer_asset_section(asset_key: str, *, kind: str) -> str:
     """Maps an asset key to the section where it should be rendered."""
 
@@ -493,6 +743,10 @@ def infer_asset_section(asset_key: str, *, kind: str) -> str:
         "data_quality_summary",
         "imputation_rules",
         "imputation_group_rules",
+        "advanced_imputation_summary",
+        "multiple_imputation_metric_paths",
+        "multiple_imputation_pooled_coefficients",
+        "multiple_imputation_pooling_summary",
         "imputation_sensitivity_summary",
         "imputation_sensitivity_detail",
         "assumption_checks",
@@ -506,7 +760,11 @@ def infer_asset_section(asset_key: str, *, kind: str) -> str:
         "missingness_by_split",
         "missingness_target_association",
         "missingness_indicator_correlation",
+        "missingness_predictive_power",
+        "littles_mcar_test",
         "missingness_indicator_heatmap",
+        "feature_construction_workbench",
+        "feature_construction_association",
         "correlation_matrix",
         "correlation_heatmap",
         "vif",
@@ -540,6 +798,7 @@ def infer_asset_section(asset_key: str, *, kind: str) -> str:
         "feature_importance",
         "feature_importance_overview",
         "model_comparison",
+        "model_comparison_significance_tests",
         "model_comparison_chart",
         "split_metric_overview",
         "score_distribution_overview",
@@ -552,8 +811,14 @@ def infer_asset_section(asset_key: str, *, kind: str) -> str:
         "actual_vs_predicted",
         "qq_plot_data",
         "qq_plot",
+        "residual_diagnostics",
+        "residual_segment_bias",
+        "outlier_flags",
+        "outlier_influence_map",
         "model_specification_tests",
         "model_influence_summary",
+        "model_dfbetas_summary",
+        "model_dffits_summary",
         "model_influence_plot",
         "coefficient_breakdown",
         "feature_effect_curves",
@@ -568,6 +833,23 @@ def infer_asset_section(asset_key: str, *, kind: str) -> str:
     }:
         return "model_performance"
     if asset_key in {
+        "subset_search_scope",
+        "subset_search_candidates",
+        "subset_search_frontier",
+        "subset_search_feature_frequency",
+        "subset_search_significance_tests",
+        "subset_search_selected_candidate",
+        "subset_search_selected_coefficients",
+        "subset_search_nonwinning_candidates",
+        "subset_search_auc_frontier",
+        "subset_search_ks_frontier",
+        "subset_search_metric_frontier",
+        "subset_search_selected_roc_curve",
+        "subset_search_selected_ks_curve",
+        "subset_search_feature_frequency_chart",
+    }:
+        return "feature_subset_search"
+    if asset_key in {
         "scorecard_woe_table",
         "scorecard_points_table",
         "scorecard_scaling_summary",
@@ -576,6 +858,9 @@ def infer_asset_section(asset_key: str, *, kind: str) -> str:
         "scorecard_feature_iv",
         "scorecard_score_distribution",
         "scorecard_reason_code_frequency_chart",
+        "binning_framework_summary",
+        "manual_binning_profile",
+        "manual_binning_distribution",
     }:
         return "scorecard_workbench"
     if asset_key in {
@@ -595,6 +880,12 @@ def infer_asset_section(asset_key: str, *, kind: str) -> str:
     if asset_key in {
         "psi",
         "psi_profile",
+        "distribution_tests",
+        "distribution_shift_tests",
+        "distribution_shift_overview",
+        "dependency_cluster_summary",
+        "condition_index_detail",
+        "dependency_cluster_heatmap",
         "imputation_sensitivity_impact",
         "robustness_metric_distribution",
         "robustness_metric_summary",
@@ -602,6 +893,7 @@ def infer_asset_section(asset_key: str, *, kind: str) -> str:
         "robustness_metric_summary_chart",
         "robustness_feature_distribution",
         "robustness_feature_stability",
+        "robustness_framework_summary",
     }:
         return "stability_drift"
     if asset_key in {
@@ -612,14 +904,22 @@ def infer_asset_section(asset_key: str, *, kind: str) -> str:
         "forecasting_statistical_tests",
         "cointegration_tests",
         "granger_causality_tests",
+        "time_series_extension_tests",
+        "seasonality_profile",
+        "structural_break_tests",
+        "structural_break_profile",
         "lifetime_pd_curve",
     }:
         return "backtesting_time"
     if asset_key in {
+        "preset_imputation_recommendations",
+        "preset_transformation_recommendations",
+        "preset_test_recommendations",
         "feature_policy_checks",
         "workflow_guardrails",
         "manual_review_feature_decisions",
         "reproducibility_manifest",
+        "performance_hardening_actions",
         "model_numerical_diagnostics",
         "numerical_warning_summary",
     }:
@@ -766,6 +1066,38 @@ def summarize_run_kpis(
 ) -> list[dict[str, str]]:
     """Builds the primary KPI strip shown in the GUI and HTML reports."""
 
+    if execution_mode == "search_feature_subsets":
+        search_summary = metrics.get("subset_search", {})
+        return [
+            {"label": "Execution Mode", "value": execution_mode.replace("_", " ").title()},
+            {"label": "Model Family", "value": model_type.replace("_", " ").title()},
+            {"label": "Input Rows", "value": _format_number(input_rows)},
+            {"label": "Candidate Features", "value": _format_number(feature_count)},
+            {
+                "label": "Enumerated Subsets",
+                "value": format_metric_value(search_summary.get("enumerated_subsets")),
+            },
+            {
+                "label": "Successful Subsets",
+                "value": format_metric_value(search_summary.get("successful_subsets")),
+            },
+            {
+                "label": "Best Validation AUC",
+                "value": format_metric_value(search_summary.get("best_validation_roc_auc")),
+            },
+            {
+                "label": "Best Validation KS",
+                "value": format_metric_value(
+                    search_summary.get("best_validation_ks_statistic")
+                ),
+            },
+            {
+                "label": "Best Feature Count",
+                "value": format_metric_value(search_summary.get("best_feature_count")),
+            },
+            {"label": "Warnings", "value": _format_number(warning_count)},
+        ]
+
     primary_split = metrics.get("test") or next(iter(metrics.values()), {})
     cards = [
         {"label": "Execution Mode", "value": execution_mode.replace("_", " ").title()},
@@ -884,10 +1216,20 @@ def build_interactive_report_html(
     events: list[str],
     diagnostics_tables: Mapping[str, pd.DataFrame],
     visualizations: Mapping[str, go.Figure],
+    table_preview_rows: int = 12,
+    max_figures_per_section: int = 6,
+    max_tables_per_section: int = 6,
 ) -> str:
     """Builds the polished standalone HTML dashboard report for each run."""
 
     asset_catalog = build_asset_catalog(diagnostics_tables, visualizations)
+    subset_search_highlight_html = ""
+    if execution_mode == "search_feature_subsets":
+        subset_search_highlight_html = _build_subset_search_highlight_html(
+            tables=diagnostics_tables,
+            figures=visualizations,
+        )
+        asset_catalog = prune_subset_search_highlight_assets(asset_catalog)
     metric_cards = summarize_run_kpis(
         metrics=metrics,
         input_rows=input_rows,
@@ -927,11 +1269,15 @@ def build_interactive_report_html(
             table_descriptors=section_payload["tables"],
             figures=visualizations,
             tables=diagnostics_tables,
+            table_preview_rows=table_preview_rows,
+            max_figures_per_section=max_figures_per_section,
+            max_tables_per_section=max_tables_per_section,
         )
         for section_id, section_payload in asset_catalog.items()
         if section_payload["figures"] or section_payload["tables"]
     )
     sections_html = diagnostic_sections_html + _build_governance_section_html(
+        execution_mode=execution_mode,
         warning_count=warning_count,
         warnings=warnings,
         events=events,
@@ -1082,11 +1428,15 @@ def build_interactive_report_html(
       }}
       .asset-card {{
         min-width: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
         padding: 18px;
         border-radius: 22px;
         background: var(--surface);
         border: 1px solid rgba(17, 32, 51, 0.08);
         overflow: hidden;
+        isolation: isolate;
       }}
       .asset-card h3 {{
         margin: 0 0 8px;
@@ -1110,15 +1460,23 @@ def build_interactive_report_html(
         overflow-y: hidden;
       }}
       .plot-shell {{
+        position: relative;
         width: 100%;
         min-width: 0;
         overflow: hidden;
+        min-height: 460px;
+        isolation: isolate;
+      }}
+      .plot-shell > div {{
+        width: 100% !important;
+        max-width: 100% !important;
       }}
       .plot-shell .js-plotly-plot,
       .plot-shell .plot-container,
       .plot-shell .svg-container {{
         width: 100% !important;
         max-width: 100% !important;
+        position: relative !important;
       }}
       .plot-shell .modebar {{
         right: 8px !important;
@@ -1185,11 +1543,127 @@ def build_interactive_report_html(
         <div class="split-strip">{split_chips_html}</div>
         <div class="metrics-grid">{metric_cards_html}</div>
       </section>
+      {subset_search_highlight_html}
       {sections_html}
     </main>
   </body>
 </html>
 """
+
+
+def _build_subset_search_highlight_html(
+    *,
+    tables: Mapping[str, pd.DataFrame],
+    figures: Mapping[str, go.Figure],
+) -> str:
+    selected_candidate = tables.get("subset_search_selected_candidate", pd.DataFrame())
+    selected_coefficients = tables.get("subset_search_selected_coefficients", pd.DataFrame())
+    nonwinning_candidates = tables.get("subset_search_nonwinning_candidates", pd.DataFrame())
+
+    summary_cards: list[str] = []
+    if not selected_candidate.empty:
+        summary_cards.append(
+            _build_table_card_html(
+                AssetDescriptor(
+                    key="subset_search_selected_candidate",
+                    title=friendly_asset_title(
+                        "subset_search_selected_candidate",
+                        kind="table",
+                    ),
+                    kind="table",
+                    section="feature_subset_search",
+                    description=ASSET_DESCRIPTIONS.get(
+                        "subset_search_selected_candidate",
+                        "",
+                    ),
+                    featured=True,
+                ),
+                selected_candidate,
+                preview_rows=1,
+            )
+        )
+    if not selected_coefficients.empty:
+        summary_cards.append(
+            _build_table_card_html(
+                AssetDescriptor(
+                    key="subset_search_selected_coefficients",
+                    title=friendly_asset_title(
+                        "subset_search_selected_coefficients",
+                        kind="table",
+                    ),
+                    kind="table",
+                    section="feature_subset_search",
+                    description=ASSET_DESCRIPTIONS.get(
+                        "subset_search_selected_coefficients",
+                        "",
+                    ),
+                    featured=True,
+                ),
+                selected_coefficients,
+                preview_rows=25,
+            )
+        )
+
+    figure_cards = "".join(
+        _build_figure_card_html(
+            AssetDescriptor(
+                key=figure_key,
+                title=friendly_asset_title(figure_key, kind="figure"),
+                kind="figure",
+                section="feature_subset_search",
+                description=ASSET_DESCRIPTIONS.get(figure_key, ""),
+                featured=True,
+            ),
+            figures[figure_key],
+        )
+        for figure_key in [
+            "subset_search_selected_roc_curve",
+            "subset_search_selected_ks_curve",
+        ]
+        if figure_key in figures
+    )
+
+    ranked_table_html = ""
+    if not nonwinning_candidates.empty:
+        ranked_table_html = _build_table_card_html(
+            AssetDescriptor(
+                key="subset_search_nonwinning_candidates",
+                title=friendly_asset_title(
+                    "subset_search_nonwinning_candidates",
+                    kind="table",
+                ),
+                kind="table",
+                section="feature_subset_search",
+                description=ASSET_DESCRIPTIONS.get(
+                    "subset_search_nonwinning_candidates",
+                    "",
+                ),
+                featured=True,
+            ),
+            nonwinning_candidates,
+            preview_rows=25,
+        )
+
+    if not summary_cards and not figure_cards and not ranked_table_html:
+        return ""
+
+    return f"""
+    <section class="section-shell" id="subset_search_selection_summary">
+      <div class="section-header">
+        <div>
+          <h2>Selected Candidate Summary</h2>
+          <p>
+            Selected-candidate evidence sits first in the subset-search report. The winning
+            subset is shown with its coefficients or feature-importance values, while the
+            alternative subsets are kept in a ranked comparison table for cleaner review.
+          </p>
+        </div>
+      </div>
+      {"<div class='table-grid'>" + "".join(summary_cards) + "</div>" if summary_cards else ""}
+      {"<div class='figure-grid'>" + figure_cards + "</div>" if figure_cards else ""}
+      {"<div class='table-grid'>" + ranked_table_html + "</div>" if ranked_table_html else ""}
+    </section>
+    """
 
 
 def _build_section_html(
@@ -1201,15 +1675,24 @@ def _build_section_html(
     table_descriptors: list[AssetDescriptor],
     figures: Mapping[str, go.Figure],
     tables: Mapping[str, pd.DataFrame],
+    table_preview_rows: int,
+    max_figures_per_section: int,
+    max_tables_per_section: int,
 ) -> str:
+    visible_figure_descriptors = figure_descriptors[:max_figures_per_section]
+    visible_table_descriptors = table_descriptors[:max_tables_per_section]
     figure_cards = "".join(
         _build_figure_card_html(descriptor, figures[descriptor.key])
-        for descriptor in figure_descriptors
+        for descriptor in visible_figure_descriptors
         if descriptor.key in figures
     )
     table_cards = "".join(
-        _build_table_card_html(descriptor, tables[descriptor.key])
-        for descriptor in table_descriptors
+        _build_table_card_html(
+            descriptor,
+            tables[descriptor.key],
+            preview_rows=table_preview_rows,
+        )
+        for descriptor in visible_table_descriptors
         if descriptor.key in tables
     )
 
@@ -1222,6 +1705,14 @@ def _build_section_html(
         <div>
           <h2>{escape(section_title)}</h2>
           <p>{escape(section_description)}</p>
+          {
+              _build_section_limit_note(
+                  figure_descriptors,
+                  table_descriptors,
+                  max_figures_per_section,
+                  max_tables_per_section,
+              )
+          }
         </div>
       </div>
       {"<div class='figure-grid'>" + figure_cards + "</div>" if figure_cards else ""}
@@ -1251,8 +1742,13 @@ def _build_figure_card_html(descriptor: AssetDescriptor, figure: go.Figure) -> s
     """
 
 
-def _build_table_card_html(descriptor: AssetDescriptor, table: pd.DataFrame) -> str:
-    preview = _prepare_table_preview(table).head(12)
+def _build_table_card_html(
+    descriptor: AssetDescriptor,
+    table: pd.DataFrame,
+    *,
+    preview_rows: int,
+) -> str:
+    preview = _prepare_table_preview(table).head(preview_rows)
     description = escape(descriptor.description or "")
     return f"""
     <article class="asset-card">
@@ -1262,7 +1758,7 @@ def _build_table_card_html(descriptor: AssetDescriptor, table: pd.DataFrame) -> 
         {preview.to_html(index=False, classes="asset-table", border=0)}
       </div>
       <div class="asset-note">
-        Showing {min(len(table), 12)} of {len(table):,} rows. Full export is available
+        Showing {min(len(table), preview_rows)} of {len(table):,} rows. Full export is available
         in the tables directory.
       </div>
     </article>
@@ -1273,8 +1769,29 @@ def _prepare_table_preview(table: pd.DataFrame) -> pd.DataFrame:
     return prepare_display_table(table)
 
 
+def _build_section_limit_note(
+    figure_descriptors: list[AssetDescriptor],
+    table_descriptors: list[AssetDescriptor],
+    max_figures_per_section: int,
+    max_tables_per_section: int,
+) -> str:
+    notes: list[str] = []
+    if len(figure_descriptors) > max_figures_per_section:
+        notes.append(
+            f"Showing the first {max_figures_per_section} figures in this section in the HTML view."
+        )
+    if len(table_descriptors) > max_tables_per_section:
+        notes.append(
+            f"Showing the first {max_tables_per_section} tables in this section in the HTML view."
+        )
+    if not notes:
+        return ""
+    return f"<p>{escape(' '.join(notes))}</p>"
+
+
 def _build_governance_section_html(
     *,
+    execution_mode: str,
     warning_count: int,
     warnings: list[str],
     events: list[str],
@@ -1289,22 +1806,50 @@ def _build_governance_section_html(
         if events
         else "<li>No pipeline events were recorded.</li>"
     )
-    export_items = "".join(
-        [
-            "<li><strong>run_config.json</strong> stores the fully resolved configuration.</li>",
-            "<li><strong>generated_run.py</strong> reruns the bundle without the GUI.</li>",
-            "<li><strong>input_snapshot.csv</strong> preserves the scored input when enabled.</li>",
-            (
-                "<li><strong>committee_report.docx/.pdf</strong> and "
-                "<strong>validation_report.docx/.pdf</strong> package the run for "
-                "committee and validation review.</li>"
-            ),
-            (
-                "<li><strong>tables/</strong> and <strong>figures/</strong> "
-                "hold distribution-ready outputs.</li>"
-            ),
-        ]
-    )
+    if execution_mode == "search_feature_subsets":
+        export_items = "".join(
+            [
+                (
+                    "<li><strong>run_config.json</strong> stores the resolved subset-search "
+                    "configuration.</li>"
+                ),
+                (
+                    "<li><strong>subset_search_candidates.csv</strong> and related tables in "
+                    "<strong>tables/</strong> preserve the candidate ranking.</li>"
+                ),
+                (
+                    "<li><strong>interactive_report.html</strong> packages the comparison-only "
+                    "visuals for review outside the GUI.</li>"
+                ),
+                (
+                    "<li><strong>figures/</strong> stores ROC, KS, frontier, and feature-"
+                    "frequency visuals for the leading candidates.</li>"
+                ),
+            ]
+        )
+    else:
+        export_items = "".join(
+            [
+                (
+                    "<li><strong>run_config.json</strong> stores the fully resolved "
+                    "configuration.</li>"
+                ),
+                "<li><strong>generated_run.py</strong> reruns the bundle without the GUI.</li>",
+                (
+                    "<li><strong>input_snapshot.csv</strong> preserves the scored input "
+                    "when enabled.</li>"
+                ),
+                (
+                    "<li><strong>committee_report.docx/.pdf</strong> and "
+                    "<strong>validation_report.docx/.pdf</strong> package the run for "
+                    "committee and validation review.</li>"
+                ),
+                (
+                    "<li><strong>tables/</strong> and <strong>figures/</strong> "
+                    "hold distribution-ready outputs.</li>"
+                ),
+            ]
+        )
     return f"""
     <section class="section-shell" id="governance_export">
       <div class="section-header">

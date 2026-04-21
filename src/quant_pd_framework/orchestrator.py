@@ -20,6 +20,7 @@ from .steps import (
     DiagnosticsStep,
     EvaluationStep,
     FeatureEngineeringStep,
+    FeatureSubsetSearchStep,
     ImputationStep,
     IngestionStep,
     ModelComparisonStep,
@@ -65,6 +66,7 @@ class QuantModelOrchestrator:
         base_config.comparison = resolved.comparison
         base_config.feature_policy = resolved.feature_policy
         base_config.feature_dictionary = resolved.feature_dictionary
+        base_config.advanced_imputation = resolved.advanced_imputation
         base_config.transformations = resolved.transformations
         base_config.manual_review = resolved.manual_review
         base_config.suitability_checks = resolved.suitability_checks
@@ -79,12 +81,35 @@ class QuantModelOrchestrator:
         base_config.regulatory_reporting = resolved.regulatory_reporting
         base_config.scenario_testing = resolved.scenario_testing
         base_config.diagnostics = resolved.diagnostics
+        base_config.distribution_diagnostics = resolved.distribution_diagnostics
+        base_config.residual_diagnostics = resolved.residual_diagnostics
+        base_config.outlier_diagnostics = resolved.outlier_diagnostics
+        base_config.dependency_diagnostics = resolved.dependency_diagnostics
+        base_config.time_series_diagnostics = resolved.time_series_diagnostics
+        base_config.structural_breaks = resolved.structural_breaks
+        base_config.feature_workbench = resolved.feature_workbench
+        base_config.preset_recommendations = resolved.preset_recommendations
         base_config.credit_risk = resolved.credit_risk
         base_config.reproducibility = resolved.reproducibility
         base_config.artifacts = resolved.artifacts
         return base_config
 
     def _build_default_steps(self) -> list[BasePipelineStep]:
+        if self.config.execution.mode == ExecutionMode.SEARCH_FEATURE_SUBSETS:
+            return [
+                IngestionStep(),
+                SchemaManagementStep(),
+                TargetConstructionStep(),
+                ValidationStep(),
+                CleaningStep(),
+                FeatureEngineeringStep(),
+                SplitStep(),
+                AssumptionCheckStep(),
+                ImputationStep(),
+                TransformationStep(),
+                FeatureSubsetSearchStep(),
+                ArtifactExportStep(),
+            ]
         return [
             IngestionStep(),
             SchemaManagementStep(),

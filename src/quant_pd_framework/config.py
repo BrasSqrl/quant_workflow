@@ -38,6 +38,7 @@ class ExecutionMode(StrEnum):
 
     FIT_NEW_MODEL = "fit_new_model"
     SCORE_EXISTING_MODEL = "score_existing_model"
+    SEARCH_FEATURE_SUBSETS = "search_feature_subsets"
 
 
 class TargetMode(StrEnum):
@@ -109,6 +110,8 @@ class MissingValuePolicy(StrEnum):
     CONSTANT = "constant"
     FORWARD_FILL = "forward_fill"
     BACKWARD_FILL = "backward_fill"
+    KNN = "knn"
+    ITERATIVE = "iterative"
 
 
 class TransformationType(StrEnum):
@@ -116,12 +119,21 @@ class TransformationType(StrEnum):
 
     WINSORIZE = "winsorize"
     LOG1P = "log1p"
+    BOX_COX = "box_cox"
+    NATURAL_SPLINE = "natural_spline"
     YEO_JOHNSON = "yeo_johnson"
     CAPPED_ZSCORE = "capped_zscore"
+    PIECEWISE_LINEAR = "piecewise_linear"
     RATIO = "ratio"
     INTERACTION = "interaction"
     LAG = "lag"
+    DIFFERENCE = "difference"
+    EWMA = "ewma"
     ROLLING_MEAN = "rolling_mean"
+    ROLLING_MEDIAN = "rolling_median"
+    ROLLING_MIN = "rolling_min"
+    ROLLING_MAX = "rolling_max"
+    ROLLING_STD = "rolling_std"
     PCT_CHANGE = "pct_change"
     MANUAL_BINS = "manual_bins"
 
@@ -221,6 +233,8 @@ class ColumnSpec:
             MissingValuePolicy.CONSTANT,
             MissingValuePolicy.FORWARD_FILL,
             MissingValuePolicy.BACKWARD_FILL,
+            MissingValuePolicy.KNN,
+            MissingValuePolicy.ITERATIVE,
         }:
             raise ValueError(
                 f"Column '{self.name}' uses missing_value_group_columns with "
@@ -423,6 +437,72 @@ class ComparisonConfig:
 
 
 @dataclass(slots=True)
+class FeatureSubsetSearchConfig:
+    """Controls exhaustive feature-subset comparison for a fixed model family."""
+
+    enabled: bool = False
+    candidate_feature_names: list[str] = field(default_factory=list)
+    locked_include_features: list[str] = field(default_factory=list)
+    locked_exclude_features: list[str] = field(default_factory=list)
+    min_subset_size: int = 1
+    max_subset_size: int | None = 4
+    max_candidate_features: int = 12
+    ranking_split: str = "validation"
+    ranking_metric: str = "roc_auc"
+    top_candidate_count: int = 25
+    top_curve_count: int = 5
+    include_significance_tests: bool = True
+
+    def validate(self) -> None:
+        if self.min_subset_size <= 0:
+            raise ValueError("FeatureSubsetSearchConfig.min_subset_size must be greater than 0.")
+        if self.max_subset_size is not None and self.max_subset_size < self.min_subset_size:
+            raise ValueError(
+                "FeatureSubsetSearchConfig.max_subset_size must be greater than or equal "
+                "to min_subset_size."
+            )
+        if self.max_candidate_features <= 1:
+            raise ValueError(
+                "FeatureSubsetSearchConfig.max_candidate_features must be greater than 1."
+            )
+        if self.ranking_split not in {"validation", "test"}:
+            raise ValueError(
+                "FeatureSubsetSearchConfig.ranking_split must be 'validation' or 'test'."
+            )
+        if self.ranking_metric not in {
+            "roc_auc",
+            "ks_statistic",
+            "average_precision",
+            "brier_score",
+            "log_loss",
+        }:
+            raise ValueError(
+                "FeatureSubsetSearchConfig.ranking_metric only supports roc_auc, "
+                "ks_statistic, average_precision, brier_score, or log_loss."
+            )
+        if self.top_candidate_count <= 0:
+            raise ValueError(
+                "FeatureSubsetSearchConfig.top_candidate_count must be greater than 0."
+            )
+        if self.top_curve_count <= 0:
+            raise ValueError("FeatureSubsetSearchConfig.top_curve_count must be greater than 0.")
+        for field_name, values in {
+            "candidate_feature_names": self.candidate_feature_names,
+            "locked_include_features": self.locked_include_features,
+            "locked_exclude_features": self.locked_exclude_features,
+        }.items():
+            normalized = [value.strip() for value in values if value and value.strip()]
+            if len(normalized) != len(set(normalized)):
+                raise ValueError(f"FeatureSubsetSearchConfig.{field_name} must be unique.")
+        overlap = set(self.locked_include_features) & set(self.locked_exclude_features)
+        if overlap:
+            raise ValueError(
+                "FeatureSubsetSearchConfig.locked_include_features and "
+                "locked_exclude_features cannot overlap."
+            )
+
+
+@dataclass(slots=True)
 class FeaturePolicyConfig:
     """Feature-governance rules used during development and documentation."""
 
@@ -549,6 +629,8 @@ class ImputationSensitivityConfig:
             MissingValuePolicy.MEAN,
             MissingValuePolicy.MEDIAN,
             MissingValuePolicy.MODE,
+            MissingValuePolicy.KNN,
+            MissingValuePolicy.ITERATIVE,
         ]
     )
     selected_features: list[str] = field(default_factory=list)
@@ -575,6 +657,8 @@ class ImputationSensitivityConfig:
             MissingValuePolicy.MEAN,
             MissingValuePolicy.MEDIAN,
             MissingValuePolicy.MODE,
+            MissingValuePolicy.KNN,
+            MissingValuePolicy.ITERATIVE,
         }
         unsupported = [
             policy.value for policy in self.alternative_policies if policy not in allowed_policies
@@ -582,7 +666,8 @@ class ImputationSensitivityConfig:
         if unsupported:
             raise ValueError(
                 "ImputationSensitivityConfig.alternative_policies only supports "
-                f"mean/median/mode. Received: {', '.join(sorted(unsupported))}."
+                "mean/median/mode/knn/iterative. "
+                f"Received: {', '.join(sorted(unsupported))}."
             )
 
 
@@ -716,8 +801,22 @@ class TransformationSpec:
             z_cap = 3.0 if self.parameter_value is None else self.parameter_value
             if z_cap <= 0:
                 raise ValueError("capped_zscore parameter_value must be greater than 0.")
+        if self.transform_type == TransformationType.NATURAL_SPLINE:
+            spline_df = 4 if self.parameter_value is None else int(self.parameter_value)
+            if spline_df < 3:
+                raise ValueError(
+                    "natural_spline transformations require parameter_value >= 3 "
+                    "to define the spline degrees of freedom."
+                )
+        if self.transform_type == TransformationType.PIECEWISE_LINEAR:
+            if self.parameter_value is None:
+                raise ValueError(
+                    "piecewise_linear transformations require parameter_value "
+                    "to define the hinge point."
+                )
         if self.transform_type in {
             TransformationType.LAG,
+            TransformationType.DIFFERENCE,
             TransformationType.PCT_CHANGE,
         }:
             lag_periods = 1 if self.lag_periods is None else self.lag_periods
@@ -725,10 +824,19 @@ class TransformationSpec:
                 raise ValueError(
                     f"{self.transform_type.value} transformations require lag_periods > 0."
                 )
-        if self.transform_type == TransformationType.ROLLING_MEAN:
+        if self.transform_type in {
+            TransformationType.EWMA,
+            TransformationType.ROLLING_MEAN,
+            TransformationType.ROLLING_MEDIAN,
+            TransformationType.ROLLING_MIN,
+            TransformationType.ROLLING_MAX,
+            TransformationType.ROLLING_STD,
+        }:
             window_size = 3 if self.window_size is None else self.window_size
             if window_size <= 1:
-                raise ValueError("rolling_mean transformations require window_size >= 2.")
+                raise ValueError(
+                    f"{self.transform_type.value} transformations require window_size >= 2."
+                )
         if self.transform_type == TransformationType.MANUAL_BINS:
             if not self.bin_edges:
                 raise ValueError("manual_bins transformations require at least one bin edge.")
@@ -785,18 +893,241 @@ class TransformationConfig:
             return f"{transformation.source_feature}_x_{transformation.secondary_feature}"
         if transformation.transform_type == TransformationType.YEO_JOHNSON:
             return f"{transformation.source_feature}_yeo_johnson"
+        if transformation.transform_type == TransformationType.BOX_COX:
+            return f"{transformation.source_feature}_box_cox"
+        if transformation.transform_type == TransformationType.NATURAL_SPLINE:
+            spline_df = 4 if transformation.parameter_value is None else int(
+                transformation.parameter_value
+            )
+            return f"{transformation.source_feature}_spline_df_{spline_df}"
         if transformation.transform_type == TransformationType.CAPPED_ZSCORE:
             return f"{transformation.source_feature}_zscore"
+        if transformation.transform_type == TransformationType.PIECEWISE_LINEAR:
+            hinge_point = transformation.parameter_value
+            hinge_token = "hinge" if hinge_point is None else str(hinge_point).replace(".", "_")
+            return f"{transformation.source_feature}_piecewise_{hinge_token}"
         if transformation.transform_type == TransformationType.LAG:
             lag_periods = 1 if transformation.lag_periods is None else transformation.lag_periods
             return f"{transformation.source_feature}_lag_{lag_periods}"
+        if transformation.transform_type == TransformationType.DIFFERENCE:
+            lag_periods = 1 if transformation.lag_periods is None else transformation.lag_periods
+            return f"{transformation.source_feature}_diff_{lag_periods}"
+        if transformation.transform_type == TransformationType.EWMA:
+            window_size = 3 if transformation.window_size is None else transformation.window_size
+            return f"{transformation.source_feature}_ewma_{window_size}"
         if transformation.transform_type == TransformationType.ROLLING_MEAN:
             window_size = 3 if transformation.window_size is None else transformation.window_size
             return f"{transformation.source_feature}_rollmean_{window_size}"
+        if transformation.transform_type == TransformationType.ROLLING_MEDIAN:
+            window_size = 3 if transformation.window_size is None else transformation.window_size
+            return f"{transformation.source_feature}_rollmedian_{window_size}"
+        if transformation.transform_type == TransformationType.ROLLING_MIN:
+            window_size = 3 if transformation.window_size is None else transformation.window_size
+            return f"{transformation.source_feature}_rollmin_{window_size}"
+        if transformation.transform_type == TransformationType.ROLLING_MAX:
+            window_size = 3 if transformation.window_size is None else transformation.window_size
+            return f"{transformation.source_feature}_rollmax_{window_size}"
+        if transformation.transform_type == TransformationType.ROLLING_STD:
+            window_size = 3 if transformation.window_size is None else transformation.window_size
+            return f"{transformation.source_feature}_rollstd_{window_size}"
         if transformation.transform_type == TransformationType.PCT_CHANGE:
             lag_periods = 1 if transformation.lag_periods is None else transformation.lag_periods
             return f"{transformation.source_feature}_pct_change_{lag_periods}"
         return transformation.source_feature
+
+
+@dataclass(slots=True)
+class AdvancedImputationConfig:
+    """Controls model-based and framework-level missing-value features."""
+
+    enabled: bool = True
+    knn_neighbors: int = 5
+    iterative_max_iter: int = 10
+    iterative_random_state: int = 42
+    iterative_sample_posterior: bool = False
+    max_auxiliary_numeric_features: int = 25
+    minimum_complete_rows: int = 20
+    multiple_imputation_enabled: bool = False
+    multiple_imputation_datasets: int = 5
+    multiple_imputation_evaluation_split: str = "test"
+    multiple_imputation_top_features: int = 20
+
+    def validate(self) -> None:
+        if self.knn_neighbors <= 0:
+            raise ValueError("AdvancedImputationConfig.knn_neighbors must be greater than 0.")
+        if self.iterative_max_iter <= 0:
+            raise ValueError(
+                "AdvancedImputationConfig.iterative_max_iter must be greater than 0."
+            )
+        if self.max_auxiliary_numeric_features <= 0:
+            raise ValueError(
+                "AdvancedImputationConfig.max_auxiliary_numeric_features must be greater than 0."
+            )
+        if self.minimum_complete_rows <= 0:
+            raise ValueError(
+                "AdvancedImputationConfig.minimum_complete_rows must be greater than 0."
+            )
+        if self.multiple_imputation_datasets < 2:
+            raise ValueError(
+                "AdvancedImputationConfig.multiple_imputation_datasets must be at least 2."
+            )
+        if self.multiple_imputation_evaluation_split not in {"train", "validation", "test"}:
+            raise ValueError(
+                "AdvancedImputationConfig.multiple_imputation_evaluation_split must be "
+                "train, validation, or test."
+            )
+        if self.multiple_imputation_top_features <= 0:
+            raise ValueError(
+                "AdvancedImputationConfig.multiple_imputation_top_features must be "
+                "greater than 0."
+            )
+
+
+@dataclass(slots=True)
+class DistributionDiagnosticConfig:
+    """Controls distributional testing and shift diagnostics."""
+
+    enabled: bool = True
+    include_normality_tests: bool = True
+    include_shift_tests: bool = True
+    top_features: int = 8
+    minimum_rows: int = 30
+
+    def validate(self) -> None:
+        if self.top_features <= 0:
+            raise ValueError("DistributionDiagnosticConfig.top_features must be greater than 0.")
+        if self.minimum_rows <= 0:
+            raise ValueError("DistributionDiagnosticConfig.minimum_rows must be greater than 0.")
+
+
+@dataclass(slots=True)
+class ResidualDiagnosticConfig:
+    """Controls residual-bias, heteroskedasticity, and autocorrelation checks."""
+
+    enabled: bool = True
+    heteroskedasticity_tests: bool = True
+    segment_bias_analysis: bool = True
+    autocorrelation_tests: bool = True
+    minimum_rows: int = 30
+
+    def validate(self) -> None:
+        if self.minimum_rows <= 0:
+            raise ValueError("ResidualDiagnosticConfig.minimum_rows must be greater than 0.")
+
+
+@dataclass(slots=True)
+class OutlierDiagnosticConfig:
+    """Controls influence and outlier flagging thresholds."""
+
+    enabled: bool = True
+    zscore_threshold: float = 3.0
+    leverage_multiplier: float = 2.0
+    cooks_distance_multiplier: float = 4.0
+    max_rows: int = 50
+
+    def validate(self) -> None:
+        if self.zscore_threshold <= 0:
+            raise ValueError("OutlierDiagnosticConfig.zscore_threshold must be positive.")
+        if self.leverage_multiplier <= 0:
+            raise ValueError("OutlierDiagnosticConfig.leverage_multiplier must be positive.")
+        if self.cooks_distance_multiplier <= 0:
+            raise ValueError(
+                "OutlierDiagnosticConfig.cooks_distance_multiplier must be positive."
+            )
+        if self.max_rows <= 0:
+            raise ValueError("OutlierDiagnosticConfig.max_rows must be greater than 0.")
+
+
+@dataclass(slots=True)
+class DependencyDiagnosticConfig:
+    """Controls multicollinearity and dependency-clustering diagnostics."""
+
+    enabled: bool = True
+    clustering_correlation_threshold: float = 0.7
+    maximum_features: int = 12
+    condition_index_warning: float = 30.0
+
+    def validate(self) -> None:
+        if not 0 < self.clustering_correlation_threshold <= 1:
+            raise ValueError(
+                "DependencyDiagnosticConfig.clustering_correlation_threshold must be in (0, 1]."
+            )
+        if self.maximum_features <= 1:
+            raise ValueError(
+                "DependencyDiagnosticConfig.maximum_features must be greater than 1."
+            )
+        if self.condition_index_warning <= 0:
+            raise ValueError(
+                "DependencyDiagnosticConfig.condition_index_warning must be positive."
+            )
+
+
+@dataclass(slots=True)
+class TimeSeriesDiagnosticConfig:
+    """Controls the deeper econometric and time-series testing layer."""
+
+    enabled: bool = True
+    maximum_lag: int = 5
+    seasonal_period: int = 4
+    minimum_series_length: int = 12
+
+    def validate(self) -> None:
+        if self.maximum_lag <= 0:
+            raise ValueError("TimeSeriesDiagnosticConfig.maximum_lag must be positive.")
+        if self.seasonal_period <= 1:
+            raise ValueError("TimeSeriesDiagnosticConfig.seasonal_period must be at least 2.")
+        if self.minimum_series_length <= 0:
+            raise ValueError(
+                "TimeSeriesDiagnosticConfig.minimum_series_length must be positive."
+            )
+
+
+@dataclass(slots=True)
+class StructuralBreakConfig:
+    """Controls structural-break and regime-shift diagnostics."""
+
+    enabled: bool = True
+    candidate_break_count: int = 3
+    minimum_segment_size: int = 12
+    rolling_window_fraction: float = 0.25
+
+    def validate(self) -> None:
+        if self.candidate_break_count <= 0:
+            raise ValueError("StructuralBreakConfig.candidate_break_count must be positive.")
+        if self.minimum_segment_size <= 2:
+            raise ValueError("StructuralBreakConfig.minimum_segment_size must be at least 3.")
+        if not 0 < self.rolling_window_fraction <= 0.5:
+            raise ValueError(
+                "StructuralBreakConfig.rolling_window_fraction must be in (0, 0.5]."
+            )
+
+
+@dataclass(slots=True)
+class FeatureWorkbenchConfig:
+    """Controls the constructed-feature workbench and preview outputs."""
+
+    enabled: bool = True
+    max_features: int = 12
+    include_preview_statistics: bool = True
+    include_target_association: bool = True
+
+    def validate(self) -> None:
+        if self.max_features <= 0:
+            raise ValueError("FeatureWorkbenchConfig.max_features must be greater than 0.")
+
+
+@dataclass(slots=True)
+class PresetRecommendationConfig:
+    """Controls preset-aligned transformation and test recommendation outputs."""
+
+    enabled: bool = True
+    include_imputation_recommendations: bool = True
+    include_transformation_recommendations: bool = True
+    include_test_recommendations: bool = True
+
+    def validate(self) -> None:
+        if not self.enabled:
+            return
 
 
 @dataclass(slots=True)
@@ -938,6 +1269,35 @@ class ReproducibilityConfig:
 
 
 @dataclass(slots=True)
+class PerformanceConfig:
+    """Controls lightweight safeguards for large uploads, diagnostics, and reports."""
+
+    enabled: bool = True
+    upload_warning_mb: int = 250
+    dataframe_warning_rows: int = 200_000
+    dataframe_warning_columns: int = 150
+    ui_preview_rows: int = 50
+    html_table_preview_rows: int = 12
+    html_max_figures_per_section: int = 6
+    html_max_tables_per_section: int = 6
+    multiple_imputation_row_cap: int = 25_000
+
+    def validate(self) -> None:
+        for field_name, value in {
+            "upload_warning_mb": self.upload_warning_mb,
+            "dataframe_warning_rows": self.dataframe_warning_rows,
+            "dataframe_warning_columns": self.dataframe_warning_columns,
+            "ui_preview_rows": self.ui_preview_rows,
+            "html_table_preview_rows": self.html_table_preview_rows,
+            "html_max_figures_per_section": self.html_max_figures_per_section,
+            "html_max_tables_per_section": self.html_max_tables_per_section,
+            "multiple_imputation_row_cap": self.multiple_imputation_row_cap,
+        }.items():
+            if value <= 0:
+                raise ValueError(f"PerformanceConfig.{field_name} must be greater than 0.")
+
+
+@dataclass(slots=True)
 class DocumentationConfig:
     """Captures development metadata for the exported documentation pack."""
 
@@ -1049,6 +1409,12 @@ class ExecutionConfig:
         if self.mode == ExecutionMode.SCORE_EXISTING_MODEL and self.existing_model_path is None:
             raise ValueError(
                 "ExecutionConfig.existing_model_path is required when mode='score_existing_model'."
+            )
+        if self.mode == ExecutionMode.SEARCH_FEATURE_SUBSETS and (
+            self.existing_model_path is not None or self.existing_config_path is not None
+        ):
+            raise ValueError(
+                "Feature subset search does not load an existing model or prior run config."
             )
 
 
@@ -1199,8 +1565,12 @@ class FrameworkConfig:
     execution: ExecutionConfig = field(default_factory=ExecutionConfig)
     model: ModelConfig = field(default_factory=ModelConfig)
     comparison: ComparisonConfig = field(default_factory=ComparisonConfig)
+    subset_search: FeatureSubsetSearchConfig = field(default_factory=FeatureSubsetSearchConfig)
     feature_policy: FeaturePolicyConfig = field(default_factory=FeaturePolicyConfig)
     feature_dictionary: FeatureDictionaryConfig = field(default_factory=FeatureDictionaryConfig)
+    advanced_imputation: AdvancedImputationConfig = field(
+        default_factory=AdvancedImputationConfig
+    )
     transformations: TransformationConfig = field(default_factory=TransformationConfig)
     manual_review: ManualReviewConfig = field(default_factory=ManualReviewConfig)
     suitability_checks: SuitabilityCheckConfig = field(default_factory=SuitabilityCheckConfig)
@@ -1217,9 +1587,28 @@ class FrameworkConfig:
     regulatory_reporting: RegulatoryReportConfig = field(default_factory=RegulatoryReportConfig)
     scenario_testing: ScenarioTestConfig = field(default_factory=ScenarioTestConfig)
     diagnostics: DiagnosticConfig = field(default_factory=DiagnosticConfig)
+    distribution_diagnostics: DistributionDiagnosticConfig = field(
+        default_factory=DistributionDiagnosticConfig
+    )
+    residual_diagnostics: ResidualDiagnosticConfig = field(
+        default_factory=ResidualDiagnosticConfig
+    )
+    outlier_diagnostics: OutlierDiagnosticConfig = field(default_factory=OutlierDiagnosticConfig)
+    dependency_diagnostics: DependencyDiagnosticConfig = field(
+        default_factory=DependencyDiagnosticConfig
+    )
+    time_series_diagnostics: TimeSeriesDiagnosticConfig = field(
+        default_factory=TimeSeriesDiagnosticConfig
+    )
+    structural_breaks: StructuralBreakConfig = field(default_factory=StructuralBreakConfig)
+    feature_workbench: FeatureWorkbenchConfig = field(default_factory=FeatureWorkbenchConfig)
+    preset_recommendations: PresetRecommendationConfig = field(
+        default_factory=PresetRecommendationConfig
+    )
     credit_risk: CreditRiskDiagnosticConfig = field(default_factory=CreditRiskDiagnosticConfig)
     robustness: RobustnessConfig = field(default_factory=RobustnessConfig)
     reproducibility: ReproducibilityConfig = field(default_factory=ReproducibilityConfig)
+    performance: PerformanceConfig = field(default_factory=PerformanceConfig)
     artifacts: ArtifactConfig = field(default_factory=ArtifactConfig)
 
     def validate(self) -> None:
@@ -1230,8 +1619,10 @@ class FrameworkConfig:
         self.execution.validate()
         self.model.validate(self.target.mode)
         self.comparison.validate(self.model.model_type, self.target.mode)
+        self.subset_search.validate()
         self.feature_policy.validate()
         self.feature_dictionary.validate()
+        self.advanced_imputation.validate()
         self.transformations.validate()
         self.manual_review.validate()
         self.suitability_checks.validate()
@@ -1246,10 +1637,45 @@ class FrameworkConfig:
         self.regulatory_reporting.validate()
         self.scenario_testing.validate()
         self.diagnostics.validate()
+        self.distribution_diagnostics.validate()
+        self.residual_diagnostics.validate()
+        self.outlier_diagnostics.validate()
+        self.dependency_diagnostics.validate()
+        self.time_series_diagnostics.validate()
+        self.structural_breaks.validate()
+        self.feature_workbench.validate()
+        self.preset_recommendations.validate()
         self.credit_risk.validate()
         self.robustness.validate()
         self.reproducibility.validate()
+        self.performance.validate()
         self.artifacts.validate()
+        if self.execution.mode == ExecutionMode.SEARCH_FEATURE_SUBSETS:
+            if self.target.mode != TargetMode.BINARY:
+                raise ValueError(
+                    "Feature subset search is currently only supported for binary targets."
+                )
+            if self.model.model_type not in {
+                ModelType.LOGISTIC_REGRESSION,
+                ModelType.DISCRETE_TIME_HAZARD_MODEL,
+                ModelType.ELASTIC_NET_LOGISTIC_REGRESSION,
+                ModelType.SCORECARD_LOGISTIC_REGRESSION,
+                ModelType.PROBIT_REGRESSION,
+                ModelType.XGBOOST,
+            }:
+                raise ValueError(
+                    "Feature subset search currently supports logistic, discrete-time hazard, "
+                    "elastic-net logistic, scorecard logistic, probit, and XGBoost models."
+                )
+            if not self.subset_search.enabled:
+                raise ValueError(
+                    "FeatureSubsetSearchConfig.enabled must be True when using "
+                    "mode='search_feature_subsets'."
+                )
+            if self.comparison.enabled:
+                raise ValueError(
+                    "Disable challenger-model comparison when running feature subset search."
+                )
         if self.workflow_guardrails.enabled:
             from .workflow_guardrails import (
                 evaluate_workflow_guardrails,

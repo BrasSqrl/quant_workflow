@@ -309,11 +309,17 @@ Supported policies:
 - `constant`
 - `forward_fill`
 - `backward_fill`
+- `knn`
+- `iterative`
 
 Current advanced-imputation support also includes:
 
 - grouped train-fit scalar fills via `ColumnSpec.missing_value_group_columns`
 - generated missingness-indicator features via `ColumnSpec.create_missing_indicator`
+- KNN and iterative model-based numeric imputation with train-fit auxiliary
+  feature selection
+- multiple imputation with pooled surrogate coefficient and metric summaries
+- approximate Little's MCAR testing on the pre-imputation numeric surface
 - exported pre-imputation split snapshots for downstream diagnostics
 - optional imputation sensitivity testing through `ImputationSensitivityConfig`
 
@@ -336,6 +342,22 @@ When `missing_value_group_columns` is configured, the same train-fit rule
 learns group-specific fill values first and then falls back to the global
 train-fit fill value if a group is not present downstream.
 
+For model-based `knn` and `iterative` policies, the framework:
+
+- fits the imputer on the train split only
+- chooses auxiliary numeric features from the modeled feature set
+- exports the learned setup through `advanced_imputation_summary`
+- still keeps a train-fit scalar fallback value if model-based imputation
+  leaves any downstream gaps
+
+When `AdvancedImputationConfig.multiple_imputation_enabled = True`, the
+framework also exports a multiply imputed surrogate-analysis surface:
+
+- `multiple_imputation_metric_paths`
+- `multiple_imputation_pooled_coefficients`
+- `multiple_imputation_pooling_summary`
+- `littles_mcar_test`
+
 ### Directional fill rules
 
 `forward_fill` and `backward_fill`:
@@ -351,6 +373,7 @@ pipeline fails rather than silently applying a fallback imputer.
 ### Audit evidence
 
 - table `imputation_rules`
+- table `advanced_imputation_summary` when model-based imputation is used
 - table `imputation_group_rules` when grouped imputation is enabled
 - metadata `imputation_summary`
 - table `imputation_sensitivity_summary` when sensitivity testing is enabled
@@ -368,12 +391,21 @@ Supported transform families:
 
 - `winsorize`
 - `log1p`
+- `box_cox`
+- `natural_spline`
 - `yeo_johnson`
 - `capped_zscore`
+- `piecewise_linear`
 - `ratio`
 - `interaction`
 - `lag`
+- `difference`
+- `ewma`
 - `rolling_mean`
+- `rolling_median`
+- `rolling_min`
+- `rolling_max`
+- `rolling_std`
 - `pct_change`
 - `manual_bins`
 
@@ -381,6 +413,7 @@ Supported transform families:
 
 - table `governed_transformations`
 - table `interaction_candidates` when the interaction engine is enabled
+- table `feature_construction_workbench` for downstream engineered-feature review
 - metadata `transformation_summary`
 
 ## 11. Variable Selection

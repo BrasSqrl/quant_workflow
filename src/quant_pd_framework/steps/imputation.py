@@ -5,7 +5,10 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+import numpy as np
 import pandas as pd
+from sklearn.experimental import enable_iterative_imputer  # noqa: F401
+from sklearn.impute import IterativeImputer, KNNImputer
 
 from ..base import BasePipelineStep
 from ..config import DataStructure, MissingValuePolicy
@@ -29,6 +32,9 @@ class ImputationRule:
     group_fill_lookup: dict[tuple[Any, ...], Any] = field(default_factory=dict)
     group_rule_rows: list[dict[str, Any]] = field(default_factory=list)
     missing_indicator_column: str | None = None
+    auxiliary_features: tuple[str, ...] = ()
+    model_based_imputer: Any = None
+    model_fit_row_count: int = 0
 
 
 class ImputationStep(BasePipelineStep):
@@ -167,6 +173,8 @@ class ImputationStep(BasePipelineStep):
                     "group_columns": ", ".join(rule.group_columns),
                     "group_rule_count": len(rule.group_fill_lookup),
                     "missing_indicator_column": rule.missing_indicator_column or "",
+                    "auxiliary_features": ", ".join(rule.auxiliary_features),
+                    "model_fit_row_count": rule.model_fit_row_count,
                 }
                 for rule in rules
             ]
@@ -176,6 +184,21 @@ class ImputationStep(BasePipelineStep):
         ]
         if group_rule_rows:
             context.diagnostics_tables["imputation_group_rules"] = pd.DataFrame(group_rule_rows)
+        advanced_rows = [
+            {
+                "feature_name": rule.feature_name,
+                "applied_policy": rule.applied_policy.value,
+                "model_based": rule.applied_policy
+                in {MissingValuePolicy.KNN, MissingValuePolicy.ITERATIVE},
+                "auxiliary_features": ", ".join(rule.auxiliary_features),
+                "model_fit_row_count": rule.model_fit_row_count,
+                "fallback_fill_value": self._render_fill_value(rule.fill_value),
+            }
+            for rule in rules
+            if rule.applied_policy in {MissingValuePolicy.KNN, MissingValuePolicy.ITERATIVE}
+        ]
+        if advanced_rows:
+            context.diagnostics_tables["advanced_imputation_summary"] = pd.DataFrame(advanced_rows)
         context.log(f"Applied missing-value rules to {len(rules)} feature columns.")
         return context
 
@@ -214,6 +237,17 @@ class ImputationStep(BasePipelineStep):
                 applied_policy=applied_policy,
                 train_missing_count=train_missing_count,
                 group_columns=group_columns,
+                missing_indicator_column=missing_indicator_column,
+            )
+
+        if applied_policy in {MissingValuePolicy.KNN, MissingValuePolicy.ITERATIVE}:
+            return self._fit_model_based_rule(
+                feature_name=feature_name,
+                train_frame=train_frame,
+                context=context,
+                configured_policy=configured_policy,
+                applied_policy=applied_policy,
+                train_missing_count=train_missing_count,
                 missing_indicator_column=missing_indicator_column,
             )
 
@@ -257,6 +291,78 @@ class ImputationStep(BasePipelineStep):
             group_fill_lookup=group_fill_lookup,
             group_rule_rows=group_rule_rows,
             missing_indicator_column=missing_indicator_column,
+        )
+
+    def _fit_model_based_rule(
+        self,
+        *,
+        feature_name: str,
+        train_frame: pd.DataFrame,
+        context: PipelineContext,
+        configured_policy: MissingValuePolicy,
+        applied_policy: MissingValuePolicy,
+        train_missing_count: int,
+        missing_indicator_column: str | None,
+    ) -> ImputationRule:
+        if feature_name not in context.numeric_features:
+            raise ValueError(
+                f"Column '{feature_name}' uses {applied_policy.value} imputation "
+                "but is not numeric."
+            )
+        if train_frame[feature_name].dropna().empty:
+            raise ValueError(
+                f"Column '{feature_name}' cannot fit {applied_policy.value} imputation because "
+                "the training split contains no observed values for that feature."
+            )
+
+        auxiliary_features = self._select_model_based_auxiliary_features(
+            feature_name=feature_name,
+            train_frame=train_frame,
+            context=context,
+        )
+        model_frame = (
+            train_frame.loc[:, auxiliary_features]
+            .apply(pd.to_numeric, errors="coerce")
+            .replace([float("inf"), float("-inf")], np.nan)
+        )
+        fit_row_count = int(model_frame.dropna(how="all").shape[0])
+        if fit_row_count < context.config.advanced_imputation.minimum_complete_rows:
+            raise ValueError(
+                f"Column '{feature_name}' could not fit {applied_policy.value} imputation "
+                "because the training split does not contain enough usable numeric rows."
+            )
+
+        if applied_policy == MissingValuePolicy.KNN:
+            imputer = KNNImputer(
+                n_neighbors=min(
+                    context.config.advanced_imputation.knn_neighbors,
+                    max(1, fit_row_count - 1),
+                )
+            )
+        else:
+            imputer = IterativeImputer(
+                max_iter=context.config.advanced_imputation.iterative_max_iter,
+                random_state=context.config.advanced_imputation.iterative_random_state,
+                sample_posterior=context.config.advanced_imputation.iterative_sample_posterior,
+                skip_complete=True,
+            )
+        imputer.fit(model_frame.astype(float))
+        fallback_fill_value = self._fit_scalar_fill_value(
+            feature_name,
+            train_frame[feature_name],
+            MissingValuePolicy.MEDIAN,
+        )
+        return ImputationRule(
+            feature_name=feature_name,
+            configured_policy=configured_policy,
+            applied_policy=applied_policy,
+            fill_value=fallback_fill_value,
+            learned_from_train=True,
+            train_missing_count=train_missing_count,
+            missing_indicator_column=missing_indicator_column,
+            auxiliary_features=tuple(auxiliary_features),
+            model_based_imputer=imputer,
+            model_fit_row_count=fit_row_count,
         )
 
     def _resolve_policy(
@@ -448,12 +554,69 @@ class ImputationStep(BasePipelineStep):
             return self._directional_fill(series, frame, context, forward=True)
         if rule.applied_policy == MissingValuePolicy.BACKWARD_FILL:
             return self._directional_fill(series, frame, context, forward=False)
+        if rule.model_based_imputer is not None:
+            imputed_series = self._apply_model_based_rule(frame, rule)
+            if imputed_series.isna().any():
+                return self._fillna_scalar(imputed_series, rule.fill_value)
+            return imputed_series
         if rule.group_fill_lookup:
             group_fill_series = self._build_group_fill_series(frame, rule)
             series = self._fillna_series(series, group_fill_series)
         if series.isna().any():
             return self._fillna_scalar(series, rule.fill_value)
         return series
+
+    def _apply_model_based_rule(
+        self,
+        frame: pd.DataFrame,
+        rule: ImputationRule,
+    ) -> pd.Series:
+        model_frame = (
+            frame.loc[:, list(rule.auxiliary_features)]
+            .apply(pd.to_numeric, errors="coerce")
+            .replace([float("inf"), float("-inf")], np.nan)
+        )
+        transformed = rule.model_based_imputer.transform(model_frame.astype(float))
+        transformed_frame = pd.DataFrame(
+            transformed,
+            columns=list(rule.auxiliary_features),
+            index=frame.index,
+        )
+        return transformed_frame[rule.feature_name]
+
+    def _select_model_based_auxiliary_features(
+        self,
+        *,
+        feature_name: str,
+        train_frame: pd.DataFrame,
+        context: PipelineContext,
+    ) -> list[str]:
+        numeric_candidates = [
+            candidate
+            for candidate in context.numeric_features
+            if candidate in train_frame.columns
+        ]
+        ranked_candidates = sorted(
+            numeric_candidates,
+            key=lambda candidate: (
+                candidate != feature_name,
+                float(train_frame[candidate].isna().mean()),
+                candidate,
+            ),
+        )
+        selected = ranked_candidates[
+            : context.config.advanced_imputation.max_auxiliary_numeric_features
+        ]
+        if feature_name not in selected:
+            selected = [feature_name, *selected]
+        ordered_selected: list[str] = []
+        seen: set[str] = set()
+        for candidate in selected:
+            if candidate in seen:
+                continue
+            seen.add(candidate)
+            ordered_selected.append(candidate)
+        return ordered_selected
 
     def _directional_fill(
         self,
