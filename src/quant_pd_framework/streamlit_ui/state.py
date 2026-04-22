@@ -1,0 +1,222 @@
+"""Typed Streamlit session helpers and shared UI utility functions."""
+
+from __future__ import annotations
+
+import hashlib
+import json
+from collections.abc import Callable
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
+
+import pandas as pd
+import plotly.graph_objects as go
+import streamlit as st
+
+from quant_pd_framework import TargetMode
+from quant_pd_framework.presentation import plotly_display_config, prepare_display_table
+
+LAST_RUN_SNAPSHOT_KEY = "last_run_snapshot"
+
+
+def get_or_initialize_frame(
+    state_key: str,
+    builder: Callable[[], pd.DataFrame],
+) -> pd.DataFrame:
+    if state_key not in st.session_state:
+        st.session_state[state_key] = builder()
+    return st.session_state[state_key].copy(deep=True)
+
+
+def store_workspace_frame(state_key: str, frame: pd.DataFrame) -> None:
+    st.session_state[state_key] = frame.copy(deep=True)
+
+
+def set_last_run_snapshot(snapshot: dict[str, Any] | None) -> None:
+    st.session_state[LAST_RUN_SNAPSHOT_KEY] = snapshot
+
+
+def get_last_run_snapshot() -> dict[str, Any] | None:
+    return st.session_state.get(LAST_RUN_SNAPSHOT_KEY)
+
+
+@dataclass(frozen=True)
+class WorkspaceStateKeys:
+    editor_key: str
+    schema_frame: str
+    feature_dictionary_widget: str
+    feature_dictionary_frame: str
+    transformation_widget: str
+    transformation_frame: str
+    feature_review_widget: str
+    feature_review_frame: str
+    scorecard_override_widget: str
+    scorecard_override_frame: str
+
+    @classmethod
+    def from_editor_key(cls, editor_key: str) -> WorkspaceStateKeys:
+        return cls(
+            editor_key=editor_key,
+            schema_frame=f"{editor_key}_schema_frame",
+            feature_dictionary_widget=f"{editor_key}_feature_dictionary_widget",
+            feature_dictionary_frame=f"{editor_key}_feature_dictionary_frame",
+            transformation_widget=f"{editor_key}_transformation_widget",
+            transformation_frame=f"{editor_key}_transformation_frame",
+            feature_review_widget=f"{editor_key}_feature_review_widget",
+            feature_review_frame=f"{editor_key}_feature_review_frame",
+            scorecard_override_widget=f"{editor_key}_scorecard_override_widget",
+            scorecard_override_frame=f"{editor_key}_scorecard_override_frame",
+        )
+
+
+@dataclass
+class WorkspaceState:
+    keys: WorkspaceStateKeys
+    schema_frame: pd.DataFrame
+    feature_dictionary_frame: pd.DataFrame
+    transformation_frame: pd.DataFrame
+    feature_review_frame: pd.DataFrame
+    scorecard_override_frame: pd.DataFrame
+
+
+def build_plotly_key(*parts: Any) -> str:
+    signature = "|".join(str(part) for part in parts)
+    digest = hashlib.sha1(signature.encode("utf-8")).hexdigest()[:12]
+    return f"plotly_{digest}"
+
+
+def render_plotly_figure(figure: go.Figure, *, key: str) -> None:
+    st.plotly_chart(
+        figure,
+        width="stretch",
+        config=plotly_display_config(),
+        key=key,
+    )
+
+
+@st.cache_data(show_spinner=False)
+def read_text_artifact(path_value: str) -> str:
+    return Path(path_value).read_text(encoding="utf-8")
+
+
+@st.cache_data(show_spinner=False)
+def read_binary_artifact(path_value: str) -> bytes:
+    return Path(path_value).read_bytes()
+
+
+def build_run_snapshot(context, config_dict: dict[str, Any]) -> dict[str, Any]:
+    artifact_paths = {
+        key: (str(value) if value is not None else "")
+        for key, value in context.artifacts.items()
+    }
+    score_column = infer_snapshot_score_column(context)
+    return {
+        "run_id": context.run_id,
+        "metrics": context.metrics,
+        "feature_importance": (
+            context.feature_importance.copy(deep=True)
+            if context.feature_importance is not None
+            else pd.DataFrame()
+        ),
+        "backtest_summary": (
+            context.backtest_summary.copy(deep=True)
+            if context.backtest_summary is not None
+            else pd.DataFrame()
+        ),
+        "predictions": {key: value.copy(deep=True) for key, value in context.predictions.items()},
+        "warnings": list(context.warnings),
+        "events": list(context.events),
+        "artifacts": artifact_paths,
+        "config": config_dict,
+        "report_path": artifact_paths.get("report", ""),
+        "diagnostics_tables": {
+            key: value.copy(deep=True) for key, value in context.diagnostics_tables.items()
+        },
+        "statistical_tests": context.statistical_tests,
+        "visualizations": context.visualizations,
+        "feature_columns": list(context.feature_columns),
+        "numeric_features": list(context.numeric_features),
+        "categorical_features": list(context.categorical_features),
+        "target_column": context.target_column,
+        "target_mode": context.config.target.mode.value,
+        "execution_mode": context.config.execution.mode.value,
+        "model_type": context.config.model.model_type.value,
+        "labels_available": bool(context.metadata.get("labels_available", False)),
+        "input_shape": dict(context.metadata.get("input_shape", {})),
+        "feature_summary": dict(context.metadata.get("feature_summary", {})),
+        "split_summary": dict(context.metadata.get("split_summary", {})),
+        "subset_search_best_candidate": dict(
+            context.metadata.get("subset_search_best_candidate", {})
+        ),
+        "threshold": context.config.model.threshold,
+        "score_column": score_column,
+        "prediction_column": str(
+            context.metadata.get("prediction_column", "predicted_class")
+        ),
+        "date_column": context.config.split.date_column,
+        "default_segment_column": context.config.diagnostics.default_segment_column,
+    }
+
+
+def infer_snapshot_score_column(context) -> str:
+    available_columns = {
+        str(column_name)
+        for prediction_frame in context.predictions.values()
+        for column_name in prediction_frame.columns
+    }
+    candidates: list[str] = []
+    configured_score_column = context.metadata.get("score_column")
+    if configured_score_column:
+        candidates.append(str(configured_score_column))
+
+    target_mode = context.config.target.mode.value
+    if target_mode == TargetMode.BINARY.value:
+        recommended_score_column = context.metadata.get("recommended_calibration_score_column")
+        if recommended_score_column:
+            candidates.append(str(recommended_score_column))
+        candidates.extend(
+            [
+                "predicted_probability_recommended",
+                "predicted_probability",
+                "prediction_score",
+            ]
+        )
+        fallback = "predicted_probability"
+    else:
+        candidates.extend(["predicted_value", "prediction_score"])
+        fallback = "predicted_value"
+
+    for candidate in dict.fromkeys(candidates):
+        if candidate in available_columns:
+            return candidate
+    return fallback
+
+
+def render_download_button(label: str, payload: Any, file_name: str, mime: str) -> None:
+    if mime == "application/json":
+        data = json.dumps(payload, indent=2)
+    else:
+        data = payload
+    st.download_button(label, data=data, file_name=file_name, mime=mime)
+
+
+def prepare_table_for_display(table: pd.DataFrame) -> pd.DataFrame:
+    display_table = prepare_display_table(table).copy()
+    for column_name in display_table.columns:
+        series = display_table[column_name]
+        if pd.api.types.is_object_dtype(series) or pd.api.types.is_string_dtype(series):
+            display_table[column_name] = series.map(_coerce_streamlit_cell_value)
+    return display_table
+
+
+def _coerce_streamlit_cell_value(value: Any) -> Any:
+    if value is None:
+        return ""
+    try:
+        if pd.isna(value):
+            return ""
+    except TypeError:
+        pass
+    if isinstance(value, (list, tuple, set, dict)):
+        return json.dumps(value, default=str)
+    return str(value)

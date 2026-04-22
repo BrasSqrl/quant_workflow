@@ -13,6 +13,12 @@ modeling logic.
 Primary implementation files:
 
 - `app/streamlit_app.py`
+- `src/quant_pd_framework/streamlit_ui/app_controller.py`
+- `src/quant_pd_framework/streamlit_ui/config_builder.py`
+- `src/quant_pd_framework/streamlit_ui/data.py`
+- `src/quant_pd_framework/streamlit_ui/results.py`
+- `src/quant_pd_framework/streamlit_ui/state.py`
+- `src/quant_pd_framework/streamlit_ui/workspace.py`
 - `src/quant_pd_framework/gui_support.py`
 - `src/quant_pd_framework/config.py`
 - `src/quant_pd_framework/orchestrator.py`
@@ -76,13 +82,20 @@ Current notable option families:
 
 ## 3. Build-Workspace Editors
 
-The main workspace now includes dedicated tabs beyond the column designer.
+The main workspace now includes dedicated sections beyond the column designer.
 
 | Workspace tab | Config field(s) | Main implementation | Export evidence |
 | --- | --- | --- | --- |
 | `Feature Dictionary` | `FeatureDictionaryConfig.entries` | `parse_feature_dictionary_frame(...)`, diagnostics feature-dictionary output | `feature_dictionary`, `validation_pack.md` |
 | `Transformations` | `TransformationConfig.transformations` | `parse_transformation_frame(...)`, `TransformationStep` | `governed_transformations`, `interaction_candidates` |
-| `Template Workbook` | none directly; imports/exports editor tables | `build_template_workbook_bytes(...)`, `load_template_workbook(...)` | `configuration_template.xlsx` |
+| `Template Workbook` | none directly; imports/exports editor tables | `build_template_workbook_bytes(...)`, `load_template_workbook(...)`, `streamlit_ui/workspace.py` | `configuration_template.xlsx` |
+
+Implementation note:
+
+- `app/streamlit_app.py` is now only the entrypoint.
+- The live GUI flow is coordinated by `streamlit_ui/app_controller.py`.
+- The build workspace and result surfaces now render one active section at a
+  time instead of rendering every tab body on every rerun.
 
 The transformation editor now supports the expanded roadmap families as values
 of `TransformationSpec.transform_type`, including `box_cox`,

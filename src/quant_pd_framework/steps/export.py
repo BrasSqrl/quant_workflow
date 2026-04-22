@@ -10,6 +10,7 @@ import shutil
 import subprocess
 import textwrap
 from copy import deepcopy
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -41,6 +42,9 @@ class ArtifactExportStep(BasePipelineStep):
     """
 
     name = "artifact_export"
+    MONITORING_BUNDLE_DIRECTORY_NAME = "model_bundle_for_monitoring"
+    MONITORING_METADATA_FILE_NAME = "monitoring_metadata.json"
+    MONITORING_BUNDLE_VERSION = "1.0"
 
     def run(self, context: PipelineContext) -> PipelineContext:
         output_root = context.config.artifacts.output_root / context.run_id
@@ -237,6 +241,32 @@ class ArtifactExportStep(BasePipelineStep):
             manifest["rerun_bundle"]["code_snapshot"] = str(code_snapshot_dir)
             self._write_json(manifest_path, manifest)
 
+        monitoring_bundle: dict[str, Any] | None = None
+        if context.config.execution.mode == ExecutionMode.FIT_NEW_MODEL:
+            monitoring_bundle = self._export_monitoring_bundle(
+                context=context,
+                output_root=output_root,
+                model_path=model_path,
+                config_path=config_path,
+                runner_script_path=runner_script_path,
+                manifest_path=manifest_path,
+                input_snapshot_path=input_snapshot_path if input_snapshot_path.exists() else None,
+                predictions_path=predictions_path,
+                code_snapshot_dir=code_snapshot_dir
+                if context.config.artifacts.export_code_snapshot
+                else None,
+            )
+            manifest["monitoring_bundle"] = {
+                "directory": str(monitoring_bundle["bundle_dir"]),
+                "metadata": str(monitoring_bundle["metadata_path"]),
+                "bundle_version": monitoring_bundle["metadata"]["bundle_version"],
+            }
+            self._write_json(manifest_path, manifest)
+            self._refresh_monitoring_bundle_manifest_copy(
+                bundle_dir=monitoring_bundle["bundle_dir"],
+                manifest_path=manifest_path,
+            )
+
         context.artifacts = {
             "output_root": output_root,
             "model": model_path,
@@ -275,6 +305,12 @@ class ArtifactExportStep(BasePipelineStep):
             "code_snapshot_dir": code_snapshot_dir
             if context.config.artifacts.export_code_snapshot
             else None,
+            "monitoring_bundle_dir": (
+                monitoring_bundle["bundle_dir"] if monitoring_bundle is not None else None
+            ),
+            "monitoring_metadata": (
+                monitoring_bundle["metadata_path"] if monitoring_bundle is not None else None
+            ),
         }
         return context
 
@@ -386,6 +422,144 @@ class ArtifactExportStep(BasePipelineStep):
             validation_report_pdf_path.write_bytes(validation_report.pdf_bytes)
             manifest["validation_pdf"] = str(validation_report_pdf_path)
         return manifest
+
+    def _export_monitoring_bundle(
+        self,
+        *,
+        context: PipelineContext,
+        output_root: Path,
+        model_path: Path,
+        config_path: Path,
+        runner_script_path: Path,
+        manifest_path: Path,
+        input_snapshot_path: Path | None,
+        predictions_path: Path,
+        code_snapshot_dir: Path | None,
+    ) -> dict[str, Any]:
+        bundle_dir = output_root / self.MONITORING_BUNDLE_DIRECTORY_NAME
+        if bundle_dir.exists():
+            shutil.rmtree(bundle_dir)
+        bundle_dir.mkdir(parents=True, exist_ok=True)
+
+        bundled_paths: dict[str, str | None] = {}
+        missing_optional_artifacts: list[str] = []
+
+        bundled_paths["quant_model.joblib"] = self._copy_file_into_bundle(
+            source_path=model_path,
+            destination_path=bundle_dir / model_path.name,
+        )
+        bundled_paths["run_config.json"] = self._copy_file_into_bundle(
+            source_path=config_path,
+            destination_path=bundle_dir / config_path.name,
+        )
+        bundled_paths["generated_run.py"] = self._copy_file_into_bundle(
+            source_path=runner_script_path,
+            destination_path=bundle_dir / runner_script_path.name,
+        )
+        bundled_paths["artifact_manifest.json"] = self._copy_file_into_bundle(
+            source_path=manifest_path,
+            destination_path=bundle_dir / manifest_path.name,
+        )
+        bundled_paths["predictions.csv"] = self._copy_file_into_bundle(
+            source_path=predictions_path,
+            destination_path=bundle_dir / predictions_path.name,
+        )
+
+        if input_snapshot_path is not None and input_snapshot_path.exists():
+            bundled_paths["input_snapshot.csv"] = self._copy_file_into_bundle(
+                source_path=input_snapshot_path,
+                destination_path=bundle_dir / input_snapshot_path.name,
+            )
+        else:
+            bundled_paths["input_snapshot.csv"] = None
+            missing_optional_artifacts.append("input_snapshot.csv")
+
+        if code_snapshot_dir is not None and code_snapshot_dir.exists():
+            bundled_paths["code_snapshot"] = self._copy_directory_into_bundle(
+                source_path=code_snapshot_dir,
+                destination_path=bundle_dir / code_snapshot_dir.name,
+            )
+        else:
+            bundled_paths["code_snapshot"] = None
+            missing_optional_artifacts.append("code_snapshot")
+
+        metadata_path = bundle_dir / self.MONITORING_METADATA_FILE_NAME
+        bundled_paths[self.MONITORING_METADATA_FILE_NAME] = metadata_path.name
+        monitoring_metadata = self._build_monitoring_metadata(
+            context=context,
+            bundled_paths=bundled_paths,
+            missing_optional_artifacts=missing_optional_artifacts,
+        )
+        self._write_json(metadata_path, monitoring_metadata)
+
+        return {
+            "bundle_dir": bundle_dir,
+            "metadata_path": metadata_path,
+            "metadata": monitoring_metadata,
+        }
+
+    def _build_monitoring_metadata(
+        self,
+        *,
+        context: PipelineContext,
+        bundled_paths: dict[str, str | None],
+        missing_optional_artifacts: list[str],
+    ) -> dict[str, Any]:
+        split_config = context.config.split
+        if context.config.target.mode.value == "binary":
+            score_column = "predicted_probability"
+            prediction_column = "predicted_class"
+            threshold = context.config.model.threshold
+        else:
+            score_column = "predicted_value"
+            prediction_column = "predicted_value"
+            threshold = None
+
+        segment_columns = [
+            column_name
+            for column_name in [context.config.diagnostics.default_segment_column]
+            if column_name
+        ]
+
+        return {
+            "bundle_type": "quant_studio_model_bundle_for_monitoring",
+            "bundle_version": self.MONITORING_BUNDLE_VERSION,
+            "created_by_run_id": context.run_id,
+            "created_at_utc": datetime.now(UTC).isoformat(),
+            "model_type": context.config.model.model_type.value,
+            "target_mode": context.config.target.mode.value,
+            "target_column": context.target_column,
+            "score_column": score_column,
+            "prediction_column": prediction_column,
+            "threshold": threshold,
+            "calibration_method": context.metadata.get("recommended_calibration_method"),
+            "selected_features": list(context.feature_columns),
+            "date_column": split_config.date_column,
+            "entity_column": split_config.entity_column,
+            "segment_columns": segment_columns,
+            "bundled_artifacts": bundled_paths,
+            "missing_optional_artifacts": missing_optional_artifacts,
+        }
+
+    def _copy_file_into_bundle(self, *, source_path: Path, destination_path: Path) -> str:
+        destination_path.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source_path, destination_path)
+        return destination_path.name
+
+    def _copy_directory_into_bundle(self, *, source_path: Path, destination_path: Path) -> str:
+        shutil.copytree(source_path, destination_path, dirs_exist_ok=True)
+        return destination_path.name
+
+    def _refresh_monitoring_bundle_manifest_copy(
+        self,
+        *,
+        bundle_dir: Path,
+        manifest_path: Path,
+    ) -> None:
+        destination_path = bundle_dir / manifest_path.name
+        if destination_path.exists():
+            destination_path.unlink()
+        shutil.copy2(manifest_path, destination_path)
 
     def _write_json(self, path: Path, payload: Any) -> None:
         with path.open("w", encoding="utf-8") as handle:

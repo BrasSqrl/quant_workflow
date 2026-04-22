@@ -106,10 +106,11 @@ def test_streamlit_app_runs_new_model_and_renders_result_tabs() -> None:
     assert not [element.value for element in at.error]
     success_messages = [element.value for element in at.success]
     assert any("Completed run" in message for message in success_messages)
-    tab_labels = [element.label for element in at.tabs]
-    assert "Overview" in tab_labels
-    assert "Model Performance" in tab_labels
-    assert "Governance" in tab_labels
+    result_section = _find_by_label(at.radio, "Result section")
+    option_labels = list(result_section.options)
+    assert "Overview" in option_labels
+    assert "Model Performance" in option_labels
+    assert "Governance" in option_labels
 
 
 def test_streamlit_guided_mode_locks_advanced_controls_until_enabled() -> None:

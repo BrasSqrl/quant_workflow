@@ -264,6 +264,14 @@ quant/
       reference_workflows.py
       run.py
       sample_data.py
+      streamlit_ui/
+        app_controller.py
+        config_builder.py
+        data.py
+        results.py
+        state.py
+        theme.py
+        workspace.py
       workflow_guardrails.py
       steps/
         assumption_checks.py
@@ -441,6 +449,17 @@ The GUI is a thin front end over the Python framework. It does not implement mod
 - calls the `QuantModelOrchestrator`
 - displays metrics, validation charts, feature drilldowns, diagnostic tables, predictions, and artifact paths
 
+The GUI is now organized as a thin entrypoint plus shared UI modules:
+
+- `app/streamlit_app.py` is the Streamlit script entrypoint
+- `src/quant_pd_framework/streamlit_ui/app_controller.py` coordinates the page
+- `streamlit_ui/data.py` handles input loading and caching
+- `streamlit_ui/state.py` owns typed session helpers and run snapshots
+- `streamlit_ui/workspace.py` renders the dataset/schema workspace
+- `streamlit_ui/results.py` renders readiness, results, and governance views
+- `streamlit_ui/config_builder.py` assembles the preview configuration outside the raw UI flow
+- `streamlit_ui/theme.py` holds the shared visual system helpers
+
 ### GUI Design System
 
 The current interface is intentionally styled as a premium light-mode fintech dashboard rather than a default Streamlit application.
@@ -573,6 +592,8 @@ That means:
 - GUI selections are converted into a `FrameworkConfig`
 - the same `QuantModelOrchestrator` runs whether the pipeline starts from the GUI or from code
 - exported run folders now include a Python rerun bundle so a user can leave the GUI entirely after setup
+- the Streamlit script itself stays small while the UI behavior is split into
+  reusable modules for state, rendering, caching, and config assembly
 
 ### Schema Editor Rules
 
@@ -1402,6 +1423,11 @@ Default artifact files:
 - `generated_run.py`
 - `HOW_TO_RERUN.md`
 - `code_snapshot/`
+- `model_bundle_for_monitoring/`
+  A versioned handoff bundle for the separate monitoring application. It
+  includes the approved model artifact, resolved run config, generated runner,
+  monitoring metadata, predictions, artifact manifest, and optional snapshot
+  assets when those exports were enabled.
 
 ## Pipeline Step Reference
 
@@ -1722,6 +1748,11 @@ Each exported run directory is now intended to be portable. A completed run fold
   A short runbook describing the rerun path and the main editable files.
 - `code_snapshot/`
   A copy of the framework source, GUI, tests, examples, README, and `pyproject.toml`.
+- `model_bundle_for_monitoring/`
+  A monitoring-ready handoff bundle containing `quant_model.joblib`,
+  `run_config.json`, `generated_run.py`, `monitoring_metadata.json`,
+  `artifact_manifest.json`, `predictions.csv`, and optional `input_snapshot.csv`
+  and `code_snapshot/` when those exports were enabled for the run.
 
 ### Why The Code Snapshot Exists
 

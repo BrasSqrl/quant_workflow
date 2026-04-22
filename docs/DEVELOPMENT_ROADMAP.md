@@ -1,129 +1,170 @@
 # Quant Studio Development Roadmap
 
-This roadmap replaces the previous hardening roadmap for the current phase.
-The focus of this phase is a third execution mode dedicated to feature-subset
-comparison. The goal is to let a user evaluate candidate feature sets for a
-single model family before committing to a normal model-development run.
+This roadmap replaces the prior phase roadmap for the current refactor cycle.
+The focus of this phase is Streamlit UI architecture, maintainability, and
+performance rather than new modeling breadth.
 
-## 1. Third Execution Mode: Feature Subset Search
-
-Status: implemented
-
-Delivered:
-
-- a third execution mode named `search_feature_subsets`
-- a typed config surface that defines the subset-search scope, size limits,
-  ranking split, ranking metric, and significance-test behavior
-- validation rules that keep this mode distinct from normal development and
-  existing-model scoring
-
-Primary code:
-
-- `src/quant_pd_framework/config.py`
-- `src/quant_pd_framework/config_io.py`
-- `src/quant_pd_framework/gui_support.py`
-- `app/streamlit_app.py`
-
-## 2. Dedicated Subset-Search Pipeline
+## 1. Split The App By Responsibility
 
 Status: implemented
 
 Delivered:
 
-- a dedicated pipeline step that enumerates eligible feature subsets for the
-  currently selected model family
-- ranking based on held-out comparison evidence rather than full development
-  packaging
-- guardrails that keep exhaustive search bounded to a practical candidate set
-
-Primary code:
-
-- `src/quant_pd_framework/steps/feature_subset_search.py`
-- `src/quant_pd_framework/orchestrator.py`
-
-## 3. Comparison-Only Metrics, Tests, And Visuals
-
-Status: implemented
-
-Delivered:
-
-- candidate-level ranking outputs centered on:
-  - ROC AUC
-  - KS statistic
-  - average precision
-  - Brier score
-  - log loss
-  - feature-count parsimony
-- ROC and KS comparison visuals for the leading candidates
-- significance testing between the top-ranked candidates using paired-model
-  comparison tests
-
-Primary code:
-
-- `src/quant_pd_framework/steps/feature_subset_search.py`
-- `src/quant_pd_framework/diagnostic_frameworks.py`
-- `src/quant_pd_framework/presentation.py`
-
-## 4. Separate Export Surface For Subset Search
-
-Status: implemented
-
-Delivered:
-
-- a dedicated export path for subset-search runs
-- comparison-focused artifacts only, without normal development outputs such as
-  fitted-model artifacts, validation packs, or full development documentation
-- a standalone HTML report and markdown run summary tailored to feature-set
-  comparison
-
-Primary code:
-
-- `src/quant_pd_framework/steps/export.py`
-- `src/quant_pd_framework/presentation.py`
-
-## 5. Dedicated GUI Experience For The Third Mode
-
-Status: implemented
-
-Delivered:
-
-- subset-search controls in the GUI only when the third execution mode is
-  selected
-- a dedicated result view that emphasizes candidate ranking, frontier charts,
-  ROC/KS comparison, and feature-inclusion frequency
-- separation between subset-search evidence and normal model-development
-  evidence
+- a thin entrypoint at `app/streamlit_app.py`
+- shared UI modules under `src/quant_pd_framework/streamlit_ui/`
+- dedicated modules for theme, state/session helpers, data loading,
+  workspace rendering, result rendering, and config assembly
 
 Primary code:
 
 - `app/streamlit_app.py`
-- `src/quant_pd_framework/gui_support.py`
+- `src/quant_pd_framework/streamlit_ui/theme.py`
+- `src/quant_pd_framework/streamlit_ui/state.py`
+- `src/quant_pd_framework/streamlit_ui/data.py`
+- `src/quant_pd_framework/streamlit_ui/workspace.py`
+- `src/quant_pd_framework/streamlit_ui/results.py`
+- `src/quant_pd_framework/streamlit_ui/config_builder.py`
+- `src/quant_pd_framework/streamlit_ui/app_controller.py`
 
-## 6. Regression Coverage And Documentation Alignment
+## 2. Introduce A Typed Session-State Layer
 
 Status: implemented
 
 Delivered:
 
-- regression tests for config validation, orchestration, exports, and
-  presentation behavior in the new mode
-- documentation updates that describe when to use subset search versus a normal
-  development run
-- traceability updates so the new execution mode is visible in the repo's
-  audit-facing documentation
+- typed workspace/session key objects
+- shared helpers for run snapshot storage and retrieval
+- centralized frame initialization and persistence instead of scattered raw
+  `st.session_state[...]` writes
 
 Primary code:
 
-- `tests/test_feature_subset_search_mode.py`
-- `README.md`
-- `docs/GUI_TO_CODE_TRACEABILITY_GUIDE.md`
-- `EXECUTIVE_SUMMARY.txt`
+- `src/quant_pd_framework/streamlit_ui/state.py`
 
-## Notes
+## 3. Replace Eager Tabs With Single-Section Rendering
 
-- The new mode is intended to answer a different question from a normal
-  development run:
-  `Which feature set should be taken forward for development?`
-- The exported outputs intentionally stay separate from standard model
-  development so the audit trail clearly distinguishes candidate-search
-  evidence from final-model evidence.
+Status: implemented
+
+Delivered:
+
+- the workspace no longer renders every tab body on each rerun
+- run results and subset-search results now render one active section at a time
+- this reduces unnecessary figure/table work on every interaction
+
+Primary code:
+
+- `src/quant_pd_framework/streamlit_ui/workspace.py`
+- `src/quant_pd_framework/streamlit_ui/results.py`
+
+## 4. Cache Expensive Data Loading And Artifact Reads
+
+Status: implemented
+
+Delivered:
+
+- cached uploaded CSV/Excel parsing
+- cached bundled sample loading
+- cached text/binary artifact reads for run reports and downloadable assets
+
+Primary code:
+
+- `src/quant_pd_framework/streamlit_ui/data.py`
+- `src/quant_pd_framework/streamlit_ui/state.py`
+
+## 5. Reduce Sidebar-Induced Rerender Pressure
+
+Status: partially implemented
+
+Delivered:
+
+- the heaviest view churn now comes from single-section rendering instead of
+  full tab rerenders
+- sidebar state is more centralized and less error-prone through typed key
+  management
+
+Remaining opportunity:
+
+- further form-based staging of sidebar controls can still be added if the UI
+  should trade some live control reactivity for fewer reruns
+
+Primary code:
+
+- `src/quant_pd_framework/streamlit_ui/app_controller.py`
+- `src/quant_pd_framework/streamlit_ui/state.py`
+
+## 6. Move Config Assembly Out Of The UI Layer
+
+Status: implemented
+
+Delivered:
+
+- a dedicated config build path that assembles preview configuration and
+  guardrail readiness outside the main controller flow
+- the controller now delegates preview construction to a specialized module
+
+Primary code:
+
+- `src/quant_pd_framework/streamlit_ui/config_builder.py`
+- `src/quant_pd_framework/streamlit_ui/app_controller.py`
+
+## 7. Reduce Repeated Dataframe Copying And Display Conversion
+
+Status: implemented
+
+Delivered:
+
+- sampling helpers now avoid unnecessary deep copies by default
+- artifact report text is no longer eagerly loaded into the snapshot payload
+- the render surface now leans on cached artifact access and narrower active
+  sections
+
+Primary code:
+
+- `src/quant_pd_framework/streamlit_ui/data.py`
+- `src/quant_pd_framework/streamlit_ui/state.py`
+- `src/quant_pd_framework/streamlit_ui/results.py`
+
+## 8. Make Artifact Downloads Lazy
+
+Status: implemented
+
+Delivered:
+
+- governance views now expose a targeted artifact selector instead of eagerly
+  materializing every download payload on each rerun
+- binary artifact reads are cached behind the selected download action
+
+Primary code:
+
+- `src/quant_pd_framework/streamlit_ui/results.py`
+- `src/quant_pd_framework/streamlit_ui/state.py`
+
+## 9. Break Out Result Renderers Into Dedicated Modules
+
+Status: implemented
+
+Delivered:
+
+- overview, governance, subset-search, section rendering, scorecard workbench,
+  and feature drilldown logic now live outside the entrypoint
+- result rendering can evolve independently of the controller and data-source
+  logic
+
+Primary code:
+
+- `src/quant_pd_framework/streamlit_ui/results.py`
+
+## 10. Remove Dead Or Drifted Entry-Point Helpers
+
+Status: implemented
+
+Delivered:
+
+- the entrypoint no longer carries unused local helper logic
+- stable helpers such as `build_editor_key` are re-exported intentionally for
+  tests and tooling instead of remaining buried in a monolithic script
+
+Primary code:
+
+- `app/streamlit_app.py`
+- `src/quant_pd_framework/streamlit_ui/data.py`

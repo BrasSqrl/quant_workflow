@@ -91,6 +91,8 @@ Each run can produce a structured output package that includes:
 - interactive charts and exported HTML reporting
 - a guided-versus-advanced GUI workflow so standard runs stay compact while
   specialist controls remain available when needed
+- a thin Streamlit entrypoint with shared UI modules for state, workspace,
+  results, caching, and config assembly
 - challenger-comparison results
 - robustness and stability summaries
 - advanced imputation summaries and sensitivity comparisons
@@ -108,6 +110,7 @@ Each run can produce a structured output package that includes:
 - structured reference example packs for PD, LGD, CECL/lifetime PD, and CCAR
   forecasting workflows
 - reproducibility manifests and rerun-ready code bundles
+- versioned monitoring handoff bundles for the separate monitoring application
 - machine-readable artifact manifests that index the full output package
 - Excel templates and governance workbooks for offline review
 
