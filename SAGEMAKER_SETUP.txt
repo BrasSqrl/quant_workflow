@@ -1,0 +1,82 @@
+Quant Studio SageMaker Setup
+============================
+
+Use this file when you want to run Quant Studio from a browser-based
+SageMaker environment such as Code Editor or JupyterLab.
+
+Recommended path
+----------------
+
+1. Clone the repo into the SageMaker space.
+2. Open a terminal in the repo root.
+3. Run:
+
+   bash scripts/bootstrap_sagemaker.sh
+
+4. Start the GUI:
+
+   bash scripts/run_sagemaker_streamlit.sh
+
+5. Open port 8501 through SageMaker's browser preview / forwarded-port feature.
+
+What the scripts do
+-------------------
+
+- scripts/bootstrap_sagemaker.sh
+  - checks for Python 3.11+
+  - installs the dependencies from requirements-sagemaker.txt
+  - installs Quant Studio from the local source tree
+
+- scripts/run_sagemaker_streamlit.sh
+  - runs Streamlit on 0.0.0.0:8501
+  - keeps the same upload-size settings used by the Windows launcher
+
+If direct pip install does not work
+-----------------------------------
+
+Your SageMaker domain may not have outbound access to PyPI, or it may require a
+private package source. In that case, use one of these:
+
+1. A SageMaker lifecycle configuration that clones the repo and runs the
+   bootstrap script automatically.
+2. A custom SageMaker image with the dependencies preinstalled.
+
+Starter lifecycle script
+------------------------
+
+This repo includes:
+
+   scripts/sagemaker_code_editor_lifecycle.sh
+
+That script is a starter for SageMaker Code Editor lifecycle configuration
+usage. It can clone or update the repo and then run the bootstrap script.
+
+Files added for SageMaker support
+---------------------------------
+
+- requirements-sagemaker.txt
+- scripts/bootstrap_sagemaker.sh
+- scripts/run_sagemaker_streamlit.sh
+- scripts/sagemaker_code_editor_lifecycle.sh
+- docs/SAGEMAKER_SETUP.md
+
+Recommended commands
+--------------------
+
+If the repo is already cloned:
+
+   cd /home/sagemaker-user/quant_workflow
+   bash scripts/bootstrap_sagemaker.sh
+   bash scripts/run_sagemaker_streamlit.sh
+
+If the dependencies are already built into the image:
+
+   cd /home/sagemaker-user/quant_workflow
+   bash scripts/run_sagemaker_streamlit.sh
+
+Detailed guide
+--------------
+
+See:
+
+   docs/SAGEMAKER_SETUP.md

@@ -169,10 +169,12 @@ The repository now includes dedicated audit-oriented reference guides:
 - [docs/PREPROCESSING_AND_DATA_TREATMENT_GUIDE.md](./docs/PREPROCESSING_AND_DATA_TREATMENT_GUIDE.md)
 - [docs/GUI_TO_CODE_TRACEABILITY_GUIDE.md](./docs/GUI_TO_CODE_TRACEABILITY_GUIDE.md)
 - [docs/LOGISTIC_REGRESSION_WALKTHROUGH.html](./docs/LOGISTIC_REGRESSION_WALKTHROUGH.html)
+- [docs/SAGEMAKER_SETUP.md](./docs/SAGEMAKER_SETUP.md)
 
 There is also an executive-level non-technical summary at:
 
 - [EXECUTIVE_SUMMARY.txt](./EXECUTIVE_SUMMARY.txt)
+- [SAGEMAKER_SETUP.txt](./SAGEMAKER_SETUP.txt)
 
 ## Reference Workflows
 
@@ -309,7 +311,13 @@ quant/
     test_streamlit_app_e2e.py
     test_workflow_guardrails.py
     support.py
+  scripts/
+    bootstrap_sagemaker.sh
+    run_sagemaker_streamlit.sh
+    sagemaker_code_editor_lifecycle.sh
+  requirements-sagemaker.txt
   EXECUTIVE_SUMMARY.txt
+  SAGEMAKER_SETUP.txt
   launch_gui.bat
   setup_gui.bat
   pyproject.toml
@@ -407,6 +415,18 @@ python examples/run_pipeline.py
 ```powershell
 python examples/run_development_workflow.py
 ```
+
+### Run In SageMaker Or Linux
+
+For a browser-based SageMaker environment such as Code Editor or JupyterLab:
+
+```bash
+bash scripts/bootstrap_sagemaker.sh
+bash scripts/run_sagemaker_streamlit.sh
+```
+
+The detailed guide is at [docs/SAGEMAKER_SETUP.md](./docs/SAGEMAKER_SETUP.md), and a
+plain-text copy is kept at [SAGEMAKER_SETUP.txt](./SAGEMAKER_SETUP.txt).
 
 ### Run From A Saved Config Bundle
 
