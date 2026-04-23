@@ -115,8 +115,8 @@ DIAGNOSTIC_SUITE_OPTIONS: list[tuple[str, str]] = [
 ]
 
 EXPORT_SURFACE_OPTIONS: list[tuple[str, str]] = [
-    ("Interactive HTML report", "interactive_visualizations"),
-    ("PNG chart exports", "static_image_exports"),
+    ("Per-figure HTML files", "interactive_visualizations"),
+    ("Per-figure PNG files", "static_image_exports"),
     ("Excel workbook", "export_excel_workbook"),
 ]
 
@@ -909,6 +909,14 @@ def run_app() -> None:
                 options=default_segment_options,
                 index=0,
             )
+            export_individual_figure_files = st.toggle(
+                "Export individual figure HTML and PNG files",
+                value=preset_inputs.artifacts.export_individual_figure_files,
+                help=(
+                    "When off, Quant Studio still exports the full interactive report but skips "
+                    "the per-figure HTML and PNG files to reduce runtime and artifact volume."
+                ),
+            )
             selected_diagnostics = st.multiselect(
                 "Diagnostic suites",
                 options=[label for label, _ in DIAGNOSTIC_SUITE_OPTIONS],
@@ -921,6 +929,11 @@ def run_app() -> None:
                 options=[label for label, _ in EXPORT_SURFACE_OPTIONS],
                 default=[label for label, _ in EXPORT_SURFACE_OPTIONS],
             )
+            if not export_individual_figure_files:
+                st.caption(
+                    "Per-figure HTML and PNG exports are disabled. The full interactive report "
+                    "will still be written."
+                )
             top_n_features = int(
                 st.number_input(
                     "Top features for analysis",
@@ -1180,8 +1193,14 @@ def run_app() -> None:
                 residual_analysis="residual_analysis" in enabled_diagnostic_flags,
                 quantile_analysis="quantile_analysis" in enabled_diagnostic_flags,
                 qq_analysis="qq_analysis" in enabled_diagnostic_flags,
-                interactive_visualizations="interactive_visualizations" in enabled_export_flags,
-                static_image_exports="static_image_exports" in enabled_export_flags,
+                interactive_visualizations=(
+                    export_individual_figure_files
+                    and "interactive_visualizations" in enabled_export_flags
+                ),
+                static_image_exports=(
+                    export_individual_figure_files
+                    and "static_image_exports" in enabled_export_flags
+                ),
                 export_excel_workbook="export_excel_workbook" in enabled_export_flags,
                 top_n_features=top_n_features,
                 top_n_categories=top_n_categories,

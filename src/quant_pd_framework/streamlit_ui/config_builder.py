@@ -9,6 +9,7 @@ import pandas as pd
 
 from quant_pd_framework import (
     AdvancedImputationConfig,
+    ArtifactConfig,
     CleaningConfig,
     ComparisonConfig,
     DataStructure,
@@ -322,6 +323,10 @@ def build_preview_configuration(
                 ],
             ),
             performance=preset_inputs.performance,
+            artifacts=ArtifactConfig(
+                output_root=Path(values["output_root"].strip() or "artifacts"),
+                export_individual_figure_files=values["export_individual_figure_files"],
+            ),
             data_structure=DataStructure(values["data_structure"]),
             train_size=float(values["train_size"]),
             validation_size=float(values["validation_size"]),

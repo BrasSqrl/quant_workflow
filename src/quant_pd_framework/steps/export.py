@@ -56,9 +56,10 @@ class ArtifactExportStep(BasePipelineStep):
         png_dir = figures_dir / context.config.artifacts.png_directory_name
         json_dir = output_root / context.config.artifacts.json_directory_name
         tables_dir.mkdir(parents=True, exist_ok=True)
-        html_dir.mkdir(parents=True, exist_ok=True)
         json_dir.mkdir(parents=True, exist_ok=True)
-        if context.config.diagnostics.static_image_exports:
+        if self._html_figure_exports_enabled(context):
+            html_dir.mkdir(parents=True, exist_ok=True)
+        if self._png_figure_exports_enabled(context):
             png_dir.mkdir(parents=True, exist_ok=True)
 
         model_path = output_root / context.config.artifacts.model_file_name
@@ -208,8 +209,9 @@ class ArtifactExportStep(BasePipelineStep):
             },
             "directories": {
                 "tables": str(tables_dir),
-                "figures": str(figures_dir),
-                "figures_html": str(html_dir),
+                "figures": str(figures_dir) if figures_dir.exists() else None,
+                "figures_html": str(html_dir) if html_dir.exists() else None,
+                "figures_png": str(png_dir) if png_dir.exists() else None,
                 "json": str(json_dir),
             },
             **visualization_manifest,
@@ -296,7 +298,7 @@ class ArtifactExportStep(BasePipelineStep):
             "reproducibility_manifest": reproducibility_manifest_path,
             "configuration_template": template_workbook_path,
             "tables_dir": tables_dir,
-            "figures_dir": figures_dir,
+            "figures_dir": figures_dir if figures_dir.exists() else None,
             "workbook": workbook_path if context.config.diagnostics.export_excel_workbook else None,
             "manifest": manifest_path,
             "step_manifest": step_manifest_path,
@@ -367,8 +369,9 @@ class ArtifactExportStep(BasePipelineStep):
             },
             "directories": {
                 "tables": str(tables_dir),
-                "figures": str(figures_dir),
-                "figures_html": str(html_dir),
+                "figures": str(figures_dir) if figures_dir.exists() else None,
+                "figures_html": str(html_dir) if html_dir.exists() else None,
+                "figures_png": str(png_dir) if png_dir.exists() else None,
                 "json": str(json_dir),
             },
             **visualization_manifest,
@@ -386,7 +389,7 @@ class ArtifactExportStep(BasePipelineStep):
             "config": config_path,
             "tests": tests_path,
             "tables_dir": tables_dir,
-            "figures_dir": figures_dir,
+            "figures_dir": figures_dir if figures_dir.exists() else None,
             "manifest": manifest_path,
             "step_manifest": step_manifest_path,
         }
@@ -1246,15 +1249,26 @@ class ArtifactExportStep(BasePipelineStep):
         html_dir: Path,
         png_dir: Path,
     ) -> dict[str, Any]:
-        manifest: dict[str, Any] = {"figures": {}}
+        html_enabled = self._html_figure_exports_enabled(context)
+        png_enabled = self._png_figure_exports_enabled(context)
+        manifest: dict[str, Any] = {
+            "figure_file_exports": {
+                "enabled": context.config.artifacts.export_individual_figure_files,
+                "html_enabled": html_enabled,
+                "png_enabled": png_enabled,
+            },
+            "figures": {},
+        }
+        if not context.config.artifacts.export_individual_figure_files:
+            return manifest
         for figure_name, figure in context.visualizations.items():
             safe_name = self._sanitize_name(figure_name)
             manifest["figures"][figure_name] = {}
-            if context.config.diagnostics.interactive_visualizations:
+            if html_enabled:
                 html_path = html_dir / f"{safe_name}.html"
                 figure.write_html(html_path, include_plotlyjs=True, full_html=True)
                 manifest["figures"][figure_name]["html"] = str(html_path)
-            if context.config.diagnostics.static_image_exports:
+            if png_enabled:
                 png_path = png_dir / f"{safe_name}.png"
                 try:
                     pio.write_image(figure, png_path)
@@ -1262,6 +1276,18 @@ class ArtifactExportStep(BasePipelineStep):
                 except Exception as exc:
                     context.warn(f"Could not export PNG for {figure_name}: {exc}")
         return manifest
+
+    def _html_figure_exports_enabled(self, context: PipelineContext) -> bool:
+        return bool(
+            context.config.artifacts.export_individual_figure_files
+            and context.config.diagnostics.interactive_visualizations
+        )
+
+    def _png_figure_exports_enabled(self, context: PipelineContext) -> bool:
+        return bool(
+            context.config.artifacts.export_individual_figure_files
+            and context.config.diagnostics.static_image_exports
+        )
 
     def _build_step_manifest(self, context: PipelineContext) -> dict[str, Any]:
         return {

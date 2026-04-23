@@ -784,6 +784,7 @@ def _build_artifact_config(payload: dict[str, Any]) -> ArtifactConfig:
         png_directory_name=payload.get("png_directory_name", "png"),
         json_directory_name=payload.get("json_directory_name", "json"),
         code_snapshot_directory_name=payload.get("code_snapshot_directory_name", "code_snapshot"),
+        export_individual_figure_files=payload.get("export_individual_figure_files", True),
         export_input_snapshot=payload.get("export_input_snapshot", True),
         export_code_snapshot=payload.get("export_code_snapshot", True),
     )

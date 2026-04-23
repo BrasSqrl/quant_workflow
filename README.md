@@ -1373,8 +1373,8 @@ Key toggles include:
 - residual analysis
 - quantile analysis
 - QQ analysis
-- interactive HTML exports
-- PNG chart exports
+- per-figure HTML exports
+- per-figure PNG exports
 - Excel workbook export
 
 ### `RobustnessConfig`
@@ -1418,6 +1418,13 @@ package versions.
 ### `ArtifactConfig`
 
 Artifacts are written under the configured output root using a timestamped run directory.
+
+Important behavior:
+
+- `interactive_report.html` is always exported for completed runs.
+- Individual figure `.html` and `.png` files can now be disabled through
+  `ArtifactConfig.export_individual_figure_files` or the matching GUI toggle to
+  reduce runtime and artifact volume.
 
 Default artifact files:
 

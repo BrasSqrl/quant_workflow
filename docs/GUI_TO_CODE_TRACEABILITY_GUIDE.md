@@ -213,6 +213,7 @@ These controls only matter when `ExecutionConfig.mode` is
 | GUI control | Config field(s) | Main implementation |
 | --- | --- | --- |
 | `Default segment column` | `DiagnosticConfig.default_segment_column` | `DiagnosticsStep._add_segment_outputs` |
+| `Export individual figure HTML and PNG files` | `ArtifactConfig.export_individual_figure_files` | `ArtifactExportStep._export_visualizations` |
 | `Diagnostic suites` | `DiagnosticConfig.*` booleans | `DiagnosticsStep.run(...)` |
 | `Export surfaces` | `DiagnosticConfig.interactive_visualizations`, `static_image_exports`, `export_excel_workbook` | `ArtifactExportStep` |
 | `Top features for analysis` | `DiagnosticConfig.top_n_features` | diagnostics feature ranking |

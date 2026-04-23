@@ -1523,6 +1523,7 @@ class ArtifactConfig:
     png_directory_name: str = "png"
     json_directory_name: str = "json"
     code_snapshot_directory_name: str = "code_snapshot"
+    export_individual_figure_files: bool = True
     export_input_snapshot: bool = True
     export_code_snapshot: bool = True
 

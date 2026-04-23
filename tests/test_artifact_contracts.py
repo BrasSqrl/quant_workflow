@@ -93,6 +93,32 @@ def test_artifact_manifest_indexes_core_outputs_and_rerun_bundle() -> None:
         assert (code_snapshot_dir / "app" / "streamlit_app.py").exists()
 
 
+def test_artifact_manifest_can_skip_individual_figure_exports() -> None:
+    dataframe = build_binary_dataframe(row_count=220)
+
+    with temporary_artifact_root("pytest_artifact_contracts_no_figure_files") as artifact_root:
+        config = _build_artifact_contract_config(artifact_root)
+        config.artifacts = ArtifactConfig(
+            output_root=artifact_root,
+            export_individual_figure_files=False,
+        )
+        context = QuantModelOrchestrator(config=config).run(dataframe)
+
+        manifest_path = Path(context.artifacts["manifest"])
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+
+        assert Path(context.artifacts["interactive_report"]).exists()
+        assert manifest["figure_file_exports"] == {
+            "enabled": False,
+            "html_enabled": False,
+            "png_enabled": False,
+        }
+        assert manifest["figures"] == {}
+        assert manifest["directories"]["figures"] is None
+        assert manifest["directories"]["figures_html"] is None
+        assert manifest["directories"]["figures_png"] is None
+
+
 def test_reference_workflow_bundle_contract_contains_expected_sections() -> None:
     definition = get_reference_workflow_definition("pd_development")
 

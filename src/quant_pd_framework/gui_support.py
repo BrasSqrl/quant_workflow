@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from io import BytesIO
 from pathlib import Path
 from typing import Any
@@ -170,6 +170,7 @@ class GUIBuildInputs:
     drop_target_source_column: bool = False
     pass_through_unconfigured_columns: bool = True
     output_root: Path = Path("artifacts")
+    artifacts: ArtifactConfig = field(default_factory=ArtifactConfig)
 
 
 def build_column_editor_frame(dataframe: pd.DataFrame) -> pd.DataFrame:
@@ -394,7 +395,7 @@ def build_framework_config_from_editor(
         robustness=inputs.robustness,
         reproducibility=inputs.reproducibility,
         performance=inputs.performance,
-        artifacts=ArtifactConfig(output_root=inputs.output_root),
+        artifacts=replace(inputs.artifacts, output_root=inputs.output_root),
     )
     if validate:
         config.validate()
