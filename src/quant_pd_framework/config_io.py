@@ -25,6 +25,7 @@ from .config import (
     ExecutionConfig,
     ExecutionMode,
     ExplainabilityConfig,
+    ExportProfile,
     FeatureDictionaryConfig,
     FeatureDictionaryEntry,
     FeatureEngineeringConfig,
@@ -421,10 +422,26 @@ def _build_explainability_config(payload: dict[str, Any]) -> ExplainabilityConfi
         enabled=payload.get("enabled", True),
         permutation_importance=payload.get("permutation_importance", True),
         feature_effect_curves=payload.get("feature_effect_curves", True),
+        partial_dependence=payload.get("partial_dependence", True),
+        ice_curves=payload.get("ice_curves", True),
+        centered_ice_curves=payload.get("centered_ice_curves", True),
+        accumulated_local_effects=payload.get("accumulated_local_effects", True),
+        two_way_effects=payload.get("two_way_effects", True),
+        effect_confidence_bands=payload.get("effect_confidence_bands", True),
+        monotonicity_diagnostics=payload.get("monotonicity_diagnostics", True),
+        segmented_effects=payload.get("segmented_effects", True),
+        effect_stability=payload.get("effect_stability", True),
+        marginal_effects=payload.get("marginal_effects", True),
+        interaction_strength=payload.get("interaction_strength", True),
+        effect_calibration=payload.get("effect_calibration", True),
         coefficient_breakdown=payload.get("coefficient_breakdown", True),
         top_n_features=payload.get("top_n_features", 5),
         grid_points=payload.get("grid_points", 12),
         sample_size=payload.get("sample_size", 2000),
+        ice_sample_size=payload.get("ice_sample_size", 250),
+        effect_band_resamples=payload.get("effect_band_resamples", 20),
+        two_way_grid_points=payload.get("two_way_grid_points", 6),
+        max_effect_segments=payload.get("max_effect_segments", 4),
     )
 
 
@@ -721,6 +738,8 @@ def _build_performance_config(payload: dict[str, Any]) -> PerformanceConfig:
         html_max_figures_per_section=payload.get("html_max_figures_per_section", 6),
         html_max_tables_per_section=payload.get("html_max_tables_per_section", 6),
         multiple_imputation_row_cap=payload.get("multiple_imputation_row_cap", 25000),
+        lazy_html_figures=payload.get("lazy_html_figures", True),
+        lazy_streamlit_results=payload.get("lazy_streamlit_results", True),
     )
 
 
@@ -784,9 +803,14 @@ def _build_artifact_config(payload: dict[str, Any]) -> ArtifactConfig:
         png_directory_name=payload.get("png_directory_name", "png"),
         json_directory_name=payload.get("json_directory_name", "json"),
         code_snapshot_directory_name=payload.get("code_snapshot_directory_name", "code_snapshot"),
-        export_individual_figure_files=payload.get("export_individual_figure_files", True),
+        export_individual_figure_files=payload.get("export_individual_figure_files", False),
         export_input_snapshot=payload.get("export_input_snapshot", True),
         export_code_snapshot=payload.get("export_code_snapshot", True),
+        export_profile=ExportProfile(payload.get("export_profile", ExportProfile.STANDARD.value)),
+        run_debug_trace_file_name=payload.get(
+            "run_debug_trace_file_name",
+            "run_debug_trace.json",
+        ),
     )
 
 

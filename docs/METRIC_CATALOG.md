@@ -202,6 +202,71 @@ These are partial-dependence-style average prediction curves over:
 - numeric quantile grids
 - most common categorical levels
 
+### Partial dependence
+
+Produced by `_build_feature_effect_curves(...)` and exported as
+`partial_dependence`.
+
+Partial dependence shows the average predicted response when one feature is
+varied across a grid and all other features stay at their observed values.
+
+### ICE and centered ICE
+
+Produced by `_build_ice_curves(...)`.
+
+`ice_curves` shows individual conditional expectation curves for sampled rows.
+`centered_ice_curves` subtracts each row's baseline response so heterogeneous
+response shapes are easier to compare.
+
+### Accumulated local effects
+
+Produced by `_build_accumulated_local_effects(...)`.
+
+`accumulated_local_effects` estimates local prediction changes within feature
+intervals and accumulates those local effects. ALE is useful when predictors are
+correlated and PDPs may be harder to interpret.
+
+### Two-way feature effects and interaction strength
+
+Produced by `_build_two_way_effects(...)` and
+`_build_interaction_strength_table(...)`.
+
+`two_way_feature_effects` provides response surfaces for top numeric feature
+pairs. `interaction_strength` summarizes the non-additive part of those
+surfaces, which helps decide whether an interaction term is materially useful.
+
+### Feature effect confidence bands
+
+Produced by `_build_effect_confidence_bands(...)`.
+
+`feature_effect_confidence_bands` bootstraps the sampled predictions behind PDP
+points and exports lower and upper 90% bands.
+
+### Monotonicity, segmentation, and stability
+
+Produced by `_build_effect_monotonicity_table(...)`,
+`_build_segmented_feature_effects(...)`, and
+`_build_effect_stability_table(...)`.
+
+These tables review whether feature effects follow expected directions, whether
+effect curves differ across important segments, and whether train, validation,
+and test effects stay aligned.
+
+### Average marginal effects
+
+Produced by `_build_marginal_effects(...)`.
+
+`average_marginal_effects` uses finite differences around each numeric feature
+to estimate the average change in prediction for a small feature movement.
+
+### Feature effect calibration
+
+Produced by `_build_effect_calibration_table(...)`.
+
+`feature_effect_calibration` compares actual and predicted outcomes by feature
+bucket so reviewers can see whether a feature's learned response is also
+calibrated across its range.
+
 ## 8. Governance and Policy Metrics
 
 Feature policy checks live in `DiagnosticsStep._add_feature_policy_outputs(...)`.

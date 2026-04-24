@@ -41,6 +41,14 @@ class ExecutionMode(StrEnum):
     SEARCH_FEATURE_SUBSETS = "search_feature_subsets"
 
 
+class ExportProfile(StrEnum):
+    """Controls how much artifact packaging work is performed after a run."""
+
+    FAST = "fast"
+    STANDARD = "standard"
+    AUDIT = "audit"
+
+
 class TargetMode(StrEnum):
     """Controls whether the framework should build a binary or continuous target."""
 
@@ -553,10 +561,26 @@ class ExplainabilityConfig:
     enabled: bool = True
     permutation_importance: bool = True
     feature_effect_curves: bool = True
+    partial_dependence: bool = True
+    ice_curves: bool = True
+    centered_ice_curves: bool = True
+    accumulated_local_effects: bool = True
+    two_way_effects: bool = True
+    effect_confidence_bands: bool = True
+    monotonicity_diagnostics: bool = True
+    segmented_effects: bool = True
+    effect_stability: bool = True
+    marginal_effects: bool = True
+    interaction_strength: bool = True
+    effect_calibration: bool = True
     coefficient_breakdown: bool = True
     top_n_features: int = 5
     grid_points: int = 12
     sample_size: int = 2000
+    ice_sample_size: int = 250
+    effect_band_resamples: int = 20
+    two_way_grid_points: int = 6
+    max_effect_segments: int = 4
 
     def validate(self) -> None:
         if self.top_n_features <= 0:
@@ -565,6 +589,14 @@ class ExplainabilityConfig:
             raise ValueError("ExplainabilityConfig.grid_points must be at least 3.")
         if self.sample_size <= 0:
             raise ValueError("ExplainabilityConfig.sample_size must be greater than 0.")
+        if self.ice_sample_size <= 0:
+            raise ValueError("ExplainabilityConfig.ice_sample_size must be greater than 0.")
+        if self.effect_band_resamples < 2:
+            raise ValueError("ExplainabilityConfig.effect_band_resamples must be at least 2.")
+        if self.two_way_grid_points < 3:
+            raise ValueError("ExplainabilityConfig.two_way_grid_points must be at least 3.")
+        if self.max_effect_segments <= 0:
+            raise ValueError("ExplainabilityConfig.max_effect_segments must be greater than 0.")
 
 
 @dataclass(slots=True)
@@ -1281,6 +1313,8 @@ class PerformanceConfig:
     html_max_figures_per_section: int = 6
     html_max_tables_per_section: int = 6
     multiple_imputation_row_cap: int = 25_000
+    lazy_html_figures: bool = True
+    lazy_streamlit_results: bool = True
 
     def validate(self) -> None:
         for field_name, value in {
@@ -1523,9 +1557,11 @@ class ArtifactConfig:
     png_directory_name: str = "png"
     json_directory_name: str = "json"
     code_snapshot_directory_name: str = "code_snapshot"
-    export_individual_figure_files: bool = True
+    export_individual_figure_files: bool = False
     export_input_snapshot: bool = True
     export_code_snapshot: bool = True
+    export_profile: ExportProfile = ExportProfile.STANDARD
+    run_debug_trace_file_name: str = "run_debug_trace.json"
 
     def validate(self) -> None:
         if not self.output_root:
@@ -1547,6 +1583,7 @@ class ArtifactConfig:
             "validation_report_pdf_file_name": self.validation_report_pdf_file_name,
             "reproducibility_manifest_file_name": self.reproducibility_manifest_file_name,
             "template_workbook_file_name": self.template_workbook_file_name,
+            "run_debug_trace_file_name": self.run_debug_trace_file_name,
         }
         for field_name, value in required_names.items():
             if not value.strip():

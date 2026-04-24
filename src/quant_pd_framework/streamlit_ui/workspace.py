@@ -94,14 +94,17 @@ def render_builder_workspace(
 ) -> dict[str, pd.DataFrame]:
     st.markdown(
         """
-        <div class="section-intro">
-          <span class="section-kicker">Build Workspace</span>
-          <h2>Prepare the dataset and schema before execution</h2>
+        <div class="workflow-stage">
+          <div class="workflow-stage__index">1</div>
+          <div class="workflow-stage__body">
+            <span class="workflow-stage__kicker">Build Workspace</span>
+            <h2>Prepare the dataset and schema before execution</h2>
             <p>
               Use the grouped sections to inspect the input, define schema rules,
               document features, stage governed transformations, and exchange
               the review workbook offline.
             </p>
+          </div>
         </div>
         """,
         unsafe_allow_html=True,

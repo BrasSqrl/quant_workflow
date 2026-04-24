@@ -4,6 +4,7 @@ set -euo pipefail
 
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PYTHON_BIN="${PYTHON_BIN:-python3}"
+VENV_DIR="${VENV_DIR:-$PROJECT_ROOT/.sagemaker_venv}"
 
 if ! command -v "$PYTHON_BIN" >/dev/null 2>&1; then
   echo "Python executable '$PYTHON_BIN' was not found on PATH." >&2
@@ -23,13 +24,20 @@ if sys.version_info < (3, 11):
 print(f"Using Python {sys.version.split()[0]}")
 PY
 
+if [ ! -x "$VENV_DIR/bin/python" ] || [ ! -f "$VENV_DIR/pyvenv.cfg" ]; then
+  echo "Creating isolated SageMaker virtual environment at $VENV_DIR..."
+  "$PYTHON_BIN" -m venv "$VENV_DIR"
+fi
+
+VENV_PYTHON="$VENV_DIR/bin/python"
+
 echo "Upgrading pip/setuptools/wheel where possible..."
-if ! "$PYTHON_BIN" -m pip install --upgrade pip setuptools wheel; then
+if ! "$VENV_PYTHON" -m pip install --upgrade pip setuptools wheel; then
   echo "Build-tool upgrade failed. Continuing with the current environment." >&2
 fi
 
 echo "Installing SageMaker runtime dependencies..."
-if ! "$PYTHON_BIN" -m pip install -r requirements-sagemaker.txt; then
+if ! "$VENV_PYTHON" -m pip install -r requirements-sagemaker.txt; then
   cat >&2 <<'EOF'
 Dependency installation failed.
 
@@ -44,7 +52,7 @@ EOF
 fi
 
 echo "Installing Quant Studio from the local source tree..."
-"$PYTHON_BIN" -m pip install -e . --no-deps --no-build-isolation
+"$VENV_PYTHON" -m pip install -e . --no-deps --no-build-isolation
 
 cat <<'EOF'
 

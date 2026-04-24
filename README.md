@@ -135,7 +135,8 @@ The framework also includes development-focused workflow features:
 - feature policy checks for required/excluded features, missingness, VIF, IV,
   expected signs, and monotonicity
 - explainability outputs such as coefficient breakdowns, permutation
-  importance, model-specific tables, and feature effect curves
+  importance, PDP, ICE, centered ICE, ALE, two-way effects, marginal effects,
+  interaction strength, and feature-bucket calibration
 - scenario testing for feature-level shocks on held-out data
 
 ## Design Goals
@@ -424,6 +425,11 @@ For a browser-based SageMaker environment such as Code Editor or JupyterLab:
 bash scripts/bootstrap_sagemaker.sh
 bash scripts/run_sagemaker_streamlit.sh
 ```
+
+The SageMaker bootstrap creates `.sagemaker_venv` in the repo and installs
+Quant Studio there. This avoids changing SageMaker's own JupyterLab/Notebook
+packages, which can otherwise produce resolver warnings from the preinstalled
+IDE environment.
 
 The detailed guide is at [docs/SAGEMAKER_SETUP.md](./docs/SAGEMAKER_SETUP.md), and a
 plain-text copy is kept at [SAGEMAKER_SETUP.txt](./SAGEMAKER_SETUP.txt).
@@ -1191,14 +1197,32 @@ Important fields:
 
 - `permutation_importance`
 - `feature_effect_curves`
+- `partial_dependence`
+- `ice_curves`
+- `centered_ice_curves`
+- `accumulated_local_effects`
+- `two_way_effects`
+- `effect_confidence_bands`
+- `monotonicity_diagnostics`
+- `segmented_effects`
+- `effect_stability`
+- `marginal_effects`
+- `interaction_strength`
+- `effect_calibration`
 - `coefficient_breakdown`
 - `top_n_features`
 - `grid_points`
 - `sample_size`
+- `ice_sample_size`
+- `effect_band_resamples`
+- `two_way_grid_points`
+- `max_effect_segments`
 
 Depending on model family, this can produce coefficient tables, odds-ratio-style
-breakdowns, permutation importance, feature-effect curves, WoE tables, and
-two-stage LGD coefficient outputs.
+breakdowns, permutation importance, PDP, ICE, centered ICE, ALE, two-way effect
+heatmaps, confidence bands, monotonicity diagnostics, segmented and split-stable
+effect curves, average marginal effects, interaction-strength tables,
+effect-by-calibration views, WoE tables, and two-stage LGD coefficient outputs.
 
 ### `CalibrationConfig`
 
@@ -1422,9 +1446,16 @@ Artifacts are written under the configured output root using a timestamped run d
 Important behavior:
 
 - `interactive_report.html` is always exported for completed runs.
-- Individual figure `.html` and `.png` files can now be disabled through
-  `ArtifactConfig.export_individual_figure_files` or the matching GUI toggle to
-  reduce runtime and artifact volume.
+- Individual figure `.html` and `.png` files are disabled by default and can be
+  enabled through `ArtifactConfig.export_individual_figure_files` or the
+  matching GUI toggle when separate chart files are needed.
+- `export_profile` controls how much supporting evidence is packaged:
+  `standard` preserves the normal governed bundle, `fast` skips heavier
+  distribution assets such as Excel workbooks, regulatory DOCX/PDF reports,
+  input snapshots, and code snapshots, and `audit` is reserved for full-review
+  runs.
+- `run_debug_trace.json` is exported for every run and records step timing,
+  completion status, shape snapshots, and error details when a step fails.
 
 Default artifact files:
 
@@ -1443,6 +1474,7 @@ Default artifact files:
   This now indexes the core run artifacts, export directories, figures, and
   rerun bundle in one file.
 - `step_manifest.json`
+- `run_debug_trace.json`
 - `model_documentation_pack.md`
 - `validation_pack.md`
 - `reproducibility_manifest.json`
@@ -1915,6 +1947,15 @@ performance safeguards through `PerformanceConfig`, including:
 - smaller dataset previews in the builder workspace
 - capped multiple-imputation surrogate sampling for expensive diagnostics
 - truncated HTML report table and figure previews so standalone reports remain usable
+- lazy Streamlit result snapshots for large runs so the GUI does not keep every
+  exported row in memory
+- export profiles that let users choose between faster development exports and
+  fuller audit-oriented packaging
+
+Explainability outputs such as PDP, ICE, ALE, two-way effects, marginal
+effects, interaction strength, and macro sensitivity use batched scoring where
+practical. This reduces repeated preprocessing through the model adapter while
+preserving the exported tables and figures.
 
 ### Time-Series Or Panel Runs Fail Validation
 

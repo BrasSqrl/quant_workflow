@@ -43,7 +43,10 @@ def _build_artifact_contract_config(output_root: Path) -> FrameworkConfig:
             interactive_visualizations=True,
             static_image_exports=False,
         ),
-        artifacts=ArtifactConfig(output_root=output_root),
+        artifacts=ArtifactConfig(
+            output_root=output_root,
+            export_individual_figure_files=True,
+        ),
     )
 
 
@@ -117,6 +120,10 @@ def test_artifact_manifest_can_skip_individual_figure_exports() -> None:
         assert manifest["directories"]["figures"] is None
         assert manifest["directories"]["figures_html"] is None
         assert manifest["directories"]["figures_png"] is None
+
+
+def test_individual_figure_exports_default_to_disabled() -> None:
+    assert ArtifactConfig().export_individual_figure_files is False
 
 
 def test_reference_workflow_bundle_contract_contains_expected_sections() -> None:

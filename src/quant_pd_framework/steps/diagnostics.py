@@ -42,6 +42,7 @@ from ..config import (
 )
 from ..context import PipelineContext
 from ..diagnostic_frameworks import add_expanded_framework_outputs
+from ..diagnostics import predict_modified_frames
 from ..models import build_model_adapter
 from ..presentation import apply_fintech_figure_theme, friendly_asset_title
 from ..workflow_guardrails import build_guardrail_table, evaluate_workflow_guardrails
@@ -2463,32 +2464,125 @@ class DiagnosticsStep(BasePipelineStep):
             )
             context.diagnostics_tables["coefficient_breakdown"] = coefficient_table
 
-        if context.config.explainability.feature_effect_curves:
+        pdp_table = pd.DataFrame()
+        if (
+            context.config.explainability.feature_effect_curves
+            or context.config.explainability.partial_dependence
+            or context.config.explainability.monotonicity_diagnostics
+            or context.config.explainability.effect_confidence_bands
+        ):
             effect_table = self._build_feature_effect_curves(context, top_features)
             if not effect_table.empty:
-                context.diagnostics_tables["feature_effect_curves"] = effect_table
-                for feature_name in effect_table["feature_name"].drop_duplicates().tolist():
-                    feature_table = effect_table.loc[
-                        effect_table["feature_name"] == feature_name
-                    ].copy(deep=True)
-                    if feature_table["curve_type"].iloc[0] == "numeric":
-                        figure = px.line(
-                            feature_table.sort_values("sort_order"),
-                            x="feature_value",
-                            y="average_prediction",
-                            title=f"Feature Effect: {feature_name}",
-                            markers=True,
-                        )
-                    else:
-                        figure = px.bar(
-                            feature_table.sort_values("sort_order"),
-                            x="feature_value",
-                            y="average_prediction",
-                            title=f"Feature Effect: {feature_name}",
-                        )
-                    context.visualizations[
-                        f"feature_effect_{self._sanitize_asset_name(feature_name)}"
-                    ] = figure
+                pdp_table = effect_table
+                if context.config.explainability.feature_effect_curves:
+                    context.diagnostics_tables["feature_effect_curves"] = effect_table
+                    self._add_effect_curve_figures(
+                        context=context,
+                        table=effect_table,
+                        prefix="feature_effect",
+                        title_prefix="Feature Effect",
+                    )
+                if context.config.explainability.partial_dependence:
+                    context.diagnostics_tables["partial_dependence"] = effect_table.copy(
+                        deep=True
+                    )
+                    self._add_effect_curve_figures(
+                        context=context,
+                        table=effect_table,
+                        prefix="partial_dependence",
+                        title_prefix="Partial Dependence",
+                    )
+
+        if context.config.explainability.ice_curves:
+            ice_table = self._build_ice_curves(context, top_features)
+            if not ice_table.empty:
+                context.diagnostics_tables["ice_curves"] = ice_table
+                self._add_ice_figures(context, ice_table, centered=False)
+                if context.config.explainability.centered_ice_curves:
+                    centered_table = ice_table.copy(deep=True)
+                    centered_table["prediction"] = centered_table["centered_prediction"]
+                    context.diagnostics_tables["centered_ice_curves"] = centered_table
+                    self._add_ice_figures(context, centered_table, centered=True)
+
+        if context.config.explainability.accumulated_local_effects:
+            ale_table = self._build_accumulated_local_effects(context, top_features)
+            if not ale_table.empty:
+                context.diagnostics_tables["accumulated_local_effects"] = ale_table
+                self._add_ale_figures(context, ale_table)
+
+        two_way_table = pd.DataFrame()
+        if context.config.explainability.two_way_effects:
+            two_way_table = self._build_two_way_effects(context, top_features)
+            if not two_way_table.empty:
+                context.diagnostics_tables["two_way_feature_effects"] = two_way_table
+                self._add_two_way_effect_figures(context, two_way_table)
+
+        if context.config.explainability.effect_confidence_bands and not pdp_table.empty:
+            band_table = self._build_effect_confidence_bands(context, pdp_table)
+            if not band_table.empty:
+                context.diagnostics_tables["feature_effect_confidence_bands"] = band_table
+                self._add_effect_band_figures(context, band_table)
+
+        if context.config.explainability.monotonicity_diagnostics and not pdp_table.empty:
+            monotonicity_table = self._build_effect_monotonicity_table(context, pdp_table)
+            if not monotonicity_table.empty:
+                context.diagnostics_tables["feature_effect_monotonicity"] = (
+                    monotonicity_table
+                )
+
+        if context.config.explainability.segmented_effects:
+            segmented_table = self._build_segmented_feature_effects(context, top_features)
+            if not segmented_table.empty:
+                context.diagnostics_tables["segmented_feature_effects"] = segmented_table
+                self._add_segmented_effect_figures(context, segmented_table)
+
+        if context.config.explainability.effect_stability:
+            stability_table = self._build_effect_stability_table(context, top_features)
+            if not stability_table.empty:
+                context.diagnostics_tables["feature_effect_stability"] = stability_table
+                self._add_effect_stability_figures(context, stability_table)
+
+        if context.config.explainability.marginal_effects:
+            marginal_table = self._build_marginal_effects(context, top_features)
+            if not marginal_table.empty:
+                context.diagnostics_tables["average_marginal_effects"] = marginal_table
+                context.visualizations["average_marginal_effects"] = px.bar(
+                    marginal_table.sort_values("absolute_average_marginal_effect"),
+                    x="average_marginal_effect",
+                    y="feature_name",
+                    orientation="h",
+                    title="Average Marginal Effects",
+                    labels={
+                        "average_marginal_effect": "Average Marginal Effect",
+                        "feature_name": "Feature",
+                    },
+                )
+
+        if context.config.explainability.interaction_strength:
+            interaction_table = self._build_interaction_strength_table(
+                context,
+                top_features,
+                two_way_table=two_way_table,
+            )
+            if not interaction_table.empty:
+                context.diagnostics_tables["interaction_strength"] = interaction_table
+                context.visualizations["interaction_strength"] = px.bar(
+                    interaction_table.sort_values("mean_absolute_interaction"),
+                    x="mean_absolute_interaction",
+                    y="feature_pair",
+                    orientation="h",
+                    title="Interaction Strength",
+                    labels={
+                        "mean_absolute_interaction": "Mean Absolute Interaction",
+                        "feature_pair": "Feature Pair",
+                    },
+                )
+
+        if context.config.explainability.effect_calibration and labels_available:
+            calibration_table = self._build_effect_calibration_table(context, top_features)
+            if not calibration_table.empty:
+                context.diagnostics_tables["feature_effect_calibration"] = calibration_table
+                self._add_effect_calibration_figures(context, calibration_table)
 
         if context.config.explainability.permutation_importance and labels_available:
             permutation_table = self._build_permutation_importance(context, top_features)
@@ -2534,18 +2628,19 @@ class DiagnosticsStep(BasePipelineStep):
                         np.linspace(0.05, 0.95, context.config.explainability.grid_points),
                     )
                 )
-                for index, grid_value in enumerate(grid):
-                    modified = sampled.copy(deep=True)
-                    modified[feature_name] = float(grid_value)
+                predictions_by_grid = self._predict_modified_frames(
+                    context,
+                    sampled,
+                    [{feature_name: float(grid_value)} for grid_value in grid],
+                )
+                for index, (grid_value, predictions) in enumerate(
+                    zip(grid, predictions_by_grid, strict=False)
+                ):
                     rows.append(
                         {
                             "feature_name": feature_name,
                             "feature_value": float(grid_value),
-                            "average_prediction": float(
-                                np.mean(
-                                    context.model.predict_score(modified[context.feature_columns])
-                                )
-                            ),
+                            "average_prediction": float(np.mean(predictions)),
                             "curve_type": "numeric",
                             "score_label": score_label,
                             "sort_order": index,
@@ -2559,24 +2654,873 @@ class DiagnosticsStep(BasePipelineStep):
                     .head(context.config.diagnostics.top_n_categories)
                     .index.tolist()
                 )
-                for index, category in enumerate(categories):
-                    modified = sampled.copy(deep=True)
-                    modified[feature_name] = category
+                predictions_by_category = self._predict_modified_frames(
+                    context,
+                    sampled,
+                    [{feature_name: category} for category in categories],
+                )
+                for index, (category, predictions) in enumerate(
+                    zip(categories, predictions_by_category, strict=False)
+                ):
                     rows.append(
                         {
                             "feature_name": feature_name,
                             "feature_value": category,
-                            "average_prediction": float(
-                                np.mean(
-                                    context.model.predict_score(modified[context.feature_columns])
-                                )
-                            ),
+                            "average_prediction": float(np.mean(predictions)),
                             "curve_type": "categorical",
                             "score_label": score_label,
                             "sort_order": index,
                         }
                     )
+        table = pd.DataFrame(rows)
+        if not table.empty:
+            table["effect_method"] = "partial_dependence"
+        return table
+
+    def _add_effect_curve_figures(
+        self,
+        *,
+        context: PipelineContext,
+        table: pd.DataFrame,
+        prefix: str,
+        title_prefix: str,
+    ) -> None:
+        for feature_name in table["feature_name"].drop_duplicates().tolist():
+            feature_table = table.loc[table["feature_name"] == feature_name].copy(deep=True)
+            if feature_table["curve_type"].iloc[0] == "numeric":
+                figure = px.line(
+                    feature_table.sort_values("sort_order"),
+                    x="feature_value",
+                    y="average_prediction",
+                    title=f"{title_prefix}: {feature_name}",
+                    markers=True,
+                )
+            else:
+                figure = px.bar(
+                    feature_table.sort_values("sort_order"),
+                    x="feature_value",
+                    y="average_prediction",
+                    title=f"{title_prefix}: {feature_name}",
+                )
+            context.visualizations[f"{prefix}_{self._sanitize_asset_name(feature_name)}"] = figure
+
+    def _build_ice_curves(
+        self,
+        context: PipelineContext,
+        top_features: list[str],
+    ) -> pd.DataFrame:
+        base_frame = self._effect_feature_frame(
+            context,
+            split_name="test",
+            max_rows=context.config.explainability.ice_sample_size,
+        )
+        if base_frame.empty:
+            return pd.DataFrame()
+
+        numeric_features = self._numeric_effect_features(context, top_features, base_frame)
+        rows: list[dict[str, Any]] = []
+        for feature_name in numeric_features:
+            grid = self._numeric_effect_grid(
+                base_frame[feature_name],
+                context.config.explainability.grid_points,
+            )
+            if len(grid) < 2:
+                continue
+            predictions_by_grid = self._predict_modified_frames(
+                context,
+                base_frame,
+                [{feature_name: float(grid_value)} for grid_value in grid],
+            )
+            if not predictions_by_grid:
+                continue
+            baseline = predictions_by_grid[0]
+            for grid_index, (grid_value, predictions) in enumerate(
+                zip(grid, predictions_by_grid, strict=False)
+            ):
+                for observation_index, prediction in enumerate(predictions):
+                    rows.append(
+                        {
+                            "feature_name": feature_name,
+                            "observation_id": observation_index,
+                            "feature_value": float(grid_value),
+                            "prediction": float(prediction),
+                            "centered_prediction": float(prediction - baseline[observation_index]),
+                            "sort_order": grid_index,
+                        }
+                    )
         return pd.DataFrame(rows)
+
+    def _add_ice_figures(
+        self,
+        context: PipelineContext,
+        ice_table: pd.DataFrame,
+        *,
+        centered: bool,
+    ) -> None:
+        y_column = "prediction"
+        prefix = "centered_ice" if centered else "ice"
+        title_prefix = "Centered ICE" if centered else "ICE"
+        for feature_name in ice_table["feature_name"].drop_duplicates().tolist():
+            feature_table = (
+                ice_table.loc[ice_table["feature_name"] == feature_name]
+                .copy(deep=True)
+                .sort_values(["observation_id", "sort_order"])
+            )
+            selected_ids = feature_table["observation_id"].drop_duplicates().head(50).tolist()
+            feature_table = feature_table.loc[feature_table["observation_id"].isin(selected_ids)]
+            context.visualizations[f"{prefix}_{self._sanitize_asset_name(feature_name)}"] = px.line(
+                feature_table,
+                x="feature_value",
+                y=y_column,
+                line_group="observation_id",
+                color="observation_id",
+                title=f"{title_prefix}: {feature_name}",
+                labels={"feature_value": feature_name, y_column: "Prediction"},
+            )
+
+    def _build_accumulated_local_effects(
+        self,
+        context: PipelineContext,
+        top_features: list[str],
+    ) -> pd.DataFrame:
+        base_frame = self._effect_feature_frame(context, split_name="test")
+        if base_frame.empty:
+            return pd.DataFrame()
+        numeric_features = self._numeric_effect_features(context, top_features, base_frame)
+        rows: list[dict[str, Any]] = []
+        for feature_name in numeric_features:
+            non_null = pd.to_numeric(base_frame[feature_name], errors="coerce").dropna()
+            if non_null.nunique() < 3:
+                continue
+            edges = np.unique(
+                np.quantile(
+                    non_null.to_numpy(dtype=float),
+                    np.linspace(0.0, 1.0, context.config.explainability.grid_points),
+                )
+            )
+            if len(edges) < 3:
+                continue
+            local_effects: list[float] = []
+            centers: list[float] = []
+            counts: list[int] = []
+            for lower, upper in zip(edges[:-1], edges[1:], strict=False):
+                mask = (base_frame[feature_name] >= lower) & (base_frame[feature_name] <= upper)
+                interval_frame = base_frame.loc[mask].copy(deep=True)
+                if interval_frame.empty:
+                    local_effects.append(0.0)
+                    centers.append(float((lower + upper) / 2.0))
+                    counts.append(0)
+                    continue
+                upper_scores, lower_scores = self._predict_modified_frames(
+                    context,
+                    interval_frame,
+                    [
+                        {feature_name: float(upper)},
+                        {feature_name: float(lower)},
+                    ],
+                )
+                diff = upper_scores - lower_scores
+                local_effects.append(float(np.mean(diff)))
+                centers.append(float((lower + upper) / 2.0))
+                counts.append(int(len(interval_frame)))
+            accumulated = np.cumsum(np.asarray(local_effects, dtype=float))
+            accumulated = accumulated - float(np.mean(accumulated))
+            for index, (center, local_effect, ale_value, count) in enumerate(
+                zip(centers, local_effects, accumulated, counts, strict=False)
+            ):
+                rows.append(
+                    {
+                        "feature_name": feature_name,
+                        "feature_value": center,
+                        "ale_value": float(ale_value),
+                        "local_effect": float(local_effect),
+                        "observation_count": count,
+                        "sort_order": index,
+                    }
+                )
+        return pd.DataFrame(rows)
+
+    def _add_ale_figures(self, context: PipelineContext, ale_table: pd.DataFrame) -> None:
+        for feature_name in ale_table["feature_name"].drop_duplicates().tolist():
+            feature_table = ale_table.loc[ale_table["feature_name"] == feature_name]
+            context.visualizations[
+                f"accumulated_local_effect_{self._sanitize_asset_name(feature_name)}"
+            ] = px.line(
+                feature_table.sort_values("sort_order"),
+                x="feature_value",
+                y="ale_value",
+                markers=True,
+                title=f"Accumulated Local Effects: {feature_name}",
+                labels={"feature_value": feature_name, "ale_value": "ALE"},
+            )
+
+    def _build_two_way_effects(
+        self,
+        context: PipelineContext,
+        top_features: list[str],
+    ) -> pd.DataFrame:
+        base_frame = self._effect_feature_frame(context, split_name="test")
+        if base_frame.empty:
+            return pd.DataFrame()
+        numeric_features = self._numeric_effect_features(context, top_features, base_frame)
+        rows: list[dict[str, Any]] = []
+        for pair_index, (feature_x, feature_y) in enumerate(self._feature_pairs(numeric_features)):
+            if pair_index >= 3:
+                break
+            grid_x = self._numeric_effect_grid(
+                base_frame[feature_x],
+                context.config.explainability.two_way_grid_points,
+            )
+            grid_y = self._numeric_effect_grid(
+                base_frame[feature_y],
+                context.config.explainability.two_way_grid_points,
+            )
+            if len(grid_x) < 2 or len(grid_y) < 2:
+                continue
+            modifications: list[dict[str, Any]] = []
+            grid_rows: list[dict[str, Any]] = []
+            for x_index, x_value in enumerate(grid_x):
+                for y_index, y_value in enumerate(grid_y):
+                    modifications.append(
+                        {
+                            feature_x: float(x_value),
+                            feature_y: float(y_value),
+                        }
+                    )
+                    grid_rows.append(
+                        {
+                            "feature_x": feature_x,
+                            "feature_y": feature_y,
+                            "feature_pair": f"{feature_x} x {feature_y}",
+                            "feature_x_value": float(x_value),
+                            "feature_y_value": float(y_value),
+                            "x_sort_order": x_index,
+                            "y_sort_order": y_index,
+                        }
+                    )
+            predictions_by_grid = self._predict_modified_frames(
+                context,
+                base_frame,
+                modifications,
+            )
+            for grid_row, predictions in zip(grid_rows, predictions_by_grid, strict=False):
+                rows.append(
+                    {
+                        **grid_row,
+                        "average_prediction": float(np.mean(predictions)),
+                    }
+                )
+        return pd.DataFrame(rows)
+
+    def _add_two_way_effect_figures(
+        self,
+        context: PipelineContext,
+        two_way_table: pd.DataFrame,
+    ) -> None:
+        for feature_pair in two_way_table["feature_pair"].drop_duplicates().tolist():
+            pair_table = two_way_table.loc[two_way_table["feature_pair"] == feature_pair]
+            context.visualizations[
+                f"two_way_effect_{self._sanitize_asset_name(feature_pair)}"
+            ] = px.density_heatmap(
+                pair_table,
+                x="feature_x_value",
+                y="feature_y_value",
+                z="average_prediction",
+                histfunc="avg",
+                title=f"2D Feature Effect: {feature_pair}",
+                labels={
+                    "feature_x_value": str(pair_table["feature_x"].iloc[0]),
+                    "feature_y_value": str(pair_table["feature_y"].iloc[0]),
+                    "average_prediction": "Average Prediction",
+                },
+            )
+
+    def _build_effect_confidence_bands(
+        self,
+        context: PipelineContext,
+        pdp_table: pd.DataFrame,
+    ) -> pd.DataFrame:
+        base_frame = self._effect_feature_frame(context, split_name="test")
+        if base_frame.empty:
+            return pd.DataFrame()
+        rng = np.random.default_rng(context.config.split.random_state)
+        rows: list[dict[str, Any]] = []
+        numeric_pdp = pdp_table.loc[pdp_table["curve_type"] == "numeric"].copy(deep=True)
+        for feature_name, feature_table in numeric_pdp.groupby("feature_name", dropna=False):
+            feature_name = str(feature_name)
+            if feature_name not in base_frame.columns:
+                continue
+            feature_rows = feature_table.to_dict("records")
+            predictions_by_grid = self._predict_modified_frames(
+                context,
+                base_frame,
+                [{feature_name: float(row["feature_value"])} for row in feature_rows],
+            )
+            for row, predictions in zip(feature_rows, predictions_by_grid, strict=False):
+                if predictions.size < 2:
+                    continue
+                bootstrapped = []
+                for _ in range(context.config.explainability.effect_band_resamples):
+                    sample = rng.choice(predictions, size=predictions.size, replace=True)
+                    bootstrapped.append(float(np.mean(sample)))
+                lower, upper = np.quantile(np.asarray(bootstrapped), [0.05, 0.95])
+                rows.append(
+                    {
+                        "feature_name": feature_name,
+                        "feature_value": float(row["feature_value"]),
+                        "average_prediction": float(row["average_prediction"]),
+                        "lower_90": float(lower),
+                        "upper_90": float(upper),
+                        "sort_order": int(row["sort_order"]),
+                    }
+                )
+        return pd.DataFrame(rows)
+
+    def _add_effect_band_figures(
+        self,
+        context: PipelineContext,
+        band_table: pd.DataFrame,
+    ) -> None:
+        for feature_name in band_table["feature_name"].drop_duplicates().tolist():
+            feature_table = band_table.loc[band_table["feature_name"] == feature_name].sort_values(
+                "sort_order"
+            )
+            figure = go.Figure()
+            figure.add_trace(
+                go.Scatter(
+                    x=feature_table["feature_value"],
+                    y=feature_table["upper_90"],
+                    mode="lines",
+                    line={"width": 0},
+                    showlegend=False,
+                    name="Upper 90%",
+                )
+            )
+            figure.add_trace(
+                go.Scatter(
+                    x=feature_table["feature_value"],
+                    y=feature_table["lower_90"],
+                    mode="lines",
+                    fill="tonexty",
+                    line={"width": 0},
+                    name="90% Band",
+                )
+            )
+            figure.add_trace(
+                go.Scatter(
+                    x=feature_table["feature_value"],
+                    y=feature_table["average_prediction"],
+                    mode="lines+markers",
+                    name="Average Prediction",
+                )
+            )
+            figure.update_layout(title=f"Feature Effect Confidence Band: {feature_name}")
+            context.visualizations[
+                f"feature_effect_band_{self._sanitize_asset_name(feature_name)}"
+            ] = figure
+
+    def _build_effect_monotonicity_table(
+        self,
+        context: PipelineContext,
+        pdp_table: pd.DataFrame,
+    ) -> pd.DataFrame:
+        rows: list[dict[str, Any]] = []
+        expected = context.config.feature_policy.monotonic_features
+        numeric_pdp = pdp_table.loc[pdp_table["curve_type"] == "numeric"].copy(deep=True)
+        for feature_name in numeric_pdp["feature_name"].drop_duplicates().tolist():
+            feature_table = numeric_pdp.loc[
+                numeric_pdp["feature_name"] == feature_name
+            ].sort_values("sort_order")
+            predictions = feature_table["average_prediction"].to_numpy(dtype=float)
+            if predictions.size < 2:
+                continue
+            deltas = np.diff(predictions)
+            increasing_violations = int(np.sum(deltas < -1e-8))
+            decreasing_violations = int(np.sum(deltas > 1e-8))
+            if increasing_violations == 0:
+                observed_direction = "increasing"
+            elif decreasing_violations == 0:
+                observed_direction = "decreasing"
+            else:
+                observed_direction = "non_monotonic"
+            expected_direction = expected.get(str(feature_name), "")
+            expected_violations = (
+                increasing_violations
+                if expected_direction == "increasing"
+                else decreasing_violations
+                if expected_direction == "decreasing"
+                else np.nan
+            )
+            rows.append(
+                {
+                    "feature_name": feature_name,
+                    "observed_direction": observed_direction,
+                    "expected_direction": expected_direction,
+                    "increasing_violation_count": increasing_violations,
+                    "decreasing_violation_count": decreasing_violations,
+                    "expected_violation_count": expected_violations,
+                    "prediction_min": float(np.min(predictions)),
+                    "prediction_max": float(np.max(predictions)),
+                    "prediction_range": float(np.max(predictions) - np.min(predictions)),
+                    "passed_expected_direction": bool(expected_violations == 0)
+                    if expected_direction
+                    else np.nan,
+                }
+            )
+        return pd.DataFrame(rows)
+
+    def _build_segmented_feature_effects(
+        self,
+        context: PipelineContext,
+        top_features: list[str],
+    ) -> pd.DataFrame:
+        scored_frame = context.predictions.get("test")
+        segment_column = context.config.diagnostics.default_segment_column or (
+            context.categorical_features[0] if context.categorical_features else None
+        )
+        if scored_frame is None or not segment_column or segment_column not in scored_frame.columns:
+            return pd.DataFrame()
+        segment_values = (
+            scored_frame[segment_column]
+            .fillna("Missing")
+            .astype(str)
+            .value_counts()
+            .head(context.config.explainability.max_effect_segments)
+            .index.tolist()
+        )
+        rows: list[dict[str, Any]] = []
+        for segment_value in segment_values:
+            segment_frame = scored_frame.loc[
+                scored_frame[segment_column].fillna("Missing").astype(str) == segment_value
+            ]
+            base_frame = self._sample_rows(
+                segment_frame[context.feature_columns].copy(deep=True),
+                context.config.explainability.sample_size,
+                context,
+            )
+            numeric_features = self._numeric_effect_features(context, top_features, base_frame)
+            for feature_name in numeric_features:
+                grid = self._numeric_effect_grid(
+                    base_frame[feature_name],
+                    context.config.explainability.grid_points,
+                )
+                predictions_by_grid = self._predict_modified_frames(
+                    context,
+                    base_frame,
+                    [{feature_name: float(grid_value)} for grid_value in grid],
+                )
+                for index, (grid_value, predictions) in enumerate(
+                    zip(grid, predictions_by_grid, strict=False)
+                ):
+                    rows.append(
+                        {
+                            "segment_column": segment_column,
+                            "segment_value": segment_value,
+                            "feature_name": feature_name,
+                            "feature_value": float(grid_value),
+                            "average_prediction": float(np.mean(predictions)),
+                            "sort_order": index,
+                            "observation_count": int(len(base_frame)),
+                        }
+                    )
+        return pd.DataFrame(rows)
+
+    def _add_segmented_effect_figures(
+        self,
+        context: PipelineContext,
+        segmented_table: pd.DataFrame,
+    ) -> None:
+        for feature_name in segmented_table["feature_name"].drop_duplicates().tolist():
+            feature_table = segmented_table.loc[segmented_table["feature_name"] == feature_name]
+            context.visualizations[
+                f"segmented_feature_effect_{self._sanitize_asset_name(feature_name)}"
+            ] = px.line(
+                feature_table.sort_values(["segment_value", "sort_order"]),
+                x="feature_value",
+                y="average_prediction",
+                color="segment_value",
+                markers=True,
+                title=f"Segmented Feature Effect: {feature_name}",
+                labels={"feature_value": feature_name, "segment_value": "Segment"},
+            )
+
+    def _build_effect_stability_table(
+        self,
+        context: PipelineContext,
+        top_features: list[str],
+    ) -> pd.DataFrame:
+        combined = self._combined_predictions(context)
+        if combined.empty:
+            return pd.DataFrame()
+        base_frame = self._sample_rows(
+            combined[context.feature_columns].copy(deep=True),
+            context.config.explainability.sample_size,
+            context,
+        )
+        numeric_features = self._numeric_effect_features(context, top_features, base_frame)
+        grids = {
+            feature_name: self._numeric_effect_grid(
+                base_frame[feature_name],
+                context.config.explainability.grid_points,
+            )
+            for feature_name in numeric_features
+        }
+        rows: list[dict[str, Any]] = []
+        for split_name, split_frame in context.predictions.items():
+            if not set(context.feature_columns).issubset(split_frame.columns):
+                continue
+            split_features = self._sample_rows(
+                split_frame[context.feature_columns].copy(deep=True),
+                context.config.explainability.sample_size,
+                context,
+            )
+            for feature_name, grid in grids.items():
+                predictions_by_grid = self._predict_modified_frames(
+                    context,
+                    split_features,
+                    [{feature_name: float(grid_value)} for grid_value in grid],
+                )
+                for index, (grid_value, predictions) in enumerate(
+                    zip(grid, predictions_by_grid, strict=False)
+                ):
+                    rows.append(
+                        {
+                            "split": split_name,
+                            "feature_name": feature_name,
+                            "feature_value": float(grid_value),
+                            "average_prediction": float(np.mean(predictions)),
+                            "sort_order": index,
+                            "observation_count": int(len(split_features)),
+                        }
+                    )
+        table = pd.DataFrame(rows)
+        if table.empty:
+            return table
+        spread = (
+            table.groupby(["feature_name", "sort_order"], dropna=False)["average_prediction"]
+            .agg(["min", "max"])
+            .reset_index()
+            .rename(columns={"min": "split_min_prediction", "max": "split_max_prediction"})
+        )
+        spread["split_prediction_range"] = (
+            spread["split_max_prediction"] - spread["split_min_prediction"]
+        )
+        return table.merge(spread, on=["feature_name", "sort_order"], how="left")
+
+    def _add_effect_stability_figures(
+        self,
+        context: PipelineContext,
+        stability_table: pd.DataFrame,
+    ) -> None:
+        for feature_name in stability_table["feature_name"].drop_duplicates().tolist():
+            feature_table = stability_table.loc[stability_table["feature_name"] == feature_name]
+            context.visualizations[
+                f"feature_effect_stability_{self._sanitize_asset_name(feature_name)}"
+            ] = px.line(
+                feature_table.sort_values(["split", "sort_order"]),
+                x="feature_value",
+                y="average_prediction",
+                color="split",
+                markers=True,
+                title=f"Feature Effect Stability: {feature_name}",
+                labels={"feature_value": feature_name, "split": "Split"},
+            )
+
+    def _build_marginal_effects(
+        self,
+        context: PipelineContext,
+        top_features: list[str],
+    ) -> pd.DataFrame:
+        base_frame = self._effect_feature_frame(context, split_name="test")
+        if base_frame.empty:
+            return pd.DataFrame()
+        rows: list[dict[str, Any]] = []
+        for feature_name in self._numeric_effect_features(context, top_features, base_frame):
+            numeric = pd.to_numeric(base_frame[feature_name], errors="coerce")
+            spread = float(numeric.quantile(0.95) - numeric.quantile(0.05))
+            step = spread * 0.01 if spread > 0 else float(numeric.std()) * 0.01
+            if not np.isfinite(step) or step <= 0:
+                continue
+            plus_scores, minus_scores = self._predict_modified_frames(
+                context,
+                base_frame,
+                [
+                    {feature_name: numeric + step},
+                    {feature_name: numeric - step},
+                ],
+            )
+            derivatives = (plus_scores - minus_scores) / (2.0 * step)
+            derivatives = derivatives[np.isfinite(derivatives)]
+            if derivatives.size == 0:
+                continue
+            average_effect = float(np.mean(derivatives))
+            rows.append(
+                {
+                    "feature_name": feature_name,
+                    "average_marginal_effect": average_effect,
+                    "absolute_average_marginal_effect": abs(average_effect),
+                    "median_marginal_effect": float(np.median(derivatives)),
+                    "p10_marginal_effect": float(np.quantile(derivatives, 0.10)),
+                    "p90_marginal_effect": float(np.quantile(derivatives, 0.90)),
+                    "finite_difference_step": float(step),
+                    "scale": "predicted_probability"
+                    if context.config.target.mode == TargetMode.BINARY
+                    else "predicted_value",
+                }
+            )
+        return pd.DataFrame(rows).sort_values(
+            "absolute_average_marginal_effect",
+            ascending=False,
+        )
+
+    def _build_interaction_strength_table(
+        self,
+        context: PipelineContext,
+        top_features: list[str],
+        *,
+        two_way_table: pd.DataFrame | None = None,
+    ) -> pd.DataFrame:
+        if two_way_table is None or two_way_table.empty:
+            two_way_table = self._build_two_way_effects(context, top_features)
+        base_frame = self._effect_feature_frame(context, split_name="test")
+        if two_way_table.empty or base_frame.empty:
+            return pd.DataFrame()
+        baseline = float(np.mean(context.model.predict_score(base_frame[context.feature_columns])))
+        rows: list[dict[str, Any]] = []
+        for feature_pair in two_way_table["feature_pair"].drop_duplicates().tolist():
+            pair_table = two_way_table.loc[two_way_table["feature_pair"] == feature_pair]
+            feature_x = str(pair_table["feature_x"].iloc[0])
+            feature_y = str(pair_table["feature_y"].iloc[0])
+            x_effects = {}
+            y_effects = {}
+            x_values = pair_table["feature_x_value"].drop_duplicates().tolist()
+            y_values = pair_table["feature_y_value"].drop_duplicates().tolist()
+            x_predictions = self._predict_modified_frames(
+                context,
+                base_frame,
+                [{feature_x: float(x_value)} for x_value in x_values],
+            )
+            y_predictions = self._predict_modified_frames(
+                context,
+                base_frame,
+                [{feature_y: float(y_value)} for y_value in y_values],
+            )
+            for x_value, predictions in zip(x_values, x_predictions, strict=False):
+                x_effects[float(x_value)] = float(np.mean(predictions))
+            for y_value, predictions in zip(y_values, y_predictions, strict=False):
+                y_effects[float(y_value)] = float(np.mean(predictions))
+            residuals = []
+            for _, row in pair_table.iterrows():
+                additive_prediction = (
+                    x_effects[float(row["feature_x_value"])]
+                    + y_effects[float(row["feature_y_value"])]
+                    - baseline
+                )
+                residuals.append(float(row["average_prediction"]) - additive_prediction)
+            residual_array = np.asarray(residuals, dtype=float)
+            rows.append(
+                {
+                    "feature_pair": feature_pair,
+                    "feature_x": feature_x,
+                    "feature_y": feature_y,
+                    "mean_absolute_interaction": float(np.mean(np.abs(residual_array))),
+                    "max_absolute_interaction": float(np.max(np.abs(residual_array))),
+                    "signed_average_interaction": float(np.mean(residual_array)),
+                    "grid_point_count": int(len(pair_table)),
+                }
+            )
+        return pd.DataFrame(rows).sort_values("mean_absolute_interaction", ascending=False)
+
+    def _build_effect_calibration_table(
+        self,
+        context: PipelineContext,
+        top_features: list[str],
+    ) -> pd.DataFrame:
+        scored_test = context.predictions.get("test")
+        if (
+            scored_test is None
+            or context.target_column is None
+            or context.target_column not in scored_test.columns
+        ):
+            return pd.DataFrame()
+        score_column = self._score_column(context)
+        if score_column not in scored_test.columns:
+            return pd.DataFrame()
+        rows: list[dict[str, Any]] = []
+        for feature_name in top_features[: context.config.explainability.top_n_features]:
+            if feature_name not in scored_test.columns:
+                continue
+            feature_series = scored_test[feature_name]
+            if pd.api.types.is_numeric_dtype(feature_series):
+                bucket = self._bucket_numeric_for_display(
+                    feature_series,
+                    context.config.calibration.bin_count,
+                )
+            else:
+                top_categories = (
+                    feature_series.fillna("Missing")
+                    .astype(str)
+                    .value_counts()
+                    .head(context.config.diagnostics.top_n_categories)
+                    .index
+                )
+                categorical_series = feature_series.fillna("Missing").astype(str)
+                bucket = categorical_series.where(
+                    categorical_series.isin(top_categories),
+                    "Other",
+                )
+            frame = pd.DataFrame(
+                {
+                    "feature_bucket": bucket.astype(str),
+                    "actual": scored_test[context.target_column],
+                    "prediction": scored_test[score_column],
+                }
+            ).dropna()
+            if frame.empty:
+                continue
+            grouped = (
+                frame.groupby("feature_bucket", dropna=False)
+                .agg(
+                    observation_count=("prediction", "size"),
+                    average_prediction=("prediction", "mean"),
+                    average_actual=("actual", "mean"),
+                )
+                .reset_index()
+            )
+            grouped["calibration_gap"] = (
+                grouped["average_actual"] - grouped["average_prediction"]
+            )
+            for order, row in grouped.iterrows():
+                rows.append(
+                    {
+                        "feature_name": feature_name,
+                        "feature_bucket": str(row["feature_bucket"]),
+                        "observation_count": int(row["observation_count"]),
+                        "average_prediction": float(row["average_prediction"]),
+                        "average_actual": float(row["average_actual"]),
+                        "calibration_gap": float(row["calibration_gap"]),
+                        "sort_order": int(order),
+                    }
+                )
+        return pd.DataFrame(rows)
+
+    def _add_effect_calibration_figures(
+        self,
+        context: PipelineContext,
+        calibration_table: pd.DataFrame,
+    ) -> None:
+        for feature_name in calibration_table["feature_name"].drop_duplicates().tolist():
+            feature_table = calibration_table.loc[
+                calibration_table["feature_name"] == feature_name
+            ].sort_values("sort_order")
+            melted = feature_table.melt(
+                id_vars=["feature_bucket", "observation_count", "sort_order"],
+                value_vars=["average_prediction", "average_actual"],
+                var_name="metric",
+                value_name="value",
+            )
+            context.visualizations[
+                f"feature_effect_calibration_{self._sanitize_asset_name(feature_name)}"
+            ] = px.line(
+                melted,
+                x="feature_bucket",
+                y="value",
+                color="metric",
+                markers=True,
+                title=f"Calibration by Feature Bucket: {feature_name}",
+                labels={"feature_bucket": "Feature Bucket", "value": "Average Value"},
+            )
+
+    def _effect_feature_frame(
+        self,
+        context: PipelineContext,
+        *,
+        split_name: str,
+        max_rows: int | None = None,
+    ) -> pd.DataFrame:
+        scored_frame = context.predictions.get(split_name)
+        if scored_frame is None:
+            return pd.DataFrame()
+        missing_features = [
+            feature_name
+            for feature_name in context.feature_columns
+            if feature_name not in scored_frame.columns
+        ]
+        if missing_features:
+            return pd.DataFrame()
+        row_limit = max_rows or context.config.explainability.sample_size
+        return self._sample_rows(
+            scored_frame[context.feature_columns].copy(deep=True),
+            row_limit,
+            context,
+        )
+
+    def _predict_modified_frames(
+        self,
+        context: PipelineContext,
+        base_frame: pd.DataFrame,
+        modifications: list[dict[str, Any]],
+    ) -> list[np.ndarray]:
+        if context.model is None:
+            return [np.asarray([], dtype=float) for _ in modifications]
+        return predict_modified_frames(
+            model=context.model,
+            base_frame=base_frame,
+            feature_columns=context.feature_columns,
+            modifications=modifications,
+        )
+
+    def _numeric_effect_features(
+        self,
+        context: PipelineContext,
+        top_features: list[str],
+        frame: pd.DataFrame,
+    ) -> list[str]:
+        return [
+            feature_name
+            for feature_name in top_features[: context.config.explainability.top_n_features]
+            if feature_name in frame.columns and pd.api.types.is_numeric_dtype(frame[feature_name])
+        ]
+
+    def _numeric_effect_grid(self, series: pd.Series, grid_points: int) -> np.ndarray:
+        non_null = (
+            pd.to_numeric(series, errors="coerce")
+            .replace([np.inf, -np.inf], np.nan)
+            .dropna()
+        )
+        if non_null.nunique() < 2:
+            return np.asarray([], dtype=float)
+        return np.unique(
+            np.quantile(non_null.to_numpy(dtype=float), np.linspace(0.05, 0.95, grid_points))
+        )
+
+    def _feature_pairs(self, features: list[str]) -> list[tuple[str, str]]:
+        pairs: list[tuple[str, str]] = []
+        for left_index, feature_x in enumerate(features):
+            for feature_y in features[left_index + 1 :]:
+                pairs.append((feature_x, feature_y))
+        return pairs
+
+    def _score_column(self, context: PipelineContext) -> str:
+        return (
+            "predicted_probability"
+            if context.config.target.mode == TargetMode.BINARY
+            else "predicted_value"
+        )
+
+    def _bucket_numeric_for_display(self, series: pd.Series, bucket_count: int) -> pd.Series:
+        ranked = pd.to_numeric(series, errors="coerce").rank(method="first")
+        if ranked.dropna().empty or ranked.nunique(dropna=True) < 2:
+            return pd.Series(
+                ["Missing" if pd.isna(value) else "Single Bucket" for value in series],
+                index=series.index,
+            )
+        bucket = pd.qcut(
+            ranked,
+            q=min(bucket_count, int(ranked.nunique(dropna=True))),
+            duplicates="drop",
+        )
+        return bucket.astype(str)
 
     def _build_permutation_importance(
         self,
@@ -2609,9 +3553,11 @@ class DiagnosticsStep(BasePipelineStep):
             lower_is_better = True
 
         rows = []
-        for feature_name in top_features[: context.config.explainability.top_n_features]:
+        tested_features = top_features[: context.config.explainability.top_n_features]
+        permuted_values: dict[str, np.ndarray] = {}
+        for feature_name in tested_features:
             permuted = x_values.copy(deep=True)
-            permuted[feature_name] = (
+            permuted_values[feature_name] = (
                 permuted[feature_name]
                 .sample(
                     frac=1.0,
@@ -2619,7 +3565,16 @@ class DiagnosticsStep(BasePipelineStep):
                 )
                 .to_numpy()
             )
-            permuted_scores = context.model.predict_score(permuted)
+        predictions_by_feature = self._predict_modified_frames(
+            context,
+            x_values,
+            [{feature_name: permuted_values[feature_name]} for feature_name in tested_features],
+        )
+        for feature_name, permuted_scores in zip(
+            tested_features,
+            predictions_by_feature,
+            strict=False,
+        ):
             if context.config.target.mode == TargetMode.BINARY:
                 permuted_metric = float(roc_auc_score(y_true.astype(int), permuted_scores))
             else:
@@ -3329,25 +4284,35 @@ class DiagnosticsStep(BasePipelineStep):
         base_scores = pd.Series(context.model.predict_score(x_frame))
         base_average = float(base_scores.mean()) if not base_scores.empty else float("nan")
         rows: list[dict[str, Any]] = []
+        shock_modifications: list[dict[str, Any]] = []
+        shock_rows: list[dict[str, Any]] = []
         for feature_name in macro_features:
             numeric_series = pd.to_numeric(x_frame[feature_name], errors="coerce")
             feature_std = float(numeric_series.std(ddof=0))
             if not np.isfinite(feature_std) or feature_std == 0:
                 continue
             shock_value = feature_std * context.config.credit_risk.shock_std_multiplier
-            shocked = x_frame.copy(deep=True)
-            shocked[feature_name] = numeric_series + shock_value
-            shocked_scores = pd.Series(context.model.predict_score(shocked))
+            shock_modifications.append({feature_name: numeric_series + shock_value})
+            shock_rows.append(
+                {
+                    "feature_name": feature_name,
+                    "base_average_score": base_average,
+                    "shock_value": shock_value,
+                }
+            )
+        shock_predictions = self._predict_modified_frames(context, x_frame, shock_modifications)
+        for row, shocked_scores_array in zip(shock_rows, shock_predictions, strict=False):
+            shocked_scores = pd.Series(shocked_scores_array)
             shocked_average = (
                 float(shocked_scores.mean()) if not shocked_scores.empty else float("nan")
             )
             rows.append(
                 {
-                    "feature_name": feature_name,
-                    "base_average_score": base_average,
+                    "feature_name": row["feature_name"],
+                    "base_average_score": row["base_average_score"],
                     "shocked_average_score": shocked_average,
                     "score_delta": shocked_average - base_average,
-                    "shock_value": shock_value,
+                    "shock_value": row["shock_value"],
                 }
             )
         if not rows:

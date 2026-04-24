@@ -127,6 +127,29 @@ def test_streamlit_guided_mode_locks_advanced_controls_until_enabled() -> None:
     assert _find_by_label(at.checkbox, "Enable explainability outputs").disabled is False
 
 
+def test_streamlit_subset_size_controls_clamp_when_features_are_deselected() -> None:
+    from app.streamlit_app import build_editor_key
+
+    at = _build_app_test()
+    at.run(timeout=120)
+
+    dataframe = build_sample_pd_dataframe()
+    schema_key = f"{build_editor_key(dataframe, 'bundled_sample')}_schema_frame"
+    schema = at.session_state[schema_key].copy(deep=True)
+    schema.loc[schema["name"] == "as_of_date", "role"] = ColumnRole.DATE.value
+    schema.loc[schema["name"] == "loan_id", "role"] = ColumnRole.IDENTIFIER.value
+    schema.loc[schema["name"] == "default_status", "role"] = ColumnRole.TARGET_SOURCE.value
+    allowed_features = {"annual_income", "debt_to_income", "utilization"}
+    feature_mask = schema["role"].eq(ColumnRole.FEATURE.value)
+    schema.loc[feature_mask & ~schema["name"].isin(allowed_features), "enabled"] = False
+    at.session_state[schema_key] = schema
+
+    at.run(timeout=120)
+
+    assert not [element.value for element in at.error]
+    assert _find_by_label(at.number_input, "Maximum subset size").value <= 3
+
+
 def test_streamlit_app_scores_existing_model_bundle() -> None:
     model_path, config_path = _build_existing_model_bundle()
 

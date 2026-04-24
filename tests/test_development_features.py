@@ -67,10 +67,25 @@ def test_development_features_produce_expected_outputs() -> None:
                 enabled=True,
                 permutation_importance=True,
                 feature_effect_curves=True,
+                partial_dependence=True,
+                ice_curves=True,
+                centered_ice_curves=True,
+                accumulated_local_effects=True,
+                two_way_effects=True,
+                effect_confidence_bands=True,
+                monotonicity_diagnostics=True,
+                segmented_effects=True,
+                effect_stability=True,
+                marginal_effects=True,
+                interaction_strength=True,
+                effect_calibration=True,
                 coefficient_breakdown=True,
                 top_n_features=3,
                 grid_points=5,
                 sample_size=120,
+                ice_sample_size=40,
+                effect_band_resamples=3,
+                two_way_grid_points=4,
             ),
             documentation=DocumentationConfig(
                 enabled=True,
@@ -103,6 +118,18 @@ def test_development_features_produce_expected_outputs() -> None:
         assert "model_comparison" in context.diagnostics_tables
         assert "feature_policy_checks" in context.diagnostics_tables
         assert "feature_effect_curves" in context.diagnostics_tables
+        assert "partial_dependence" in context.diagnostics_tables
+        assert "ice_curves" in context.diagnostics_tables
+        assert "centered_ice_curves" in context.diagnostics_tables
+        assert "accumulated_local_effects" in context.diagnostics_tables
+        assert "two_way_feature_effects" in context.diagnostics_tables
+        assert "feature_effect_confidence_bands" in context.diagnostics_tables
+        assert "feature_effect_monotonicity" in context.diagnostics_tables
+        assert "segmented_feature_effects" in context.diagnostics_tables
+        assert "feature_effect_stability" in context.diagnostics_tables
+        assert "average_marginal_effects" in context.diagnostics_tables
+        assert "interaction_strength" in context.diagnostics_tables
+        assert "feature_effect_calibration" in context.diagnostics_tables
         assert "permutation_importance" in context.diagnostics_tables
         assert "scenario_summary" in context.diagnostics_tables
         assert context.metadata.get("comparison_recommended_model") is not None

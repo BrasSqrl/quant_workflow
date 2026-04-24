@@ -3,7 +3,12 @@
 set -euo pipefail
 
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-PYTHON_BIN="${PYTHON_BIN:-python3}"
+VENV_DIR="${VENV_DIR:-$PROJECT_ROOT/.sagemaker_venv}"
+if [ -z "${PYTHON_BIN:-}" ] && [ -x "$VENV_DIR/bin/python" ]; then
+  PYTHON_BIN="$VENV_DIR/bin/python"
+else
+  PYTHON_BIN="${PYTHON_BIN:-python3}"
+fi
 HOST="${HOST:-0.0.0.0}"
 PORT="${PORT:-8501}"
 MAX_UPLOAD_MB="${MAX_UPLOAD_MB:-51200}"

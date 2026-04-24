@@ -16,6 +16,7 @@ from quant_pd_framework import (
     DataStructure,
     DiagnosticConfig,
     ExecutionMode,
+    ExportProfile,
     MissingValuePolicy,
     ModelType,
     PresetName,
@@ -355,7 +356,6 @@ def run_app() -> None:
         initial_sidebar_state="expanded",
     )
     ui_inject_styles()
-    ui_render_header()
 
     dataframe, data_source_label = ui_select_input_dataframe()
     if dataframe is None:
@@ -394,10 +394,18 @@ def run_app() -> None:
     ).columns.tolist()
 
     with st.sidebar:
-        st.markdown("## Modeling Controls")
-        st.caption(
-            "Use the grouped panels to keep core setup visible while "
-            "hiding lower-priority tuning until you need it."
+        st.markdown(
+            """
+            <div class="sidebar-panel-intro">
+              <span class="sidebar-panel-kicker">Modeling Controls</span>
+              <h3 class="sidebar-panel-title">Configure the workflow</h3>
+              <p class="sidebar-panel-copy">
+                Use the grouped panels to keep core setup visible while hiding
+                lower-priority tuning until you need it.
+              </p>
+            </div>
+            """,
+            unsafe_allow_html=True,
         )
         preset_options = [
             ("custom", "Custom Configuration", "Start from the current manual controls."),
@@ -785,25 +793,39 @@ def run_app() -> None:
                 ],
                 disabled=not subset_search_enabled,
             )
+            subset_search_feature_count = max(1, len(subset_search_feature_options) or 1)
+            default_min_subset_size = min(
+                max(1, int(preset_inputs.subset_search.min_subset_size)),
+                subset_search_feature_count,
+            )
+            configured_max_subset_size = (
+                preset_inputs.subset_search.max_subset_size
+                or min(4, subset_search_feature_count)
+            )
+            default_max_subset_size = min(
+                max(default_min_subset_size, int(configured_max_subset_size)),
+                subset_search_feature_count,
+            )
             subset_search_min_subset_size = int(
                 st.number_input(
                     "Minimum subset size",
                     min_value=1,
-                    max_value=max(1, len(subset_search_feature_options) or 1),
-                    value=int(preset_inputs.subset_search.min_subset_size),
+                    max_value=subset_search_feature_count,
+                    value=default_min_subset_size,
                     step=1,
                     disabled=not subset_search_enabled,
                 )
             )
+            default_max_subset_size = max(
+                min(default_max_subset_size, subset_search_feature_count),
+                subset_search_min_subset_size,
+            )
             subset_search_max_subset_size = int(
                 st.number_input(
                     "Maximum subset size",
-                    min_value=1,
-                    max_value=max(1, len(subset_search_feature_options) or 1),
-                    value=int(
-                        preset_inputs.subset_search.max_subset_size
-                        or min(4, max(1, len(subset_search_feature_options) or 1))
-                    ),
+                    min_value=subset_search_min_subset_size,
+                    max_value=subset_search_feature_count,
+                    value=default_max_subset_size,
                     step=1,
                     disabled=not subset_search_enabled,
                 )
@@ -812,11 +834,11 @@ def run_app() -> None:
                 st.number_input(
                     "Maximum candidate features",
                     min_value=2,
-                    max_value=max(2, len(subset_search_feature_options) or 2),
+                    max_value=max(2, subset_search_feature_count),
                     value=int(
                         min(
                             preset_inputs.subset_search.max_candidate_features,
-                            max(2, len(subset_search_feature_options) or 2),
+                            max(2, subset_search_feature_count),
                         )
                     ),
                     step=1,
@@ -1325,6 +1347,7 @@ def run_app() -> None:
         documentation_exclusions = "\n".join(preset_inputs.documentation.exclusions)
         documentation_limitations = "\n".join(preset_inputs.documentation.limitations)
         documentation_reviewer_notes = preset_inputs.documentation.reviewer_notes
+        export_profile = preset_inputs.artifacts.export_profile.value
         regulatory_reporting_enabled = preset_inputs.regulatory_reporting.enabled
         regulatory_export_docx = preset_inputs.regulatory_reporting.export_docx
         regulatory_export_pdf = preset_inputs.regulatory_reporting.export_pdf
@@ -1369,10 +1392,30 @@ def run_app() -> None:
         explainability_enabled = preset_inputs.explainability.enabled
         permutation_importance_enabled = preset_inputs.explainability.permutation_importance
         feature_effect_curves_enabled = preset_inputs.explainability.feature_effect_curves
+        partial_dependence_enabled = preset_inputs.explainability.partial_dependence
+        ice_curves_enabled = preset_inputs.explainability.ice_curves
+        centered_ice_curves_enabled = preset_inputs.explainability.centered_ice_curves
+        ale_enabled = preset_inputs.explainability.accumulated_local_effects
+        two_way_effects_enabled = preset_inputs.explainability.two_way_effects
+        effect_confidence_bands_enabled = (
+            preset_inputs.explainability.effect_confidence_bands
+        )
+        effect_monotonicity_enabled = (
+            preset_inputs.explainability.monotonicity_diagnostics
+        )
+        segmented_effects_enabled = preset_inputs.explainability.segmented_effects
+        effect_stability_enabled = preset_inputs.explainability.effect_stability
+        marginal_effects_enabled = preset_inputs.explainability.marginal_effects
+        interaction_strength_enabled = preset_inputs.explainability.interaction_strength
+        effect_calibration_enabled = preset_inputs.explainability.effect_calibration
         coefficient_breakdown_enabled = preset_inputs.explainability.coefficient_breakdown
         explainability_top_n = int(preset_inputs.explainability.top_n_features)
         explainability_grid_points = int(preset_inputs.explainability.grid_points)
         explainability_sample_size = int(preset_inputs.explainability.sample_size)
+        explainability_ice_sample_size = int(preset_inputs.explainability.ice_sample_size)
+        effect_band_resamples = int(preset_inputs.explainability.effect_band_resamples)
+        two_way_grid_points = int(preset_inputs.explainability.two_way_grid_points)
+        max_effect_segments = int(preset_inputs.explainability.max_effect_segments)
         scenario_split = preset_inputs.scenario_testing.evaluation_split
         scenario_rows = default_scenario_editor_frame()
 
@@ -1954,6 +1997,66 @@ def run_app() -> None:
                 value=preset_inputs.explainability.feature_effect_curves,
                 disabled=not explainability_enabled,
             )
+            partial_dependence_enabled = st.checkbox(
+                "Partial dependence plots",
+                value=preset_inputs.explainability.partial_dependence,
+                disabled=not explainability_enabled,
+            )
+            ice_curves_enabled = st.checkbox(
+                "ICE and centered ICE curves",
+                value=preset_inputs.explainability.ice_curves,
+                disabled=not explainability_enabled,
+            )
+            centered_ice_curves_enabled = ice_curves_enabled and st.checkbox(
+                "Centered ICE curves",
+                value=preset_inputs.explainability.centered_ice_curves,
+                disabled=not explainability_enabled or not ice_curves_enabled,
+            )
+            ale_enabled = st.checkbox(
+                "Accumulated local effects",
+                value=preset_inputs.explainability.accumulated_local_effects,
+                disabled=not explainability_enabled,
+            )
+            two_way_effects_enabled = st.checkbox(
+                "2D feature effect heatmaps",
+                value=preset_inputs.explainability.two_way_effects,
+                disabled=not explainability_enabled,
+            )
+            effect_confidence_bands_enabled = st.checkbox(
+                "Feature effect confidence bands",
+                value=preset_inputs.explainability.effect_confidence_bands,
+                disabled=not explainability_enabled,
+            )
+            effect_monotonicity_enabled = st.checkbox(
+                "Feature effect monotonicity diagnostics",
+                value=preset_inputs.explainability.monotonicity_diagnostics,
+                disabled=not explainability_enabled,
+            )
+            segmented_effects_enabled = st.checkbox(
+                "Segmented feature effects",
+                value=preset_inputs.explainability.segmented_effects,
+                disabled=not explainability_enabled,
+            )
+            effect_stability_enabled = st.checkbox(
+                "Feature effect stability by split",
+                value=preset_inputs.explainability.effect_stability,
+                disabled=not explainability_enabled,
+            )
+            marginal_effects_enabled = st.checkbox(
+                "Average marginal effects",
+                value=preset_inputs.explainability.marginal_effects,
+                disabled=not explainability_enabled,
+            )
+            interaction_strength_enabled = st.checkbox(
+                "Interaction strength tests",
+                value=preset_inputs.explainability.interaction_strength,
+                disabled=not explainability_enabled,
+            )
+            effect_calibration_enabled = st.checkbox(
+                "Calibration by feature bucket",
+                value=preset_inputs.explainability.effect_calibration,
+                disabled=not explainability_enabled,
+            )
             coefficient_breakdown_enabled = st.checkbox(
                 "Coefficient breakdown",
                 value=preset_inputs.explainability.coefficient_breakdown,
@@ -1989,6 +2092,47 @@ def run_app() -> None:
                     disabled=not explainability_enabled,
                 )
             )
+            explainability_ice_sample_size = int(
+                st.number_input(
+                    "ICE sample size",
+                    min_value=50,
+                    max_value=2000,
+                    value=preset_inputs.explainability.ice_sample_size,
+                    step=50,
+                    disabled=not explainability_enabled or not ice_curves_enabled,
+                )
+            )
+            effect_band_resamples = int(
+                st.number_input(
+                    "Effect confidence resamples",
+                    min_value=2,
+                    max_value=100,
+                    value=preset_inputs.explainability.effect_band_resamples,
+                    step=1,
+                    disabled=not explainability_enabled
+                    or not effect_confidence_bands_enabled,
+                )
+            )
+            two_way_grid_points = int(
+                st.number_input(
+                    "2D effect grid points",
+                    min_value=3,
+                    max_value=12,
+                    value=preset_inputs.explainability.two_way_grid_points,
+                    step=1,
+                    disabled=not explainability_enabled or not two_way_effects_enabled,
+                )
+            )
+            max_effect_segments = int(
+                st.number_input(
+                    "Max feature-effect segments",
+                    min_value=1,
+                    max_value=10,
+                    value=preset_inputs.explainability.max_effect_segments,
+                    step=1,
+                    disabled=not explainability_enabled or not segmented_effects_enabled,
+                )
+            )
             scenario_split = st.selectbox(
                 "Scenario evaluation split",
                 options=["train", "validation", "test"],
@@ -2021,6 +2165,18 @@ def run_app() -> None:
             )
 
         with st.expander("Output Options", expanded=False):
+            export_profile = st.selectbox(
+                "Export profile",
+                options=[profile.value for profile in ExportProfile],
+                index=[profile.value for profile in ExportProfile].index(
+                    preset_inputs.artifacts.export_profile.value
+                ),
+                help=(
+                    "Fast skips expensive packaging such as workbooks, DOCX/PDF reports, "
+                    "input snapshots, and code snapshots. Standard keeps the normal bundle. "
+                    "Audit preserves the full governed export path."
+                ),
+            )
             pass_through_unconfigured_columns = st.checkbox(
                 "Keep unconfigured columns",
                 value=True,
@@ -2042,9 +2198,20 @@ def run_app() -> None:
             )
             output_root = st.text_input("Artifact root", value="artifacts")
 
-    workspace_frames = ui_render_builder_workspace(
-        dataframe=dataframe,
+    run_clicked = ui_render_header(
         data_source_label=data_source_label,
+        preset_label=preset_lookup[selected_preset_name_value]["label"],
+        workspace_mode=workspace_mode,
+        run_label=(
+            "Run Feature Subset Search"
+            if execution_mode == ExecutionMode.SEARCH_FEATURE_SUBSETS.value
+            else "Run Quant Model Workflow"
+        ),
+    )
+
+    workspace_frames = ui_render_builder_workspace(
+        data_source_label=data_source_label,
+        dataframe=dataframe,
         workspace_state=WorkspaceState(
             keys=workspace_keys,
             schema_frame=workspace_schema_frame,
@@ -2085,14 +2252,6 @@ def run_app() -> None:
         preview_config=preview_config,
         preview_findings=preview_findings,
         preview_error=preview_error,
-    )
-
-    run_clicked = st.button(
-        "Run Feature Subset Search"
-        if execution_mode == ExecutionMode.SEARCH_FEATURE_SUBSETS.value
-        else "Run Quant Model Workflow",
-        type="primary",
-        width="stretch",
     )
 
     if run_clicked:

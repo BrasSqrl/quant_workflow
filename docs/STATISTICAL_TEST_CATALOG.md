@@ -671,6 +671,77 @@ needs evidence about whether "completely random" is a defensible assumption.
 
 - Table: `littles_mcar_test`
 
+## 19. Feature Effect Monotonicity Diagnostics
+
+### What they test
+
+These diagnostics compare PDP-style feature-effect curves with the expected
+monotonic direction configured in the feature policy layer. They count
+increasing and decreasing violations across the ordered feature grid.
+
+### When to use them
+
+Use them for PD, scorecard, and other governed development workflows when a
+feature is expected to move risk or severity in a specific direction.
+
+### Output location
+
+- Table: `feature_effect_monotonicity`
+
+## 20. Interaction Strength Diagnostics
+
+### What they test
+
+Interaction strength compares a two-feature response surface with the additive
+effect implied by each feature independently. Larger absolute residuals suggest
+that the pair has a non-additive model effect.
+
+### When to use them
+
+Use them when deciding whether an interaction term is worth keeping or when a
+two-way PDP heatmap shows a strong joint pattern.
+
+### Output location
+
+- Table: `interaction_strength`
+- Table: `two_way_feature_effects`
+
+## 21. Feature Effect Stability Diagnostics
+
+### What they test
+
+Feature effect stability compares train, validation, and test effect curves on
+common feature grids and records the split-level prediction range at each grid
+point.
+
+### When to use them
+
+Use them when a feature relationship looks plausible in one sample but may not
+be stable enough to support final model selection.
+
+### Output location
+
+- Table: `feature_effect_stability`
+
+## 22. Feature Effect Calibration Diagnostics
+
+### What they test
+
+Feature effect calibration compares actual and predicted outcomes within
+feature buckets. It is not a formal hypothesis test, but it directly supports
+review of whether a learned feature relationship is well calibrated across the
+feature range.
+
+### When to use them
+
+Use them when PDP, ICE, or ALE plots show a meaningful feature effect and the
+reviewer needs to understand whether that effect lines up with observed
+outcomes.
+
+### Output location
+
+- Table: `feature_effect_calibration`
+
 ## Related Non-Test Diagnostics
 
 The following are often discussed like tests in practice, but they are better
@@ -680,6 +751,12 @@ thought of as analytical diagnostics:
 - quantile backtest
 - lift and gain
 - ROC and precision-recall curves
+- partial dependence plots
+- ICE and centered ICE plots
+- accumulated local effects
+- feature effect confidence bands
+- segmented feature effect plots
+- average marginal effects
 - residual plots and QQ plots
 
 Those are documented in [METRIC_CATALOG.md](./METRIC_CATALOG.md).

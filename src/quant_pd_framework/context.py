@@ -42,6 +42,7 @@ class PipelineContext:
     metadata: dict[str, Any] = field(default_factory=dict)
     warnings: list[str] = field(default_factory=list)
     events: list[str] = field(default_factory=list)
+    debug_trace: list[dict[str, Any]] = field(default_factory=list)
 
     def log(self, message: str) -> None:
         """Adds a short breadcrumb that can be written into the final report."""
@@ -52,3 +53,8 @@ class PipelineContext:
         """Stores non-fatal issues that the user should still review."""
 
         self.warnings.append(message)
+
+    def add_debug_record(self, record: dict[str, Any]) -> None:
+        """Stores structured timing and sizing data for performance debugging."""
+
+        self.debug_trace.append(record)

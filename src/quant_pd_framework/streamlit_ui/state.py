@@ -110,6 +110,30 @@ def build_run_snapshot(context, config_dict: dict[str, Any]) -> dict[str, Any]:
         for key, value in context.artifacts.items()
     }
     score_column = infer_snapshot_score_column(context)
+    lazy_results = bool(context.config.performance.lazy_streamlit_results)
+    prediction_row_cap = int(context.config.diagnostics.max_plot_rows)
+    table_row_cap = max(
+        int(context.config.diagnostics.max_plot_rows),
+        int(context.config.performance.ui_preview_rows),
+    )
+    prediction_snapshots = {
+        key: _snapshot_frame_for_session(
+            value,
+            lazy=lazy_results,
+            row_cap=prediction_row_cap,
+            random_state=context.config.split.random_state,
+        )
+        for key, value in context.predictions.items()
+    }
+    diagnostics_table_snapshots = {
+        key: _snapshot_frame_for_session(
+            value,
+            lazy=lazy_results,
+            row_cap=table_row_cap,
+            random_state=context.config.split.random_state,
+        )
+        for key, value in context.diagnostics_tables.items()
+    }
     return {
         "run_id": context.run_id,
         "metrics": context.metrics,
@@ -123,17 +147,32 @@ def build_run_snapshot(context, config_dict: dict[str, Any]) -> dict[str, Any]:
             if context.backtest_summary is not None
             else pd.DataFrame()
         ),
-        "predictions": {key: value.copy(deep=True) for key, value in context.predictions.items()},
+        "predictions": prediction_snapshots,
         "warnings": list(context.warnings),
         "events": list(context.events),
         "artifacts": artifact_paths,
         "config": config_dict,
         "report_path": artifact_paths.get("report", ""),
-        "diagnostics_tables": {
-            key: value.copy(deep=True) for key, value in context.diagnostics_tables.items()
-        },
+        "diagnostics_tables": diagnostics_table_snapshots,
         "statistical_tests": context.statistical_tests,
         "visualizations": context.visualizations,
+        "streamlit_snapshot": {
+            "lazy_results": lazy_results,
+            "prediction_row_cap": prediction_row_cap,
+            "diagnostics_table_row_cap": table_row_cap,
+            "prediction_row_counts": {
+                key: int(value.shape[0]) for key, value in context.predictions.items()
+            },
+            "prediction_rows_stored": {
+                key: int(value.shape[0]) for key, value in prediction_snapshots.items()
+            },
+            "diagnostics_table_row_counts": {
+                key: int(value.shape[0]) for key, value in context.diagnostics_tables.items()
+            },
+            "diagnostics_table_rows_stored": {
+                key: int(value.shape[0]) for key, value in diagnostics_table_snapshots.items()
+            },
+        },
         "feature_columns": list(context.feature_columns),
         "numeric_features": list(context.numeric_features),
         "categorical_features": list(context.categorical_features),
@@ -156,6 +195,18 @@ def build_run_snapshot(context, config_dict: dict[str, Any]) -> dict[str, Any]:
         "date_column": context.config.split.date_column,
         "default_segment_column": context.config.diagnostics.default_segment_column,
     }
+
+
+def _snapshot_frame_for_session(
+    frame: pd.DataFrame,
+    *,
+    lazy: bool,
+    row_cap: int,
+    random_state: int,
+) -> pd.DataFrame:
+    if not lazy or len(frame) <= row_cap:
+        return frame.copy(deep=True)
+    return frame.sample(row_cap, random_state=random_state).sort_index().copy(deep=True)
 
 
 def infer_snapshot_score_column(context) -> str:

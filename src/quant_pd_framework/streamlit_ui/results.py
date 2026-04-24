@@ -45,13 +45,16 @@ def render_workflow_readiness(
 ) -> None:
     st.markdown(
         """
-        <div class="section-intro">
-          <span class="section-kicker">Readiness Check</span>
-          <h2>Validate the configured workflow before execution</h2>
-          <p>
-            This summary uses the same typed configuration build that will be used at run time,
-            including preset-specific guardrails and documentation requirements.
-          </p>
+        <div class="workflow-stage">
+          <div class="workflow-stage__index">2</div>
+          <div class="workflow-stage__body">
+            <span class="workflow-stage__kicker">Readiness Check</span>
+            <h2>Validate the configured workflow before execution</h2>
+            <p>
+              This summary uses the same typed configuration build that will be used at run time,
+              including preset-specific guardrails and documentation requirements.
+            </p>
+          </div>
         </div>
         """,
         unsafe_allow_html=True,
@@ -116,13 +119,16 @@ def render_run_results(snapshot: dict[str, Any]) -> None:
 
     st.markdown(
         """
-        <div class="section-intro">
-          <span class="section-kicker">Diagnostic Studio</span>
-          <h2>Validation outputs organized by decision workflow</h2>
-          <p>
-            Review the run through grouped sections, interactive filters, and a
-            polished export bundle that mirrors the live dashboard.
-          </p>
+        <div class="workflow-stage">
+          <div class="workflow-stage__index">3</div>
+          <div class="workflow-stage__body">
+            <span class="workflow-stage__kicker">Diagnostic Studio</span>
+            <h2>Validation outputs organized by decision workflow</h2>
+            <p>
+              Review the run through grouped sections, interactive filters, and a
+              polished export bundle that mirrors the live dashboard.
+            </p>
+          </div>
         </div>
         """,
         unsafe_allow_html=True,
@@ -169,14 +175,17 @@ def render_run_results(snapshot: dict[str, Any]) -> None:
 def render_subset_search_results(snapshot: dict[str, Any]) -> None:
     st.markdown(
         """
-        <div class="section-intro">
-          <span class="section-kicker">Subset Search Studio</span>
-          <h2>Compare candidate feature sets before full model development</h2>
-          <p>
-            This execution mode is intentionally separate from normal development.
-            The outputs below focus only on subset ranking, ROC and KS comparison,
-            significance tests, and performance-versus-parsimony evidence.
-          </p>
+        <div class="workflow-stage">
+          <div class="workflow-stage__index">3</div>
+          <div class="workflow-stage__body">
+            <span class="workflow-stage__kicker">Subset Search Studio</span>
+            <h2>Compare candidate feature sets before full model development</h2>
+            <p>
+              This execution mode is intentionally separate from normal development.
+              The outputs below focus only on subset ranking, ROC and KS comparison,
+              significance tests, and performance-versus-parsimony evidence.
+            </p>
+          </div>
         </div>
         """,
         unsafe_allow_html=True,

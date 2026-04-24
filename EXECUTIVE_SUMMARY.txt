@@ -37,11 +37,17 @@ the run through the major stages of model development:
 - expanded statistical-review frameworks for distribution shifts, residual
   bias, outliers, dependency clustering, econometric checks, and structural
   breaks
+- feature-effect explainability outputs including partial dependence, ICE,
+  centered ICE, accumulated local effects, two-way effect heatmaps, confidence
+  bands, monotonicity diagnostics, segmented effects, effect stability,
+  marginal effects, interaction strength, and feature-bucket calibration
 - robustness and stability testing on repeated train resamples
 - preset-aware workflow guardrails and readiness checks
 - credit-risk-specific development diagnostics such as vintage, migration,
   recovery, and macro-sensitivity views
 - visualization, documentation, and artifact export
+- performance-aware export profiles, batched explainability scoring, and
+  run-level debug traces for large-run review
 
 Supported Development Scope
 ---------------------------
@@ -110,6 +116,8 @@ Each run can produce a structured output package that includes:
 - structured reference example packs for PD, LGD, CECL/lifetime PD, and CCAR
   forecasting workflows
 - reproducibility manifests and rerun-ready code bundles
+- run debug traces showing per-step timing, status, and shape changes
+- fast, standard, and audit export profile support
 - versioned monitoring handoff bundles for the separate monitoring application
 - machine-readable artifact manifests that index the full output package
 - Excel templates and governance workbooks for offline review
@@ -126,6 +134,10 @@ features include:
   training split, and exported
 - lightweight performance safeguards that keep large-run previews and exported
   HTML reports usable
+- batched explainability scoring for PDP, ICE, ALE, marginal effects, and
+  interaction diagnostics where practical
+- run-level debug traces that make slow or failed pipeline steps easier to
+  isolate during review
 - manual feature-review decisions and scorecard bin overrides
 - preset-aware workflow guardrails tied to the selected development use case
 - repeated-resample stability testing for held-out metrics and feature effects

@@ -213,7 +213,8 @@ These controls only matter when `ExecutionConfig.mode` is
 | GUI control | Config field(s) | Main implementation |
 | --- | --- | --- |
 | `Default segment column` | `DiagnosticConfig.default_segment_column` | `DiagnosticsStep._add_segment_outputs` |
-| `Export individual figure HTML and PNG files` | `ArtifactConfig.export_individual_figure_files` | `ArtifactExportStep._export_visualizations` |
+| `Export individual figure HTML and PNG files` | `ArtifactConfig.export_individual_figure_files`; default `False` | `ArtifactExportStep._export_visualizations` |
+| `Export profile` | `ArtifactConfig.export_profile` | `ArtifactExportStep`, `export_profiles.py` |
 | `Diagnostic suites` | `DiagnosticConfig.*` booleans | `DiagnosticsStep.run(...)` |
 | `Export surfaces` | `DiagnosticConfig.interactive_visualizations`, `static_image_exports`, `export_excel_workbook` | `ArtifactExportStep` |
 | `Top features for analysis` | `DiagnosticConfig.top_n_features` | diagnostics feature ranking |
@@ -324,10 +325,25 @@ These controls only matter when `ExecutionConfig.mode` is
 | `Enable explainability outputs` | `ExplainabilityConfig.enabled` | `DiagnosticsStep._add_explainability_outputs` |
 | `Permutation importance` | `ExplainabilityConfig.permutation_importance` | permutation importance |
 | `Feature effect curves` | `ExplainabilityConfig.feature_effect_curves` | feature effect curves |
+| `Partial dependence plots` | `ExplainabilityConfig.partial_dependence` | PDP tables and figures |
+| `ICE and centered ICE curves` | `ExplainabilityConfig.ice_curves`, `centered_ice_curves` | ICE tables and figures |
+| `Accumulated local effects` | `ExplainabilityConfig.accumulated_local_effects` | ALE tables and figures |
+| `2D feature effect heatmaps` | `ExplainabilityConfig.two_way_effects` | two-way effect surfaces |
+| `Feature effect confidence bands` | `ExplainabilityConfig.effect_confidence_bands` | PDP bootstrap bands |
+| `Feature effect monotonicity diagnostics` | `ExplainabilityConfig.monotonicity_diagnostics` | effect monotonicity table |
+| `Segmented feature effects` | `ExplainabilityConfig.segmented_effects` | segment-level PDP curves |
+| `Feature effect stability by split` | `ExplainabilityConfig.effect_stability` | split-level effect curves |
+| `Average marginal effects` | `ExplainabilityConfig.marginal_effects` | finite-difference marginal effects |
+| `Interaction strength tests` | `ExplainabilityConfig.interaction_strength` | interaction-strength summary |
+| `Calibration by feature bucket` | `ExplainabilityConfig.effect_calibration` | feature-bucket calibration |
 | `Coefficient breakdown` | `ExplainabilityConfig.coefficient_breakdown` | coefficient table |
 | `Explainability top features` | `ExplainabilityConfig.top_n_features` | explainability ranking |
 | `Effect curve grid points` | `ExplainabilityConfig.grid_points` | numeric effect grids |
 | `Explainability sample size` | `ExplainabilityConfig.sample_size` | explainability sampling |
+| `ICE sample size` | `ExplainabilityConfig.ice_sample_size` | ICE sampling |
+| `Effect confidence resamples` | `ExplainabilityConfig.effect_band_resamples` | confidence-band resampling |
+| `2D effect grid points` | `ExplainabilityConfig.two_way_grid_points` | two-way effect grid |
+| `Max feature-effect segments` | `ExplainabilityConfig.max_effect_segments` | segmented effect limits |
 | `Scenario evaluation split` | `ScenarioTestConfig.evaluation_split` | scenario testing |
 | scenario editor rows | `ScenarioTestConfig.scenarios` | scenario testing |
 
@@ -342,9 +358,12 @@ These controls only matter when `ExecutionConfig.mode` is
 | `Artifact root` | `ArtifactConfig.output_root` | `ArtifactExportStep` |
 
 The current performance safeguards are preset-backed and serialized through
-`PerformanceConfig`, but they are not directly edited in the sidebar yet.
-Their main audit surface is `run_config.json`, plus the exported
-`performance_hardening_actions` table when large-run limits are applied.
+`PerformanceConfig`, but most are not directly edited in the sidebar yet.
+Their main audit surfaces are `run_config.json`, `run_debug_trace.json`, plus
+the exported `performance_hardening_actions` table when large-run limits are
+applied. The Streamlit results viewer may keep sampled in-memory previews for
+large runs when `PerformanceConfig.lazy_streamlit_results` is enabled; the full
+CSV/table artifacts remain in the run folder.
 
 ## 16. Run Button
 
@@ -355,7 +374,8 @@ The `Run Quant Model Workflow` button performs this chain:
 3. renders the pre-run readiness summary from that same resolved config
 4. instantiates `QuantModelOrchestrator`
 5. runs the full pipeline
-6. stores a snapshot for the result viewer
+6. records per-step debug timing and shape snapshots
+7. stores a bounded snapshot for the result viewer
 
 Relevant code path:
 

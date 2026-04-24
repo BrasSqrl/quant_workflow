@@ -21,6 +21,13 @@ import plotly.io as pio
 from ..base import BasePipelineStep
 from ..config import ExecutionMode
 from ..context import PipelineContext
+from ..export_profiles import (
+    code_snapshot_enabled,
+    excel_workbook_enabled,
+    input_snapshot_enabled,
+    regulatory_reports_enabled,
+    resolve_html_report_limits,
+)
 from ..gui_support import (
     build_column_editor_frame_from_schema,
     build_feature_dictionary_frame_from_config,
@@ -99,6 +106,7 @@ class ArtifactExportStep(BasePipelineStep):
         reproducibility_manifest_path = (
             output_root / context.config.artifacts.reproducibility_manifest_file_name
         )
+        run_debug_trace_path = output_root / context.config.artifacts.run_debug_trace_file_name
         template_workbook_path = (
             output_root / context.config.artifacts.template_workbook_file_name
         )
@@ -123,6 +131,7 @@ class ArtifactExportStep(BasePipelineStep):
                 tests_path=tests_path,
                 manifest_path=manifest_path,
                 step_manifest_path=step_manifest_path,
+                run_debug_trace_path=run_debug_trace_path,
             )
 
         if context.model is None:
@@ -139,7 +148,7 @@ class ArtifactExportStep(BasePipelineStep):
         self._write_json(config_path, self._build_export_config_payload(context, model_path))
         self._write_json(tests_path, context.statistical_tests)
 
-        if context.config.artifacts.export_input_snapshot and context.raw_data is not None:
+        if self._input_snapshot_enabled(context) and context.raw_data is not None:
             context.raw_data.to_csv(input_snapshot_path, index=False)
 
         predictions = pd.concat(context.predictions.values(), ignore_index=True)
@@ -152,7 +161,7 @@ class ArtifactExportStep(BasePipelineStep):
             table.to_csv(tables_dir / f"{self._sanitize_name(table_name)}.csv", index=False)
 
         visualization_manifest = self._export_visualizations(context, html_dir, png_dir)
-        if context.config.diagnostics.export_excel_workbook:
+        if self._excel_workbook_enabled(context):
             self._export_excel_workbook(context, workbook_path, predictions)
         if context.model_summary is not None:
             if isinstance(context.model_summary, pd.DataFrame):
@@ -169,12 +178,16 @@ class ArtifactExportStep(BasePipelineStep):
             self._build_validation_pack(context),
             encoding="utf-8",
         )
-        regulatory_report_manifest = self._export_regulatory_reports(
-            context=context,
-            committee_report_docx_path=committee_report_docx_path,
-            validation_report_docx_path=validation_report_docx_path,
-            committee_report_pdf_path=committee_report_pdf_path,
-            validation_report_pdf_path=validation_report_pdf_path,
+        regulatory_report_manifest = (
+            self._export_regulatory_reports(
+                context=context,
+                committee_report_docx_path=committee_report_docx_path,
+                validation_report_docx_path=validation_report_docx_path,
+                committee_report_pdf_path=committee_report_pdf_path,
+                validation_report_pdf_path=validation_report_pdf_path,
+            )
+            if self._regulatory_reports_enabled(context)
+            else {}
         )
         reproducibility_manifest = self._build_reproducibility_manifest(
             context=context,
@@ -193,9 +206,11 @@ class ArtifactExportStep(BasePipelineStep):
         template_workbook_path.write_bytes(self._build_template_workbook(context))
         step_manifest = self._build_step_manifest(context)
         self._write_json(step_manifest_path, step_manifest)
+        self._write_json(run_debug_trace_path, self._build_run_debug_trace(context))
         manifest = {
             "core_artifacts": {
                 "output_root": str(output_root),
+                "export_profile": context.config.artifacts.export_profile.value,
                 "model": str(model_path),
                 "metrics": str(metrics_path),
                 "predictions": str(predictions_path),
@@ -205,6 +220,7 @@ class ArtifactExportStep(BasePipelineStep):
                 "config": str(config_path),
                 "tests": str(tests_path),
                 "step_manifest": str(step_manifest_path),
+                "run_debug_trace": str(run_debug_trace_path),
                 "artifact_manifest": str(manifest_path),
             },
             "directories": {
@@ -227,9 +243,9 @@ class ArtifactExportStep(BasePipelineStep):
                 "rerun_readme": str(rerun_readme_path),
             },
         }
-        if context.config.diagnostics.export_excel_workbook:
+        if self._excel_workbook_enabled(context):
             manifest["core_artifacts"]["analysis_workbook"] = str(workbook_path)
-        if context.config.artifacts.export_input_snapshot and input_snapshot_path.exists():
+        if self._input_snapshot_enabled(context) and input_snapshot_path.exists():
             manifest["rerun_bundle"]["input_snapshot"] = str(input_snapshot_path)
         self._write_json(manifest_path, manifest)
 
@@ -238,7 +254,7 @@ class ArtifactExportStep(BasePipelineStep):
         )
         rerun_readme_path.write_text(self._build_rerun_readme(context), encoding="utf-8")
 
-        if context.config.artifacts.export_code_snapshot:
+        if self._code_snapshot_enabled(context):
             self._export_code_snapshot(code_snapshot_dir)
             manifest["rerun_bundle"]["code_snapshot"] = str(code_snapshot_dir)
             self._write_json(manifest_path, manifest)
@@ -252,10 +268,12 @@ class ArtifactExportStep(BasePipelineStep):
                 config_path=config_path,
                 runner_script_path=runner_script_path,
                 manifest_path=manifest_path,
-                input_snapshot_path=input_snapshot_path if input_snapshot_path.exists() else None,
+                input_snapshot_path=input_snapshot_path
+                if self._input_snapshot_enabled(context) and input_snapshot_path.exists()
+                else None,
                 predictions_path=predictions_path,
                 code_snapshot_dir=code_snapshot_dir
-                if context.config.artifacts.export_code_snapshot
+                if self._code_snapshot_enabled(context)
                 else None,
             )
             manifest["monitoring_bundle"] = {
@@ -299,13 +317,14 @@ class ArtifactExportStep(BasePipelineStep):
             "configuration_template": template_workbook_path,
             "tables_dir": tables_dir,
             "figures_dir": figures_dir if figures_dir.exists() else None,
-            "workbook": workbook_path if context.config.diagnostics.export_excel_workbook else None,
+            "workbook": workbook_path if self._excel_workbook_enabled(context) else None,
+            "run_debug_trace": run_debug_trace_path,
             "manifest": manifest_path,
             "step_manifest": step_manifest_path,
             "runner_script": runner_script_path,
             "rerun_readme": rerun_readme_path,
             "code_snapshot_dir": code_snapshot_dir
-            if context.config.artifacts.export_code_snapshot
+            if self._code_snapshot_enabled(context)
             else None,
             "monitoring_bundle_dir": (
                 monitoring_bundle["bundle_dir"] if monitoring_bundle is not None else None
@@ -334,6 +353,7 @@ class ArtifactExportStep(BasePipelineStep):
         tests_path: Path,
         manifest_path: Path,
         step_manifest_path: Path,
+        run_debug_trace_path: Path,
     ) -> PipelineContext:
         if not context.diagnostics_tables:
             raise ValueError("Feature subset search requires comparison tables before export.")
@@ -341,7 +361,7 @@ class ArtifactExportStep(BasePipelineStep):
         self._write_json(metrics_path, context.metrics)
         self._write_json(config_path, context.config.to_dict())
         self._write_json(tests_path, context.statistical_tests)
-        if context.config.artifacts.export_input_snapshot and context.raw_data is not None:
+        if self._input_snapshot_enabled(context) and context.raw_data is not None:
             context.raw_data.to_csv(input_snapshot_path, index=False)
 
         for table_name, table in context.diagnostics_tables.items():
@@ -355,16 +375,19 @@ class ArtifactExportStep(BasePipelineStep):
         )
         step_manifest = self._build_step_manifest(context)
         self._write_json(step_manifest_path, step_manifest)
+        self._write_json(run_debug_trace_path, self._build_run_debug_trace(context))
 
         manifest = {
             "core_artifacts": {
                 "output_root": str(output_root),
+                "export_profile": context.config.artifacts.export_profile.value,
                 "metrics": str(metrics_path),
                 "report": str(report_path),
                 "interactive_report": str(interactive_report_path),
                 "config": str(config_path),
                 "tests": str(tests_path),
                 "step_manifest": str(step_manifest_path),
+                "run_debug_trace": str(run_debug_trace_path),
                 "artifact_manifest": str(manifest_path),
             },
             "directories": {
@@ -376,7 +399,7 @@ class ArtifactExportStep(BasePipelineStep):
             },
             **visualization_manifest,
         }
-        if context.config.artifacts.export_input_snapshot and input_snapshot_path.exists():
+        if self._input_snapshot_enabled(context) and input_snapshot_path.exists():
             manifest["core_artifacts"]["input_snapshot"] = str(input_snapshot_path)
         self._write_json(manifest_path, manifest)
 
@@ -392,6 +415,7 @@ class ArtifactExportStep(BasePipelineStep):
             "figures_dir": figures_dir if figures_dir.exists() else None,
             "manifest": manifest_path,
             "step_manifest": step_manifest_path,
+            "run_debug_trace": run_debug_trace_path,
         }
         return context
 
@@ -1205,7 +1229,7 @@ class ArtifactExportStep(BasePipelineStep):
         input_shape = context.metadata.get("input_shape", {})
         feature_summary = context.metadata.get("feature_summary", {})
         split_summary = context.metadata.get("split_summary", {})
-        performance = context.config.performance
+        report_limits = resolve_html_report_limits(context)
         return build_interactive_report_html(
             run_id=context.run_id,
             model_type=context.config.model.model_type.value,
@@ -1221,9 +1245,9 @@ class ArtifactExportStep(BasePipelineStep):
             events=context.events,
             diagnostics_tables=context.diagnostics_tables,
             visualizations=context.visualizations,
-            table_preview_rows=performance.html_table_preview_rows,
-            max_figures_per_section=performance.html_max_figures_per_section,
-            max_tables_per_section=performance.html_max_tables_per_section,
+            table_preview_rows=report_limits["table_preview_rows"],
+            max_figures_per_section=report_limits["max_figures_per_section"],
+            max_tables_per_section=report_limits["max_tables_per_section"],
         )
 
     def _export_excel_workbook(
@@ -1289,11 +1313,46 @@ class ArtifactExportStep(BasePipelineStep):
             and context.config.diagnostics.static_image_exports
         )
 
+    def _excel_workbook_enabled(self, context: PipelineContext) -> bool:
+        return excel_workbook_enabled(context)
+
+    def _regulatory_reports_enabled(self, context: PipelineContext) -> bool:
+        return regulatory_reports_enabled(context)
+
+    def _code_snapshot_enabled(self, context: PipelineContext) -> bool:
+        return code_snapshot_enabled(context)
+
+    def _input_snapshot_enabled(self, context: PipelineContext) -> bool:
+        return input_snapshot_enabled(context)
+
     def _build_step_manifest(self, context: PipelineContext) -> dict[str, Any]:
         return {
             "run_id": context.run_id,
             "steps": context.metadata.get("step_manifest", []),
             "pipeline_events": context.events,
+        }
+
+    def _build_run_debug_trace(self, context: PipelineContext) -> dict[str, Any]:
+        output_root = context.config.artifacts.output_root / context.run_id
+        return {
+            "run_id": context.run_id,
+            "created_at_utc": datetime.now(UTC).isoformat(),
+            "execution_mode": context.config.execution.mode.value,
+            "model_type": context.config.model.model_type.value,
+            "export_profile": context.config.artifacts.export_profile.value,
+            "step_count": len(context.debug_trace),
+            "steps": context.debug_trace,
+            "summary": {
+                "total_step_seconds": round(
+                    sum(float(row.get("elapsed_seconds", 0.0)) for row in context.debug_trace),
+                    6,
+                ),
+                "diagnostic_table_count": len(context.diagnostics_tables),
+                "visualization_count": len(context.visualizations),
+                "warning_count": len(context.warnings),
+                "artifact_count": len(context.artifacts),
+                "artifact_output_root": str(output_root),
+            },
         }
 
     def _build_generated_runner_script(self, context: PipelineContext) -> str:

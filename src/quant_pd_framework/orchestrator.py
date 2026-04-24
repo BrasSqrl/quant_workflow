@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import json
+import traceback
 from copy import deepcopy
 from datetime import UTC, datetime
 from pathlib import Path
+from time import perf_counter
 
 import pandas as pd
 
@@ -155,6 +158,101 @@ class QuantModelOrchestrator:
         context.metadata["step_manifest"] = self.describe_steps()
 
         for step in self.steps:
-            context = step(context)
+            before = self._debug_snapshot(context)
+            started_at = datetime.now(UTC)
+            started = perf_counter()
+            status = "completed"
+            error_message = ""
+            error_traceback = ""
+            try:
+                context = step(context)
+            except Exception as exc:
+                status = "failed"
+                error_message = str(exc)
+                error_traceback = traceback.format_exc()
+                raise
+            finally:
+                elapsed_seconds = perf_counter() - started
+                after = self._debug_snapshot(context)
+                context.add_debug_record(
+                    {
+                        "order": len(context.debug_trace) + 1,
+                        "step_name": step.name,
+                        "class_name": step.__class__.__name__,
+                        "module": step.__class__.__module__,
+                        "status": status,
+                        "started_at_utc": started_at.isoformat(),
+                        "elapsed_seconds": round(elapsed_seconds, 6),
+                        "before": before,
+                        "after": after,
+                        "error_message": error_message,
+                        "error_traceback": error_traceback,
+                    }
+                )
+                if step.name == "artifact_export":
+                    self._refresh_exported_debug_trace(context)
 
         return context
+
+    def _debug_snapshot(self, context: PipelineContext) -> dict[str, int | str | None]:
+        working_shape = self._frame_shape(context.working_data)
+        raw_shape = self._frame_shape(context.raw_data)
+        split_rows = {
+            split_name: int(frame.shape[0])
+            for split_name, frame in context.split_frames.items()
+        }
+        prediction_rows = {
+            split_name: int(frame.shape[0])
+            for split_name, frame in context.predictions.items()
+        }
+        return {
+            "raw_rows": raw_shape[0],
+            "raw_columns": raw_shape[1],
+            "working_rows": working_shape[0],
+            "working_columns": working_shape[1],
+            "feature_count": len(context.feature_columns),
+            "numeric_feature_count": len(context.numeric_features),
+            "categorical_feature_count": len(context.categorical_features),
+            "split_rows": split_rows,
+            "prediction_rows": prediction_rows,
+            "diagnostic_table_count": len(context.diagnostics_tables),
+            "visualization_count": len(context.visualizations),
+            "warning_count": len(context.warnings),
+            "event_count": len(context.events),
+            "artifact_count": len(context.artifacts),
+            "model_type": context.config.model.model_type.value,
+            "execution_mode": context.config.execution.mode.value,
+        }
+
+    def _frame_shape(self, dataframe: pd.DataFrame | None) -> tuple[int | None, int | None]:
+        if dataframe is None:
+            return None, None
+        return int(dataframe.shape[0]), int(dataframe.shape[1])
+
+    def _refresh_exported_debug_trace(self, context: PipelineContext) -> None:
+        trace_path = context.artifacts.get("run_debug_trace")
+        if trace_path is None:
+            return
+        try:
+            payload = json.loads(trace_path.read_text(encoding="utf-8"))
+            if not isinstance(payload, dict):
+                payload = {}
+            payload["step_count"] = len(context.debug_trace)
+            payload["steps"] = context.debug_trace
+            payload["summary"] = {
+                **dict(payload.get("summary", {})),
+                "total_step_seconds": round(
+                    sum(float(row.get("elapsed_seconds", 0.0)) for row in context.debug_trace),
+                    6,
+                ),
+                "diagnostic_table_count": len(context.diagnostics_tables),
+                "visualization_count": len(context.visualizations),
+                "warning_count": len(context.warnings),
+                "artifact_count": len(context.artifacts),
+            }
+            trace_path.write_text(
+                json.dumps(payload, indent=2, default=str),
+                encoding="utf-8",
+            )
+        except Exception as exc:
+            context.warn(f"Could not refresh run debug trace after export timing: {exc}")

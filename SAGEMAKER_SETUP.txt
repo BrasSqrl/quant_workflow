@@ -24,12 +24,27 @@ What the scripts do
 
 - scripts/bootstrap_sagemaker.sh
   - checks for Python 3.11+
-  - installs the dependencies from requirements-sagemaker.txt
+  - creates a repo-local .sagemaker_venv virtual environment
+  - installs the dependencies from requirements-sagemaker.txt into that venv
   - installs Quant Studio from the local source tree
 
 - scripts/run_sagemaker_streamlit.sh
+  - uses .sagemaker_venv automatically when it exists
   - runs Streamlit on 0.0.0.0:8501
   - keeps the same upload-size settings used by the Windows launcher
+
+Why the virtual environment matters
+-----------------------------------
+
+SageMaker JupyterLab and Code Editor images include their own Jupyter and
+Notebook packages. Installing application dependencies directly into that base
+environment can surface resolver warnings such as:
+
+   notebook 7.4.4 requires jupyterlab<4.5,>=4.4.4, but you have jupyterlab 4.2.5
+
+Quant Studio does not need to alter SageMaker's IDE packages. The bootstrap
+script therefore installs the app into .sagemaker_venv so the Streamlit app
+runtime is isolated from SageMaker's Jupyter runtime.
 
 If direct pip install does not work
 -----------------------------------

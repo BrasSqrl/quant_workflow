@@ -32,6 +32,19 @@ def load_bundled_sample_dataframe() -> pd.DataFrame:
 
 def select_input_dataframe() -> tuple[pd.DataFrame | None, str]:
     with st.sidebar:
+        st.markdown(
+            """
+            <div class="sidebar-panel-intro">
+              <span class="sidebar-panel-kicker">Data Source</span>
+              <h3 class="sidebar-panel-title">Choose the input dataset</h3>
+              <p class="sidebar-panel-copy">
+                Use the bundled sample data for a quick start, or upload a CSV
+                or Excel file for a full workflow run.
+              </p>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
         with st.expander("Data Source", expanded=True):
             use_sample_data = st.toggle("Use bundled sample data", value=True)
             uploaded_file = st.file_uploader(

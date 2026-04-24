@@ -60,14 +60,31 @@ What these do:
 
 - `bootstrap_sagemaker.sh`
   - verifies Python `3.11+`
+  - creates a repo-local `.sagemaker_venv` virtual environment
   - upgrades `pip`, `setuptools`, and `wheel` when possible
   - installs the runtime dependencies listed in `requirements-sagemaker.txt`
+    into `.sagemaker_venv`
   - installs the local project in editable mode with `--no-build-isolation`
+    inside `.sagemaker_venv`
 
 - `run_sagemaker_streamlit.sh`
+  - uses `.sagemaker_venv/bin/python` automatically when the venv exists
   - sets `PYTHONPATH` to the local `src/` tree
   - runs Streamlit on `0.0.0.0:8501`
   - keeps the same large-upload settings used in the Windows launcher
+
+The virtual environment is intentional. SageMaker JupyterLab and Code Editor
+images include their own Jupyter and Notebook packages. Installing application
+packages directly into that base environment can expose resolver conflicts in
+SageMaker's IDE stack, for example:
+
+```text
+notebook 7.4.4 requires jupyterlab<4.5,>=4.4.4, but you have jupyterlab 4.2.5
+```
+
+Quant Studio runs as a Streamlit app and does not need to modify SageMaker's
+Jupyter runtime, so the project-local `.sagemaker_venv` keeps those two
+environments separate.
 
 ## Opening The App In SageMaker
 
@@ -158,6 +175,19 @@ ls
 ```
 
 Then `cd` into the folder containing `pyproject.toml`.
+
+### `notebook ... requires jupyterlab ... but you have jupyterlab ...`
+
+This means pip is detecting a dependency conflict in SageMaker's preinstalled
+Jupyter environment. With the current scripts, Quant Studio installs into the
+repo-local `.sagemaker_venv`, so this warning should not block the app.
+
+If you previously ran an older bootstrap script, rebuild the isolated venv:
+
+```bash
+rm -rf .sagemaker_venv
+bash scripts/bootstrap_sagemaker.sh
+```
 
 ### Streamlit starts but the app is not visible in the browser
 

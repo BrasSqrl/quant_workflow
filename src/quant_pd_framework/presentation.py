@@ -74,6 +74,16 @@ SECTION_SPECS: OrderedDict[str, dict[str, str]] = OrderedDict(
             },
         ),
         (
+            "feature_effects",
+            {
+                "title": "Feature Effects / Explainability",
+                "description": (
+                    "Partial dependence, ICE, ALE, marginal effects, interaction strength, "
+                    "and effect stability diagnostics."
+                ),
+            },
+        ),
+        (
             "feature_subset_search",
             {
                 "title": "Feature Subset Search",
@@ -209,6 +219,18 @@ TABLE_LABELS = {
     "qq_plot_data": "QQ Plot Data",
     "coefficient_breakdown": "Coefficient Breakdown",
     "feature_effect_curves": "Feature Effect Curves",
+    "partial_dependence": "Partial Dependence",
+    "ice_curves": "ICE Curves",
+    "centered_ice_curves": "Centered ICE Curves",
+    "accumulated_local_effects": "Accumulated Local Effects",
+    "two_way_feature_effects": "2D Feature Effects",
+    "feature_effect_confidence_bands": "Feature Effect Confidence Bands",
+    "feature_effect_monotonicity": "Feature Effect Monotonicity",
+    "segmented_feature_effects": "Segmented Feature Effects",
+    "feature_effect_stability": "Feature Effect Stability",
+    "average_marginal_effects": "Average Marginal Effects",
+    "interaction_strength": "Interaction Strength",
+    "feature_effect_calibration": "Feature Effect Calibration",
     "permutation_importance": "Permutation Importance",
     "feature_policy_checks": "Feature Policy Checks",
     "scenario_summary": "Scenario Summary",
@@ -285,6 +307,8 @@ FIGURE_LABELS = {
     "outlier_influence_map": "Outlier / Influence Map",
     "model_comparison_chart": "Model Comparison Chart",
     "permutation_importance": "Permutation Importance",
+    "average_marginal_effects": "Average Marginal Effects",
+    "interaction_strength": "Interaction Strength",
     "scenario_summary_chart": "Scenario Summary",
     "scenario_segment_impact": "Scenario Impact by Segment",
     "lifetime_pd_curve": "Lifetime PD Curve",
@@ -488,6 +512,36 @@ ASSET_DESCRIPTIONS = {
     "coefficient_breakdown": "Signed coefficient summary for interpretable model review.",
     "feature_effect_curves": (
         "Average predicted response when each key feature is stressed in isolation."
+    ),
+    "partial_dependence": (
+        "Formal PDP table showing average prediction response over feature grids."
+    ),
+    "ice_curves": "Individual conditional expectation values for sampled observations.",
+    "centered_ice_curves": "ICE values centered to each observation's starting response.",
+    "accumulated_local_effects": (
+        "ALE curves for correlated numeric predictors using local interval effects."
+    ),
+    "two_way_feature_effects": "Two-feature response surface for candidate interactions.",
+    "feature_effect_confidence_bands": (
+        "Bootstrap uncertainty bands around top numeric partial-dependence curves."
+    ),
+    "feature_effect_monotonicity": (
+        "Monotonicity review of feature-effect curves against expected directions."
+    ),
+    "segmented_feature_effects": (
+        "Feature-effect curves broken out by the configured default segment."
+    ),
+    "feature_effect_stability": (
+        "Train, validation, and test feature-effect curves compared on a common grid."
+    ),
+    "average_marginal_effects": (
+        "Finite-difference marginal effects on the model prediction scale."
+    ),
+    "interaction_strength": (
+        "Strength of non-additive two-feature effects across response-surface grids."
+    ),
+    "feature_effect_calibration": (
+        "Actual-versus-predicted calibration by feature bucket."
     ),
     "permutation_importance": "Held-out metric degradation when each top feature is shuffled.",
     "feature_policy_checks": (
@@ -820,11 +874,29 @@ def infer_asset_section(asset_key: str, *, kind: str) -> str:
         "model_dfbetas_summary",
         "model_dffits_summary",
         "model_influence_plot",
-        "coefficient_breakdown",
-        "feature_effect_curves",
-        "permutation_importance",
         "lgd_stage_one_coefficients",
         "lgd_stage_two_coefficients",
+    }:
+        return "model_performance"
+    if asset_key in {
+        "coefficient_breakdown",
+        "feature_effect_curves",
+        "partial_dependence",
+        "ice_curves",
+        "centered_ice_curves",
+        "accumulated_local_effects",
+        "two_way_feature_effects",
+        "feature_effect_confidence_bands",
+        "feature_effect_monotonicity",
+        "segmented_feature_effects",
+        "feature_effect_stability",
+        "average_marginal_effects",
+        "interaction_strength",
+        "feature_effect_calibration",
+        "permutation_importance",
+    }:
+        return "feature_effects"
+    if asset_key in {
         "scenario_summary",
         "scenario_definitions",
         "scenario_segment_impacts",
@@ -934,8 +1006,18 @@ def infer_asset_section(asset_key: str, *, kind: str) -> str:
         return "scorecard_workbench"
     if asset_key.startswith("time_backtest_"):
         return "backtesting_time"
-    if asset_key.startswith("feature_effect_"):
-        return "model_performance"
+    if asset_key.startswith(
+        (
+            "feature_effect_",
+            "partial_dependence_",
+            "ice_",
+            "centered_ice_",
+            "accumulated_local_effect_",
+            "two_way_effect_",
+            "segmented_feature_effect_",
+        )
+    ):
+        return "feature_effects"
     return "model_performance" if kind == "figure" else "data_quality"
 
 
@@ -970,6 +1052,15 @@ def apply_fintech_figure_theme(
     """Applies the shared premium-fintech chart styling to a Plotly figure."""
 
     resolved_title = title or figure.layout.title.text or ""
+    existing_meta = figure.layout.meta if isinstance(figure.layout.meta, dict) else {}
+    theme_token = "quant_studio_premium_fintech_v1"
+    if (
+        existing_meta.get("quant_studio_theme") == theme_token
+        and existing_meta.get("quant_studio_theme_title") == resolved_title
+        and int(figure.layout.height or 0) >= height
+    ):
+        return figure
+
     figure.update_layout(
         template="plotly_white",
         colorway=FINTECH_COLORWAY,
@@ -1050,6 +1141,13 @@ def apply_fintech_figure_theme(
             ]
 
     _make_figure_display_safe(figure)
+    figure.update_layout(
+        meta={
+            **existing_meta,
+            "quant_studio_theme": theme_token,
+            "quant_studio_theme_title": resolved_title,
+        }
+    )
     return figure
 
 
