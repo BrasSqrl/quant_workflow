@@ -357,6 +357,9 @@ These controls only matter when `ExecutionConfig.mode` is
 | `Tracked package names` | `ReproducibilityConfig.package_names` | `ArtifactExportStep` |
 | `Artifact root` | `ArtifactConfig.output_root` | `ArtifactExportStep` |
 
+Each run writes to a readable UTC timestamped folder under the artifact root,
+for example `run_2026-04-24_15-42-10_UTC`.
+
 The current performance safeguards are preset-backed and serialized through
 `PerformanceConfig`, but most are not directly edited in the sidebar yet.
 Their main audit surfaces are `run_config.json`, `run_debug_trace.json`, plus

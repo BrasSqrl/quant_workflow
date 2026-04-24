@@ -151,7 +151,7 @@ class QuantModelOrchestrator:
 
         context = PipelineContext(
             config=self.config,
-            run_id=datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ"),
+            run_id=self._build_run_id(),
             raw_input=data,
         )
         context.metadata["execution_mode"] = self.config.execution.mode.value
@@ -193,6 +193,11 @@ class QuantModelOrchestrator:
                     self._refresh_exported_debug_trace(context)
 
         return context
+
+    def _build_run_id(self) -> str:
+        """Builds a readable, filesystem-safe identifier for artifact folders."""
+
+        return datetime.now(UTC).strftime("run_%Y-%m-%d_%H-%M-%S_UTC")
 
     def _debug_snapshot(self, context: PipelineContext) -> dict[str, int | str | None]:
         working_shape = self._frame_shape(context.working_data)

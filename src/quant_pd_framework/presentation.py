@@ -1899,9 +1899,24 @@ def _build_static_figure_fallback_html(
             height=max(height, 360),
             validate=False,
         ).decode("utf-8")
-    except Exception:
-        return f'<div class="plot-fallback">{escape(fallback_message)}</div>'
+    except Exception as exc:
+        message = (
+            f"{fallback_message} Static chart fallback was unavailable in the export "
+            f"environment: {_summarize_static_export_error(exc)}"
+        )
+        return f'<div class="plot-fallback">{escape(message)}</div>'
     return f'<div class="static-plot-fallback">{_safe_svg_fragment(svg)}</div>'
+
+
+def _summarize_static_export_error(error: Exception) -> str:
+    message = " ".join(str(error).split())
+    if "Chrome" in message or "Kaleido" in message:
+        return (
+            "Plotly/Kaleido could not find Chrome. Re-run "
+            "`bash scripts/bootstrap_sagemaker.sh` in SageMaker so the bootstrap "
+            "can install Chrome for static chart export."
+        )
+    return message[:260] if message else error.__class__.__name__
 
 
 def _safe_svg_fragment(svg: str) -> str:

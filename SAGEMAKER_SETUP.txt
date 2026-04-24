@@ -56,6 +56,8 @@ What the scripts do
   - creates a repo-local .sagemaker_venv virtual environment
   - installs the dependencies from requirements-sagemaker.txt into that venv
   - installs Quant Studio from the local source tree
+  - checks Plotly static chart export support and attempts to install Chrome
+    for Kaleido when the SageMaker image does not already provide it
 
 - scripts/run_sagemaker_streamlit.sh
   - uses .sagemaker_venv automatically when it exists
@@ -75,6 +77,23 @@ environment can surface resolver warnings such as:
 Quant Studio does not need to alter SageMaker's IDE packages. The bootstrap
 script therefore installs the app into .sagemaker_venv so the Streamlit app
 runtime is isolated from SageMaker's Jupyter runtime.
+
+Why downloaded HTML charts may fail from SageMaker
+--------------------------------------------------
+
+The interactive report includes dynamic Plotly charts and static SVG fallback
+charts. On Linux, Kaleido v1 requires Chrome for static image export. Many
+SageMaker images do not include Chrome by default, so the bootstrap script now
+checks static export support and attempts to install Chrome automatically.
+
+If downloaded interactive_report.html files show chart fallback messages, rerun:
+
+   bash scripts/bootstrap_sagemaker.sh
+
+Then rerun the Quant Studio workflow so a new report is generated. To skip the
+Chrome install attempt in locked-down environments, use:
+
+   INSTALL_PLOTLY_CHROME=0 bash scripts/bootstrap_sagemaker.sh
 
 Fallback: SageMaker JupyterLab browser proxy
 --------------------------------------------

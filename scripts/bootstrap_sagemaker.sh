@@ -54,6 +54,45 @@ fi
 echo "Installing Quant Studio from the local source tree..."
 "$VENV_PYTHON" -m pip install -e . --no-deps --no-build-isolation
 
+if [ "${INSTALL_PLOTLY_CHROME:-1}" != "0" ]; then
+  echo "Checking Plotly static chart export support..."
+  "$VENV_PYTHON" - <<'PY'
+from __future__ import annotations
+
+import sys
+
+import plotly.graph_objects as go
+import plotly.io as pio
+
+
+def _static_export_check() -> None:
+    figure = go.Figure(data=[go.Bar(x=["check"], y=[1])])
+    pio.to_image(figure, format="svg", width=320, height=240, validate=False)
+
+
+try:
+    _static_export_check()
+    print("Plotly static chart export is available.")
+except Exception as first_error:
+    print(f"Plotly static chart export is not available yet: {first_error}", file=sys.stderr)
+    print("Attempting to install Chrome for Kaleido static chart export...", file=sys.stderr)
+    try:
+        pio.get_chrome()
+        _static_export_check()
+        print("Plotly static chart export is available after Chrome install.")
+    except Exception as second_error:
+        print(
+            "WARNING: Could not enable Plotly static chart export. "
+            "Interactive reports will still export, but downloaded HTML reports may "
+            "show chart fallback messages if browser JavaScript is blocked. "
+            f"Reason: {second_error}",
+            file=sys.stderr,
+        )
+PY
+else
+  echo "Skipping Plotly Chrome install check because INSTALL_PLOTLY_CHROME=0."
+fi
+
 cat <<'EOF'
 
 Quant Studio is installed for the current SageMaker environment.

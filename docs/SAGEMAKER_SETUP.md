@@ -74,6 +74,8 @@ SageMaker browser proxy URL instead of VS Code port forwarding.
     into `.sagemaker_venv`
   - installs the local project in editable mode with `--no-build-isolation`
     inside `.sagemaker_venv`
+  - checks Plotly static chart export support and attempts to install Chrome
+    for Kaleido when the SageMaker image does not already provide it
 
 - `run_sagemaker_streamlit.sh`
   - uses `.sagemaker_venv/bin/python` automatically when the venv exists
@@ -96,6 +98,30 @@ notebook 7.4.4 requires jupyterlab<4.5,>=4.4.4, but you have jupyterlab 4.2.5
 Quant Studio runs as a Streamlit app and does not need to modify SageMaker's
 Jupyter runtime, so the project-local `.sagemaker_venv` keeps those two
 environments separate.
+
+## Downloaded HTML Reports And Chart Rendering
+
+The exported `interactive_report.html` includes dynamic Plotly charts and
+static SVG fallback charts. On Linux, Kaleido v1 requires Chrome for static
+image export. Many SageMaker images do not include Chrome by default, so
+`bootstrap_sagemaker.sh` checks static export support and attempts to install
+Chrome automatically through Plotly when needed.
+
+If downloaded reports show chart fallback messages instead of charts, rerun:
+
+```bash
+bash scripts/bootstrap_sagemaker.sh
+```
+
+Then rerun the Quant Studio workflow so a new `interactive_report.html` is
+generated.
+
+If your SageMaker environment blocks Chrome downloads and you want to skip the
+attempt explicitly, use:
+
+```bash
+INSTALL_PLOTLY_CHROME=0 bash scripts/bootstrap_sagemaker.sh
+```
 
 ## Environment Variables For The Run Script
 

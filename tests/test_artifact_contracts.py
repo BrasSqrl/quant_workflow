@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Any
 
@@ -94,6 +95,20 @@ def test_artifact_manifest_indexes_core_outputs_and_rerun_bundle() -> None:
         assert json_dir.exists()
         assert (code_snapshot_dir / "src" / "quant_pd_framework" / "run.py").exists()
         assert (code_snapshot_dir / "app" / "streamlit_app.py").exists()
+
+
+def test_run_artifact_folder_uses_readable_datetime_name() -> None:
+    dataframe = build_binary_dataframe(row_count=120)
+
+    with temporary_artifact_root("pytest_readable_run_id") as artifact_root:
+        config = _build_artifact_contract_config(artifact_root)
+        context = QuantModelOrchestrator(config=config).run(dataframe)
+
+        assert re.fullmatch(
+            r"run_\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}_UTC",
+            context.run_id,
+        )
+        assert Path(context.artifacts["output_root"]).name == context.run_id
 
 
 def test_artifact_manifest_can_skip_individual_figure_exports() -> None:

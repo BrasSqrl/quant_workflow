@@ -1459,6 +1459,8 @@ package versions.
 ### `ArtifactConfig`
 
 Artifacts are written under the configured output root using a timestamped run directory.
+Run folders use a readable UTC date/time name such as
+`run_2026-04-24_15-42-10_UTC`.
 
 Important behavior:
 
