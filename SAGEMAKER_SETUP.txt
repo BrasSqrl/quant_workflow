@@ -78,6 +78,17 @@ Quant Studio does not need to alter SageMaker's IDE packages. The bootstrap
 script therefore installs the app into .sagemaker_venv so the Streamlit app
 runtime is isolated from SageMaker's Jupyter runtime.
 
+Loading data in SageMaker
+-------------------------
+
+For remote runs, place CSV or Excel files in the repo-level Data_Load/
+directory, then choose Select from Data_Load in the left-pane Data Source
+controls. This avoids browser-upload friction and records the selected file
+name, suffix, size, and modified time in reproducibility_manifest.json.
+
+Data_Load/ is ignored by git except for .gitkeep, so large or private datasets
+are not pushed to GitHub.
+
 Why downloaded HTML charts may fail from SageMaker
 --------------------------------------------------
 

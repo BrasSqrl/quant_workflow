@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import hashlib
+from dataclasses import dataclass
+from datetime import UTC, datetime
 from io import BytesIO
 from pathlib import Path
+from typing import Any
 
 import pandas as pd
 import streamlit as st
@@ -13,6 +16,19 @@ from quant_pd_framework import PerformanceConfig, build_sample_pd_dataframe
 
 MAX_UPLOAD_SIZE_MB = 51_200
 DEFAULT_PERFORMANCE_CONFIG = PerformanceConfig()
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
+DATA_LOAD_DIR = PROJECT_ROOT / "Data_Load"
+SUPPORTED_DATA_FILE_SUFFIXES = {".csv", ".xlsx", ".xls", ".xlsm"}
+INPUT_SOURCE_METADATA_ATTR = "quant_studio_input_source"
+
+
+@dataclass(frozen=True, slots=True)
+class SelectedInputDataset:
+    """Holds the dataframe selected in the sidebar plus audit metadata."""
+
+    dataframe: pd.DataFrame | None
+    label: str
+    metadata: dict[str, Any]
 
 
 @st.cache_data(show_spinner=False)
@@ -20,9 +36,27 @@ def load_uploaded_dataframe_bytes(file_bytes: bytes, suffix: str) -> pd.DataFram
     buffer = BytesIO(file_bytes)
     if suffix == ".csv":
         return pd.read_csv(buffer)
-    if suffix in {".xlsx", ".xls"}:
+    if suffix in {".xlsx", ".xls", ".xlsm"}:
         return pd.read_excel(buffer)
-    raise ValueError("Unsupported file type. Upload CSV or Excel.")
+    raise ValueError("Unsupported file type. Provide CSV or Excel.")
+
+
+@st.cache_data(show_spinner=False)
+def load_data_load_dataframe(
+    path_text: str,
+    suffix: str,
+    modified_ns: int,
+    size_bytes: int,
+) -> pd.DataFrame:
+    """Loads a Data_Load file with cache invalidation tied to file metadata."""
+
+    _ = (modified_ns, size_bytes)
+    path = Path(path_text)
+    if suffix == ".csv":
+        return pd.read_csv(path)
+    if suffix in {".xlsx", ".xls", ".xlsm"}:
+        return pd.read_excel(path)
+    raise ValueError("Unsupported file type. Provide CSV or Excel.")
 
 
 @st.cache_data(show_spinner=False)
@@ -30,7 +64,72 @@ def load_bundled_sample_dataframe() -> pd.DataFrame:
     return build_sample_pd_dataframe()
 
 
-def select_input_dataframe() -> tuple[pd.DataFrame | None, str]:
+def list_data_load_files(data_load_dir: Path = DATA_LOAD_DIR) -> list[Path]:
+    """Returns supported, direct-child data files from the landing directory."""
+
+    if not data_load_dir.exists():
+        return []
+    return sorted(
+        [
+            path
+            for path in data_load_dir.iterdir()
+            if path.is_file()
+            and not path.name.startswith(".")
+            and path.suffix.lower() in SUPPORTED_DATA_FILE_SUFFIXES
+        ],
+        key=lambda path: path.name.lower(),
+    )
+
+
+def describe_data_file(path: Path) -> dict[str, Any]:
+    """Builds lightweight file metadata for display and run auditability."""
+
+    stat_result = path.stat()
+    modified_at_utc = datetime.fromtimestamp(stat_result.st_mtime, tz=UTC)
+    try:
+        relative_path = path.resolve().relative_to(PROJECT_ROOT).as_posix()
+    except ValueError:
+        relative_path = path.name
+    return {
+        "source_kind": "data_load",
+        "display_label": f"Data_Load/{path.name}",
+        "file_name": path.name,
+        "relative_path": relative_path,
+        "suffix": path.suffix.lower(),
+        "size_bytes": int(stat_result.st_size),
+        "modified_at_utc": modified_at_utc.isoformat(),
+        "modified_ns": int(stat_result.st_mtime_ns),
+    }
+
+
+def format_file_size(size_bytes: int) -> str:
+    """Formats byte counts for compact sidebar display."""
+
+    size = float(size_bytes)
+    for unit in ("B", "KB", "MB", "GB"):
+        if size < 1024.0 or unit == "GB":
+            return f"{size:.1f} {unit}" if unit != "B" else f"{int(size)} B"
+        size /= 1024.0
+    return f"{size:.1f} GB"
+
+
+def format_data_load_file_option(path: Path) -> str:
+    metadata = describe_data_file(path)
+    modified_at = datetime.fromisoformat(metadata["modified_at_utc"]).strftime(
+        "%Y-%m-%d %H:%M UTC"
+    )
+    return f"{path.name} ({format_file_size(metadata['size_bytes'])}, {modified_at})"
+
+
+def attach_input_source_metadata(
+    dataframe: pd.DataFrame,
+    metadata: dict[str, Any],
+) -> pd.DataFrame:
+    dataframe.attrs[INPUT_SOURCE_METADATA_ATTR] = metadata
+    return dataframe
+
+
+def select_input_dataframe() -> SelectedInputDataset:
     with st.sidebar:
         st.markdown(
             """
@@ -38,43 +137,111 @@ def select_input_dataframe() -> tuple[pd.DataFrame | None, str]:
               <span class="sidebar-panel-kicker">Data Source</span>
               <h3 class="sidebar-panel-title">Choose the input dataset</h3>
               <p class="sidebar-panel-copy">
-                Use the bundled sample data for a quick start, or upload a CSV
-                or Excel file for a full workflow run.
+                Use the bundled sample, select a governed landing-zone file,
+                or upload a CSV or Excel file for a full workflow run.
               </p>
             </div>
             """,
             unsafe_allow_html=True,
         )
         with st.expander("Data Source", expanded=True):
-            use_sample_data = st.toggle("Use bundled sample data", value=True)
-            uploaded_file = st.file_uploader(
-                "Upload CSV or Excel",
-                type=["csv", "xlsx", "xls"],
-                max_upload_size=MAX_UPLOAD_SIZE_MB,
-                help=(
-                    "Configured upload limit: 50 GB per file. Practical limits still depend "
-                    "on available memory and the size expansion that happens when pandas "
-                    "parses large CSV or Excel files."
-                ),
+            source_mode = st.radio(
+                "Input method",
+                options=["sample", "data_load", "upload"],
+                format_func={
+                    "sample": "Bundled sample data",
+                    "data_load": "Select from Data_Load",
+                    "upload": "Upload file",
+                }.get,
+                horizontal=False,
             )
-            if (
-                uploaded_file is not None
-                and getattr(uploaded_file, "size", 0)
-                > DEFAULT_PERFORMANCE_CONFIG.upload_warning_mb * 1024 * 1024
-            ):
-                st.warning(
-                    "Large upload detected. The file is within the configured limit, but "
-                    "practical runtime still depends on local memory and pandas parsing cost."
+            if source_mode == "sample":
+                st.caption("Uses the bundled synthetic PD dataset for a quick start.")
+            elif source_mode == "data_load":
+                DATA_LOAD_DIR.mkdir(exist_ok=True)
+                st.caption(
+                    "Drop CSV or Excel files into `Data_Load/`, then refresh this list."
                 )
+                refresh_clicked = st.button("Refresh available files", width="stretch")
+                if refresh_clicked:
+                    load_data_load_dataframe.clear()
+                available_files = list_data_load_files()
+                if not available_files:
+                    st.info("No supported CSV or Excel files were found in Data_Load.")
+                    return SelectedInputDataset(None, "", {})
+                selected_path = st.selectbox(
+                    "Available Data_Load files",
+                    options=available_files,
+                    format_func=format_data_load_file_option,
+                )
+                file_metadata = describe_data_file(selected_path)
+                st.caption(
+                    "Selected file: "
+                    f"`{file_metadata['relative_path']}` | "
+                    f"{format_file_size(file_metadata['size_bytes'])}"
+                )
+                dataframe = load_data_load_dataframe(
+                    str(selected_path),
+                    file_metadata["suffix"],
+                    file_metadata["modified_ns"],
+                    file_metadata["size_bytes"],
+                )
+                attach_input_source_metadata(dataframe, file_metadata)
+                return SelectedInputDataset(
+                    dataframe,
+                    file_metadata["display_label"],
+                    file_metadata,
+                )
+            else:
+                uploaded_file = st.file_uploader(
+                    "Upload CSV or Excel",
+                    type=["csv", "xlsx", "xls", "xlsm"],
+                    max_upload_size=MAX_UPLOAD_SIZE_MB,
+                    help=(
+                        "Configured upload limit: 50 GB per file. Practical limits still "
+                        "depend on available memory and the size expansion that happens "
+                        "when pandas parses large CSV or Excel files."
+                    ),
+                )
+                if (
+                    uploaded_file is not None
+                    and getattr(uploaded_file, "size", 0)
+                    > DEFAULT_PERFORMANCE_CONFIG.upload_warning_mb * 1024 * 1024
+                ):
+                    st.warning(
+                        "Large upload detected. The file is within the configured limit, but "
+                        "practical runtime still depends on local memory and pandas parsing cost."
+                    )
 
-    if uploaded_file is not None:
+    if source_mode == "upload" and uploaded_file is not None:
         suffix = Path(uploaded_file.name).suffix.lower()
         uploaded_file.seek(0)
         dataframe = load_uploaded_dataframe_bytes(uploaded_file.read(), suffix)
-        return dataframe, uploaded_file.name
-    if use_sample_data:
-        return load_bundled_sample_dataframe(), "bundled_sample"
-    return None, ""
+        metadata = {
+            "source_kind": "upload",
+            "display_label": uploaded_file.name,
+            "file_name": uploaded_file.name,
+            "relative_path": "",
+            "suffix": suffix,
+            "size_bytes": int(getattr(uploaded_file, "size", 0) or 0),
+            "modified_at_utc": "",
+        }
+        attach_input_source_metadata(dataframe, metadata)
+        return SelectedInputDataset(dataframe, uploaded_file.name, metadata)
+    if source_mode == "sample":
+        dataframe = load_bundled_sample_dataframe()
+        metadata = {
+            "source_kind": "bundled_sample",
+            "display_label": "Bundled Sample",
+            "file_name": "",
+            "relative_path": "",
+            "suffix": ".csv",
+            "size_bytes": "",
+            "modified_at_utc": "",
+        }
+        attach_input_source_metadata(dataframe, metadata)
+        return SelectedInputDataset(dataframe, "bundled_sample", metadata)
+    return SelectedInputDataset(None, "", {})
 
 
 def build_editor_key(dataframe: pd.DataFrame, data_source_label: str) -> str:

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from html import escape
+
 import streamlit as st
 
 
@@ -59,11 +61,13 @@ def render_header(
 
 
 def _render_toolbar_card(label: str, value: str) -> None:
+    safe_label = escape(label)
+    safe_value = escape(value)
     st.markdown(
         f"""
         <div class="toolbar-card">
-          <span class="toolbar-card__label">{label}</span>
-          <div class="toolbar-card__value">{value}</div>
+          <span class="toolbar-card__label">{safe_label}</span>
+          <div class="toolbar-card__value">{safe_value}</div>
         </div>
         """,
         unsafe_allow_html=True,

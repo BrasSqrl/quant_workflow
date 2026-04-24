@@ -20,6 +20,8 @@ htmlcov/
 .setup_tmp/
 
 artifacts/
+Data_Load/*
+!Data_Load/.gitkeep
 build/
 dist/
 pip-wheel-metadata/

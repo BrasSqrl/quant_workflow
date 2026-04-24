@@ -39,12 +39,14 @@ Traceability chain:
 
 | GUI location | Main controls | Config or runtime target | Code path | Audit surface |
 | --- | --- | --- | --- | --- |
-| `Data Source` expander | bundled sample toggle, CSV/Excel upload | runtime dataframe only | `select_input_dataframe`, `load_uploaded_dataframe` | `input_snapshot.csv`, `input_shape` |
+| `Data Source` expander | bundled sample, `Data_Load/` file selection, CSV/Excel upload | runtime dataframe plus input-source metadata | `select_input_dataframe`, `list_data_load_files`, `load_data_load_dataframe`, `load_uploaded_dataframe_bytes` | `input_snapshot.csv`, `input_shape`, `input_source::*` rows in `reproducibility_manifest.json` |
 
 Notes:
 
-- The upload control does not modify model config directly.
-- It determines the dataframe consumed by the orchestrator.
+- The data-source controls do not modify model config directly.
+- They determine the dataframe consumed by the orchestrator.
+- `Data_Load/` is a git-ignored landing-zone directory for CSV and Excel files.
+  The app scans it on demand and exposes supported files in a dropdown.
 
 ## 2. Column Designer
 

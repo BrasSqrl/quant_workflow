@@ -1185,6 +1185,7 @@ class ArtifactExportStep(BasePipelineStep):
                 ),
             },
         ]
+        rows.extend(self._build_input_source_manifest_rows(context))
         rows.extend(
             {
                 "field": f"package_version::{package_name}",
@@ -1197,6 +1198,28 @@ class ArtifactExportStep(BasePipelineStep):
             "rows": rows,
             "package_versions": package_versions,
         }
+
+    def _build_input_source_manifest_rows(self, context: PipelineContext) -> list[dict[str, Any]]:
+        source_metadata = context.metadata.get("input_source")
+        if not isinstance(source_metadata, dict):
+            return []
+
+        tracked_fields = [
+            "source_kind",
+            "display_label",
+            "file_name",
+            "relative_path",
+            "suffix",
+            "size_bytes",
+            "modified_at_utc",
+        ]
+        return [
+            {
+                "field": f"input_source::{field_name}",
+                "value": source_metadata.get(field_name, ""),
+            }
+            for field_name in tracked_fields
+        ]
 
     def _build_template_workbook(self, context: PipelineContext) -> bytes:
         return build_template_workbook_bytes(

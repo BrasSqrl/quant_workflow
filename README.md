@@ -527,6 +527,7 @@ The GUI exposes the following decision areas:
 - workflow preset
 - execution mode
 - file upload with a configured 50 GB per-file Streamlit limit
+- `Data_Load/` landing-zone file selection for CSV and Excel datasets
 - existing model artifact path
 - existing run config path
 - model type
@@ -1781,6 +1782,7 @@ Typical outputs include:
 - documentation pack for development and review
 - validator-facing validation pack
 - reproducibility manifest with hashes and package versions
+- input source metadata for uploaded, bundled, or `Data_Load/` datasets
 - editable configuration workbook for offline governance
 - resolved configuration used for the run
 - ordered step manifest for the exact pipeline stack used
@@ -1815,7 +1817,8 @@ Each exported run directory is now intended to be portable. A completed run fold
 - `reference_example_pack.md`
   A workflow-specific reading guide included in each reference example run.
 - `reproducibility_manifest.json`
-  Hashes, package versions, environment metadata, and optional git information.
+  Hashes, package versions, input source metadata, environment metadata, and
+  optional git information.
 - `configuration_template.xlsx`
   The editable workbook for schema, feature dictionary, transformations, and
   review tables.

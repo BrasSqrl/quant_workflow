@@ -84,6 +84,17 @@ SageMaker browser proxy URL instead of VS Code port forwarding.
   - accepts `BASE_URL_PATH` only for browser proxy fallback scenarios
   - keeps the same large-upload settings used in the Windows launcher
 
+## Loading Data In SageMaker
+
+For remote runs, the recommended path is to place CSV or Excel files in the
+repo-level `Data_Load/` directory, then choose `Select from Data_Load` in the
+left-pane Data Source controls. This avoids browser-upload friction and lets
+Quant Studio record the selected file name, size, suffix, and modified time in
+`reproducibility_manifest.json`.
+
+`Data_Load/` is intentionally ignored by git except for `.gitkeep`, so private
+or large modeling datasets are not committed to GitHub.
+
 ## Why The Virtual Environment Matters
 
 SageMaker JupyterLab and Code Editor images include their own Jupyter and

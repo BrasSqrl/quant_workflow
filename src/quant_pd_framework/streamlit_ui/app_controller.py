@@ -357,9 +357,14 @@ def run_app() -> None:
     )
     ui_inject_styles()
 
-    dataframe, data_source_label = ui_select_input_dataframe()
+    selected_input = ui_select_input_dataframe()
+    dataframe = selected_input.dataframe
+    data_source_label = selected_input.label
     if dataframe is None:
-        st.info("Upload a CSV/Excel file or switch on the bundled sample dataset to begin.")
+        st.info(
+            "Select a Data_Load file, upload a CSV/Excel file, or use the bundled sample "
+            "dataset to begin."
+        )
         return
     ui_render_input_performance_notice(dataframe)
 
