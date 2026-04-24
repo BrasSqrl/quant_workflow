@@ -423,13 +423,19 @@ For a browser-based SageMaker environment such as Code Editor or JupyterLab:
 
 ```bash
 bash scripts/bootstrap_sagemaker.sh
-bash scripts/run_sagemaker_streamlit.sh
+BASE_URL_PATH=/jupyterlab/default/proxy/absolute/8501 bash scripts/run_sagemaker_streamlit.sh
 ```
 
 The SageMaker bootstrap creates `.sagemaker_venv` in the repo and installs
 Quant Studio there. This avoids changing SageMaker's own JupyterLab/Notebook
 packages, which can otherwise produce resolver warnings from the preinstalled
 IDE environment.
+
+For SageMaker Notebook Instances, use:
+
+```bash
+BASE_URL_PATH=/proxy/absolute/8501 bash scripts/run_sagemaker_streamlit.sh
+```
 
 The detailed guide is at [docs/SAGEMAKER_SETUP.md](./docs/SAGEMAKER_SETUP.md), and a
 plain-text copy is kept at [SAGEMAKER_SETUP.txt](./SAGEMAKER_SETUP.txt).

@@ -12,6 +12,7 @@ fi
 HOST="${HOST:-0.0.0.0}"
 PORT="${PORT:-8501}"
 MAX_UPLOAD_MB="${MAX_UPLOAD_MB:-51200}"
+BASE_URL_PATH="${BASE_URL_PATH:-}"
 
 if ! command -v "$PYTHON_BIN" >/dev/null 2>&1; then
   echo "Python executable '$PYTHON_BIN' was not found on PATH." >&2
@@ -21,8 +22,16 @@ fi
 cd "$PROJECT_ROOT"
 export PYTHONPATH="$PROJECT_ROOT/src${PYTHONPATH:+:$PYTHONPATH}"
 
-exec "$PYTHON_BIN" -m streamlit run "$PROJECT_ROOT/app/streamlit_app.py" \
-  --server.address "$HOST" \
-  --server.port "$PORT" \
-  --server.maxUploadSize "$MAX_UPLOAD_MB" \
+STREAMLIT_ARGS=(
+  --server.address "$HOST"
+  --server.port "$PORT"
+  --server.maxUploadSize "$MAX_UPLOAD_MB"
   --server.maxMessageSize "$MAX_UPLOAD_MB"
+)
+
+if [ -n "$BASE_URL_PATH" ]; then
+  STREAMLIT_ARGS+=(--server.baseUrlPath "$BASE_URL_PATH")
+fi
+
+exec "$PYTHON_BIN" -m streamlit run "$PROJECT_ROOT/app/streamlit_app.py" \
+  "${STREAMLIT_ARGS[@]}"

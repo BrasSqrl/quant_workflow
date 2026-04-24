@@ -53,7 +53,7 @@ From a terminal inside the cloned repo:
 ```bash
 cd /home/sagemaker-user/quant_workflow
 bash scripts/bootstrap_sagemaker.sh
-bash scripts/run_sagemaker_streamlit.sh
+BASE_URL_PATH=/jupyterlab/default/proxy/absolute/8501 bash scripts/run_sagemaker_streamlit.sh
 ```
 
 What these do:
@@ -71,6 +71,7 @@ What these do:
   - uses `.sagemaker_venv/bin/python` automatically when the venv exists
   - sets `PYTHONPATH` to the local `src/` tree
   - runs Streamlit on `0.0.0.0:8501`
+  - accepts `BASE_URL_PATH` for SageMaker proxy paths
   - keeps the same large-upload settings used in the Windows launcher
 
 The virtual environment is intentional. SageMaker JupyterLab and Code Editor
@@ -99,12 +100,44 @@ In a SageMaker browser IDE, you typically need one of:
 Bind the app to `0.0.0.0`, not `127.0.0.1`, so the SageMaker browser access
 layer can reach it. The run script already does this.
 
+### SageMaker JupyterLab Proxy Command
+
+For SageMaker Studio JupyterLab, use the absolute proxy base path:
+
+```bash
+cd /home/sagemaker-user/quant_workflow
+BASE_URL_PATH=/jupyterlab/default/proxy/absolute/8501 bash scripts/run_sagemaker_streamlit.sh
+```
+
+Then open this URL pattern in your browser, using the same host and region from
+your current JupyterLab tab:
+
+```text
+https://<your-space>.studio.<region>.sagemaker.aws/jupyterlab/default/proxy/absolute/8501/
+```
+
+### SageMaker Notebook Instance Proxy Command
+
+For a SageMaker Notebook Instance, use the shorter notebook proxy path:
+
+```bash
+cd /home/sagemaker-user/quant_workflow
+BASE_URL_PATH=/proxy/absolute/8501 bash scripts/run_sagemaker_streamlit.sh
+```
+
+Then open:
+
+```text
+https://<notebook-name>.notebook.<region>.sagemaker.aws/proxy/absolute/8501/
+```
+
 ## Environment Variables For The Run Script
 
 You can override the defaults:
 
 ```bash
 HOST=0.0.0.0 PORT=8502 MAX_UPLOAD_MB=1024 bash scripts/run_sagemaker_streamlit.sh
+BASE_URL_PATH=/jupyterlab/default/proxy/absolute/8501 bash scripts/run_sagemaker_streamlit.sh
 ```
 
 Default values:
@@ -112,6 +145,7 @@ Default values:
 - `HOST=0.0.0.0`
 - `PORT=8501`
 - `MAX_UPLOAD_MB=51200`
+- `BASE_URL_PATH=`
 - `PYTHON_BIN=python3`
 
 ## Lifecycle Configuration Starter
@@ -152,7 +186,7 @@ In that setup, your interactive run path becomes:
 
 ```bash
 cd /home/sagemaker-user/quant_workflow
-bash scripts/run_sagemaker_streamlit.sh
+BASE_URL_PATH=/jupyterlab/default/proxy/absolute/8501 bash scripts/run_sagemaker_streamlit.sh
 ```
 
 ## Troubleshooting
@@ -196,6 +230,8 @@ This is usually a port-access issue, not an app issue. Confirm:
 1. Streamlit is bound to `0.0.0.0`
 2. it is running on port `8501`
 3. SageMaker exposes that port through preview or forwarding
+4. JupyterLab runs use `BASE_URL_PATH=/jupyterlab/default/proxy/absolute/8501`
+5. Notebook Instance runs use `BASE_URL_PATH=/proxy/absolute/8501`
 
 ### The app works locally but not in SageMaker
 
@@ -214,12 +250,12 @@ If the repo has already been cloned:
 ```bash
 cd /home/sagemaker-user/quant_workflow
 bash scripts/bootstrap_sagemaker.sh
-bash scripts/run_sagemaker_streamlit.sh
+BASE_URL_PATH=/jupyterlab/default/proxy/absolute/8501 bash scripts/run_sagemaker_streamlit.sh
 ```
 
 If dependencies are already available in the image:
 
 ```bash
 cd /home/sagemaker-user/quant_workflow
-bash scripts/run_sagemaker_streamlit.sh
+BASE_URL_PATH=/jupyterlab/default/proxy/absolute/8501 bash scripts/run_sagemaker_streamlit.sh
 ```
