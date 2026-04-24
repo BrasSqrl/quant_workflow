@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from collections import OrderedDict
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -11,7 +12,6 @@ from typing import Any
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
-import plotly.io as pio
 from plotly.offline.offline import get_plotlyjs
 
 FINTECH_COLORWAY = [
@@ -1380,6 +1380,7 @@ def build_interactive_report_html(
         warnings=warnings,
         events=events,
     )
+    plotly_render_script = _build_plotly_render_script()
     plotly_js_bundle = get_plotlyjs()
 
     return f"""<!DOCTYPE html>
@@ -1388,7 +1389,6 @@ def build_interactive_report_html(
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Quant Studio Report {escape(run_id)}</title>
-    <script>{plotly_js_bundle}</script>
     <style>
       :root {{
         --bg: {FINTECH_NEUTRAL["bg"]};
@@ -1579,6 +1579,16 @@ def build_interactive_report_html(
       .plot-shell .modebar {{
         right: 8px !important;
       }}
+      .plot-fallback {{
+        display: grid;
+        min-height: 280px;
+        place-items: center;
+        border-radius: 18px;
+        background: linear-gradient(135deg, #F8FAFC, #F3EEE5);
+        color: var(--muted);
+        text-align: center;
+        padding: 24px;
+      }}
       .asset-table th {{
         text-align: left;
         background: var(--surface-alt);
@@ -1644,6 +1654,8 @@ def build_interactive_report_html(
       {subset_search_highlight_html}
       {sections_html}
     </main>
+    <script>{plotly_js_bundle}</script>
+    <script>{plotly_render_script}</script>
   </body>
 </html>
 """
@@ -1822,20 +1834,37 @@ def _build_section_html(
 def _build_figure_card_html(descriptor: AssetDescriptor, figure: go.Figure) -> str:
     safe_figure = go.Figure(figure)
     _make_figure_display_safe(safe_figure)
-    figure_html = pio.to_html(
-        safe_figure,
-        include_plotlyjs=False,
-        full_html=False,
-        default_width="100%",
-        default_height=f"{int(safe_figure.layout.height or 440)}px",
-        config=plotly_display_config(),
+    figure_payload = json.dumps(
+        safe_figure.to_plotly_json(),
+        default=_json_default,
+        separators=(",", ":"),
+    )
+    figure_id = f"plot_{descriptor.key}_{abs(hash(descriptor.key))}".replace("-", "_")
+    figure_height = int(safe_figure.layout.height or 440)
+    config_payload = json.dumps(plotly_display_config(), separators=(",", ":"))
+    config_payload_html = escape(config_payload)
+    payload_id = f"{figure_id}_payload"
+    fallback = (
+        "Chart loading. If this remains visible, open the report in a modern "
+        "browser or serve it from a local HTTP server."
     )
     description = escape(descriptor.description or "")
     return f"""
     <article class="asset-card">
       <h3>{escape(descriptor.title)}</h3>
       {f"<p>{description}</p>" if description else ""}
-      <div class="plot-shell">{figure_html}</div>
+      <div
+        class="plot-shell plotly-lazy"
+        id="{escape(figure_id)}"
+        data-figure-payload="{escape(payload_id)}"
+        data-config="{config_payload_html}"
+        style="min-height: {figure_height}px;"
+      >
+        <div class="plot-fallback">{escape(fallback)}</div>
+      </div>
+      <script type="application/json" id="{escape(payload_id)}">
+        {_safe_json_script(figure_payload)}
+      </script>
     </article>
     """
 
@@ -1976,6 +2005,92 @@ def _build_governance_section_html(
       </div>
     </section>
     """
+
+
+def _build_plotly_render_script() -> str:
+    return r"""
+      (function () {
+        function setFallback(node, message) {
+          node.innerHTML = "";
+          var fallback = document.createElement("div");
+          fallback.className = "plot-fallback";
+          fallback.textContent = message;
+          node.appendChild(fallback);
+        }
+
+        function renderFigures() {
+          var nodes = document.querySelectorAll(".plotly-lazy");
+          if (!nodes.length) {
+            return;
+          }
+          if (!window.Plotly) {
+            nodes.forEach(function (node) {
+              setFallback(
+                node,
+                "Plotly could not load. Serve this report from a local HTTP server " +
+                  "or open it in a modern browser."
+              );
+            });
+            return;
+          }
+          nodes.forEach(function (node) {
+            try {
+              var payloadNode = document.getElementById(node.dataset.figurePayload);
+              if (!payloadNode) {
+                setFallback(node, "Chart payload was not found in this report.");
+                return;
+              }
+              var figure = JSON.parse(payloadNode.textContent || "{}");
+              var config = JSON.parse(node.dataset.config || "{}");
+              node.innerHTML = "";
+              window.Plotly.newPlot(
+                node,
+                figure.data || [],
+                figure.layout || {},
+                config
+              ).then(function () {
+                window.Plotly.Plots.resize(node);
+              });
+            } catch (error) {
+              setFallback(node, "Chart could not render: " + error.message);
+            }
+          });
+        }
+
+        if (document.readyState === "loading") {
+          document.addEventListener("DOMContentLoaded", renderFigures);
+        } else {
+          renderFigures();
+        }
+        window.addEventListener("resize", function () {
+          document.querySelectorAll(".plotly-lazy").forEach(function (node) {
+            if (window.Plotly && node.data) {
+              window.Plotly.Plots.resize(node);
+            }
+          });
+        });
+      })();
+    """
+
+
+def _safe_json_script(payload: str) -> str:
+    return payload.replace("</", "<\\/")
+
+
+def _json_default(value: Any) -> Any:
+    if isinstance(value, np.ndarray):
+        return [_json_default(item) for item in value.tolist()]
+    if isinstance(value, np.generic):
+        return value.item()
+    if isinstance(value, (pd.Series, pd.Index)):
+        return [_json_default(item) for item in value.tolist()]
+    if isinstance(value, pd.Timestamp):
+        return value.isoformat()
+    if isinstance(value, pd.Interval):
+        return str(value)
+    if isinstance(value, pd.Period):
+        return str(value)
+    return str(value)
 
 
 def _format_number(value: int | None) -> str:

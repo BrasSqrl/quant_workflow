@@ -1,49 +1,52 @@
 Quant Studio SageMaker Setup
 ============================
 
-Use this file when you want to run Quant Studio from a browser-based
-SageMaker environment such as Code Editor or JupyterLab.
+Recommended path: VS Code Remote to SageMaker
+---------------------------------------------
 
-Recommended path
-----------------
+Use this file when you want to run Quant Studio on SageMaker compute while
+using your local VS Code desktop IDE.
 
-1. Clone the repo into the SageMaker space.
-2. Open a terminal in the repo root.
-3. Run:
+The recommended workflow is:
 
+1. Open the SageMaker space through local VS Code Remote access.
+2. Open a VS Code terminal connected to the SageMaker machine.
+3. Clone or pull the repo on the SageMaker filesystem.
+4. Bootstrap the project once:
+
+   cd /home/sagemaker-user/quant_workflow
    bash scripts/bootstrap_sagemaker.sh
 
-4. Start the GUI:
+5. Start Streamlit from the same remote VS Code terminal:
 
    bash scripts/run_sagemaker_streamlit.sh
 
-5. Open port 8501 through SageMaker's browser preview / forwarded-port feature.
+6. In local VS Code, open the Ports / Forwarded Ports panel.
+7. Forward remote port 8501.
+8. Open the forwarded local URL, usually:
 
-JupyterLab proxy launch command
--------------------------------
+   http://localhost:8501
 
-If you are running from a SageMaker JupyterLab space and the normal proxy URL
-returns 404 or a blank page, start the GUI with the JupyterLab absolute proxy
-base path:
+Why localhost works in this setup
+---------------------------------
+
+Streamlit is running on the SageMaker machine, not on your laptop. VS Code
+Remote forwards SageMaker port 8501 back to your local machine. After the port
+is forwarded, your browser's localhost:8501 points through VS Code to the
+remote SageMaker Streamlit process.
+
+Do not use BASE_URL_PATH for VS Code Remote
+-------------------------------------------
+
+When using local VS Code Remote plus port forwarding, start the app with:
+
+   bash scripts/run_sagemaker_streamlit.sh
+
+Do not use:
 
    BASE_URL_PATH=/jupyterlab/default/proxy/absolute/8501 bash scripts/run_sagemaker_streamlit.sh
 
-Then open this URL pattern in the browser, using the same host and region from
-your current JupyterLab tab:
-
-   https://<your-space>.studio.<region>.sagemaker.aws/jupyterlab/default/proxy/absolute/8501/
-
-Notebook instance proxy launch command
---------------------------------------
-
-If you are running from a SageMaker Notebook Instance instead of Studio
-JupyterLab, use this command:
-
-   BASE_URL_PATH=/proxy/absolute/8501 bash scripts/run_sagemaker_streamlit.sh
-
-Then open:
-
-   https://<notebook-name>.notebook.<region>.sagemaker.aws/proxy/absolute/8501/
+The BASE_URL_PATH form is only for SageMaker JupyterLab browser proxy URLs.
 
 What the scripts do
 -------------------
@@ -57,7 +60,7 @@ What the scripts do
 - scripts/run_sagemaker_streamlit.sh
   - uses .sagemaker_venv automatically when it exists
   - runs Streamlit on 0.0.0.0:8501
-  - accepts BASE_URL_PATH for SageMaker proxy paths
+  - accepts BASE_URL_PATH only for browser proxy fallback scenarios
   - keeps the same upload-size settings used by the Windows launcher
 
 Why the virtual environment matters
@@ -73,6 +76,31 @@ Quant Studio does not need to alter SageMaker's IDE packages. The bootstrap
 script therefore installs the app into .sagemaker_venv so the Streamlit app
 runtime is isolated from SageMaker's Jupyter runtime.
 
+Fallback: SageMaker JupyterLab browser proxy
+--------------------------------------------
+
+If you are not using local VS Code Remote and are instead running directly from
+a SageMaker JupyterLab browser tab, start Streamlit with:
+
+   BASE_URL_PATH=/jupyterlab/default/proxy/absolute/8501 bash scripts/run_sagemaker_streamlit.sh
+
+Then open this URL pattern in the browser, using the same host and region from
+your current JupyterLab tab:
+
+   https://<your-space>.studio.<region>.sagemaker.aws/jupyterlab/default/proxy/absolute/8501/
+
+Fallback: SageMaker Notebook Instance proxy
+-------------------------------------------
+
+If you are running from a SageMaker Notebook Instance instead of Studio
+JupyterLab, use this command:
+
+   BASE_URL_PATH=/proxy/absolute/8501 bash scripts/run_sagemaker_streamlit.sh
+
+Then open:
+
+   https://<notebook-name>.notebook.<region>.sagemaker.aws/proxy/absolute/8501/
+
 If direct pip install does not work
 -----------------------------------
 
@@ -83,16 +111,6 @@ private package source. In that case, use one of these:
    bootstrap script automatically.
 2. A custom SageMaker image with the dependencies preinstalled.
 
-Starter lifecycle script
-------------------------
-
-This repo includes:
-
-   scripts/sagemaker_code_editor_lifecycle.sh
-
-That script is a starter for SageMaker Code Editor lifecycle configuration
-usage. It can clone or update the repo and then run the bootstrap script.
-
 Files added for SageMaker support
 ---------------------------------
 
@@ -101,20 +119,6 @@ Files added for SageMaker support
 - scripts/run_sagemaker_streamlit.sh
 - scripts/sagemaker_code_editor_lifecycle.sh
 - docs/SAGEMAKER_SETUP.md
-
-Recommended commands
---------------------
-
-If the repo is already cloned:
-
-   cd /home/sagemaker-user/quant_workflow
-   bash scripts/bootstrap_sagemaker.sh
-   BASE_URL_PATH=/jupyterlab/default/proxy/absolute/8501 bash scripts/run_sagemaker_streamlit.sh
-
-If the dependencies are already built into the image:
-
-   cd /home/sagemaker-user/quant_workflow
-   BASE_URL_PATH=/jupyterlab/default/proxy/absolute/8501 bash scripts/run_sagemaker_streamlit.sh
 
 Detailed guide
 --------------

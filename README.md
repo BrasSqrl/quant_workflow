@@ -419,19 +419,30 @@ python examples/run_development_workflow.py
 
 ### Run In SageMaker Or Linux
 
-For a browser-based SageMaker environment such as Code Editor or JupyterLab:
+For SageMaker, the recommended path is local VS Code Remote connected to
+SageMaker compute. In the remote VS Code terminal:
 
 ```bash
 bash scripts/bootstrap_sagemaker.sh
-BASE_URL_PATH=/jupyterlab/default/proxy/absolute/8501 bash scripts/run_sagemaker_streamlit.sh
+bash scripts/run_sagemaker_streamlit.sh
 ```
+
+Then forward remote port `8501` from the local VS Code Ports panel and open the
+forwarded local URL, usually `http://localhost:8501`.
 
 The SageMaker bootstrap creates `.sagemaker_venv` in the repo and installs
 Quant Studio there. This avoids changing SageMaker's own JupyterLab/Notebook
 packages, which can otherwise produce resolver warnings from the preinstalled
 IDE environment.
 
-For SageMaker Notebook Instances, use:
+If you are not using local VS Code Remote and must use SageMaker JupyterLab's
+browser proxy directly, use:
+
+```bash
+BASE_URL_PATH=/jupyterlab/default/proxy/absolute/8501 bash scripts/run_sagemaker_streamlit.sh
+```
+
+For SageMaker Notebook Instances, the fallback proxy command is:
 
 ```bash
 BASE_URL_PATH=/proxy/absolute/8501 bash scripts/run_sagemaker_streamlit.sh
