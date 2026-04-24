@@ -130,7 +130,8 @@ def test_interactive_report_html_wraps_plot_and_table_content() -> None:
         visualizations={"segment_performance_chart": figure},
     )
 
-    assert 'class="plot-shell"' in html
+    assert 'class="plot-shell plotly-lazy"' in html
+    assert 'class="static-plot-fallback"' in html or 'class="plot-fallback"' in html
     assert 'class="table-shell"' in html
     assert "Quant Studio Report test_run" in html
     assert '<script src="https://cdn.plot.ly/' not in html

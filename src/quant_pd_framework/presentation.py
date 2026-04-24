@@ -12,6 +12,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
+import plotly.io as pio
 from plotly.offline.offline import get_plotlyjs
 
 FINTECH_COLORWAY = [
@@ -1589,6 +1590,16 @@ def build_interactive_report_html(
         text-align: center;
         padding: 24px;
       }}
+      .static-plot-fallback {{
+        width: 100%;
+        overflow-x: auto;
+      }}
+      .static-plot-fallback svg {{
+        display: block;
+        width: 100%;
+        height: auto;
+        max-width: 100%;
+      }}
       .asset-table th {{
         text-align: left;
         background: var(--surface-alt);
@@ -1848,6 +1859,11 @@ def _build_figure_card_html(descriptor: AssetDescriptor, figure: go.Figure) -> s
         "Chart loading. If this remains visible, open the report in a modern "
         "browser or serve it from a local HTTP server."
     )
+    static_fallback_html = _build_static_figure_fallback_html(
+        safe_figure,
+        fallback_message=fallback,
+        height=figure_height,
+    )
     description = escape(descriptor.description or "")
     return f"""
     <article class="asset-card">
@@ -1860,13 +1876,41 @@ def _build_figure_card_html(descriptor: AssetDescriptor, figure: go.Figure) -> s
         data-config="{config_payload_html}"
         style="min-height: {figure_height}px;"
       >
-        <div class="plot-fallback">{escape(fallback)}</div>
+        {static_fallback_html}
       </div>
       <script type="application/json" id="{escape(payload_id)}">
         {_safe_json_script(figure_payload)}
       </script>
     </article>
     """
+
+
+def _build_static_figure_fallback_html(
+    figure: go.Figure,
+    *,
+    fallback_message: str,
+    height: int,
+) -> str:
+    try:
+        svg = pio.to_image(
+            figure,
+            format="svg",
+            width=900,
+            height=max(height, 360),
+            validate=False,
+        ).decode("utf-8")
+    except Exception:
+        return f'<div class="plot-fallback">{escape(fallback_message)}</div>'
+    return f'<div class="static-plot-fallback">{_safe_svg_fragment(svg)}</div>'
+
+
+def _safe_svg_fragment(svg: str) -> str:
+    cleaned = svg.strip()
+    if cleaned.startswith("<?xml"):
+        end_index = cleaned.find("?>")
+        if end_index != -1:
+            cleaned = cleaned[end_index + 2 :].strip()
+    return cleaned.replace("</script", "<\\/script")
 
 
 def _build_table_card_html(
