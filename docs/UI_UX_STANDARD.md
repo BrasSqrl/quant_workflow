@@ -2,6 +2,11 @@
 
 This standard defines how the Quant Studio GUI and exported diagnostic reports should look and behave. The target experience is a premium light-mode fintech dashboard for model builders and validation teams.
 
+The companion implementation standard for the latest Streamlit enterprise
+redesign is [UI_ENTERPRISE_REDESIGN.md](./UI_ENTERPRISE_REDESIGN.md). That
+document governs the command bar, four-step workflow navigation, main-canvas
+configuration groups, readiness checkpoint, and results/artifact workspace.
+
 ## 1. Visual Direction
 
 The interface should feel:

@@ -388,21 +388,45 @@ def run_app() -> None:
         page_title="Quant Studio",
         page_icon="Q",
         layout="wide",
-        initial_sidebar_state="expanded",
+        initial_sidebar_state="collapsed",
     )
     ui_inject_styles()
 
-    selected_input = ui_select_input_dataframe()
+    ui_render_header(
+        data_source_label="",
+        preset_label="",
+        workspace_mode="guided",
+        run_label="",
+    )
+    data_tab, configuration_tab, readiness_tab, results_tab = st.tabs(
+        [
+            "1  Dataset & Schema",
+            "2  Model Configuration",
+            "3  Readiness Check",
+            "4  Results & Artifacts",
+        ]
+    )
+
+    with data_tab:
+        selected_input = ui_select_input_dataframe()
     dataframe = selected_input.dataframe
     data_source_label = selected_input.label
     source_large_data_mode = selected_input.large_data_mode
     if dataframe is None:
-        st.info(
-            "Select a Data_Load file, upload a CSV/Excel/Parquet file, or use the "
-            "bundled sample dataset to begin."
-        )
+        with data_tab:
+            st.info(
+                "Select a Data_Load file, upload a CSV/Excel/Parquet file, or use the "
+                "bundled sample dataset to begin."
+            )
+        with configuration_tab:
+            st.info("Complete Step 1 before configuring the model workflow.")
+        with readiness_tab:
+            st.info("Readiness checks appear after a dataset and schema are available.")
+        with results_tab:
+            st.info("Run a valid workflow from Step 3 to populate results and artifacts.")
         return
-    ui_render_input_performance_notice(dataframe)
+    with data_tab:
+        ui_render_input_performance_notice(dataframe)
 
     editor_key = ui_build_editor_key(dataframe, data_source_label)
     workspace_keys = WorkspaceStateKeys.from_editor_key(editor_key)
@@ -434,13 +458,13 @@ def run_app() -> None:
         include=["object", "string", "category"]
     ).columns.tolist()
 
-    with st.sidebar:
+    with configuration_tab:
         st.markdown(
             """
-            <div class="sidebar-panel-intro">
-              <span class="sidebar-panel-kicker">Modeling Controls</span>
-              <h3 class="sidebar-panel-title">Configure the workflow</h3>
-              <p class="sidebar-panel-copy">
+            <div class="step-panel-intro">
+              <span class="step-panel-kicker">Model Configuration</span>
+              <h3 class="step-panel-title">Configure the workflow</h3>
+              <p class="step-panel-copy">
                 Use the grouped panels to keep core setup visible while hiding
                 lower-priority tuning until you need it.
               </p>
@@ -488,8 +512,9 @@ def run_app() -> None:
             if selected_preset is not None
             else GUIBuildInputs()
         )
+        left_config_column, right_config_column = st.columns(2, gap="large")
 
-        with st.expander("Core Setup", expanded=True):
+        with left_config_column.expander("Core Setup", expanded=True):
             execution_mode = st.selectbox(
                 "Execution mode",
                 options=[mode.value for mode in ExecutionMode],
@@ -574,7 +599,7 @@ def run_app() -> None:
                 value=False,
             )
 
-        with st.expander("Split Strategy", expanded=True):
+        with left_config_column.expander("Split Strategy", expanded=True):
             train_size = st.number_input(
                 "Train size", min_value=0.1, max_value=0.9, value=0.6, step=0.05
             )
@@ -597,7 +622,7 @@ def run_app() -> None:
                 disabled=data_structure != DataStructure.CROSS_SECTIONAL.value,
             )
 
-        with st.expander("Model Settings", expanded=False):
+        with left_config_column.expander("Model Settings", expanded=False):
             threshold = (
                 st.number_input(
                     "Classification threshold",
@@ -795,7 +820,10 @@ def run_app() -> None:
             )
 
         subset_search_enabled = execution_mode == ExecutionMode.SEARCH_FEATURE_SUBSETS.value
-        with st.expander("Feature Subset Search", expanded=subset_search_enabled):
+        with left_config_column.expander(
+            "Feature Subset Search",
+            expanded=subset_search_enabled,
+        ):
             st.caption(
                 "Use this mode to compare candidate feature sets for the selected model "
                 "family before a normal development run. The exported bundle contains "
@@ -939,7 +967,7 @@ def run_app() -> None:
                 disabled=not subset_search_enabled,
             )
 
-        with st.expander("Data Preparation", expanded=False):
+        with left_config_column.expander("Data Preparation", expanded=False):
             trim_string_columns = st.checkbox("Trim string columns", value=True)
             blank_strings_as_null = st.checkbox("Treat blank strings as null", value=True)
             drop_duplicate_rows = st.checkbox("Drop duplicate rows", value=True)
@@ -965,7 +993,7 @@ def run_app() -> None:
                 default=preset_inputs.feature_engineering.date_parts,
             )
 
-        with st.expander("Diagnostics & Exports", expanded=False):
+        with right_config_column.expander("Diagnostics & Exports", expanded=False):
             large_data_mode = bool(
                 source_large_data_mode or preset_inputs.performance.large_data_mode
             )
@@ -1667,7 +1695,7 @@ def run_app() -> None:
         scenario_rows = default_scenario_editor_frame()
 
         if advanced_workspace:
-            with st.expander("Challengers & Policies", expanded=False):
+            with right_config_column.expander("Challengers & Policies", expanded=False):
                 comparison_enabled = st.checkbox(
                     "Enable model comparison mode",
                     value=preset_inputs.comparison.enabled,
@@ -1767,13 +1795,13 @@ def run_app() -> None:
                     disabled=not feature_policy_enabled,
                 )
         else:
-            with st.expander("Challengers & Policies", expanded=False):
+            with right_config_column.expander("Challengers & Policies", expanded=False):
                 st.caption(
                     "Guided mode keeps comparison and feature-policy settings on the "
                     "preset defaults. Switch to Advanced to edit them."
                 )
 
-        with st.expander("Selection & Documentation", expanded=False):
+        with right_config_column.expander("Selection & Documentation", expanded=False):
             if not advanced_workspace:
                 st.caption(
                     "Guided mode keeps these controls on the preset defaults. Switch "
@@ -2084,7 +2112,7 @@ def run_app() -> None:
                 disabled=not regulatory_reporting_enabled,
             )
 
-        with st.expander("Governance & Review", expanded=False):
+        with right_config_column.expander("Governance & Review", expanded=False):
             if not advanced_workspace:
                 st.caption(
                     "Guided mode keeps governance and review controls on the preset "
@@ -2223,7 +2251,7 @@ def run_app() -> None:
                 scorecard_override_rows,
             )
 
-        with st.expander("Explainability & Scenarios", expanded=False):
+        with right_config_column.expander("Explainability & Scenarios", expanded=False):
             if not advanced_workspace:
                 st.caption(
                     "Guided mode keeps explainability and scenario settings on the preset "
@@ -2411,7 +2439,7 @@ def run_app() -> None:
                 },
             )
 
-        with st.expander("Output Options", expanded=False):
+        with right_config_column.expander("Output Options", expanded=False):
             export_profile = st.selectbox(
                 "Export profile",
                 options=[profile.value for profile in ExportProfile],
@@ -2514,29 +2542,19 @@ def run_app() -> None:
             )
             output_root = st.text_input("Artifact root", value="artifacts")
 
-    run_clicked = ui_render_header(
-        data_source_label=data_source_label,
-        preset_label=preset_lookup[selected_preset_name_value]["label"],
-        workspace_mode=workspace_mode,
-        run_label=(
-            "Run Feature Subset Search"
-            if execution_mode == ExecutionMode.SEARCH_FEATURE_SUBSETS.value
-            else "Run Quant Model Workflow"
-        ),
-    )
-
-    workspace_frames = ui_render_builder_workspace(
-        data_source_label=data_source_label,
-        dataframe=dataframe,
-        workspace_state=WorkspaceState(
-            keys=workspace_keys,
-            schema_frame=workspace_schema_frame,
-            feature_dictionary_frame=workspace_feature_dictionary_frame,
-            transformation_frame=workspace_transformation_frame,
-            feature_review_frame=workspace_feature_review_frame,
-            scorecard_override_frame=workspace_scorecard_override_frame,
-        ),
-    )
+    with data_tab:
+        workspace_frames = ui_render_builder_workspace(
+            data_source_label=data_source_label,
+            dataframe=dataframe,
+            workspace_state=WorkspaceState(
+                keys=workspace_keys,
+                schema_frame=workspace_schema_frame,
+                feature_dictionary_frame=workspace_feature_dictionary_frame,
+                transformation_frame=workspace_transformation_frame,
+                feature_review_frame=workspace_feature_review_frame,
+                scorecard_override_frame=workspace_scorecard_override_frame,
+            ),
+        )
 
     edited_schema = workspace_frames["schema"]
     feature_dictionary_frame = workspace_frames["feature_dictionary"]
@@ -2563,51 +2581,76 @@ def run_app() -> None:
             "scorecard_override_frame": scorecard_override_frame,
         },
     )
-
-    ui_render_workflow_readiness(
-        preview_config=preview_config,
-        preview_findings=preview_findings,
-        preview_error=preview_error,
+    run_button_label = (
+        "Run Feature Subset Search"
+        if execution_mode == ExecutionMode.SEARCH_FEATURE_SUBSETS.value
+        else "Run Quant Model Workflow"
     )
-    ui_render_execution_plan(
-        ui_build_execution_plan_cards(
+    with readiness_tab:
+        ui_render_workflow_readiness(
             preview_config=preview_config,
-            data_source_label=data_source_label,
+            preview_findings=preview_findings,
+            preview_error=preview_error,
+        )
+        ui_render_execution_plan(
+            ui_build_execution_plan_cards(
+                preview_config=preview_config,
+                data_source_label=data_source_label,
+                large_data_mode=large_data_mode,
+            ),
             large_data_mode=large_data_mode,
-        ),
-        large_data_mode=large_data_mode,
-    )
+        )
+        run_clicked = st.button(
+            run_button_label,
+            type="primary",
+            width="stretch",
+            key="readiness_run_workflow_button",
+        )
 
     if run_clicked:
-        if preview_error or preview_config is None:
-            st.error(preview_error or "Resolve the readiness issues before running the workflow.")
-            ui_set_last_run_snapshot(None)
-        else:
-            try:
-                with st.spinner(ui_workflow_spinner_message(execution_mode)):
-                    context = ui_execute_workflow(
-                        preview_config=preview_config,
-                        dataframe=dataframe,
-                        selected_input=selected_input,
-                        large_data_mode=large_data_mode,
-                    )
-                snapshot = ui_build_run_snapshot(
-                    context,
-                    preview_config.to_dict(),
-                )
-                ui_set_last_run_snapshot(snapshot)
-                ui_render_run_success(snapshot)
-            except Exception as exc:
-                ui_render_run_failure(
-                    ui_classify_workflow_exception(
-                        exc,
-                        technical_details=traceback.format_exc(),
-                    )
+        with readiness_tab:
+            if preview_error or preview_config is None:
+                st.error(
+                    preview_error
+                    or "Resolve the readiness issues before running the workflow."
                 )
                 ui_set_last_run_snapshot(None)
+            else:
+                try:
+                    with st.spinner(ui_workflow_spinner_message(execution_mode)):
+                        context = ui_execute_workflow(
+                            preview_config=preview_config,
+                            dataframe=dataframe,
+                            selected_input=selected_input,
+                            large_data_mode=large_data_mode,
+                        )
+                    snapshot = ui_build_run_snapshot(
+                        context,
+                        preview_config.to_dict(),
+                    )
+                    ui_set_last_run_snapshot(snapshot)
+                    ui_render_run_success(snapshot)
+                except Exception as exc:
+                    ui_render_run_failure(
+                        ui_classify_workflow_exception(
+                            exc,
+                            technical_details=traceback.format_exc(),
+                        )
+                    )
+                    ui_set_last_run_snapshot(None)
 
-    if ui_get_last_run_snapshot():
-        ui_render_run_results(ui_get_last_run_snapshot())
+    with results_tab:
+        last_run_snapshot = ui_get_last_run_snapshot()
+        if last_run_snapshot:
+            current_config = preview_config.to_dict() if preview_config is not None else None
+            if current_config is not None and last_run_snapshot.get("config") != current_config:
+                st.warning(
+                    "Results are from the last completed run and may be stale because "
+                    "the current workflow configuration has changed."
+                )
+            ui_render_run_results(last_run_snapshot)
+        else:
+            st.info("Run a valid workflow from Step 3 to populate results and artifacts.")
 
 if __name__ == "__main__":
     run_app()

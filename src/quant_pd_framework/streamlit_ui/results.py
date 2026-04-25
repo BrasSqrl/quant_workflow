@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from html import escape
 from pathlib import Path
 from typing import Any
 
@@ -61,7 +62,7 @@ def render_workflow_readiness(
     )
     if preview_config is None:
         if preview_error:
-            st.error(preview_error)
+            render_readiness_blocker(preview_error)
         st.info("Readiness details will appear after the current configuration resolves cleanly.")
         return
     preset_value = preview_config.preset_name.value if preview_config.preset_name else "custom"
@@ -70,7 +71,7 @@ def render_workflow_readiness(
 
     if not preview_config.workflow_guardrails.enabled:
         if preview_error:
-            st.error(preview_error)
+            render_readiness_blocker(preview_error)
         render_metric_strip(
             [
                 {"label": "Preset", "value": preset_value},
@@ -95,7 +96,7 @@ def render_workflow_readiness(
         compact=True,
     )
     if preview_error:
-        st.error(preview_error)
+        render_readiness_blocker(preview_error)
     if not preview_findings:
         st.success("The current preset-specific readiness checks passed.")
         return
@@ -109,6 +110,27 @@ def render_workflow_readiness(
         prepare_table_for_display(readiness_table),
         width="stretch",
         hide_index=True,
+    )
+
+
+def render_readiness_blocker(message: str) -> None:
+    safe_message = escape(message)
+    title = (
+        "Target source required"
+        if "target" in message.lower()
+        else "Readiness issue requires attention"
+    )
+    st.markdown(
+        f"""
+        <div class="readiness-blocker-card">
+          <span class="readiness-blocker-card__icon">!</span>
+          <div>
+            <strong>{escape(title)}</strong>
+            <p>{safe_message}</p>
+          </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
     )
 
 

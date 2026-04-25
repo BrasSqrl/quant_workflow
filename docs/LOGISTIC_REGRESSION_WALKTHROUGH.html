@@ -91,7 +91,7 @@
       </section>
 
       <section class="step" id="step-1">
-        <div class="step-head"><div class="num">1</div><div><h2>Choose the data source.</h2><p>Start in the left sidebar. For this walkthrough, leave the bundled sample on. For your own work, this is the same place where you upload a CSV, Excel, or Parquet file.</p></div></div>
+        <div class="step-head"><div class="num">1</div><div><h2>Choose the data source.</h2><p>Start in Step 1, Dataset &amp; Schema. For this walkthrough, leave the bundled sample on. For your own work, this is the same place where you upload a CSV, Excel, or Parquet file.</p></div></div>
         <div class="visual">
           <div class="shot">
             <div class="bar"><div class="dots"><span></span><span></span><span></span></div><div>Quant Studio | Builder</div><div>Data source</div></div>
@@ -114,7 +114,7 @@
       </section>
 
       <section class="step" id="step-2">
-        <div class="step-head"><div class="num">2</div><div><h2>Configure the model in the sidebar.</h2><p>Keep the first build simple. The point is to confirm the full path works before you tune or add challenger logic.</p></div></div>
+        <div class="step-head"><div class="num">2</div><div><h2>Configure the model in Step 2.</h2><p>Open Model Configuration and keep the first build simple. The point is to confirm the full path works before you tune or add challenger logic.</p></div></div>
         <div class="visual">
           <div class="shot">
             <div class="bar"><div class="dots"><span></span><span></span><span></span></div><div>Quant Studio | Modeling controls</div><div>Core Setup</div></div>
@@ -184,7 +184,7 @@
       </section>
 
       <section class="step" id="step-5">
-        <div class="step-head"><div class="num">5</div><div><h2>Run the workflow.</h2><p>Once the data source, model settings, and schema look right, execute the full pipeline from the main sidebar button.</p></div></div>
+        <div class="step-head"><div class="num">5</div><div><h2>Run the workflow.</h2><p>Once the data source, model settings, and schema look right, open Step 3, Readiness Check, and execute the full pipeline from the run button there.</p></div></div>
         <div class="two-col">
           <div class="visual"><div class="shot"><div class="bar"><div class="dots"><span></span><span></span><span></span></div><div>Quant Studio | Run action</div><div>Primary workflow button</div></div><div class="studio"><div class="left"><div class="group"><h4>Final pre-run check</h4><ul><li>Sample data is loaded.</li><li><code>logistic_regression</code> is selected.</li><li><code>default_status</code> is the target source.</li><li>Main feature columns are enabled.</li></ul></div><div class="btn">Run Quant Model Workflow</div></div><div style="padding:18px;background:#f5f9fe"><div class="main-card"><h4>What happens next</h4><p>Quant Studio validates the config, builds the train / validation / test split, fits the model, scores the splits, creates diagnostics, and writes the artifact folder.</p></div></div></div></div></div>
           <div class="note"><strong>What to expect</strong><p>The app shows a spinner during execution. When the run finishes, the canvas switches into the organized results view and a timestamped run folder is written under <code>artifacts</code>.</p></div>

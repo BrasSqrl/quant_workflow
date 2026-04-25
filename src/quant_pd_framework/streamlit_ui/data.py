@@ -23,6 +23,7 @@ from quant_pd_framework.large_data import (
     read_dataset_preview,
     read_tabular_path,
 )
+from quant_pd_framework.streamlit_ui.theme import render_html
 
 MAX_UPLOAD_SIZE_MB = 51_200
 DEFAULT_PERFORMANCE_CONFIG = PerformanceConfig()
@@ -34,7 +35,7 @@ INPUT_SOURCE_METADATA_ATTR = "quant_studio_input_source"
 
 @dataclass(frozen=True, slots=True)
 class SelectedInputDataset:
-    """Holds the dataframe selected in the sidebar plus audit metadata."""
+    """Holds the dataframe selected in the workflow plus audit metadata."""
 
     dataframe: pd.DataFrame | None
     label: str
@@ -151,19 +152,16 @@ def attach_input_source_metadata(
 
 
 def select_input_dataframe() -> SelectedInputDataset:
-    with st.sidebar:
-        st.markdown(
-            """
-            <div class="sidebar-panel-intro">
-              <span class="sidebar-panel-kicker">Data Source</span>
-              <h3 class="sidebar-panel-title">Choose the input dataset</h3>
-              <p class="sidebar-panel-copy">
-                Use the bundled sample, select a governed landing-zone file,
-                or upload a CSV, Excel, or Parquet file for a full workflow run.
-              </p>
-            </div>
-            """,
-            unsafe_allow_html=True,
+    with st.container():
+        render_html(
+            '<div class="step-panel-intro">'
+            '<span class="step-panel-kicker">Data Source</span>'
+            '<h3 class="step-panel-title">Choose the input dataset</h3>'
+            '<p class="step-panel-copy">'
+            "Use the bundled sample, select a governed landing-zone file, "
+            "or upload a CSV, Excel, or Parquet file for a full workflow run."
+            "</p>"
+            "</div>"
         )
         with st.expander("Data Source", expanded=True):
             large_data_mode = st.toggle(

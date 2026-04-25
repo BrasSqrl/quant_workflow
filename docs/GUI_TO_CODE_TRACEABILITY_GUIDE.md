@@ -132,17 +132,17 @@ configuration surface is editable.
 
 | GUI control | Config or runtime target | Main implementation | Audit surface |
 | --- | --- | --- | --- |
-| `Workspace mode` | runtime-only UI state | `app/streamlit_app.py` sidebar control gating advanced expanders | indirect; preserved by the resolved preset-backed `run_config.json` |
+| `Workspace mode` | runtime-only UI state | `app/streamlit_app.py` Step 2 control gating advanced expanders | indirect; preserved by the resolved preset-backed `run_config.json` |
 
 Notes:
 
 - `guided` mode keeps advanced controls on the current preset defaults.
 - `advanced` mode unlocks comparison, review, explainability, and documentation
-  controls directly in the sidebar.
+  controls directly in the Step 2 model-configuration workspace.
 - The authoritative audit surface is still the resolved `FrameworkConfig`,
   not the UI mode itself.
 
-## 5. Sidebar Group: Core Setup
+## 5. Step 2 Group: Core Setup
 
 | GUI control | Config field(s) | Main implementation |
 | --- | --- | --- |
@@ -166,7 +166,7 @@ Execution-mode meaning:
   Runs the dedicated feature-subset-search workflow and exports only
   comparison-ready ranking evidence.
 
-## 6. Sidebar Group: Split Strategy
+## 6. Step 2 Group: Split Strategy
 
 | GUI control | Config field(s) | Main implementation | Export evidence |
 | --- | --- | --- | --- |
@@ -179,7 +179,7 @@ Execution-mode meaning:
 Date and identifier columns are not collected here. They are derived from the
 column designer role assignments.
 
-## 7. Sidebar Group: Model Settings
+## 7. Step 2 Group: Model Settings
 
 | GUI control | Config field(s) | Main implementation |
 | --- | --- | --- |
@@ -200,7 +200,7 @@ column designer role assignments.
 | `XGBoost ...` controls | `ModelConfig.xgboost_*` | `XGBoostAdapter` |
 | `Tobit ...` controls | `ModelConfig.tobit_*` | `TobitRegressionAdapter` |
 
-## 8. Sidebar Group: Feature Subset Search
+## 8. Step 2 Group: Feature Subset Search
 
 These controls only matter when `ExecutionConfig.mode` is
 `search_feature_subsets`.
@@ -218,7 +218,7 @@ These controls only matter when `ExecutionConfig.mode` is
 | `Top candidates to retain` | `FeatureSubsetSearchConfig.top_candidate_count` | `FeatureSubsetSearchStep` | `subset_search_candidates`, `subset_search_feature_frequency`, `subset_search_significance_tests` |
 | `Include paired significance tests ...` | `FeatureSubsetSearchConfig.include_significance_tests` | `FeatureSubsetSearchStep` | `subset_search_significance_tests` |
 
-## 9. Sidebar Group: Data Preparation
+## 9. Step 2 Group: Data Preparation
 
 | GUI control | Config field(s) | Main implementation |
 | --- | --- | --- |
@@ -231,7 +231,7 @@ These controls only matter when `ExecutionConfig.mode` is
 | `Drop raw date columns ...` | `FeatureEngineeringConfig.drop_raw_date_columns` | `FeatureEngineeringStep` |
 | `Date parts` | `FeatureEngineeringConfig.date_parts` | `FeatureEngineeringStep` |
 
-## 10. Sidebar Group: Diagnostics & Exports
+## 10. Step 2 Group: Diagnostics & Exports
 
 | GUI control | Config field(s) | Main implementation |
 | --- | --- | --- |
@@ -285,7 +285,7 @@ These controls only matter when `ExecutionConfig.mode` is
 | `Top credit-risk segments` | `CreditRiskDiagnosticConfig.top_segments` | segment-limited credit diagnostics |
 | `Macro shock std multiplier` | `CreditRiskDiagnosticConfig.shock_std_multiplier` | macro sensitivity diagnostics |
 
-## 11. Sidebar Group: Challengers & Policies
+## 11. Step 2 Group: Challengers & Policies
 
 | GUI control | Config field(s) | Main implementation | Export evidence |
 | --- | --- | --- | --- |
@@ -302,7 +302,7 @@ These controls only matter when `ExecutionConfig.mode` is
 | `Minimum IV` | `FeaturePolicyConfig.minimum_information_value` | policy checks | `feature_policy_checks` |
 | `Fail run on policy violation` | `FeaturePolicyConfig.error_on_violation` | policy checks | run failure if violated |
 
-## 12. Sidebar Group: Selection & Documentation
+## 12. Step 2 Group: Selection & Documentation
 
 | GUI control | Config field(s) | Main implementation |
 | --- | --- | --- |
@@ -336,7 +336,7 @@ These controls only matter when `ExecutionConfig.mode` is
 | `Validation template name` | `RegulatoryReportConfig.validation_template_name` | validation-ready report export |
 | report section toggles | `RegulatoryReportConfig.include_*` | regulator-ready report assembly |
 
-## 13. Sidebar Group: Governance & Review
+## 13. Step 2 Group: Governance & Review
 
 | GUI control | Config field(s) | Main implementation | Export evidence |
 | --- | --- | --- | --- |
@@ -354,7 +354,7 @@ These controls only matter when `ExecutionConfig.mode` is
 | feature review editor rows | `ManualReviewConfig.feature_decisions` | `parse_manual_review_frames(...)`, `VariableSelectionStep` | `manual_review_feature_decisions` |
 | scorecard override rows | `ManualReviewConfig.scorecard_bin_overrides` | `parse_manual_review_frames(...)`, `ScorecardLogisticRegressionAdapter` | `scorecard_bin_overrides` |
 
-## 14. Sidebar Group: Explainability & Scenarios
+## 14. Step 2 Group: Explainability & Scenarios
 
 | GUI control | Config field(s) | Main implementation |
 | --- | --- | --- |
@@ -383,7 +383,7 @@ These controls only matter when `ExecutionConfig.mode` is
 | `Scenario evaluation split` | `ScenarioTestConfig.evaluation_split` | scenario testing |
 | scenario editor rows | `ScenarioTestConfig.scenarios` | scenario testing |
 
-## 15. Sidebar Group: Output Options
+## 15. Step 2 Group: Output Options
 
 | GUI control | Config field(s) | Main implementation |
 | --- | --- | --- |

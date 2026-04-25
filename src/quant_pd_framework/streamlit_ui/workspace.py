@@ -20,6 +20,7 @@ from quant_pd_framework.streamlit_ui.state import (
     WorkspaceState,
     store_workspace_frame,
 )
+from quant_pd_framework.streamlit_ui.theme import render_html
 
 
 def schema_editor_column_config() -> dict[str, object]:
@@ -92,24 +93,6 @@ def render_builder_workspace(
     data_source_label: str,
     workspace_state: WorkspaceState,
 ) -> dict[str, pd.DataFrame]:
-    st.markdown(
-        """
-        <div class="workflow-stage">
-          <div class="workflow-stage__index">1</div>
-          <div class="workflow-stage__body">
-            <span class="workflow-stage__kicker">Build Workspace</span>
-            <h2>Prepare the dataset and schema before execution</h2>
-            <p>
-              Use the grouped sections to inspect the input, define schema rules,
-              document features, stage governed transformations, and exchange
-              the review workbook offline.
-            </p>
-          </div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
     section_options = [
         "Dataset Preview",
         "Column Designer",
@@ -117,6 +100,25 @@ def render_builder_workspace(
         "Transformations",
         "Template Workbook",
     ]
+
+    edited_schema = workspace_state.schema_frame
+    edited_feature_dictionary = workspace_state.feature_dictionary_frame
+    edited_transformations = workspace_state.transformation_frame
+    feature_review_frame = workspace_state.feature_review_frame
+    scorecard_override_frame = workspace_state.scorecard_override_frame
+
+    render_html(
+        '<div class="workflow-stage">'
+        '<div class="workflow-stage__index">1</div>'
+        '<div class="workflow-stage__body">'
+        '<span class="workflow-stage__kicker">Dataset & Schema</span>'
+        "<h2>Prepare data and schema</h2>"
+        "<p>Inspect the input, define governed schema rules, document features, "
+        "stage transformations, and exchange the review workbook offline.</p>"
+        "</div>"
+        "</div>"
+    )
+
     selected_section = st.radio(
         "Workspace section",
         options=section_options,
@@ -124,12 +126,6 @@ def render_builder_workspace(
         key=f"{workspace_state.keys.editor_key}_workspace_section",
         label_visibility="collapsed",
     )
-
-    edited_schema = workspace_state.schema_frame
-    edited_feature_dictionary = workspace_state.feature_dictionary_frame
-    edited_transformations = workspace_state.transformation_frame
-    feature_review_frame = workspace_state.feature_review_frame
-    scorecard_override_frame = workspace_state.scorecard_override_frame
 
     if selected_section == "Dataset Preview":
         render_dataset_overview(dataframe, data_source_label)
@@ -201,7 +197,11 @@ def render_builder_workspace(
                 ),
                 "parameter_value": st.column_config.NumberColumn("Parameter"),
                 "window_size": st.column_config.NumberColumn("Window", min_value=1, step=1),
-                "lag_periods": st.column_config.NumberColumn("Lag periods", min_value=1, step=1),
+                "lag_periods": st.column_config.NumberColumn(
+                    "Lag periods",
+                    min_value=1,
+                    step=1,
+                ),
                 "bin_edges": st.column_config.TextColumn("Bin edges"),
                 "generated_automatically": st.column_config.CheckboxColumn("Generated"),
                 "notes": st.column_config.TextColumn("Notes"),
@@ -219,11 +219,13 @@ def render_builder_workspace(
                   handle zero and negative values.
                 - `capped_zscore` standardizes a numeric feature and clips it
                   at the configured z-cap.
-                - `piecewise_linear` creates a positive hinge term above the configured cut point.
+                - `piecewise_linear` creates a positive hinge term above the
+                  configured cut point.
                 - `ratio` creates `source / secondary`.
                 - `interaction` creates `source * secondary`.
                 - `lag`, `difference`, `ewma`, and rolling transforms add time-aware features.
-                - `manual_bins` creates an ordered categorical feature using your internal edges.
+                - `manual_bins` creates an ordered categorical feature using
+                  your internal edges.
                 """
             )
 
@@ -258,18 +260,18 @@ def render_builder_workspace(
             if st.session_state.get(upload_state_key) != upload_hash:
                 workbook_frames = load_template_workbook(BytesIO(template_bytes))
                 st.session_state[workspace_state.keys.schema_frame] = workbook_frames["schema"]
-                st.session_state[workspace_state.keys.feature_dictionary_frame] = workbook_frames[
-                    "feature_dictionary"
-                ]
-                st.session_state[workspace_state.keys.transformation_frame] = workbook_frames[
-                    "transformations"
-                ]
+                st.session_state[workspace_state.keys.feature_dictionary_frame] = (
+                    workbook_frames["feature_dictionary"]
+                )
+                st.session_state[workspace_state.keys.transformation_frame] = (
+                    workbook_frames["transformations"]
+                )
                 st.session_state[workspace_state.keys.feature_review_frame] = workbook_frames[
                     "feature_review"
                 ]
-                st.session_state[workspace_state.keys.scorecard_override_frame] = workbook_frames[
-                    "scorecard_overrides"
-                ]
+                st.session_state[workspace_state.keys.scorecard_override_frame] = (
+                    workbook_frames["scorecard_overrides"]
+                )
                 st.session_state[upload_state_key] = upload_hash
                 st.rerun()
 

@@ -165,6 +165,7 @@ The repository now includes an explicit engineering rubric and alignment note:
 - [docs/ENGINEERING_RUBRIC.md](./docs/ENGINEERING_RUBRIC.md)
 - [docs/RUBRIC_ALIGNMENT.md](./docs/RUBRIC_ALIGNMENT.md)
 - [docs/UI_UX_STANDARD.md](./docs/UI_UX_STANDARD.md)
+- [docs/UI_ENTERPRISE_REDESIGN.md](./docs/UI_ENTERPRISE_REDESIGN.md)
 - [docs/DEVELOPMENT_ROADMAP.md](./docs/DEVELOPMENT_ROADMAP.md)
 
 ## Transparency and Auditability Guides
@@ -237,6 +238,7 @@ quant/
     PREPROCESSING_AND_DATA_TREATMENT_GUIDE.md
     RUBRIC_ALIGNMENT.md
     STATISTICAL_TEST_CATALOG.md
+    UI_ENTERPRISE_REDESIGN.md
     UI_UX_STANDARD.md
   examples/
     reference_workflows/
@@ -522,19 +524,26 @@ The GUI is now organized as a thin entrypoint plus shared UI modules:
 - `streamlit_ui/results.py` renders readiness, results, and governance views
 - `streamlit_ui/config_builder.py` assembles the preview configuration outside the raw UI flow
 - `streamlit_ui/theme.py` holds the shared visual system helpers
+- `streamlit_ui/theme.py` also owns the command bar, four-step workflow tabs,
+  main-canvas cards, and shared visual styling
 
 ### GUI Design System
 
 The current interface is intentionally styled as a premium light-mode fintech dashboard rather than a default Streamlit application.
 
-The governing visual and interaction standard is documented in:
+The governing visual and interaction standards are documented in:
 
 - [docs/UI_UX_STANDARD.md](./docs/UI_UX_STANDARD.md)
+- [docs/UI_ENTERPRISE_REDESIGN.md](./docs/UI_ENTERPRISE_REDESIGN.md)
 
 That standard drives both the live GUI and the exported standalone HTML report. The design system emphasizes:
 
 - a light enterprise-fintech palette with stronger visual hierarchy
+- a command-bar header and four large clickable workflow steps
+- a two-column Step 2 model-configuration workspace for faster scanning
 - grouped diagnostics instead of one long undifferentiated result page
+- main-canvas model configuration, readiness, and artifact workspaces instead
+  of persistent side panes
 - consistent Plotly theming across all charts
 - metric cards, section shells, and filter controls that make scanning easier for model builders and validation teams
 - the same section taxonomy in both Streamlit and exported reports so users do not have to relearn the layout
