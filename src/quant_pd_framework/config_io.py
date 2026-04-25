@@ -17,6 +17,8 @@ from .config import (
     ColumnSpec,
     ComparisonConfig,
     CreditRiskDiagnosticConfig,
+    CrossValidationConfig,
+    CrossValidationStrategy,
     DataStructure,
     DependencyDiagnosticConfig,
     DiagnosticConfig,
@@ -36,6 +38,7 @@ from .config import (
     FeatureWorkbenchConfig,
     FrameworkConfig,
     ImputationSensitivityConfig,
+    LargeDataExportPolicy,
     ManualReviewConfig,
     MissingValuePolicy,
     ModelConfig,
@@ -60,6 +63,7 @@ from .config import (
     SplitConfig,
     StructuralBreakConfig,
     SuitabilityCheckConfig,
+    TabularOutputFormat,
     TargetConfig,
     TargetMode,
     TimeSeriesDiagnosticConfig,
@@ -135,6 +139,7 @@ def load_framework_config(source: str | Path | dict[str, Any]) -> FrameworkConfi
         ),
         credit_risk=_build_credit_risk_diagnostic_config(payload.get("credit_risk", {})),
         robustness=_build_robustness_config(payload.get("robustness", {})),
+        cross_validation=_build_cross_validation_config(payload.get("cross_validation", {})),
         reproducibility=_build_reproducibility_config(payload.get("reproducibility", {})),
         performance=_build_performance_config(payload.get("performance", {})),
         artifacts=_build_artifact_config(payload.get("artifacts", {})),
@@ -716,6 +721,18 @@ def _build_robustness_config(payload: dict[str, Any]) -> RobustnessConfig:
     )
 
 
+def _build_cross_validation_config(payload: dict[str, Any]) -> CrossValidationConfig:
+    return CrossValidationConfig(
+        enabled=payload.get("enabled", False),
+        fold_count=payload.get("fold_count", 5),
+        strategy=CrossValidationStrategy(payload.get("strategy", CrossValidationStrategy.AUTO)),
+        shuffle=payload.get("shuffle", True),
+        metric_stability=payload.get("metric_stability", True),
+        coefficient_stability=payload.get("coefficient_stability", True),
+        random_state=payload.get("random_state", 42),
+    )
+
+
 def _build_reproducibility_config(payload: dict[str, Any]) -> ReproducibilityConfig:
     return ReproducibilityConfig(
         enabled=payload.get("enabled", True),
@@ -730,6 +747,7 @@ def _build_reproducibility_config(payload: dict[str, Any]) -> ReproducibilityCon
 def _build_performance_config(payload: dict[str, Any]) -> PerformanceConfig:
     return PerformanceConfig(
         enabled=payload.get("enabled", True),
+        large_data_mode=payload.get("large_data_mode", False),
         upload_warning_mb=payload.get("upload_warning_mb", 250),
         dataframe_warning_rows=payload.get("dataframe_warning_rows", 200000),
         dataframe_warning_columns=payload.get("dataframe_warning_columns", 150),
@@ -737,9 +755,26 @@ def _build_performance_config(payload: dict[str, Any]) -> PerformanceConfig:
         html_table_preview_rows=payload.get("html_table_preview_rows", 12),
         html_max_figures_per_section=payload.get("html_max_figures_per_section", 6),
         html_max_tables_per_section=payload.get("html_max_tables_per_section", 6),
+        diagnostic_sample_rows=payload.get("diagnostic_sample_rows", 20000),
         multiple_imputation_row_cap=payload.get("multiple_imputation_row_cap", 25000),
         lazy_html_figures=payload.get("lazy_html_figures", True),
         lazy_streamlit_results=payload.get("lazy_streamlit_results", True),
+        optimize_dtypes=payload.get("optimize_dtypes", False),
+        downcast_numeric=payload.get("downcast_numeric", True),
+        convert_low_cardinality_strings=payload.get("convert_low_cardinality_strings", True),
+        category_max_unique_values=payload.get("category_max_unique_values", 500),
+        category_max_unique_ratio=payload.get("category_max_unique_ratio", 0.5),
+        convert_csv_to_parquet=payload.get("convert_csv_to_parquet", False),
+        csv_conversion_chunk_rows=payload.get("csv_conversion_chunk_rows", 100000),
+        large_data_training_sample_rows=payload.get("large_data_training_sample_rows", 250000),
+        large_data_score_chunk_rows=payload.get("large_data_score_chunk_rows", 100000),
+        large_data_project_columns=payload.get("large_data_project_columns", True),
+        large_data_auto_stage_parquet=payload.get("large_data_auto_stage_parquet", True),
+        memory_limit_gb=payload.get("memory_limit_gb"),
+        memory_estimate_file_multiplier=payload.get("memory_estimate_file_multiplier", 6.0),
+        memory_estimate_dataframe_multiplier=payload.get(
+            "memory_estimate_dataframe_multiplier", 4.0
+        ),
     )
 
 
@@ -749,7 +784,15 @@ def _build_artifact_config(payload: dict[str, Any]) -> ArtifactConfig:
         model_file_name=payload.get("model_file_name", "quant_model.joblib"),
         metrics_file_name=payload.get("metrics_file_name", "metrics.json"),
         input_snapshot_file_name=payload.get("input_snapshot_file_name", "input_snapshot.csv"),
+        input_snapshot_parquet_file_name=payload.get(
+            "input_snapshot_parquet_file_name",
+            "input_snapshot.parquet",
+        ),
         predictions_file_name=payload.get("predictions_file_name", "predictions.csv"),
+        predictions_parquet_file_name=payload.get(
+            "predictions_parquet_file_name",
+            "predictions.parquet",
+        ),
         feature_importance_file_name=payload.get(
             "feature_importance_file_name", "feature_importance.csv"
         ),
@@ -807,6 +850,14 @@ def _build_artifact_config(payload: dict[str, Any]) -> ArtifactConfig:
         export_input_snapshot=payload.get("export_input_snapshot", True),
         export_code_snapshot=payload.get("export_code_snapshot", True),
         export_profile=ExportProfile(payload.get("export_profile", ExportProfile.STANDARD.value)),
+        tabular_output_format=TabularOutputFormat(
+            payload.get("tabular_output_format", TabularOutputFormat.CSV.value)
+        ),
+        large_data_export_policy=LargeDataExportPolicy(
+            payload.get("large_data_export_policy", LargeDataExportPolicy.FULL.value)
+        ),
+        large_data_sample_rows=payload.get("large_data_sample_rows", 50000),
+        parquet_compression=payload.get("parquet_compression", "snappy"),
         run_debug_trace_file_name=payload.get(
             "run_debug_trace_file_name",
             "run_debug_trace.json",

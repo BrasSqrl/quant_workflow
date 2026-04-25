@@ -20,12 +20,14 @@ from .steps import (
     AssumptionCheckStep,
     BacktestStep,
     CleaningStep,
+    CrossValidationStep,
     DiagnosticsStep,
     EvaluationStep,
     FeatureEngineeringStep,
     FeatureSubsetSearchStep,
     ImputationStep,
     IngestionStep,
+    LargeDataFullScoringStep,
     ModelComparisonStep,
     ModelTrainingStep,
     SchemaManagementStep,
@@ -130,6 +132,8 @@ class QuantModelOrchestrator:
             ModelComparisonStep(),
             BacktestStep(),
             DiagnosticsStep(),
+            CrossValidationStep(),
+            LargeDataFullScoringStep(),
             ArtifactExportStep(),
         ]
 

@@ -7,6 +7,7 @@ from copy import deepcopy
 from pathlib import Path
 
 from .config_io import load_framework_config
+from .large_data import build_dataset_handle
 from .orchestrator import QuantModelOrchestrator
 
 
@@ -47,28 +48,61 @@ def run_saved_config(
         config.artifacts.output_root = Path(output_root)
 
     resolved_input = _resolve_input_path(
-        config_path, config.artifacts.input_snapshot_file_name, input_path
+        config_path,
+        [
+            config.artifacts.input_snapshot_file_name,
+            config.artifacts.input_snapshot_parquet_file_name,
+        ],
+        input_path,
     )
     orchestrator = QuantModelOrchestrator(config=config)
+    if config.performance.large_data_mode:
+        metadata = _describe_input_path(resolved_input)
+        return orchestrator.run(build_dataset_handle(resolved_input, metadata))
     return orchestrator.run(resolved_input)
 
 
 def _resolve_input_path(
     config_path: Path,
-    default_input_name: str,
+    default_input_names: list[str],
     input_path: str | Path | None,
 ) -> Path:
     if input_path is not None:
         return Path(input_path)
 
-    default_input = config_path.parent / default_input_name
-    if default_input.exists():
-        return default_input
+    for default_input_name in default_input_names:
+        default_input = config_path.parent / default_input_name
+        if default_input.exists():
+            return default_input
 
     raise ValueError(
         "No input data was supplied. Pass --input or place the exported "
         "input snapshot beside the config."
     )
+
+
+def _describe_input_path(path: Path) -> dict[str, str | int]:
+    try:
+        stat_result = path.stat()
+        return {
+            "source_kind": "cli_file",
+            "display_label": str(path),
+            "file_name": path.name,
+            "relative_path": str(path),
+            "suffix": path.suffix.lower(),
+            "size_bytes": int(stat_result.st_size),
+            "modified_ns": int(stat_result.st_mtime_ns),
+        }
+    except OSError:
+        return {
+            "source_kind": "cli_file",
+            "display_label": str(path),
+            "file_name": path.name,
+            "relative_path": str(path),
+            "suffix": path.suffix.lower(),
+            "size_bytes": 0,
+            "modified_ns": 0,
+        }
 
 
 def main(argv: list[str] | None = None) -> int:

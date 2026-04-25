@@ -21,8 +21,8 @@ Quant Studio is built primarily for:
 
 Core Workflow
 -------------
-The application accepts a pandas dataframe, CSV file, or Excel file and guides
-the run through the major stages of model development:
+The application accepts a pandas dataframe, CSV file, Excel file, or Parquet
+file and guides the run through the major stages of model development:
 
 - ingestion and schema control
 - target definition and feature setup
@@ -48,6 +48,14 @@ the run through the major stages of model development:
 - visualization, documentation, and artifact export
 - performance-aware export profiles, batched explainability scoring, and
   run-level debug traces for large-run review
+- large-data controls for Parquet intake, reusable CSV-to-Parquet staging,
+  file-backed previews, dtype optimization, memory guardrails, governed sample
+  fitting, chunked full-data scoring, and sampled or Parquet tabular exports
+- user-facing error recovery guidance and clearer post-run output-location
+  panels so users can find reports, model objects, debug traces, and large-data
+  folders without inspecting raw artifact JSON
+- diagnostic registry outputs, profiling utilities, and synthetic large-data
+  benchmarks that make future performance and audit reviews easier to repeat
 
 Supported Development Scope
 ---------------------------
@@ -116,7 +124,14 @@ Each run can produce a structured output package that includes:
 - structured reference example packs for PD, LGD, CECL/lifetime PD, and CCAR
   forecasting workflows
 - reproducibility manifests and rerun-ready code bundles
+- sampled CSV and full Parquet tabular artifacts when large-data export
+  controls are enabled
+- separate sample-development, full-data-scoring, and large-data-metadata
+  folders for large file runs
 - run debug traces showing per-step timing, status, and shape changes
+- readable artifact-location tables and key output summaries in the GUI
+- diagnostic registry tables that explain which validation surfaces were
+  emitted, disabled, or skipped
 - fast, standard, and audit export profile support
 - versioned monitoring handoff bundles for the separate monitoring application
 - machine-readable artifact manifests that index the full output package
@@ -134,10 +149,16 @@ features include:
   training split, and exported
 - lightweight performance safeguards that keep large-run previews and exported
   HTML reports usable
+- memory-estimate, dtype-optimization, and CSV-to-Parquet conversion audit
+  tables for large-data runs
+- full-data chunked scoring summaries that document row counts, chunk counts,
+  score distributions, and prediction aggregates
 - batched explainability scoring for PDP, ICE, ALE, marginal effects, and
   interaction diagnostics where practical
 - run-level debug traces that make slow or failed pipeline steps easier to
   isolate during review
+- classified failure messages that pair likely causes with recommended recovery
+  actions while preserving technical tracebacks for debugging
 - manual feature-review decisions and scorecard bin overrides
 - preset-aware workflow guardrails tied to the selected development use case
 - repeated-resample stability testing for held-out metrics and feature effects

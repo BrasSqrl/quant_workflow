@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from typing import Any
 
@@ -21,6 +20,7 @@ from quant_pd_framework.presentation import (
     prune_subset_search_highlight_assets,
     summarize_run_kpis,
 )
+from quant_pd_framework.streamlit_ui.artifact_summary import build_artifact_summary_frame
 from quant_pd_framework.streamlit_ui.data import sample_frame
 from quant_pd_framework.streamlit_ui.state import (
     build_plotly_key,
@@ -413,8 +413,7 @@ def render_subset_search_governance(snapshot: dict[str, Any]) -> None:
             st.markdown("### Warnings")
             for warning in snapshot["warnings"]:
                 st.warning(warning)
-        st.markdown("### Artifact Paths")
-        st.code(json.dumps(snapshot["artifacts"], indent=2), language="json")
+        render_artifact_locations(snapshot)
         render_download_button(
             "Download Run Config",
             snapshot["config"],
@@ -1332,8 +1331,7 @@ def render_governance_panel(snapshot: dict[str, Any], filtered_predictions: pd.D
             st.markdown("### Warnings")
             for warning in snapshot["warnings"]:
                 st.warning(warning)
-        st.markdown("### Artifact Paths")
-        st.code(json.dumps(snapshot["artifacts"], indent=2), language="json")
+        render_artifact_locations(snapshot)
         render_download_button(
             "Download Run Config",
             snapshot["config"],
@@ -1689,6 +1687,22 @@ def render_lazy_artifact_downloads(
         data=read_binary_artifact(selected_path),
         file_name=Path(selected_path).name,
         mime="application/octet-stream",
+    )
+
+
+def render_artifact_locations(snapshot: dict[str, Any]) -> None:
+    st.markdown("### Artifact Locations")
+    artifact_table = build_artifact_summary_frame(snapshot["artifacts"])
+    available_count = int(artifact_table["status"].eq("Available").sum())
+    st.caption(
+        f"{available_count:,} artifact locations are available for this run. "
+        "Use this table to find the run folder, model object, reports, manifests, "
+        "and any Large Data Mode output folders."
+    )
+    st.dataframe(
+        prepare_table_for_display(artifact_table),
+        width="stretch",
+        hide_index=True,
     )
 
 

@@ -19,6 +19,7 @@ from .config import (
     ColumnSpec,
     ComparisonConfig,
     CreditRiskDiagnosticConfig,
+    CrossValidationConfig,
     DataStructure,
     DiagnosticConfig,
     DocumentationConfig,
@@ -153,6 +154,7 @@ class GUIBuildInputs:
     diagnostics: DiagnosticConfig = field(default_factory=DiagnosticConfig)
     credit_risk: CreditRiskDiagnosticConfig = field(default_factory=CreditRiskDiagnosticConfig)
     robustness: RobustnessConfig = field(default_factory=RobustnessConfig)
+    cross_validation: CrossValidationConfig = field(default_factory=CrossValidationConfig)
     reproducibility: ReproducibilityConfig = field(default_factory=ReproducibilityConfig)
     performance: PerformanceConfig = field(default_factory=PerformanceConfig)
     data_structure: DataStructure = DataStructure.CROSS_SECTIONAL
@@ -393,6 +395,7 @@ def build_framework_config_from_editor(
         diagnostics=inputs.diagnostics,
         credit_risk=inputs.credit_risk,
         robustness=inputs.robustness,
+        cross_validation=inputs.cross_validation,
         reproducibility=inputs.reproducibility,
         performance=inputs.performance,
         artifacts=replace(inputs.artifacts, output_root=inputs.output_root),
@@ -877,6 +880,7 @@ def build_gui_inputs_from_preset(preset_name: PresetName) -> GUIBuildInputs:
         diagnostics=preset.diagnostics,
         credit_risk=preset.credit_risk,
         robustness=preset.robustness,
+        cross_validation=preset.cross_validation,
         performance=preset.performance,
         data_structure=preset.data_structure,
         target_mode=preset.target_mode,

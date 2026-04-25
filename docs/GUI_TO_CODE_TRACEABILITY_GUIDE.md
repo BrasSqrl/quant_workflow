@@ -14,15 +14,24 @@ Primary implementation files:
 
 - `app/streamlit_app.py`
 - `src/quant_pd_framework/streamlit_ui/app_controller.py`
+- `src/quant_pd_framework/streamlit_ui/artifact_summary.py`
 - `src/quant_pd_framework/streamlit_ui/config_builder.py`
 - `src/quant_pd_framework/streamlit_ui/data.py`
+- `src/quant_pd_framework/streamlit_ui/error_guidance.py`
 - `src/quant_pd_framework/streamlit_ui/results.py`
+- `src/quant_pd_framework/streamlit_ui/run_execution.py`
 - `src/quant_pd_framework/streamlit_ui/state.py`
+- `src/quant_pd_framework/streamlit_ui/workflow_feedback.py`
 - `src/quant_pd_framework/streamlit_ui/workspace.py`
 - `src/quant_pd_framework/gui_support.py`
 - `src/quant_pd_framework/config.py`
+- `src/quant_pd_framework/config_serialization.py`
+- `src/quant_pd_framework/export_layout.py`
+- `src/quant_pd_framework/diagnostics/assets.py`
+- `src/quant_pd_framework/diagnostics/registry.py`
 - `src/quant_pd_framework/orchestrator.py`
 - `src/quant_pd_framework/steps/assumption_checks.py`
+- `src/quant_pd_framework/steps/cross_validation.py`
 - `src/quant_pd_framework/steps/transformations.py`
 
 ## Core Principle
@@ -35,18 +44,30 @@ Traceability chain:
 
 `Streamlit widget -> GUIBuildInputs / editor table -> FrameworkConfig -> pipeline step -> artifact`
 
+Execution and recovery chain:
+
+`Run button -> run_execution.py -> QuantModelOrchestrator -> build_run_snapshot -> workflow_feedback.py`
+
+If execution fails, `error_guidance.py` classifies the exception into a likely
+cause, recommended recovery action, and expandable technical traceback.
+
 ## 1. Data Source Controls
 
 | GUI location | Main controls | Config or runtime target | Code path | Audit surface |
 | --- | --- | --- | --- | --- |
-| `Data Source` expander | bundled sample, `Data_Load/` file selection, CSV/Excel upload | runtime dataframe plus input-source metadata | `select_input_dataframe`, `list_data_load_files`, `load_data_load_dataframe`, `load_uploaded_dataframe_bytes` | `input_snapshot.csv`, `input_shape`, `input_source::*` rows in `reproducibility_manifest.json` |
+| `Data Source` expander | bundled sample, `Data_Load/` file selection, CSV/Excel/Parquet upload, `Large Data Mode` | runtime dataframe or file-backed `DatasetHandle` plus input-source metadata | `select_input_dataframe`, `list_data_load_files`, `load_data_load_dataframe`, `load_uploaded_dataframe_bytes`, `build_dataset_handle` | `input_snapshot.csv`, `input_snapshot.parquet`, `sample_development/`, `full_data_scoring/`, `large_data_metadata/`, `input_shape`, `input_source::*` rows in `reproducibility_manifest.json` |
 
 Notes:
 
 - The data-source controls do not modify model config directly.
 - They determine the dataframe consumed by the orchestrator.
-- `Data_Load/` is a git-ignored landing-zone directory for CSV and Excel files.
+- `Data_Load/` is a git-ignored landing-zone directory for CSV, Excel, and
+  Parquet files.
   The app scans it on demand and exposes supported files in a dropdown.
+- Data_Load CSV files can be converted to Parquet from the UI before selection
+  when a more efficient local file format is preferred.
+- When `Large Data Mode` is enabled, Data_Load files are previewed from disk
+  and the full file is not loaded into pandas before execution.
 
 ## 2. Column Designer
 
@@ -215,8 +236,15 @@ These controls only matter when `ExecutionConfig.mode` is
 | GUI control | Config field(s) | Main implementation |
 | --- | --- | --- |
 | `Default segment column` | `DiagnosticConfig.default_segment_column` | `DiagnosticsStep._add_segment_outputs` |
+| `Large data mode` | `PerformanceConfig.large_data_mode` | Data Source file-backed intake, safer GUI defaults, sampled diagnostics, and chunked full-data scoring |
+| `Large-data diagnostic sample rows` | `PerformanceConfig.diagnostic_sample_rows` | diagnostics sampling helpers |
+| `Memory warning threshold` | `PerformanceConfig.memory_limit_gb` | `IngestionStep._record_memory_estimate` |
+| `Optimize dtypes during ingestion` | `PerformanceConfig.optimize_dtypes` | `IngestionStep._apply_large_data_controls` |
+| `Convert CSV file-path inputs to Parquet before ingestion` | `PerformanceConfig.convert_csv_to_parquet` | `IngestionStep._read_file`, `convert_csv_to_parquet` |
+| `CSV-to-Parquet chunk rows` | `PerformanceConfig.csv_conversion_chunk_rows` | chunked conversion helper |
+| `Large-data training sample rows` | `PerformanceConfig.large_data_training_sample_rows` | sample-fit row cap for file-backed runs |
+| `Full-data scoring chunk rows` | `PerformanceConfig.large_data_score_chunk_rows` | chunk size for `LargeDataFullScoringStep` |
 | `Export individual figure HTML and PNG files` | `ArtifactConfig.export_individual_figure_files`; default `False` | `ArtifactExportStep._export_visualizations` |
-| `Export profile` | `ArtifactConfig.export_profile` | `ArtifactExportStep`, `export_profiles.py` |
 | `Diagnostic suites` | `DiagnosticConfig.*` booleans | `DiagnosticsStep.run(...)` |
 | `Export surfaces` | `DiagnosticConfig.interactive_visualizations`, `static_image_exports`, `export_excel_workbook` | `ArtifactExportStep` |
 | `Top features for analysis` | `DiagnosticConfig.top_n_features` | diagnostics feature ranking |
@@ -237,6 +265,12 @@ These controls only matter when `ExecutionConfig.mode` is
 | `Robustness evaluation split` | `RobustnessConfig.evaluation_split` | robustness diagnostics |
 | `Export metric-stability views` | `RobustnessConfig.metric_stability` | robustness diagnostics |
 | `Export coefficient-stability views` | `RobustnessConfig.coefficient_stability` | robustness diagnostics |
+| `Enable cross-validation diagnostics` | `CrossValidationConfig.enabled` | `CrossValidationStep` |
+| `Cross-validation folds` | `CrossValidationConfig.fold_count` | fold count for cross-validation diagnostics |
+| `Cross-validation strategy` | `CrossValidationConfig.strategy` | stratified k-fold, k-fold, or expanding-window selection |
+| `Shuffle cross-sectional folds` | `CrossValidationConfig.shuffle` | cross-sectional fold construction |
+| `Export cross-validation metric views` | `CrossValidationConfig.metric_stability` | fold metric tables and charts |
+| `Export cross-validation feature-stability views` | `CrossValidationConfig.coefficient_stability` | fold feature/coefficient stability tables and charts |
 | `Enable scorecard workbench` | `ScorecardWorkbenchConfig.enabled` | `DiagnosticsStep._add_scorecard_workbench_outputs` |
 | `Scorecard workbench features` | `ScorecardWorkbenchConfig.max_features` | scorecard workbench asset selection |
 | `Include scorecard points distribution` | `ScorecardWorkbenchConfig.include_score_distribution` | scorecard workbench diagnostics |
@@ -353,6 +387,13 @@ These controls only matter when `ExecutionConfig.mode` is
 
 | GUI control | Config field(s) | Main implementation |
 | --- | --- | --- |
+| `Export profile` | `ArtifactConfig.export_profile` | `ArtifactExportStep`, `export_profiles.py` |
+| `Export input snapshot` | `ArtifactConfig.export_input_snapshot` | `ArtifactExportStep._export_tabular_dataframe` |
+| `Export code snapshot` | `ArtifactConfig.export_code_snapshot` | `ArtifactExportStep._export_code_snapshot` |
+| `Tabular artifact format` | `ArtifactConfig.tabular_output_format` | CSV/Parquet output branching in `ArtifactExportStep` |
+| `Large tabular export policy` | `ArtifactConfig.large_data_export_policy` | full, sampled, or metadata-only tabular export policy |
+| `Rows in sampled CSV exports` | `ArtifactConfig.large_data_sample_rows` | sampled CSV output size |
+| `Parquet compression` | `ArtifactConfig.parquet_compression` | Parquet writer compression |
 | `Keep unconfigured columns` | `SchemaConfig.pass_through_unconfigured_columns` | `SchemaManagementStep` |
 | `Export reproducibility manifest` | `ReproducibilityConfig.enabled` | `ArtifactExportStep` |
 | `Capture git commit metadata` | `ReproducibilityConfig.capture_git_metadata` | `ArtifactExportStep` |
@@ -362,13 +403,30 @@ These controls only matter when `ExecutionConfig.mode` is
 Each run writes to a readable UTC timestamped folder under the artifact root,
 for example `run_2026-04-24_15-42-10_UTC`.
 
-The current performance safeguards are preset-backed and serialized through
-`PerformanceConfig`, but most are not directly edited in the sidebar yet.
-Their main audit surfaces are `run_config.json`, `run_debug_trace.json`, plus
-the exported `performance_hardening_actions` table when large-run limits are
-applied. The Streamlit results viewer may keep sampled in-memory previews for
-large runs when `PerformanceConfig.lazy_streamlit_results` is enabled; the full
-CSV/table artifacts remain in the run folder.
+The large-run audit surfaces are `run_config.json`, `run_debug_trace.json`,
+`large_data_memory_estimate`, `dtype_optimization`, optional
+`csv_to_parquet_conversion`, `large_data_full_scoring_summary`,
+`large_data_full_score_distribution`, and the `tabular_export_policy` metadata
+recorded in the run context. The Streamlit results viewer may keep sampled
+in-memory previews for large runs when `PerformanceConfig.lazy_streamlit_results`
+is enabled; full-data predictions are written separately under
+`full_data_scoring/`.
+
+The GUI output-location table is assembled by
+`streamlit_ui/artifact_summary.py`. It prioritizes the run folder, interactive
+report, model object, run config, reproducibility manifest, debug trace,
+predictions, monitoring bundle, and Large Data Mode folders before listing
+secondary artifacts.
+
+Artifact filenames and subdirectories are resolved through
+`export_layout.py`, which keeps the export path contract centralized before
+`ArtifactExportStep` writes files.
+
+The diagnostics step also exports `diagnostic_registry`, built from
+`diagnostics/registry.py`. This table records each major diagnostic family,
+the config path that controls it, expected tables and figures, target-mode
+limits, label requirements, large-data behavior, and whether the diagnostic was
+emitted, disabled, or skipped for the run.
 
 ## 16. Run Button
 
@@ -377,15 +435,21 @@ The `Run Quant Model Workflow` button performs this chain:
 1. collects widget state into `GUIBuildInputs`
 2. converts the schema editor and inputs into `FrameworkConfig`
 3. renders the pre-run readiness summary from that same resolved config
-4. instantiates `QuantModelOrchestrator`
-5. runs the full pipeline
-6. records per-step debug timing and shape snapshots
-7. stores a bounded snapshot for the result viewer
+4. renders the execution-plan summary from `streamlit_ui/run_execution.py`
+5. chooses the correct dataframe or file-backed `DatasetHandle`
+6. instantiates `QuantModelOrchestrator`
+7. runs the full pipeline
+8. records per-step debug timing and shape snapshots
+9. stores a bounded snapshot for the result viewer
+
+If a run fails, `streamlit_ui/error_guidance.py` maps the exception to a
+user-facing recovery message while preserving the original traceback in the GUI.
 
 Relevant code path:
 
 - `build_framework_config_from_editor(...)`
-- `QuantModelOrchestrator(config=config).run(dataframe)`
+- `execute_workflow(...)`
+- `QuantModelOrchestrator(config=config).run(run_input)`
 - `build_run_snapshot(...)`
 
 ## 17. Result-Viewer Filters

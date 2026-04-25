@@ -11,9 +11,16 @@ Primary implementation files:
 - `src/quant_pd_framework/steps/evaluation.py`
 - `src/quant_pd_framework/steps/backtesting.py`
 - `src/quant_pd_framework/steps/diagnostics.py`
+- `src/quant_pd_framework/diagnostics/assets.py`
+- `src/quant_pd_framework/diagnostics/registry.py`
 - `src/quant_pd_framework/diagnostic_frameworks.py`
 
 ## Metric Families
+
+Each run also exports a `diagnostic_registry` table. It lists major diagnostic
+families, their controlling config paths, expected output tables and figures,
+target-mode or label restrictions, large-data behavior, and whether each item
+was emitted, disabled, or skipped.
 
 The framework reports metrics in nine broad families:
 
@@ -510,7 +517,46 @@ Primary figures:
 - `robustness_metric_summary_chart`
 - `robustness_feature_stability`
 
-## 18. Scorecard Workbench Outputs
+## 18. Cross-Validation Diagnostics
+
+These are calculated in `CrossValidationStep` after the standard diagnostics
+finish. They fit temporary fold-level models and do not replace the final model
+artifact saved as `quant_model.joblib`.
+
+Primary exported tables:
+
+- `cross_validation_fold_metrics`
+- `cross_validation_metric_distribution`
+- `cross_validation_metric_summary`
+- `cross_validation_feature_distribution`
+- `cross_validation_feature_stability`
+
+Key fields include:
+
+- `fold_id`
+- `validation_method`
+- `train_rows`
+- `validation_rows`
+- `metric_name`
+- `metric_value`
+- `mean_value`
+- `std_value`
+- `selection_frequency`
+- `mean_effect`
+- `mean_abs_effect`
+- `sign_consistency`
+
+The automatic strategy uses stratified k-fold validation for binary
+cross-sectional data, regular k-fold validation for continuous cross-sectional
+data, and expanding-window validation for time-series or panel data.
+
+Primary figures:
+
+- `cross_validation_metric_boxplot`
+- `cross_validation_metric_summary_chart`
+- `cross_validation_feature_stability`
+
+## 19. Scorecard Workbench Outputs
 
 These are calculated in `DiagnosticsStep._add_scorecard_workbench_outputs(...)`
 for `scorecard_logistic_regression` runs.

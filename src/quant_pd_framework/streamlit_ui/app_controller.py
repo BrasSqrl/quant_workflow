@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import traceback
+from dataclasses import replace
 from typing import Any
 
 import pandas as pd
@@ -13,18 +15,21 @@ from quant_pd_framework import (
     CalibrationStrategy,
     ColumnRole,
     CreditRiskDiagnosticConfig,
+    CrossValidationConfig,
+    CrossValidationStrategy,
     DataStructure,
     DiagnosticConfig,
     ExecutionMode,
     ExportProfile,
+    LargeDataExportPolicy,
     MissingValuePolicy,
     ModelType,
     PresetName,
-    QuantModelOrchestrator,
     RobustnessConfig,
     ScenarioShockOperation,
     ScorecardMonotonicity,
     ScorecardWorkbenchConfig,
+    TabularOutputFormat,
     TargetMode,
 )
 from quant_pd_framework.gui_support import (
@@ -54,11 +59,23 @@ from quant_pd_framework.streamlit_ui.data import (
 from quant_pd_framework.streamlit_ui.data import (
     select_input_dataframe as ui_select_input_dataframe,
 )
+from quant_pd_framework.streamlit_ui.error_guidance import (
+    classify_workflow_exception as ui_classify_workflow_exception,
+)
 from quant_pd_framework.streamlit_ui.results import (
     render_run_results as ui_render_run_results,
 )
 from quant_pd_framework.streamlit_ui.results import (
     render_workflow_readiness as ui_render_workflow_readiness,
+)
+from quant_pd_framework.streamlit_ui.run_execution import (
+    build_execution_plan_cards as ui_build_execution_plan_cards,
+)
+from quant_pd_framework.streamlit_ui.run_execution import (
+    execute_workflow as ui_execute_workflow,
+)
+from quant_pd_framework.streamlit_ui.run_execution import (
+    workflow_spinner_message as ui_workflow_spinner_message,
 )
 from quant_pd_framework.streamlit_ui.state import (
     WorkspaceState,
@@ -91,6 +108,15 @@ from quant_pd_framework.streamlit_ui.theme import (
 from quant_pd_framework.streamlit_ui.theme import (
     render_header as ui_render_header,
 )
+from quant_pd_framework.streamlit_ui.workflow_feedback import (
+    render_execution_plan as ui_render_execution_plan,
+)
+from quant_pd_framework.streamlit_ui.workflow_feedback import (
+    render_run_failure as ui_render_run_failure,
+)
+from quant_pd_framework.streamlit_ui.workflow_feedback import (
+    render_run_success as ui_render_run_success,
+)
 from quant_pd_framework.streamlit_ui.workspace import (
     render_builder_workspace as ui_render_builder_workspace,
 )
@@ -120,6 +146,15 @@ EXPORT_SURFACE_OPTIONS: list[tuple[str, str]] = [
     ("Per-figure PNG files", "static_image_exports"),
     ("Excel workbook", "export_excel_workbook"),
 ]
+LARGE_DATA_DIAGNOSTIC_DEFAULTS = {
+    "Data quality",
+    "Descriptive statistics",
+    "Missingness analysis",
+    "Calibration analysis",
+    "Threshold analysis",
+    "Segment analysis",
+    "Quantile analysis",
+}
 
 SCENARIO_EDITOR_COLUMNS = [
     "enabled",
@@ -360,10 +395,11 @@ def run_app() -> None:
     selected_input = ui_select_input_dataframe()
     dataframe = selected_input.dataframe
     data_source_label = selected_input.label
+    source_large_data_mode = selected_input.large_data_mode
     if dataframe is None:
         st.info(
-            "Select a Data_Load file, upload a CSV/Excel file, or use the bundled sample "
-            "dataset to begin."
+            "Select a Data_Load file, upload a CSV/Excel/Parquet file, or use the "
+            "bundled sample dataset to begin."
         )
         return
     ui_render_input_performance_notice(dataframe)
@@ -930,6 +966,111 @@ def run_app() -> None:
             )
 
         with st.expander("Diagnostics & Exports", expanded=False):
+            large_data_mode = bool(
+                source_large_data_mode or preset_inputs.performance.large_data_mode
+            )
+            if large_data_mode:
+                st.caption(
+                    "Large Data Mode is active from Data Source. This run will train on a "
+                    "governed sample and score the full file in chunks when a file-backed "
+                    "Data_Load source is selected."
+                )
+            else:
+                st.caption("Enable Large Data Mode in Data Source before selecting a large file.")
+            diagnostic_sample_rows = int(
+                st.number_input(
+                    "Large-data diagnostic sample rows",
+                    min_value=1000,
+                    max_value=500000,
+                    value=int(
+                        min(
+                            max(preset_inputs.performance.diagnostic_sample_rows, 1000),
+                            500000,
+                        )
+                    ),
+                    step=1000,
+                    help="Caps heavy diagnostic samples when large data mode is enabled.",
+                )
+            )
+            memory_limit_gb_input = st.number_input(
+                "Memory warning threshold (GB, 0 = off)",
+                min_value=0.0,
+                max_value=2048.0,
+                value=float(preset_inputs.performance.memory_limit_gb or 0.0),
+                step=1.0,
+                format="%.1f",
+            )
+            memory_limit_gb = (
+                None if memory_limit_gb_input <= 0 else float(memory_limit_gb_input)
+            )
+            optimize_dtypes = st.checkbox(
+                "Optimize dtypes during ingestion",
+                value=large_data_mode or preset_inputs.performance.optimize_dtypes,
+                help=(
+                    "Downcasts numeric columns and converts low-cardinality strings "
+                    "to categorical dtype where safe."
+                ),
+            )
+            convert_csv_to_parquet = st.checkbox(
+                "Convert CSV file-path inputs to Parquet before ingestion",
+                value=large_data_mode or preset_inputs.performance.convert_csv_to_parquet,
+                help=(
+                    "Only applies to file-path runs and Data_Load style sources. "
+                    "Uploaded files are already loaded by Streamlit."
+                ),
+            )
+            csv_conversion_chunk_rows = int(
+                st.number_input(
+                    "CSV-to-Parquet chunk rows",
+                    min_value=10000,
+                    max_value=1000000,
+                    value=int(
+                        min(
+                            max(preset_inputs.performance.csv_conversion_chunk_rows, 10000),
+                            1000000,
+                        )
+                    ),
+                    step=10000,
+                    disabled=not convert_csv_to_parquet,
+                )
+            )
+            large_data_training_sample_rows = int(
+                st.number_input(
+                    "Large-data training sample rows",
+                    min_value=10000,
+                    max_value=5000000,
+                    value=int(
+                        min(
+                            max(
+                                preset_inputs.performance.large_data_training_sample_rows,
+                                10000,
+                            ),
+                            5000000,
+                        )
+                    ),
+                    step=10000,
+                    disabled=not large_data_mode,
+                    help=(
+                        "Maximum rows loaded into pandas for model development when using "
+                        "file-backed Large Data Mode."
+                    ),
+                )
+            )
+            large_data_score_chunk_rows = int(
+                st.number_input(
+                    "Full-data scoring chunk rows",
+                    min_value=10000,
+                    max_value=1000000,
+                    value=int(
+                        min(
+                            max(preset_inputs.performance.large_data_score_chunk_rows, 10000),
+                            1000000,
+                        )
+                    ),
+                    step=10000,
+                    disabled=not large_data_mode,
+                )
+            )
             default_segment_options = ["(auto)", *categorical_like_columns]
             default_segment_column = st.selectbox(
                 "Default segment column",
@@ -938,53 +1079,83 @@ def run_app() -> None:
             )
             export_individual_figure_files = st.toggle(
                 "Export individual figure HTML and PNG files",
-                value=preset_inputs.artifacts.export_individual_figure_files,
+                value=(
+                    False
+                    if large_data_mode
+                    else preset_inputs.artifacts.export_individual_figure_files
+                ),
                 help=(
                     "When off, Quant Studio still exports the full interactive report but skips "
                     "the per-figure HTML and PNG files to reduce runtime and artifact volume."
                 ),
             )
+            default_diagnostic_labels = (
+                [
+                    label
+                    for label, _ in DIAGNOSTIC_SUITE_OPTIONS
+                    if label in LARGE_DATA_DIAGNOSTIC_DEFAULTS
+                ]
+                if large_data_mode
+                else [label for label, _ in DIAGNOSTIC_SUITE_OPTIONS]
+            )
             selected_diagnostics = st.multiselect(
                 "Diagnostic suites",
                 options=[label for label, _ in DIAGNOSTIC_SUITE_OPTIONS],
-                default=[label for label, _ in DIAGNOSTIC_SUITE_OPTIONS],
+                default=default_diagnostic_labels,
             )
             if target_mode != TargetMode.BINARY.value:
                 st.caption("Binary-only suites are automatically skipped for continuous targets.")
             selected_export_surfaces = st.multiselect(
                 "Export surfaces",
                 options=[label for label, _ in EXPORT_SURFACE_OPTIONS],
-                default=[label for label, _ in EXPORT_SURFACE_OPTIONS],
+                default=[]
+                if large_data_mode
+                else [label for label, _ in EXPORT_SURFACE_OPTIONS],
             )
             if not export_individual_figure_files:
                 st.caption(
                     "Per-figure HTML and PNG exports are disabled. The full interactive report "
                     "will still be written."
                 )
+            default_top_n_features = (
+                min(preset_inputs.diagnostics.top_n_features, 10)
+                if large_data_mode
+                else preset_inputs.diagnostics.top_n_features
+            )
             top_n_features = int(
                 st.number_input(
                     "Top features for analysis",
                     min_value=5,
                     max_value=30,
-                    value=preset_inputs.diagnostics.top_n_features,
+                    value=int(min(max(default_top_n_features, 5), 30)),
                     step=1,
                 )
+            )
+            default_top_n_categories = (
+                min(preset_inputs.diagnostics.top_n_categories, 10)
+                if large_data_mode
+                else preset_inputs.diagnostics.top_n_categories
             )
             top_n_categories = int(
                 st.number_input(
                     "Top categories per chart",
                     min_value=5,
                     max_value=25,
-                    value=preset_inputs.diagnostics.top_n_categories,
+                    value=int(min(max(default_top_n_categories, 5), 25)),
                     step=1,
                 )
+            )
+            default_max_plot_rows = (
+                min(preset_inputs.diagnostics.max_plot_rows, diagnostic_sample_rows, 5000)
+                if large_data_mode
+                else preset_inputs.diagnostics.max_plot_rows
             )
             max_plot_rows = int(
                 st.number_input(
                     "Max rows rendered in plots",
                     min_value=1000,
                     max_value=50000,
-                    value=preset_inputs.diagnostics.max_plot_rows,
+                    value=int(min(max(default_max_plot_rows, 1000), 50000)),
                     step=1000,
                 )
             )
@@ -1037,7 +1208,7 @@ def run_app() -> None:
             )
             robustness_enabled = st.checkbox(
                 "Enable robustness testing",
-                value=preset_inputs.robustness.enabled,
+                value=False if large_data_mode else preset_inputs.robustness.enabled,
                 help=(
                     "Refit the current model on repeated train resamples and score a "
                     "held-out split to test metric and coefficient stability."
@@ -1084,6 +1255,57 @@ def run_app() -> None:
                 "Export coefficient-stability views",
                 value=preset_inputs.robustness.coefficient_stability,
                 disabled=not robustness_enabled,
+            )
+            cross_validation_enabled = st.checkbox(
+                "Enable cross-validation diagnostics",
+                value=False if large_data_mode else preset_inputs.cross_validation.enabled,
+                help=(
+                    "Fits temporary fold models on the training split to assess metric "
+                    "and feature stability. The final exported model is still fit once "
+                    "through the normal training workflow."
+                ),
+            )
+            cross_validation_fold_count = int(
+                st.number_input(
+                    "Cross-validation folds",
+                    min_value=2,
+                    max_value=20,
+                    value=int(preset_inputs.cross_validation.fold_count),
+                    step=1,
+                    disabled=not cross_validation_enabled,
+                )
+            )
+            cross_validation_strategy = st.selectbox(
+                "Cross-validation strategy",
+                options=[strategy.value for strategy in CrossValidationStrategy],
+                index=[strategy.value for strategy in CrossValidationStrategy].index(
+                    preset_inputs.cross_validation.strategy.value
+                ),
+                format_func=lambda value: value.replace("_", " ").title(),
+                disabled=not cross_validation_enabled,
+                help=(
+                    "`Auto` uses stratified k-fold for binary cross-sectional data, "
+                    "regular k-fold for continuous cross-sectional data, and expanding "
+                    "time-series folds for time-aware data."
+                ),
+            )
+            cross_validation_shuffle = st.checkbox(
+                "Shuffle cross-sectional folds",
+                value=preset_inputs.cross_validation.shuffle,
+                disabled=(
+                    not cross_validation_enabled
+                    or cross_validation_strategy == CrossValidationStrategy.TIME_SERIES.value
+                ),
+            )
+            cross_validation_metric_stability = st.checkbox(
+                "Export cross-validation metric views",
+                value=preset_inputs.cross_validation.metric_stability,
+                disabled=not cross_validation_enabled,
+            )
+            cross_validation_coefficient_stability = st.checkbox(
+                "Export cross-validation feature-stability views",
+                value=preset_inputs.cross_validation.coefficient_stability,
+                disabled=not cross_validation_enabled,
             )
             scorecard_workbench_enabled = st.checkbox(
                 "Enable scorecard workbench",
@@ -1254,6 +1476,15 @@ def run_app() -> None:
                 coefficient_stability=robustness_coefficient_stability,
                 random_state=int(random_state),
             )
+            cross_validation_config = CrossValidationConfig(
+                enabled=cross_validation_enabled,
+                fold_count=int(cross_validation_fold_count),
+                strategy=CrossValidationStrategy(cross_validation_strategy),
+                shuffle=cross_validation_shuffle,
+                metric_stability=cross_validation_metric_stability,
+                coefficient_stability=cross_validation_coefficient_stability,
+                random_state=int(random_state),
+            )
             scorecard_workbench_config = ScorecardWorkbenchConfig(
                 enabled=scorecard_workbench_enabled,
                 max_features=int(scorecard_workbench_max_features),
@@ -1272,6 +1503,17 @@ def run_app() -> None:
                 top_macro_features=credit_risk_top_macro_features,
                 top_segments=credit_risk_top_segments,
                 shock_std_multiplier=float(credit_risk_shock_std_multiplier),
+            )
+            performance_config = replace(
+                preset_inputs.performance,
+                large_data_mode=large_data_mode,
+                diagnostic_sample_rows=diagnostic_sample_rows,
+                optimize_dtypes=optimize_dtypes,
+                convert_csv_to_parquet=convert_csv_to_parquet,
+                csv_conversion_chunk_rows=csv_conversion_chunk_rows,
+                large_data_training_sample_rows=large_data_training_sample_rows,
+                large_data_score_chunk_rows=large_data_score_chunk_rows,
+                memory_limit_gb=memory_limit_gb,
             )
 
         comparison_enabled = preset_inputs.comparison.enabled
@@ -2182,6 +2424,75 @@ def run_app() -> None:
                     "Audit preserves the full governed export path."
                 ),
             )
+            export_input_snapshot = st.checkbox(
+                "Export input snapshot",
+                value=preset_inputs.artifacts.export_input_snapshot,
+                help=(
+                    "Writes a rerun-ready copy of the modeled input. For large data, pair this "
+                    "with Parquet or sampled export policy to control artifact size."
+                ),
+            )
+            export_code_snapshot = st.checkbox(
+                "Export code snapshot",
+                value=preset_inputs.artifacts.export_code_snapshot,
+                help="Copies the project code into the run folder for audit reruns.",
+            )
+            default_tabular_output_format = (
+                TabularOutputFormat.PARQUET.value
+                if large_data_mode
+                else preset_inputs.artifacts.tabular_output_format.value
+            )
+            tabular_output_format = st.selectbox(
+                "Tabular artifact format",
+                options=[format_name.value for format_name in TabularOutputFormat],
+                index=[format_name.value for format_name in TabularOutputFormat].index(
+                    default_tabular_output_format
+                ),
+                format_func=lambda value: value.replace("_", " ").title(),
+            )
+            default_large_data_export_policy = (
+                LargeDataExportPolicy.SAMPLED.value
+                if large_data_mode
+                else preset_inputs.artifacts.large_data_export_policy.value
+            )
+            large_data_export_policy = st.selectbox(
+                "Large tabular export policy",
+                options=[policy.value for policy in LargeDataExportPolicy],
+                index=[policy.value for policy in LargeDataExportPolicy].index(
+                    default_large_data_export_policy
+                ),
+                format_func=lambda value: value.replace("_", " ").title(),
+                help=(
+                    "`Full` writes complete tabular outputs. `Sampled` writes sampled CSV "
+                    "outputs while Parquet stays full. `Metadata only` records row/column "
+                    "counts without writing large tables."
+                ),
+            )
+            large_data_sample_rows = int(
+                st.number_input(
+                    "Rows in sampled CSV exports",
+                    min_value=1000,
+                    max_value=1000000,
+                    value=int(
+                        min(
+                            max(preset_inputs.artifacts.large_data_sample_rows, 1000),
+                            1000000,
+                        )
+                    ),
+                    step=1000,
+                    disabled=large_data_export_policy != LargeDataExportPolicy.SAMPLED.value,
+                )
+            )
+            parquet_compression = st.selectbox(
+                "Parquet compression",
+                options=["snappy", "gzip", "zstd"],
+                index=["snappy", "gzip", "zstd"].index(
+                    preset_inputs.artifacts.parquet_compression
+                    if preset_inputs.artifacts.parquet_compression in {"snappy", "gzip", "zstd"}
+                    else "snappy"
+                ),
+                disabled=tabular_output_format == TabularOutputFormat.CSV.value,
+            )
             pass_through_unconfigured_columns = st.checkbox(
                 "Keep unconfigured columns",
                 value=True,
@@ -2197,7 +2508,7 @@ def run_app() -> None:
             )
             reproducibility_packages_text = st.text_input(
                 "Tracked package names",
-                value="quant-pd-framework,pandas,numpy,scikit-learn,statsmodels,xgboost,plotly,streamlit,joblib,openpyxl",
+                value="quant-pd-framework,pandas,numpy,scikit-learn,statsmodels,xgboost,plotly,streamlit,joblib,openpyxl,pyarrow",
                 disabled=not reproducibility_enabled,
                 help="Comma-separated packages recorded in the reproducibility manifest.",
             )
@@ -2258,6 +2569,14 @@ def run_app() -> None:
         preview_findings=preview_findings,
         preview_error=preview_error,
     )
+    ui_render_execution_plan(
+        ui_build_execution_plan_cards(
+            preview_config=preview_config,
+            data_source_label=data_source_label,
+            large_data_mode=large_data_mode,
+        ),
+        large_data_mode=large_data_mode,
+    )
 
     if run_clicked:
         if preview_error or preview_config is None:
@@ -2265,22 +2584,26 @@ def run_app() -> None:
             ui_set_last_run_snapshot(None)
         else:
             try:
-                orchestrator = QuantModelOrchestrator(config=preview_config)
-                with st.spinner(
-                    "Running feature subset search, comparison visuals, and export package..."
-                    if execution_mode == ExecutionMode.SEARCH_FEATURE_SUBSETS.value
-                    else "Running the model, diagnostics, visualizations, and export package..."
-                ):
-                    context = orchestrator.run(dataframe)
-                ui_set_last_run_snapshot(
-                    ui_build_run_snapshot(
-                        context,
-                        preview_config.to_dict(),
+                with st.spinner(ui_workflow_spinner_message(execution_mode)):
+                    context = ui_execute_workflow(
+                        preview_config=preview_config,
+                        dataframe=dataframe,
+                        selected_input=selected_input,
+                        large_data_mode=large_data_mode,
+                    )
+                snapshot = ui_build_run_snapshot(
+                    context,
+                    preview_config.to_dict(),
+                )
+                ui_set_last_run_snapshot(snapshot)
+                ui_render_run_success(snapshot)
+            except Exception as exc:
+                ui_render_run_failure(
+                    ui_classify_workflow_exception(
+                        exc,
+                        technical_details=traceback.format_exc(),
                     )
                 )
-                st.success(f"Completed run `{context.run_id}`.")
-            except Exception as exc:
-                st.error(str(exc))
                 ui_set_last_run_snapshot(None)
 
     if ui_get_last_run_snapshot():

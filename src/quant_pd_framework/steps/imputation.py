@@ -78,6 +78,7 @@ class ImputationStep(BasePipelineStep):
             for feature_name in context.feature_columns
             if feature_name in train_frame.columns
         ]
+        context.metadata["imputation_rule_objects"] = rules
         self._validate_generated_indicator_columns(context, rules)
 
         updated_splits: dict[str, pd.DataFrame] = {}
@@ -201,6 +202,30 @@ class ImputationStep(BasePipelineStep):
             context.diagnostics_tables["advanced_imputation_summary"] = pd.DataFrame(advanced_rows)
         context.log(f"Applied missing-value rules to {len(rules)} feature columns.")
         return context
+
+    def apply_rules_to_frame(
+        self,
+        *,
+        context: PipelineContext,
+        frame: pd.DataFrame,
+        rules: list[ImputationRule],
+    ) -> pd.DataFrame:
+        """Applies already-fitted imputation rules to a new frame."""
+
+        updated_frame = frame.copy(deep=True)
+        for rule in rules:
+            if rule.feature_name not in updated_frame.columns:
+                continue
+            original_series = updated_frame[rule.feature_name]
+            if rule.missing_indicator_column is not None:
+                updated_frame[rule.missing_indicator_column] = original_series.isna().astype(int)
+            updated_frame[rule.feature_name] = self._apply_rule(
+                updated_frame,
+                column_name=rule.feature_name,
+                rule=rule,
+                context=context,
+            )
+        return updated_frame
 
     def _build_rule(
         self,

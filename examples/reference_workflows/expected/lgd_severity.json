@@ -2,7 +2,7 @@
   "name": "lgd_severity",
   "model_type": "two_stage_lgd_model",
   "target_mode": "continuous",
-  "expected_step_count": 17,
+  "expected_step_count": 19,
   "required_artifacts": [
     "model",
     "metrics",

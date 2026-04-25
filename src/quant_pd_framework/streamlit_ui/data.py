@@ -13,12 +13,22 @@ import pandas as pd
 import streamlit as st
 
 from quant_pd_framework import PerformanceConfig, build_sample_pd_dataframe
+from quant_pd_framework.large_data import (
+    PARQUET_SUFFIXES,
+    SUPPORTED_TABULAR_SUFFIXES,
+    DatasetHandle,
+    build_dataset_handle,
+    convert_csv_to_parquet,
+    profile_dataset_handle,
+    read_dataset_preview,
+    read_tabular_path,
+)
 
 MAX_UPLOAD_SIZE_MB = 51_200
 DEFAULT_PERFORMANCE_CONFIG = PerformanceConfig()
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 DATA_LOAD_DIR = PROJECT_ROOT / "Data_Load"
-SUPPORTED_DATA_FILE_SUFFIXES = {".csv", ".xlsx", ".xls", ".xlsm"}
+SUPPORTED_DATA_FILE_SUFFIXES = SUPPORTED_TABULAR_SUFFIXES
 INPUT_SOURCE_METADATA_ATTR = "quant_studio_input_source"
 
 
@@ -29,6 +39,8 @@ class SelectedInputDataset:
     dataframe: pd.DataFrame | None
     label: str
     metadata: dict[str, Any]
+    dataset_handle: DatasetHandle | None = None
+    large_data_mode: bool = False
 
 
 @st.cache_data(show_spinner=False)
@@ -38,7 +50,9 @@ def load_uploaded_dataframe_bytes(file_bytes: bytes, suffix: str) -> pd.DataFram
         return pd.read_csv(buffer)
     if suffix in {".xlsx", ".xls", ".xlsm"}:
         return pd.read_excel(buffer)
-    raise ValueError("Unsupported file type. Provide CSV or Excel.")
+    if suffix in PARQUET_SUFFIXES:
+        return pd.read_parquet(buffer)
+    raise ValueError("Unsupported file type. Provide CSV, Excel, or Parquet.")
 
 
 @st.cache_data(show_spinner=False)
@@ -52,11 +66,18 @@ def load_data_load_dataframe(
 
     _ = (modified_ns, size_bytes)
     path = Path(path_text)
-    if suffix == ".csv":
-        return pd.read_csv(path)
-    if suffix in {".xlsx", ".xls", ".xlsm"}:
-        return pd.read_excel(path)
-    raise ValueError("Unsupported file type. Provide CSV or Excel.")
+    return read_tabular_path(path)
+
+
+def convert_data_load_csv_to_parquet(path: Path) -> Path:
+    destination = path.with_suffix(".parquet")
+    convert_csv_to_parquet(
+        path,
+        destination,
+        chunk_rows=DEFAULT_PERFORMANCE_CONFIG.csv_conversion_chunk_rows,
+        compression="snappy",
+    )
+    return destination
 
 
 @st.cache_data(show_spinner=False)
@@ -138,13 +159,22 @@ def select_input_dataframe() -> SelectedInputDataset:
               <h3 class="sidebar-panel-title">Choose the input dataset</h3>
               <p class="sidebar-panel-copy">
                 Use the bundled sample, select a governed landing-zone file,
-                or upload a CSV or Excel file for a full workflow run.
+                or upload a CSV, Excel, or Parquet file for a full workflow run.
               </p>
             </div>
             """,
             unsafe_allow_html=True,
         )
         with st.expander("Data Source", expanded=True):
+            large_data_mode = st.toggle(
+                "Large Data Mode",
+                value=False,
+                help=(
+                    "Use Data_Load file-backed intake for large files. The app previews "
+                    "a small sample, then the run trains on a governed sample and scores "
+                    "the full file in chunks."
+                ),
+            )
             source_mode = st.radio(
                 "Input method",
                 options=["sample", "data_load", "upload"],
@@ -155,19 +185,25 @@ def select_input_dataframe() -> SelectedInputDataset:
                 }.get,
                 horizontal=False,
             )
+            if large_data_mode and source_mode == "upload":
+                st.warning(
+                    "Large Data Mode supports Data_Load or CLI file paths only. "
+                    "Browser upload still buffers the full file through Streamlit."
+                )
+                return SelectedInputDataset(None, "", {}, large_data_mode=True)
             if source_mode == "sample":
                 st.caption("Uses the bundled synthetic PD dataset for a quick start.")
             elif source_mode == "data_load":
                 DATA_LOAD_DIR.mkdir(exist_ok=True)
                 st.caption(
-                    "Drop CSV or Excel files into `Data_Load/`, then refresh this list."
+                    "Drop CSV, Excel, or Parquet files into `Data_Load/`, then refresh this list."
                 )
                 refresh_clicked = st.button("Refresh available files", width="stretch")
                 if refresh_clicked:
                     load_data_load_dataframe.clear()
                 available_files = list_data_load_files()
                 if not available_files:
-                    st.info("No supported CSV or Excel files were found in Data_Load.")
+                    st.info("No supported CSV, Excel, or Parquet files were found in Data_Load.")
                     return SelectedInputDataset(None, "", {})
                 selected_path = st.selectbox(
                     "Available Data_Load files",
@@ -175,11 +211,43 @@ def select_input_dataframe() -> SelectedInputDataset:
                     format_func=format_data_load_file_option,
                 )
                 file_metadata = describe_data_file(selected_path)
+                if selected_path.suffix.lower() == ".csv":
+                    if st.button("Convert selected CSV to Parquet", width="stretch"):
+                        try:
+                            converted_path = convert_data_load_csv_to_parquet(selected_path)
+                            load_data_load_dataframe.clear()
+                            st.success(f"Created `{converted_path.name}`. Refresh the file list.")
+                        except Exception as exc:
+                            st.error(f"CSV-to-Parquet conversion failed: {exc}")
                 st.caption(
                     "Selected file: "
                     f"`{file_metadata['relative_path']}` | "
                     f"{format_file_size(file_metadata['size_bytes'])}"
                 )
+                if large_data_mode:
+                    dataset_handle = build_dataset_handle(selected_path, file_metadata)
+                    preview_frame = read_dataset_preview(
+                        dataset_handle,
+                        rows=DEFAULT_PERFORMANCE_CONFIG.ui_preview_rows,
+                    )
+                    try:
+                        profile = profile_dataset_handle(dataset_handle)
+                        file_metadata["large_data_profile"] = profile
+                        if profile.get("row_count") is not None:
+                            st.caption(
+                                f"File-backed profile: {int(profile['row_count']):,} rows, "
+                                f"{int(profile['column_count']):,} columns."
+                            )
+                    except Exception as exc:
+                        st.caption(f"File-backed profile unavailable: {exc}")
+                    attach_input_source_metadata(preview_frame, file_metadata)
+                    return SelectedInputDataset(
+                        preview_frame,
+                        file_metadata["display_label"],
+                        file_metadata,
+                        dataset_handle=dataset_handle,
+                        large_data_mode=True,
+                    )
                 dataframe = load_data_load_dataframe(
                     str(selected_path),
                     file_metadata["suffix"],
@@ -191,16 +259,17 @@ def select_input_dataframe() -> SelectedInputDataset:
                     dataframe,
                     file_metadata["display_label"],
                     file_metadata,
+                    large_data_mode=False,
                 )
             else:
                 uploaded_file = st.file_uploader(
-                    "Upload CSV or Excel",
-                    type=["csv", "xlsx", "xls", "xlsm"],
+                    "Upload CSV, Excel, or Parquet",
+                    type=["csv", "xlsx", "xls", "xlsm", "parquet", "pq"],
                     max_upload_size=MAX_UPLOAD_SIZE_MB,
                     help=(
                         "Configured upload limit: 50 GB per file. Practical limits still "
                         "depend on available memory and the size expansion that happens "
-                        "when pandas parses large CSV or Excel files."
+                        "when pandas parses large CSV, Excel, or Parquet files."
                     ),
                 )
                 if (
@@ -240,8 +309,13 @@ def select_input_dataframe() -> SelectedInputDataset:
             "modified_at_utc": "",
         }
         attach_input_source_metadata(dataframe, metadata)
-        return SelectedInputDataset(dataframe, "bundled_sample", metadata)
-    return SelectedInputDataset(None, "", {})
+        return SelectedInputDataset(
+            dataframe,
+            "bundled_sample",
+            metadata,
+            large_data_mode=large_data_mode,
+        )
+    return SelectedInputDataset(None, "", {}, large_data_mode=large_data_mode)
 
 
 def build_editor_key(dataframe: pd.DataFrame, data_source_label: str) -> str:

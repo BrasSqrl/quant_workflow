@@ -17,6 +17,7 @@ Primary implementation files:
 - `src/quant_pd_framework/steps/imputation.py`
 - `src/quant_pd_framework/steps/transformations.py`
 - `src/quant_pd_framework/steps/variable_selection.py`
+- `src/quant_pd_framework/large_data.py`
 
 ## End-to-End Sequence
 
@@ -57,14 +58,39 @@ The framework accepts:
 - a pandas dataframe
 - a CSV file
 - an Excel file
+- a Parquet file
 
 The GUI upload path lives in `app/streamlit_app.py` and the pipeline ingestion
 step lives in `src/quant_pd_framework/steps/ingestion.py`.
 
+When `PerformanceConfig.convert_csv_to_parquet=True`, file-path CSV inputs are
+converted to Parquet in chunks before the dataframe is loaded. This is intended
+for large Data_Load or CLI-style runs where a reusable columnar file is more
+efficient than repeatedly parsing CSV.
+
+When `PerformanceConfig.large_data_mode=True` and the input is a Data_Load or
+CLI file path, the framework uses a file-backed `DatasetHandle`. The GUI reads
+only a small preview for schema design, then ingestion loads a governed sample
+into pandas for model development. The fitted model later scores the full file
+in chunks and writes full-data predictions to Parquet.
+
+When `PerformanceConfig.optimize_dtypes=True` or `large_data_mode=True`,
+ingestion can downcast numeric columns and convert low-cardinality string
+columns to categorical dtype. The transformation is memory-oriented and is
+recorded in an audit table.
+
 ### Audit evidence
 
 - `input_shape`
+- `large_data_memory_estimate`
+- optional `dtype_optimization`
+- optional `csv_to_parquet_conversion`
+- optional `sample_development/training_sample.parquet`
+- optional `full_data_scoring/predictions.parquet`
+- optional `large_data_metadata/large_data_full_scoring.json`
+- optional `large_data_metadata/large_data_full_scoring_progress.json`
 - optional exported `input_snapshot.csv`
+- optional exported `input_snapshot.parquet`
 
 ## 2. Schema Management
 
@@ -111,7 +137,8 @@ Boolean coercion accepts values such as:
 ### Why it exists
 
 This step makes later pipeline logic deterministic. The framework does not rely
-on whatever raw column names and dtypes happened to arrive from Excel or CSV.
+on whatever raw column names and dtypes happened to arrive from Excel, CSV, or
+Parquet.
 
 ### Audit evidence
 
@@ -492,6 +519,10 @@ The preprocessing and data-treatment audit trail is spread across:
 - `run_config.json`
 - `step_manifest.json`
 - `input_snapshot.csv`
+- `input_snapshot.parquet`
+- `large_data_memory_estimate`
+- `dtype_optimization`
+- `csv_to_parquet_conversion`
 - `imputation_rules`
 - `assumption_checks`
 - `governed_transformations`

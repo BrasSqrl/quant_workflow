@@ -17,7 +17,8 @@ class PipelineContext:
 
     config: FrameworkConfig
     run_id: str
-    raw_input: pd.DataFrame | str | Path
+    raw_input: Any
+    large_data_handle: Any = None
     raw_data: pd.DataFrame | None = None
     working_data: pd.DataFrame | None = None
     target_column: str | None = None

@@ -2,7 +2,7 @@
   "name": "ccar_forecasting",
   "model_type": "panel_regression",
   "target_mode": "continuous",
-  "expected_step_count": 17,
+  "expected_step_count": 19,
   "required_artifacts": [
     "model",
     "metrics",

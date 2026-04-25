@@ -259,6 +259,11 @@ TABLE_LABELS = {
     "robustness_feature_distribution": "Robustness Feature Distribution",
     "robustness_feature_stability": "Robustness Feature Stability",
     "robustness_framework_summary": "Robustness Framework Summary",
+    "cross_validation_fold_metrics": "Cross-Validation Fold Metrics",
+    "cross_validation_metric_distribution": "Cross-Validation Metric Distribution",
+    "cross_validation_metric_summary": "Cross-Validation Metric Summary",
+    "cross_validation_feature_distribution": "Cross-Validation Feature Distribution",
+    "cross_validation_feature_stability": "Cross-Validation Feature Stability",
     "feature_construction_workbench": "Feature Construction Workbench",
     "preset_imputation_recommendations": "Preset Imputation Recommendations",
     "preset_transformation_recommendations": "Preset Transformation Recommendations",
@@ -316,6 +321,9 @@ FIGURE_LABELS = {
     "robustness_metric_boxplot": "Robustness Metric Distribution",
     "robustness_metric_summary_chart": "Robustness Metric Summary",
     "robustness_feature_stability": "Feature Stability Profile",
+    "cross_validation_metric_boxplot": "Cross-Validation Metric Distribution",
+    "cross_validation_metric_summary_chart": "Cross-Validation Metric Summary",
+    "cross_validation_feature_stability": "Cross-Validation Feature Stability",
     "feature_construction_association": "Constructed Feature Association",
     "manual_binning_distribution": "Manual Binning Distribution",
     "seasonality_profile": "Seasonality Profile",
@@ -601,6 +609,21 @@ ASSET_DESCRIPTIONS = {
     "robustness_framework_summary": (
         "Coefficient-of-variation summary for the robustness framework's metric outputs."
     ),
+    "cross_validation_fold_metrics": (
+        "Fold-level validation metrics from temporary cross-validation models."
+    ),
+    "cross_validation_metric_distribution": (
+        "Long-form fold metric values used to assess validation stability."
+    ),
+    "cross_validation_metric_summary": (
+        "Mean, spread, and range of metrics across cross-validation folds."
+    ),
+    "cross_validation_feature_distribution": (
+        "Fold-level feature effects or importances from temporary cross-validation models."
+    ),
+    "cross_validation_feature_stability": (
+        "Feature-level stability summary across cross-validation folds."
+    ),
     "feature_construction_workbench": (
         "Constructed-feature preview covering engineered feature types, coverage, and "
         "target association."
@@ -660,6 +683,12 @@ ASSET_DESCRIPTIONS = {
     "robustness_metric_summary_chart": (
         "Average and standard deviation of held-out metrics across repeated resamples."
     ),
+    "cross_validation_metric_boxplot": (
+        "Distribution of fold-level validation metrics from cross-validation."
+    ),
+    "cross_validation_metric_summary_chart": (
+        "Average and standard deviation of validation metrics across folds."
+    ),
 }
 
 FEATURED_ASSETS = {
@@ -694,6 +723,8 @@ FEATURED_ASSETS = {
     "adf_tests",
     "robustness_metric_summary",
     "robustness_feature_stability",
+    "cross_validation_metric_summary",
+    "cross_validation_feature_stability",
     "scorecard_feature_summary",
     "scorecard_feature_iv",
 }
@@ -967,6 +998,13 @@ def infer_asset_section(asset_key: str, *, kind: str) -> str:
         "robustness_feature_distribution",
         "robustness_feature_stability",
         "robustness_framework_summary",
+        "cross_validation_fold_metrics",
+        "cross_validation_metric_distribution",
+        "cross_validation_metric_summary",
+        "cross_validation_metric_boxplot",
+        "cross_validation_metric_summary_chart",
+        "cross_validation_feature_distribution",
+        "cross_validation_feature_stability",
     }:
         return "stability_drift"
     if asset_key in {

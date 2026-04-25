@@ -42,9 +42,17 @@ from ..config import (
 )
 from ..context import PipelineContext
 from ..diagnostic_frameworks import add_expanded_framework_outputs
-from ..diagnostics import predict_modified_frames
+from ..diagnostics import (
+    apply_visual_theme_to_context,
+    bucket_numeric_series,
+    build_diagnostic_registry_table,
+    compute_population_stability_index,
+    predict_modified_frames,
+    sample_frame_for_plotting,
+    sample_rows_for_diagnostics,
+    sanitize_asset_name,
+)
 from ..models import build_model_adapter
-from ..presentation import apply_fintech_figure_theme, friendly_asset_title
 from ..workflow_guardrails import build_guardrail_table, evaluate_workflow_guardrails
 from .evaluation import EvaluationStep
 from .imputation import ImputationStep
@@ -187,7 +195,10 @@ class DiagnosticsStep(BasePipelineStep):
             labels_available=labels_available,
         )
 
-        self._apply_visual_theme(context)
+        context.diagnostics_tables["diagnostic_registry"] = build_diagnostic_registry_table(
+            context
+        )
+        apply_visual_theme_to_context(context)
         return context
 
     def _add_metric_overview_outputs(self, context: PipelineContext) -> None:
@@ -1361,7 +1372,7 @@ class DiagnosticsStep(BasePipelineStep):
         for feature in top_features[: context.config.diagnostics.top_n_features]:
             feature_series = dataframe[feature]
             if feature in context.numeric_features:
-                bucketed = self._bucket_numeric_series(
+                bucketed = bucket_numeric_series(
                     feature_series,
                     max(3, min(10, context.config.diagnostics.quantile_bucket_count)),
                 )
@@ -1415,7 +1426,7 @@ class DiagnosticsStep(BasePipelineStep):
 
         psi_rows = []
         for feature in top_features[: context.config.diagnostics.top_n_features]:
-            psi_value = self._compute_population_stability_index(
+            psi_value = compute_population_stability_index(
                 train_frame[feature],
                 test_frame[feature],
             )
@@ -1429,7 +1440,7 @@ class DiagnosticsStep(BasePipelineStep):
         psi_rows.append(
             {
                 "feature_name": score_column,
-                "psi": self._compute_population_stability_index(
+                "psi": compute_population_stability_index(
                     context.predictions["train"][score_column],
                     context.predictions["test"][score_column],
                 ),
@@ -1822,7 +1833,7 @@ class DiagnosticsStep(BasePipelineStep):
         residual_summary = scored_test["residual"].describe().reset_index()
         residual_summary.columns = ["statistic", "value"]
         context.diagnostics_tables["residual_summary"] = residual_summary
-        sampled = self._sample_frame(scored_test[["predicted_value", "residual"]], context)
+        sampled = sample_frame_for_plotting(scored_test[["predicted_value", "residual"]], context)
         context.visualizations["residuals_vs_predicted"] = px.scatter(
             sampled,
             x="predicted_value",
@@ -1831,7 +1842,7 @@ class DiagnosticsStep(BasePipelineStep):
             opacity=0.5,
         )
         context.visualizations["actual_vs_predicted"] = px.scatter(
-            self._sample_frame(
+            sample_frame_for_plotting(
                 scored_test[[context.target_column, "predicted_value"]],
                 context,
             ),
@@ -2340,7 +2351,7 @@ class DiagnosticsStep(BasePipelineStep):
             score_split = next(iter(context.predictions.values()), None)
         if score_split is None or "scorecard_points" not in score_split.columns:
             return None
-        sampled = self._sample_frame(score_split.copy(deep=True), context)
+        sampled = sample_frame_for_plotting(score_split.copy(deep=True), context)
         color_column = None
         if self._labels_available(context) and context.target_column in sampled.columns:
             color_column = context.target_column
@@ -2407,7 +2418,7 @@ class DiagnosticsStep(BasePipelineStep):
             return
         feature_woe = feature_woe.sort_values("bucket_rank")
         feature_points = feature_points.sort_values("bucket_rank")
-        asset_key = self._sanitize_asset_name(feature_name)
+        asset_key = sanitize_asset_name(feature_name)
 
         context.visualizations[f"scorecard_bad_rate_{asset_key}"] = px.bar(
             feature_woe,
@@ -2605,7 +2616,7 @@ class DiagnosticsStep(BasePipelineStep):
         scored_frame = context.predictions.get("test")
         if scored_frame is None:
             return pd.DataFrame()
-        sampled = self._sample_rows(
+        sampled = sample_rows_for_diagnostics(
             scored_frame[context.feature_columns].copy(deep=True),
             context.config.explainability.sample_size,
             context,
@@ -2702,7 +2713,7 @@ class DiagnosticsStep(BasePipelineStep):
                     y="average_prediction",
                     title=f"{title_prefix}: {feature_name}",
                 )
-            context.visualizations[f"{prefix}_{self._sanitize_asset_name(feature_name)}"] = figure
+            context.visualizations[f"{prefix}_{sanitize_asset_name(feature_name)}"] = figure
 
     def _build_ice_curves(
         self,
@@ -2768,7 +2779,7 @@ class DiagnosticsStep(BasePipelineStep):
             )
             selected_ids = feature_table["observation_id"].drop_duplicates().head(50).tolist()
             feature_table = feature_table.loc[feature_table["observation_id"].isin(selected_ids)]
-            context.visualizations[f"{prefix}_{self._sanitize_asset_name(feature_name)}"] = px.line(
+            context.visualizations[f"{prefix}_{sanitize_asset_name(feature_name)}"] = px.line(
                 feature_table,
                 x="feature_value",
                 y=y_column,
@@ -2844,7 +2855,7 @@ class DiagnosticsStep(BasePipelineStep):
         for feature_name in ale_table["feature_name"].drop_duplicates().tolist():
             feature_table = ale_table.loc[ale_table["feature_name"] == feature_name]
             context.visualizations[
-                f"accumulated_local_effect_{self._sanitize_asset_name(feature_name)}"
+                f"accumulated_local_effect_{sanitize_asset_name(feature_name)}"
             ] = px.line(
                 feature_table.sort_values("sort_order"),
                 x="feature_value",
@@ -2920,7 +2931,7 @@ class DiagnosticsStep(BasePipelineStep):
         for feature_pair in two_way_table["feature_pair"].drop_duplicates().tolist():
             pair_table = two_way_table.loc[two_way_table["feature_pair"] == feature_pair]
             context.visualizations[
-                f"two_way_effect_{self._sanitize_asset_name(feature_pair)}"
+                f"two_way_effect_{sanitize_asset_name(feature_pair)}"
             ] = px.density_heatmap(
                 pair_table,
                 x="feature_x_value",
@@ -3016,7 +3027,7 @@ class DiagnosticsStep(BasePipelineStep):
             )
             figure.update_layout(title=f"Feature Effect Confidence Band: {feature_name}")
             context.visualizations[
-                f"feature_effect_band_{self._sanitize_asset_name(feature_name)}"
+                f"feature_effect_band_{sanitize_asset_name(feature_name)}"
             ] = figure
 
     def _build_effect_monotonicity_table(
@@ -3093,7 +3104,7 @@ class DiagnosticsStep(BasePipelineStep):
             segment_frame = scored_frame.loc[
                 scored_frame[segment_column].fillna("Missing").astype(str) == segment_value
             ]
-            base_frame = self._sample_rows(
+            base_frame = sample_rows_for_diagnostics(
                 segment_frame[context.feature_columns].copy(deep=True),
                 context.config.explainability.sample_size,
                 context,
@@ -3133,7 +3144,7 @@ class DiagnosticsStep(BasePipelineStep):
         for feature_name in segmented_table["feature_name"].drop_duplicates().tolist():
             feature_table = segmented_table.loc[segmented_table["feature_name"] == feature_name]
             context.visualizations[
-                f"segmented_feature_effect_{self._sanitize_asset_name(feature_name)}"
+                f"segmented_feature_effect_{sanitize_asset_name(feature_name)}"
             ] = px.line(
                 feature_table.sort_values(["segment_value", "sort_order"]),
                 x="feature_value",
@@ -3152,7 +3163,7 @@ class DiagnosticsStep(BasePipelineStep):
         combined = self._combined_predictions(context)
         if combined.empty:
             return pd.DataFrame()
-        base_frame = self._sample_rows(
+        base_frame = sample_rows_for_diagnostics(
             combined[context.feature_columns].copy(deep=True),
             context.config.explainability.sample_size,
             context,
@@ -3169,7 +3180,7 @@ class DiagnosticsStep(BasePipelineStep):
         for split_name, split_frame in context.predictions.items():
             if not set(context.feature_columns).issubset(split_frame.columns):
                 continue
-            split_features = self._sample_rows(
+            split_features = sample_rows_for_diagnostics(
                 split_frame[context.feature_columns].copy(deep=True),
                 context.config.explainability.sample_size,
                 context,
@@ -3215,7 +3226,7 @@ class DiagnosticsStep(BasePipelineStep):
         for feature_name in stability_table["feature_name"].drop_duplicates().tolist():
             feature_table = stability_table.loc[stability_table["feature_name"] == feature_name]
             context.visualizations[
-                f"feature_effect_stability_{self._sanitize_asset_name(feature_name)}"
+                f"feature_effect_stability_{sanitize_asset_name(feature_name)}"
             ] = px.line(
                 feature_table.sort_values(["split", "sort_order"]),
                 x="feature_value",
@@ -3420,7 +3431,7 @@ class DiagnosticsStep(BasePipelineStep):
                 value_name="value",
             )
             context.visualizations[
-                f"feature_effect_calibration_{self._sanitize_asset_name(feature_name)}"
+                f"feature_effect_calibration_{sanitize_asset_name(feature_name)}"
             ] = px.line(
                 melted,
                 x="feature_bucket",
@@ -3449,7 +3460,7 @@ class DiagnosticsStep(BasePipelineStep):
         if missing_features:
             return pd.DataFrame()
         row_limit = max_rows or context.config.explainability.sample_size
-        return self._sample_rows(
+        return sample_rows_for_diagnostics(
             scored_frame[context.feature_columns].copy(deep=True),
             row_limit,
             context,
@@ -3531,7 +3542,7 @@ class DiagnosticsStep(BasePipelineStep):
         if scored_test is None or context.target_column not in scored_test.columns:
             return pd.DataFrame()
 
-        sampled = self._sample_rows(
+        sampled = sample_rows_for_diagnostics(
             scored_test[[*context.feature_columns, context.target_column]].copy(deep=True),
             context.config.explainability.sample_size,
             context,
@@ -4836,19 +4847,6 @@ class DiagnosticsStep(BasePipelineStep):
             aggregated["residual"] = aggregated["target_mean"] - aggregated["prediction_mean"]
         return aggregated
 
-    def _sample_rows(
-        self,
-        dataframe: pd.DataFrame,
-        max_rows: int,
-        context: PipelineContext,
-    ) -> pd.DataFrame:
-        if len(dataframe) <= max_rows:
-            return dataframe
-        return dataframe.sample(max_rows, random_state=context.config.split.random_state)
-
-    def _sanitize_asset_name(self, name: str) -> str:
-        return "".join(character if character.isalnum() else "_" for character in name).strip("_")
-
     def _select_top_features(self, context: PipelineContext) -> list[str]:
         ranked = context.feature_importance.copy(deep=True)
         if "feature_name" in ranked.columns:
@@ -4866,77 +4864,8 @@ class DiagnosticsStep(BasePipelineStep):
                 return deduplicated_preferred[: context.config.diagnostics.top_n_features]
         return context.feature_columns[: context.config.diagnostics.top_n_features]
 
-    def _apply_visual_theme(self, context: PipelineContext) -> None:
-        themed: dict[str, go.Figure] = {}
-        for figure_name, figure in context.visualizations.items():
-            themed[figure_name] = apply_fintech_figure_theme(
-                figure,
-                title=friendly_asset_title(figure_name, kind="figure"),
-            )
-        context.visualizations = themed
-
     def _labels_available(self, context: PipelineContext) -> bool:
         return bool(context.metadata.get("labels_available", False))
-
-    def _sample_frame(self, dataframe: pd.DataFrame, context: PipelineContext) -> pd.DataFrame:
-        max_rows = context.config.diagnostics.max_plot_rows
-        if len(dataframe) <= max_rows:
-            return dataframe
-        return dataframe.sample(max_rows, random_state=context.config.split.random_state)
-
-    def _bucket_numeric_series(self, series: pd.Series, bucket_count: int) -> pd.Series:
-        ranked = series.rank(method="first")
-        return pd.qcut(ranked, q=min(bucket_count, ranked.nunique()), duplicates="drop")
-
-    def _compute_population_stability_index(
-        self,
-        expected: pd.Series,
-        actual: pd.Series,
-    ) -> float:
-        expected_series = pd.Series(expected).dropna()
-        actual_series = pd.Series(actual).dropna()
-        if expected_series.empty or actual_series.empty:
-            return float("nan")
-
-        if pd.api.types.is_numeric_dtype(expected_series):
-            bucket_edges = np.unique(
-                np.quantile(
-                    expected_series,
-                    np.linspace(0, 1, min(11, max(3, expected_series.nunique()))),
-                )
-            )
-            if len(bucket_edges) < 2:
-                return 0.0
-            bucket_edges = bucket_edges.astype(float)
-            bucket_edges[0] = -np.inf
-            bucket_edges[-1] = np.inf
-            if len(np.unique(bucket_edges)) < 2:
-                return 0.0
-            expected_bucket = pd.cut(
-                expected_series,
-                bins=bucket_edges,
-                include_lowest=True,
-                duplicates="drop",
-            )
-            actual_bucket = pd.cut(
-                actual_series,
-                bins=bucket_edges,
-                include_lowest=True,
-                duplicates="drop",
-            )
-            expected_dist = expected_bucket.value_counts(normalize=True, sort=False)
-            actual_dist = actual_bucket.value_counts(normalize=True, sort=False)
-        else:
-            expected_dist = expected_series.astype(str).value_counts(normalize=True)
-            actual_dist = actual_series.astype(str).value_counts(normalize=True)
-
-        all_buckets = expected_dist.index.union(actual_dist.index)
-        psi_value = 0.0
-        for bucket in all_buckets:
-            expected_pct = max(float(expected_dist.get(bucket, 0.0)), 1e-6)
-            actual_pct = max(float(actual_dist.get(bucket, 0.0)), 1e-6)
-            psi_value += (actual_pct - expected_pct) * math.log(actual_pct / expected_pct)
-        return float(psi_value)
 
     def _run_adf_test(
         self,

@@ -30,6 +30,7 @@ The framework assumes you begin with one of the following inputs:
 - a pandas dataframe
 - a CSV file
 - an Excel file
+- a Parquet file
 
 The default workflow then moves through the main stages of a quantitative modeling process:
 
@@ -108,6 +109,8 @@ The framework also includes development-focused workflow features:
 - scorecard development mode with monotonic binning, score scaling, and reason
   codes
 - robustness and stability testing with repeated held-out resamples
+- optional cross-validation diagnostics with stratified k-fold, regular k-fold,
+  and time-aware expanding-window folds
 - interactive scorecard workbench outputs for binning, WoE, points, and reason
   code review
 - preset-aware workflow guardrails with pre-run readiness checks
@@ -138,6 +141,10 @@ The framework also includes development-focused workflow features:
   importance, PDP, ICE, centered ICE, ALE, two-way effects, marginal effects,
   interaction strength, and feature-bucket calibration
 - scenario testing for feature-level shocks on held-out data
+- large-data controls for Parquet intake, CSV-to-Parquet staging, DuckDB/PyArrow
+  file-backed previews, dtype optimization, memory guardrails, sampled
+  development, chunked full-data scoring, sampled exports, and Parquet output
+  bundles
 
 ## Design Goals
 
@@ -257,7 +264,9 @@ quant/
       base.py
       config.py
       config_io.py
+      config_serialization.py
       context.py
+      export_layout.py
       gui_launcher.py
       gui_support.py
       models.py
@@ -267,13 +276,21 @@ quant/
       reference_workflows.py
       run.py
       sample_data.py
+      diagnostics/
+        assets.py
+        registry.py
+        scoring.py
       streamlit_ui/
+        artifact_summary.py
         app_controller.py
         config_builder.py
         data.py
+        error_guidance.py
         results.py
+        run_execution.py
         state.py
         theme.py
+        workflow_feedback.py
         workspace.py
       workflow_guardrails.py
       steps/
@@ -314,6 +331,8 @@ quant/
     support.py
   scripts/
     bootstrap_sagemaker.sh
+    benchmark_large_data.py
+    profile_workflow.py
     run_sagemaker_streamlit.sh
     sagemaker_code_editor_lifecycle.sh
   requirements-sagemaker.txt
@@ -459,7 +478,8 @@ If you already have an exported run folder, you can rerun it without the GUI:
 python -m quant_pd_framework.run --config artifacts\20260418T000000Z\run_config.json
 ```
 
-If the run folder includes `input_snapshot.csv`, the runner picks it up automatically. Otherwise supply `--input`.
+If the run folder includes `input_snapshot.csv` or `input_snapshot.parquet`,
+the runner picks it up automatically. Otherwise supply `--input`.
 
 ### Run Tests
 
@@ -477,7 +497,7 @@ python -m ruff check .
 
 The GUI is a thin front end over the Python framework. It does not implement modeling logic itself. Instead, it:
 
-- loads CSV or Excel data
+- loads CSV, Excel, or Parquet data
 - previews the incoming dataframe
 - constructs a schema editor from the incoming columns
   - lets the user assign column roles and dtypes
@@ -527,7 +547,7 @@ The GUI exposes the following decision areas:
 - workflow preset
 - execution mode
 - file upload with a configured 50 GB per-file Streamlit limit
-- `Data_Load/` landing-zone file selection for CSV and Excel datasets
+- `Data_Load/` landing-zone file selection for CSV, Excel, and Parquet datasets
 - existing model artifact path
 - existing run config path
 - model type
@@ -562,6 +582,9 @@ The GUI exposes the following decision areas:
   calibration ranking metric
 - reproducibility-manifest controls for tracked package versions and git capture
 - diagnostics and export toggles
+- Large Data Mode, memory guardrails, dtype optimization, CSV-to-Parquet
+  staging, training sample size, full-data scoring chunk size, tabular output
+  format, and sampled export policy
 - artifact output root
 - schema editor for column-level configuration
 
@@ -850,7 +873,7 @@ from quant_pd_framework import run_saved_config
 
 context = run_saved_config(
     config_path="artifacts/20260418T000000Z/run_config.json",
-    input_path="artifacts/20260418T000000Z/input_snapshot.csv",
+    input_path="artifacts/20260418T000000Z/input_snapshot.parquet",
     output_root="artifacts/reruns",
 )
 
@@ -1419,6 +1442,44 @@ Key toggles include:
 - per-figure PNG exports
 - Excel workbook export
 
+### `PerformanceConfig`
+
+`PerformanceConfig` controls large-run safeguards and runtime tradeoffs.
+
+Important fields include:
+
+- `large_data_mode`
+- `diagnostic_sample_rows`
+- `optimize_dtypes`
+- `downcast_numeric`
+- `convert_low_cardinality_strings`
+- `convert_csv_to_parquet`
+- `csv_conversion_chunk_rows`
+- `large_data_training_sample_rows`
+- `large_data_score_chunk_rows`
+- `large_data_project_columns`
+- `large_data_auto_stage_parquet`
+- `memory_limit_gb`
+- `memory_estimate_file_multiplier`
+- `memory_estimate_dataframe_multiplier`
+
+When large-data mode is enabled in the GUI, Quant Studio defaults to safer
+settings: file-backed Data_Load intake, sampled diagnostics, disabled
+robustness and cross-validation refits, disabled per-figure file exports,
+optional dtype optimization, reusable CSV-to-Parquet staging for file-path
+inputs, configurable training sample size, chunked full-data scoring, and
+sampled or Parquet-first tabular outputs.
+
+For file-backed runs, the large-data workflow is intentionally split:
+
+- `sample_development/` contains the governed sample loaded into pandas for
+  model fitting, diagnostics, and documentation.
+- `full_data_scoring/` contains chunked full-file scoring outputs, including
+  full-data predictions written directly to Parquet.
+- `large_data_metadata/` contains metadata describing the source path, staged
+  Parquet path, projected columns, sample size, chunk size, row counts, and
+  chunk-progress status.
+
 ### `RobustnessConfig`
 
 `RobustnessConfig` controls repeated-resample robustness testing for new-model
@@ -1443,6 +1504,35 @@ resamples, scores a held-out split, and exports:
 - feature and coefficient stability tables
 - stability charts under the `Stability / Drift` reporting section
 
+### `CrossValidationConfig`
+
+`CrossValidationConfig` controls optional fold-based validation diagnostics for
+new-model development runs. It does not replace the final saved model. The final
+model artifact is still fit once on the configured training split.
+
+Important fields:
+
+- `enabled`
+- `fold_count`
+- `strategy`
+- `shuffle`
+- `metric_stability`
+- `coefficient_stability`
+- `random_state`
+
+When `strategy="auto"`, the framework uses:
+
+- stratified k-fold validation for binary cross-sectional workflows
+- regular k-fold validation for continuous cross-sectional workflows
+- expanding-window time-series validation for time-series and panel workflows
+
+When enabled, the framework exports:
+
+- fold-level validation metrics
+- metric distribution and summary tables
+- feature and coefficient stability tables across folds
+- metric and feature-stability charts
+
 ### `ReproducibilityConfig`
 
 `ReproducibilityConfig` controls run-manifest metadata used for auditability and
@@ -1466,6 +1556,11 @@ Run folders use a readable UTC date/time name such as
 Important behavior:
 
 - `interactive_report.html` is always exported for completed runs.
+- `tabular_output_format` controls whether major tabular artifacts are written
+  as CSV, Parquet, or both.
+- `large_data_export_policy` can write full tabular outputs, sampled CSV
+  outputs with full Parquet outputs, or metadata-only entries for very large
+  tables.
 - Individual figure `.html` and `.png` files are disabled by default and can be
   enabled through `ArtifactConfig.export_individual_figure_files` or the
   matching GUI toggle when separate chart files are needed.
@@ -1482,7 +1577,9 @@ Default artifact files:
 - `quant_model.joblib`
 - `metrics.json`
 - `input_snapshot.csv`
+- `input_snapshot.parquet` when Parquet or dual tabular output is selected
 - `predictions.csv`
+- `predictions.parquet` when Parquet or dual tabular output is selected
 - `feature_importance.csv`
 - `backtest_summary.csv`
 - `run_report.md`
@@ -1514,7 +1611,10 @@ Each major stage in the workflow is implemented as its own class.
 
 ### 1. Ingestion
 
-Loads the starting dataframe from memory, CSV, or Excel and gives the rest of the framework a consistent input object.
+Loads the starting dataframe from memory, CSV, Excel, or Parquet and gives the
+rest of the framework a consistent input object. File-path CSV inputs can be
+converted to Parquet in chunks before ingestion when `convert_csv_to_parquet`
+is enabled.
 
 ### 2. Schema Management
 
@@ -1740,7 +1840,17 @@ Builds validation tables and interactive Plotly visuals such as:
 - reproducibility manifest tables
 - scenario summaries and segment impacts
 
-### 16. Artifact Export
+### 16. Cross-Validation Diagnostics
+
+Optionally fits temporary fold-level models on the training split to evaluate
+metric and feature stability. This step does not replace `quant_model.joblib`;
+the exported model remains the model fit by the normal training step.
+
+Cross-sectional binary models use stratified k-fold validation by default.
+Cross-sectional continuous models use regular k-fold validation. Time-series and
+panel models use expanding-window validation to reduce look-ahead leakage risk.
+
+### 17. Artifact Export
 
 Writes model artifacts, metrics, predictions, tables, figures, tests, workbook exports,
 a markdown report, a standalone interactive HTML report, a development
@@ -1766,10 +1876,12 @@ Typical outputs include:
 - variable-selection tables and selected-feature metadata
 - manual feature-review decisions and scorecard override tables
 - model-specific feature importance or coefficient summary
+- cross-validation fold metrics and stability summaries when enabled
 - challenger comparison results and recommended model metadata
 - lifetime PD curve outputs for discrete-time hazard runs
 - backtest summary by risk band
 - diagnostic tables as CSV
+- diagnostic tables as Parquet when Parquet or dual tabular output is selected
 - feature policy check tables
 - model numerical diagnostics and normalized numerical warning tables
 - scenario summary tables and scenario definition tables
@@ -1799,6 +1911,8 @@ Each exported run directory is now intended to be portable. A completed run fold
   The fully resolved configuration used for the run.
 - `input_snapshot.csv`
   A CSV snapshot of the ingested dataframe, so the run can be reproduced without pointing back to the original upload.
+- `input_snapshot.parquet`
+  A full Parquet snapshot when Parquet or dual tabular output is selected.
 - `step_manifest.json`
   The exact ordered list of pipeline steps used, including module and class names.
 - `generated_run.py`
@@ -1832,8 +1946,9 @@ Each exported run directory is now intended to be portable. A completed run fold
 - `model_bundle_for_monitoring/`
   A monitoring-ready handoff bundle containing `quant_model.joblib`,
   `run_config.json`, `generated_run.py`, `monitoring_metadata.json`,
-  `artifact_manifest.json`, `predictions.csv`, and optional `input_snapshot.csv`
-  and `code_snapshot/` when those exports were enabled for the run.
+  `artifact_manifest.json`, predictions in the selected primary tabular format,
+  and optional input snapshot and `code_snapshot/` assets when those exports
+  were enabled for the run.
 
 ### Why The Code Snapshot Exists
 
@@ -1859,7 +1974,7 @@ python generated_run.py
 By default this:
 
 - reads `run_config.json`
-- uses `input_snapshot.csv` if it exists
+- uses `input_snapshot.csv` or `input_snapshot.parquet` if either exists
 - writes the new results under `reruns/`
 - imports the local code snapshot first
 
@@ -1947,7 +2062,8 @@ If you prefer the packaged CLI instead:
 python -m quant_pd_framework.run --config run_config.json --input input_snapshot.csv --output-root reruns
 ```
 
-If `input_snapshot.csv` is missing because input export was disabled, supply your own CSV or Excel path with `--input`.
+If `input_snapshot.csv` and `input_snapshot.parquet` are missing because input
+export was disabled, supply your own CSV, Excel, or Parquet path with `--input`.
 
 ### Excel Files Do Not Load
 
@@ -1958,19 +2074,35 @@ Excel support requires `openpyxl`, which is already included in the declared dep
 The GUI is now configured for a `50 GB` Streamlit upload limit through
 `.streamlit/config.toml`, the launcher command, and the uploader widget itself.
 
-That limit is not the same as a guaranteed practical ingest size. Very large CSV
-and Excel files can still fail if the machine does not have enough memory for
-upload buffering and pandas parsing.
+That limit is not the same as a guaranteed practical ingest size. Very large
+CSV, Excel, and Parquet files can still fail if the machine does not have
+enough memory for upload buffering and pandas parsing. Browser upload also
+requires Streamlit to receive the file before pandas parses it, so `Data_Load/`
+is preferred for multi-GB datasets.
 
 To keep large runs usable, the framework now also applies lightweight
 performance safeguards through `PerformanceConfig`, including:
 
 - dataset-size warnings in the GUI
+- file-backed Large Data Mode for `Data_Load/` and CLI file-path runs, avoiding
+  eager full-file pandas loads before the user runs the workflow
+- large-data mode defaults that turn off expensive optional refit diagnostics
+  until the user opts back in
+- memory-estimate tables and configurable pre-run warning thresholds
+- dtype optimization audit tables for numeric downcasting and low-cardinality
+  string-to-category conversion
+- reusable chunked CSV-to-Parquet staging for file-path inputs
+- governed sample-fit / full-data-score execution, where the development model
+  is fit on a configurable sample and the full file is scored in chunks
 - smaller dataset previews in the builder workspace
 - capped multiple-imputation surrogate sampling for expensive diagnostics
 - truncated HTML report table and figure previews so standalone reports remain usable
 - lazy Streamlit result snapshots for large runs so the GUI does not keep every
   exported row in memory
+- sampled CSV exports or full Parquet exports for predictions and input
+  snapshots
+- separate `sample_development/`, `full_data_scoring/`, and
+  `large_data_metadata/` output folders for audit clarity
 - export profiles that let users choose between faster development exports and
   fuller audit-oriented packaging
 
@@ -1978,6 +2110,44 @@ Explainability outputs such as PDP, ICE, ALE, two-way effects, marginal
 effects, interaction strength, and macro sensitivity use batched scoring where
 practical. This reduces repeated preprocessing through the model adapter while
 preserving the exported tables and figures.
+
+### Workflow Failure Guidance
+
+The Streamlit app now classifies common run failures into user-facing recovery
+messages instead of only showing the raw Python exception. The guidance covers
+memory pressure, target setup, date and panel split setup, invalid feature
+values, model convergence issues, large-data staging failures, and incomplete
+artifact export. The original traceback remains available in an expandable
+technical detail panel for debugging.
+
+### Output Location Guidance
+
+After a run completes, the GUI surfaces the most important output locations
+immediately: the run folder, interactive report, model object, run
+configuration, reproducibility manifest, debug trace, predictions, and any
+Large Data Mode folders. The Governance result panel also renders artifact
+locations as a readable table rather than a raw JSON block.
+
+### Profiling And Benchmarking
+
+Two scripts support performance investigation without changing the application
+workflow:
+
+```powershell
+python scripts/profile_workflow.py --config artifacts\run_id\run_config.json --input Data_Load\sample.parquet --profile-output artifacts\profile.json
+```
+
+This profiles a saved configuration run, records elapsed time, peak traced
+memory, slowest pipeline steps, diagnostic counts, and artifact locations.
+
+```powershell
+python scripts/benchmark_large_data.py --rows 100000 --features 12 --output-root artifacts\benchmarks
+```
+
+This generates synthetic Parquet data, runs Large Data Mode with sample-fit and
+chunked full-data scoring, and writes a benchmark JSON file. It is intended for
+before/after comparisons when optimizing diagnostics, exports, or large-data
+scoring.
 
 ### Time-Series Or Panel Runs Fail Validation
 
@@ -2006,7 +2176,7 @@ The automated tests were also refactored to use isolated temporary workspaces in
 The current implementation includes:
 
 - end-to-end PD workflow orchestration
-- dataframe, CSV, and Excel inputs
+- dataframe, CSV, Excel, and Parquet inputs
 - configurable schema and dtype handling
 - cross-sectional, time-series, and panel split modes
 - fresh-model, existing-model, and feature-subset-search execution modes
@@ -2027,5 +2197,11 @@ The current implementation includes:
 - feature subset search mode for comparison-only feature-set selection with selected-candidate and ranked non-winning comparison outputs
 - rerun-ready code bundles with saved config, input snapshot, step manifest, generated launcher, and code snapshot
 - explicit configuration validation and engineering-rubric documentation
+- user-facing failure guidance with expandable technical tracebacks
+- readable run-output location panels and artifact summary tables in the GUI
+- diagnostic registry output that records enabled, emitted, disabled, and
+  skipped diagnostic surfaces
+- profiling and synthetic Large Data Mode benchmark scripts for performance
+  regression review
 - Streamlit GUI
 - automated tests for pipeline flow, GUI config translation, GUI launching, model variants, existing-model scoring, and saved-bundle reruns

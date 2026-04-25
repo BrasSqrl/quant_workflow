@@ -86,14 +86,41 @@ SageMaker browser proxy URL instead of VS Code port forwarding.
 
 ## Loading Data In SageMaker
 
-For remote runs, the recommended path is to place CSV or Excel files in the
-repo-level `Data_Load/` directory, then choose `Select from Data_Load` in the
-left-pane Data Source controls. This avoids browser-upload friction and lets
-Quant Studio record the selected file name, size, suffix, and modified time in
-`reproducibility_manifest.json`.
+For remote runs, the recommended path is to place CSV, Excel, or Parquet files
+in the repo-level `Data_Load/` directory, then choose `Select from Data_Load`
+in the left-pane Data Source controls. This avoids browser-upload friction and
+lets Quant Studio record the selected file name, size, suffix, and modified
+time in `reproducibility_manifest.json`.
 
 `Data_Load/` is intentionally ignored by git except for `.gitkeep`, so private
 or large modeling datasets are not committed to GitHub.
+
+For multi-GB files, prefer Parquet over CSV or Excel. If you start with CSV,
+use the Data_Load conversion button or enable `Large data mode` plus
+`Convert CSV file-path inputs to Parquet before ingestion` so file-path runs
+can write a chunked Parquet copy before loading the workflow dataframe.
+
+## Sizing Guidance For Large Datasets
+
+The 50 GB Streamlit upload setting is a configured ceiling, not a practical
+memory guarantee. Pandas can require several times the source-file size once a
+CSV, Excel, or Parquet file is parsed, and model diagnostics can add
+additional copies.
+
+Use these conservative starting points:
+
+- For files under 1 GB, start with at least 16 GB RAM.
+- For 1-5 GB CSV files, start with 32-64 GB RAM and use Large data mode.
+- For 5-10 GB CSV files, start with 96-128 GB RAM, prefer Data_Load instead
+  of browser upload, convert to Parquet first, and use sampled exports.
+- For Parquet files, the same row count usually needs less disk and parse time,
+  but the in-memory dataframe can still be large after decompression.
+
+In the GUI, enable `Large Data Mode` before running large files. The mode uses
+file-backed Data_Load intake, defaults expensive optional refit diagnostics
+off, adds memory-estimate and dtype-optimization audit tables, trains on a
+configurable governed sample, scores the full file in chunks, and lets you
+choose Parquet or sampled tabular exports.
 
 ## Why The Virtual Environment Matters
 

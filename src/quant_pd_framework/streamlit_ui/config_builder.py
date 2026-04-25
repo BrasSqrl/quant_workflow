@@ -21,6 +21,7 @@ from quant_pd_framework import (
     FeaturePolicyConfig,
     FeatureSubsetSearchConfig,
     ImputationSensitivityConfig,
+    LargeDataExportPolicy,
     MissingValuePolicy,
     ModelConfig,
     ModelType,
@@ -29,6 +30,7 @@ from quant_pd_framework import (
     ScorecardConfig,
     ScorecardMonotonicity,
     SuitabilityCheckConfig,
+    TabularOutputFormat,
     TargetMode,
     VariableSelectionConfig,
     WorkflowGuardrailConfig,
@@ -330,6 +332,7 @@ def build_preview_configuration(
             diagnostics=values["diagnostic_config"],
             credit_risk=values["credit_risk_config"],
             robustness=values["robustness_config"],
+            cross_validation=values["cross_validation_config"],
             reproducibility=ReproducibilityConfig(
                 enabled=values["reproducibility_enabled"],
                 capture_git_metadata=values["reproducibility_capture_git"],
@@ -339,11 +342,19 @@ def build_preview_configuration(
                     if value.strip()
                 ],
             ),
-            performance=preset_inputs.performance,
+            performance=values.get("performance_config", preset_inputs.performance),
             artifacts=ArtifactConfig(
                 output_root=Path(values["output_root"].strip() or "artifacts"),
                 export_individual_figure_files=values["export_individual_figure_files"],
+                export_input_snapshot=values["export_input_snapshot"],
+                export_code_snapshot=values["export_code_snapshot"],
                 export_profile=ExportProfile(values["export_profile"]),
+                tabular_output_format=TabularOutputFormat(values["tabular_output_format"]),
+                large_data_export_policy=LargeDataExportPolicy(
+                    values["large_data_export_policy"]
+                ),
+                large_data_sample_rows=int(values["large_data_sample_rows"]),
+                parquet_compression=values["parquet_compression"],
             ),
             data_structure=DataStructure(values["data_structure"]),
             train_size=float(values["train_size"]),

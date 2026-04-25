@@ -70,7 +70,7 @@
       <section class="hero">
         <div class="eyebrow">Detailed GUI Walkthrough</div>
         <h1>Build a new logistic regression model in Quant Studio from start to finish.</h1>
-        <p>This guide uses the bundled sample dataset so you can learn the GUI flow quickly and then repeat the same steps on your own CSV or Excel file.</p>
+        <p>This guide uses the bundled sample dataset so you can learn the GUI flow quickly and then repeat the same steps on your own CSV, Excel, or Parquet file.</p>
         <div class="hero-grid">
           <div class="stat"><span class="label">Launch command</span><div class="value"><code>.\launch_gui.bat</code></div><p>Starts the local GUI.</p></div>
           <div class="stat"><span class="label">Target mapping</span><div class="value"><code>default_status -> default_flag</code></div><p>This is the target mapping used here.</p></div>
@@ -91,13 +91,13 @@
       </section>
 
       <section class="step" id="step-1">
-        <div class="step-head"><div class="num">1</div><div><h2>Choose the data source.</h2><p>Start in the left sidebar. For this walkthrough, leave the bundled sample on. For your own work, this is the same place where you upload a CSV or Excel file.</p></div></div>
+        <div class="step-head"><div class="num">1</div><div><h2>Choose the data source.</h2><p>Start in the left sidebar. For this walkthrough, leave the bundled sample on. For your own work, this is the same place where you upload a CSV, Excel, or Parquet file.</p></div></div>
         <div class="visual">
           <div class="shot">
             <div class="bar"><div class="dots"><span></span><span></span><span></span></div><div>Quant Studio | Builder</div><div>Data source</div></div>
             <div class="studio">
               <div class="left">
-                <div class="group"><h4>Data Source</h4><div class="row"><span>Use bundled sample data</span><span class="toggle on"></span></div><div class="field"><label>Upload CSV or Excel</label><div class="input">Choose file...</div></div></div>
+                <div class="group"><h4>Data Source</h4><div class="row"><span>Use bundled sample data</span><span class="toggle on"></span></div><div class="field"><label>Upload CSV, Excel, or Parquet</label><div class="input">Choose file...</div></div></div>
                 <div class="group"><h4>Workflow preset</h4><div class="select">PD Development</div><p class="muted">A good starting point for a binary credit-style model.</p></div>
               </div>
               <div style="padding:18px;display:grid;gap:12px;background:#f5f9fe">
@@ -236,7 +236,7 @@
       <section class="step" id="step-8">
         <div class="step-head"><div class="num">8</div><div><h2>Move from the sample walkthrough to your real data.</h2><p>Once the bundled-sample flow works, repeat the same path with your own file. The control flow stays the same even though the schema and assumptions change.</p></div></div>
         <div class="two-col">
-          <div class="note"><strong>What to change for a real dataset</strong><ul><li>Turn off <code>Use bundled sample data</code>.</li><li>Upload your CSV or Excel file.</li><li>Rebuild the <code>Column Designer</code> roles around your actual target, date, and identifier columns.</li><li>Only change missing-value policy when you have a defined business rule.</li><li>Update the documentation fields so the export pack reflects the real model purpose.</li></ul></div>
+          <div class="note"><strong>What to change for a real dataset</strong><ul><li>Turn off <code>Use bundled sample data</code>.</li><li>Upload your CSV, Excel, or Parquet file, or select it from <code>Data_Load/</code>.</li><li>Rebuild the <code>Column Designer</code> roles around your actual target, date, and identifier columns.</li><li>Only change missing-value policy when you have a defined business rule.</li><li>Update the documentation fields so the export pack reflects the real model purpose.</li></ul></div>
           <div class="note"><strong>Best practice</strong><p>Keep the first successful real-data run as your baseline. It gives you a reproducible artifact folder, validation pack, and saved model object for future existing-model scoring.</p></div>
         </div>
       </section>

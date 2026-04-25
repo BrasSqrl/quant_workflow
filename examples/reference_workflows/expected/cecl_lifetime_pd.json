@@ -2,7 +2,7 @@
   "name": "cecl_lifetime_pd",
   "model_type": "discrete_time_hazard_model",
   "target_mode": "binary",
-  "expected_step_count": 17,
+  "expected_step_count": 19,
   "required_artifacts": [
     "model",
     "metrics",

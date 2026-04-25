@@ -17,7 +17,11 @@ Primary implementation files:
 - `src/quant_pd_framework/steps/evaluation.py`
 - `src/quant_pd_framework/steps/diagnostics.py`
 - `src/quant_pd_framework/steps/backtesting.py`
+- `src/quant_pd_framework/diagnostics/registry.py`
 - `src/quant_pd_framework/diagnostic_frameworks.py`
+
+The exported `diagnostic_registry` table provides the run-specific index of
+configured, emitted, disabled, and skipped diagnostic/test surfaces.
 
 ## Quick Index
 
@@ -757,6 +761,7 @@ thought of as analytical diagnostics:
 - feature effect confidence bands
 - segmented feature effect plots
 - average marginal effects
+- cross-validation fold metrics and feature-stability summaries
 - residual plots and QQ plots
 
 Those are documented in [METRIC_CATALOG.md](./METRIC_CATALOG.md).

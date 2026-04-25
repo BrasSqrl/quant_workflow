@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
 from typing import Any
+
+from .config_serialization import framework_config_to_dict
 
 
 class DataStructure(StrEnum):
@@ -49,6 +51,22 @@ class ExportProfile(StrEnum):
     AUDIT = "audit"
 
 
+class TabularOutputFormat(StrEnum):
+    """Controls file formats for large tabular artifacts."""
+
+    CSV = "csv"
+    PARQUET = "parquet"
+    BOTH = "both"
+
+
+class LargeDataExportPolicy(StrEnum):
+    """Controls whether large tabular exports are full, sampled, or metadata-only."""
+
+    FULL = "full"
+    SAMPLED = "sampled"
+    METADATA_ONLY = "metadata_only"
+
+
 class TargetMode(StrEnum):
     """Controls whether the framework should build a binary or continuous target."""
 
@@ -86,6 +104,15 @@ class CalibrationRankingMetric(StrEnum):
     BRIER_SCORE = "brier_score"
     LOG_LOSS = "log_loss"
     EXPECTED_CALIBRATION_ERROR = "expected_calibration_error"
+
+
+class CrossValidationStrategy(StrEnum):
+    """Supported validation resampling strategies."""
+
+    AUTO = "auto"
+    KFOLD = "kfold"
+    STRATIFIED_KFOLD = "stratified_kfold"
+    TIME_SERIES = "time_series"
 
 
 class ScorecardMonotonicity(StrEnum):
@@ -732,6 +759,27 @@ class RobustnessConfig:
 
 
 @dataclass(slots=True)
+class CrossValidationConfig:
+    """Controls optional fold-based validation without changing the final model fit."""
+
+    enabled: bool = False
+    fold_count: int = 5
+    strategy: CrossValidationStrategy = CrossValidationStrategy.AUTO
+    shuffle: bool = True
+    metric_stability: bool = True
+    coefficient_stability: bool = True
+    random_state: int = 42
+
+    def validate(self) -> None:
+        if self.fold_count < 2:
+            raise ValueError("CrossValidationConfig.fold_count must be at least 2.")
+        if self.enabled and not (self.metric_stability or self.coefficient_stability):
+            raise ValueError(
+                "CrossValidationConfig.enabled=True requires at least one output type."
+            )
+
+
+@dataclass(slots=True)
 class VariableSelectionConfig:
     """Controls the optional train-split variable-selection workflow."""
 
@@ -1289,6 +1337,7 @@ class ReproducibilityConfig:
             "streamlit",
             "joblib",
             "openpyxl",
+            "pyarrow",
         ]
     )
 
@@ -1305,6 +1354,7 @@ class PerformanceConfig:
     """Controls lightweight safeguards for large uploads, diagnostics, and reports."""
 
     enabled: bool = True
+    large_data_mode: bool = False
     upload_warning_mb: int = 250
     dataframe_warning_rows: int = 200_000
     dataframe_warning_columns: int = 150
@@ -1312,9 +1362,24 @@ class PerformanceConfig:
     html_table_preview_rows: int = 12
     html_max_figures_per_section: int = 6
     html_max_tables_per_section: int = 6
+    diagnostic_sample_rows: int = 20_000
     multiple_imputation_row_cap: int = 25_000
     lazy_html_figures: bool = True
     lazy_streamlit_results: bool = True
+    optimize_dtypes: bool = False
+    downcast_numeric: bool = True
+    convert_low_cardinality_strings: bool = True
+    category_max_unique_values: int = 500
+    category_max_unique_ratio: float = 0.5
+    convert_csv_to_parquet: bool = False
+    csv_conversion_chunk_rows: int = 100_000
+    large_data_training_sample_rows: int = 250_000
+    large_data_score_chunk_rows: int = 100_000
+    large_data_project_columns: bool = True
+    large_data_auto_stage_parquet: bool = True
+    memory_limit_gb: float | None = None
+    memory_estimate_file_multiplier: float = 6.0
+    memory_estimate_dataframe_multiplier: float = 4.0
 
     def validate(self) -> None:
         for field_name, value in {
@@ -1325,10 +1390,25 @@ class PerformanceConfig:
             "html_table_preview_rows": self.html_table_preview_rows,
             "html_max_figures_per_section": self.html_max_figures_per_section,
             "html_max_tables_per_section": self.html_max_tables_per_section,
+            "diagnostic_sample_rows": self.diagnostic_sample_rows,
             "multiple_imputation_row_cap": self.multiple_imputation_row_cap,
+            "category_max_unique_values": self.category_max_unique_values,
+            "csv_conversion_chunk_rows": self.csv_conversion_chunk_rows,
+            "large_data_training_sample_rows": self.large_data_training_sample_rows,
+            "large_data_score_chunk_rows": self.large_data_score_chunk_rows,
         }.items():
             if value <= 0:
                 raise ValueError(f"PerformanceConfig.{field_name} must be greater than 0.")
+        if not 0 < self.category_max_unique_ratio <= 1:
+            raise ValueError("PerformanceConfig.category_max_unique_ratio must be in (0, 1].")
+        if self.memory_limit_gb is not None and self.memory_limit_gb <= 0:
+            raise ValueError("PerformanceConfig.memory_limit_gb must be positive when set.")
+        if self.memory_estimate_file_multiplier <= 0:
+            raise ValueError("PerformanceConfig.memory_estimate_file_multiplier must be positive.")
+        if self.memory_estimate_dataframe_multiplier <= 0:
+            raise ValueError(
+                "PerformanceConfig.memory_estimate_dataframe_multiplier must be positive."
+            )
 
 
 @dataclass(slots=True)
@@ -1530,7 +1610,9 @@ class ArtifactConfig:
     model_file_name: str = "quant_model.joblib"
     metrics_file_name: str = "metrics.json"
     input_snapshot_file_name: str = "input_snapshot.csv"
+    input_snapshot_parquet_file_name: str = "input_snapshot.parquet"
     predictions_file_name: str = "predictions.csv"
+    predictions_parquet_file_name: str = "predictions.parquet"
     feature_importance_file_name: str = "feature_importance.csv"
     backtest_file_name: str = "backtest_summary.csv"
     report_file_name: str = "run_report.md"
@@ -1561,6 +1643,10 @@ class ArtifactConfig:
     export_input_snapshot: bool = True
     export_code_snapshot: bool = True
     export_profile: ExportProfile = ExportProfile.STANDARD
+    tabular_output_format: TabularOutputFormat = TabularOutputFormat.CSV
+    large_data_export_policy: LargeDataExportPolicy = LargeDataExportPolicy.FULL
+    large_data_sample_rows: int = 50_000
+    parquet_compression: str = "snappy"
     run_debug_trace_file_name: str = "run_debug_trace.json"
 
     def validate(self) -> None:
@@ -1569,7 +1655,10 @@ class ArtifactConfig:
         required_names = {
             "model_file_name": self.model_file_name,
             "metrics_file_name": self.metrics_file_name,
+            "input_snapshot_file_name": self.input_snapshot_file_name,
+            "input_snapshot_parquet_file_name": self.input_snapshot_parquet_file_name,
             "predictions_file_name": self.predictions_file_name,
+            "predictions_parquet_file_name": self.predictions_parquet_file_name,
             "feature_importance_file_name": self.feature_importance_file_name,
             "backtest_file_name": self.backtest_file_name,
             "report_file_name": self.report_file_name,
@@ -1588,6 +1677,10 @@ class ArtifactConfig:
         for field_name, value in required_names.items():
             if not value.strip():
                 raise ValueError(f"ArtifactConfig.{field_name} cannot be blank.")
+        if self.large_data_sample_rows <= 0:
+            raise ValueError("ArtifactConfig.large_data_sample_rows must be greater than 0.")
+        if not self.parquet_compression.strip():
+            raise ValueError("ArtifactConfig.parquet_compression cannot be blank.")
 
 
 @dataclass(slots=True)
@@ -1645,6 +1738,7 @@ class FrameworkConfig:
     )
     credit_risk: CreditRiskDiagnosticConfig = field(default_factory=CreditRiskDiagnosticConfig)
     robustness: RobustnessConfig = field(default_factory=RobustnessConfig)
+    cross_validation: CrossValidationConfig = field(default_factory=CrossValidationConfig)
     reproducibility: ReproducibilityConfig = field(default_factory=ReproducibilityConfig)
     performance: PerformanceConfig = field(default_factory=PerformanceConfig)
     artifacts: ArtifactConfig = field(default_factory=ArtifactConfig)
@@ -1685,6 +1779,7 @@ class FrameworkConfig:
         self.preset_recommendations.validate()
         self.credit_risk.validate()
         self.robustness.validate()
+        self.cross_validation.validate()
         self.reproducibility.validate()
         self.performance.validate()
         self.artifacts.validate()
@@ -1731,17 +1826,4 @@ class FrameworkConfig:
     def to_dict(self) -> dict[str, Any]:
         """Serializes dataclasses, enums, and paths into JSON-friendly objects."""
 
-        def convert(value: Any) -> Any:
-            if isinstance(value, StrEnum):
-                return value.value
-            if isinstance(value, Path):
-                return str(value)
-            if isinstance(value, list):
-                return [convert(item) for item in value]
-            if isinstance(value, dict):
-                return {key: convert(item) for key, item in value.items()}
-            if hasattr(value, "__dataclass_fields__"):
-                return {key: convert(item) for key, item in asdict(value).items()}
-            return value
-
-        return convert(self)
+        return framework_config_to_dict(self)

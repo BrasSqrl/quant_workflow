@@ -10,6 +10,7 @@ from .config import (
     CalibrationConfig,
     ComparisonConfig,
     CreditRiskDiagnosticConfig,
+    CrossValidationConfig,
     DataStructure,
     DiagnosticConfig,
     DocumentationConfig,
@@ -55,6 +56,7 @@ class PresetDefinition:
     scorecard_workbench: ScorecardWorkbenchConfig
     imputation_sensitivity: ImputationSensitivityConfig
     robustness: RobustnessConfig
+    cross_validation: CrossValidationConfig
     variable_selection: VariableSelectionConfig
     documentation: DocumentationConfig
     feature_policy: FeaturePolicyConfig
@@ -96,6 +98,7 @@ PRESET_DEFINITIONS: dict[PresetName, PresetDefinition] = {
         scorecard_workbench=ScorecardWorkbenchConfig(enabled=True, max_features=6),
         imputation_sensitivity=ImputationSensitivityConfig(enabled=False),
         robustness=RobustnessConfig(enabled=False),
+        cross_validation=CrossValidationConfig(enabled=False),
         variable_selection=VariableSelectionConfig(
             enabled=True,
             max_features=12,
@@ -164,6 +167,7 @@ PRESET_DEFINITIONS: dict[PresetName, PresetDefinition] = {
         scorecard_workbench=ScorecardWorkbenchConfig(enabled=True, max_features=6),
         imputation_sensitivity=ImputationSensitivityConfig(enabled=False),
         robustness=RobustnessConfig(enabled=False),
+        cross_validation=CrossValidationConfig(enabled=False),
         variable_selection=VariableSelectionConfig(
             enabled=True,
             max_features=15,
@@ -228,6 +232,7 @@ PRESET_DEFINITIONS: dict[PresetName, PresetDefinition] = {
         scorecard_workbench=ScorecardWorkbenchConfig(enabled=True, max_features=6),
         imputation_sensitivity=ImputationSensitivityConfig(enabled=False),
         robustness=RobustnessConfig(enabled=False),
+        cross_validation=CrossValidationConfig(enabled=False),
         variable_selection=VariableSelectionConfig(
             enabled=True,
             max_features=12,
@@ -289,6 +294,7 @@ PRESET_DEFINITIONS: dict[PresetName, PresetDefinition] = {
         scorecard_workbench=ScorecardWorkbenchConfig(enabled=True, max_features=6),
         imputation_sensitivity=ImputationSensitivityConfig(enabled=False),
         robustness=RobustnessConfig(enabled=False),
+        cross_validation=CrossValidationConfig(enabled=False),
         variable_selection=VariableSelectionConfig(
             enabled=True,
             max_features=15,

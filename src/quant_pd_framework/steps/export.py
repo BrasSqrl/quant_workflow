@@ -19,8 +19,9 @@ import pandas as pd
 import plotly.io as pio
 
 from ..base import BasePipelineStep
-from ..config import ExecutionMode
+from ..config import ExecutionMode, LargeDataExportPolicy, TabularOutputFormat
 from ..context import PipelineContext
+from ..export_layout import build_export_path_layout
 from ..export_profiles import (
     code_snapshot_enabled,
     excel_workbook_enabled,
@@ -56,12 +57,13 @@ class ArtifactExportStep(BasePipelineStep):
     def run(self, context: PipelineContext) -> PipelineContext:
         output_root = context.config.artifacts.output_root / context.run_id
         output_root.mkdir(parents=True, exist_ok=True)
+        paths = build_export_path_layout(context.config.artifacts, output_root)
 
-        tables_dir = output_root / context.config.artifacts.tables_directory_name
-        figures_dir = output_root / context.config.artifacts.figures_directory_name
-        html_dir = figures_dir / context.config.artifacts.html_directory_name
-        png_dir = figures_dir / context.config.artifacts.png_directory_name
-        json_dir = output_root / context.config.artifacts.json_directory_name
+        tables_dir = paths.tables_dir
+        figures_dir = paths.figures_dir
+        html_dir = paths.html_dir
+        png_dir = paths.png_dir
+        json_dir = paths.json_dir
         tables_dir.mkdir(parents=True, exist_ok=True)
         json_dir.mkdir(parents=True, exist_ok=True)
         if self._html_figure_exports_enabled(context):
@@ -69,50 +71,34 @@ class ArtifactExportStep(BasePipelineStep):
         if self._png_figure_exports_enabled(context):
             png_dir.mkdir(parents=True, exist_ok=True)
 
-        model_path = output_root / context.config.artifacts.model_file_name
-        metrics_path = output_root / context.config.artifacts.metrics_file_name
-        input_snapshot_path = output_root / context.config.artifacts.input_snapshot_file_name
-        predictions_path = output_root / context.config.artifacts.predictions_file_name
-        feature_importance_path = (
-            output_root / context.config.artifacts.feature_importance_file_name
-        )
-        backtest_path = output_root / context.config.artifacts.backtest_file_name
-        report_path = output_root / context.config.artifacts.report_file_name
-        interactive_report_path = (
-            output_root / context.config.artifacts.interactive_report_file_name
-        )
-        config_path = output_root / context.config.artifacts.config_file_name
-        tests_path = output_root / context.config.artifacts.statistical_tests_file_name
-        workbook_path = output_root / context.config.artifacts.workbook_file_name
-        model_summary_path = output_root / context.config.artifacts.model_summary_file_name
-        manifest_path = output_root / context.config.artifacts.manifest_file_name
-        step_manifest_path = output_root / context.config.artifacts.step_manifest_file_name
-        documentation_pack_path = (
-            output_root / context.config.artifacts.documentation_pack_file_name
-        )
-        validation_pack_path = output_root / context.config.artifacts.validation_pack_file_name
-        committee_report_docx_path = (
-            output_root / context.config.artifacts.committee_report_docx_file_name
-        )
-        validation_report_docx_path = (
-            output_root / context.config.artifacts.validation_report_docx_file_name
-        )
-        committee_report_pdf_path = (
-            output_root / context.config.artifacts.committee_report_pdf_file_name
-        )
-        validation_report_pdf_path = (
-            output_root / context.config.artifacts.validation_report_pdf_file_name
-        )
-        reproducibility_manifest_path = (
-            output_root / context.config.artifacts.reproducibility_manifest_file_name
-        )
-        run_debug_trace_path = output_root / context.config.artifacts.run_debug_trace_file_name
-        template_workbook_path = (
-            output_root / context.config.artifacts.template_workbook_file_name
-        )
-        runner_script_path = output_root / context.config.artifacts.runner_script_file_name
-        rerun_readme_path = output_root / context.config.artifacts.rerun_readme_file_name
-        code_snapshot_dir = output_root / context.config.artifacts.code_snapshot_directory_name
+        model_path = paths.model_path
+        metrics_path = paths.metrics_path
+        input_snapshot_path = paths.input_snapshot_path
+        input_snapshot_parquet_path = paths.input_snapshot_parquet_path
+        predictions_path = paths.predictions_path
+        predictions_parquet_path = paths.predictions_parquet_path
+        feature_importance_path = paths.feature_importance_path
+        backtest_path = paths.backtest_path
+        report_path = paths.report_path
+        interactive_report_path = paths.interactive_report_path
+        config_path = paths.config_path
+        tests_path = paths.tests_path
+        workbook_path = paths.workbook_path
+        model_summary_path = paths.model_summary_path
+        manifest_path = paths.manifest_path
+        step_manifest_path = paths.step_manifest_path
+        documentation_pack_path = paths.documentation_pack_path
+        validation_pack_path = paths.validation_pack_path
+        committee_report_docx_path = paths.committee_report_docx_path
+        validation_report_docx_path = paths.validation_report_docx_path
+        committee_report_pdf_path = paths.committee_report_pdf_path
+        validation_report_pdf_path = paths.validation_report_pdf_path
+        reproducibility_manifest_path = paths.reproducibility_manifest_path
+        run_debug_trace_path = paths.run_debug_trace_path
+        template_workbook_path = paths.template_workbook_path
+        runner_script_path = paths.runner_script_path
+        rerun_readme_path = paths.rerun_readme_path
+        code_snapshot_dir = paths.code_snapshot_dir
 
         if context.config.execution.mode == ExecutionMode.SEARCH_FEATURE_SUBSETS:
             return self._run_subset_search_export(
@@ -148,17 +134,39 @@ class ArtifactExportStep(BasePipelineStep):
         self._write_json(config_path, self._build_export_config_payload(context, model_path))
         self._write_json(tests_path, context.statistical_tests)
 
+        input_snapshot_exports: dict[str, Any] = {}
         if self._input_snapshot_enabled(context) and context.raw_data is not None:
-            context.raw_data.to_csv(input_snapshot_path, index=False)
+            input_snapshot_exports = self._export_tabular_dataframe(
+                context=context,
+                dataframe=context.raw_data,
+                dataset_name="input_snapshot",
+                csv_path=input_snapshot_path,
+                parquet_path=input_snapshot_parquet_path,
+            )
 
         predictions = pd.concat(context.predictions.values(), ignore_index=True)
-        predictions.to_csv(predictions_path, index=False)
+        prediction_exports = self._export_tabular_dataframe(
+            context=context,
+            dataframe=predictions,
+            dataset_name="predictions",
+            csv_path=predictions_path,
+            parquet_path=predictions_parquet_path,
+        )
+        self._publish_tabular_export_policy_table(context)
         context.feature_importance.to_csv(feature_importance_path, index=False)
         context.backtest_summary.to_csv(backtest_path, index=False)
         for split_name, split_frame in context.predictions.items():
-            split_frame.to_csv(tables_dir / f"predictions_{split_name}.csv", index=False)
+            self._export_table(
+                context=context,
+                table=split_frame,
+                csv_path=tables_dir / f"predictions_{split_name}.csv",
+            )
         for table_name, table in context.diagnostics_tables.items():
-            table.to_csv(tables_dir / f"{self._sanitize_name(table_name)}.csv", index=False)
+            self._export_table(
+                context=context,
+                table=table,
+                csv_path=tables_dir / f"{self._sanitize_name(table_name)}.csv",
+            )
 
         visualization_manifest = self._export_visualizations(context, html_dir, png_dir)
         if self._excel_workbook_enabled(context):
@@ -193,7 +201,7 @@ class ArtifactExportStep(BasePipelineStep):
             context=context,
             model_path=model_path,
             config_path=config_path,
-            input_snapshot_path=input_snapshot_path if input_snapshot_path.exists() else None,
+            input_snapshot_path=self._primary_export_path(input_snapshot_exports),
         )
         self._write_json(reproducibility_manifest_path, reproducibility_manifest)
         context.diagnostics_tables["reproducibility_manifest"] = pd.DataFrame(
@@ -213,7 +221,13 @@ class ArtifactExportStep(BasePipelineStep):
                 "export_profile": context.config.artifacts.export_profile.value,
                 "model": str(model_path),
                 "metrics": str(metrics_path),
-                "predictions": str(predictions_path),
+                "predictions": self._path_string(self._primary_export_path(prediction_exports)),
+                "predictions_csv": self._path_string(predictions_path)
+                if predictions_path.exists()
+                else None,
+                "predictions_parquet": self._path_string(predictions_parquet_path)
+                if predictions_parquet_path.exists()
+                else None,
                 "feature_importance": str(feature_importance_path),
                 "backtest": str(backtest_path),
                 "report": str(report_path),
@@ -229,6 +243,15 @@ class ArtifactExportStep(BasePipelineStep):
                 "figures_html": str(html_dir) if html_dir.exists() else None,
                 "figures_png": str(png_dir) if png_dir.exists() else None,
                 "json": str(json_dir),
+                "sample_development": self._path_string(
+                    context.artifacts.get("sample_development_dir")
+                ),
+                "full_data_scoring": self._path_string(
+                    context.artifacts.get("full_data_scoring_dir")
+                ),
+                "large_data_metadata": self._path_string(
+                    context.artifacts.get("large_data_metadata_dir")
+                ),
             },
             **visualization_manifest,
             "interactive_report": str(interactive_report_path),
@@ -245,8 +268,16 @@ class ArtifactExportStep(BasePipelineStep):
         }
         if self._excel_workbook_enabled(context):
             manifest["core_artifacts"]["analysis_workbook"] = str(workbook_path)
-        if self._input_snapshot_enabled(context) and input_snapshot_path.exists():
-            manifest["rerun_bundle"]["input_snapshot"] = str(input_snapshot_path)
+        if self._input_snapshot_enabled(context) and input_snapshot_exports:
+            manifest["rerun_bundle"]["input_snapshot"] = self._path_string(
+                self._primary_export_path(input_snapshot_exports)
+            )
+            manifest["rerun_bundle"]["input_snapshot_csv"] = (
+                str(input_snapshot_path) if input_snapshot_path.exists() else None
+            )
+            manifest["rerun_bundle"]["input_snapshot_parquet"] = (
+                str(input_snapshot_parquet_path) if input_snapshot_parquet_path.exists() else None
+            )
         self._write_json(manifest_path, manifest)
 
         runner_script_path.write_text(
@@ -268,10 +299,8 @@ class ArtifactExportStep(BasePipelineStep):
                 config_path=config_path,
                 runner_script_path=runner_script_path,
                 manifest_path=manifest_path,
-                input_snapshot_path=input_snapshot_path
-                if self._input_snapshot_enabled(context) and input_snapshot_path.exists()
-                else None,
-                predictions_path=predictions_path,
+                input_snapshot_path=self._primary_export_path(input_snapshot_exports),
+                predictions_path=self._primary_export_path(prediction_exports),
                 code_snapshot_dir=code_snapshot_dir
                 if self._code_snapshot_enabled(context)
                 else None,
@@ -291,8 +320,16 @@ class ArtifactExportStep(BasePipelineStep):
             "output_root": output_root,
             "model": model_path,
             "metrics": metrics_path,
-            "input_snapshot": input_snapshot_path if input_snapshot_path.exists() else None,
-            "predictions": predictions_path,
+            "input_snapshot": self._primary_export_path(input_snapshot_exports),
+            "input_snapshot_csv": input_snapshot_path if input_snapshot_path.exists() else None,
+            "input_snapshot_parquet": input_snapshot_parquet_path
+            if input_snapshot_parquet_path.exists()
+            else None,
+            "predictions": self._primary_export_path(prediction_exports),
+            "predictions_csv": predictions_path if predictions_path.exists() else None,
+            "predictions_parquet": predictions_parquet_path
+            if predictions_parquet_path.exists()
+            else None,
             "feature_importance": feature_importance_path,
             "backtest": backtest_path,
             "report": report_path,
@@ -321,6 +358,17 @@ class ArtifactExportStep(BasePipelineStep):
             "run_debug_trace": run_debug_trace_path,
             "manifest": manifest_path,
             "step_manifest": step_manifest_path,
+            "sample_development_dir": context.artifacts.get("sample_development_dir"),
+            "large_data_training_sample": context.artifacts.get("large_data_training_sample"),
+            "full_data_scoring_dir": context.artifacts.get("full_data_scoring_dir"),
+            "full_data_predictions": context.artifacts.get("full_data_predictions"),
+            "large_data_metadata_dir": context.artifacts.get("large_data_metadata_dir"),
+            "large_data_full_scoring_progress": context.artifacts.get(
+                "large_data_full_scoring_progress"
+            ),
+            "large_data_full_scoring_metadata": context.artifacts.get(
+                "large_data_full_scoring_metadata"
+            ),
             "runner_script": runner_script_path,
             "rerun_readme": rerun_readme_path,
             "code_snapshot_dir": code_snapshot_dir
@@ -334,6 +382,144 @@ class ArtifactExportStep(BasePipelineStep):
             ),
         }
         return context
+
+    def _export_tabular_dataframe(
+        self,
+        *,
+        context: PipelineContext,
+        dataframe: pd.DataFrame,
+        dataset_name: str,
+        csv_path: Path,
+        parquet_path: Path,
+    ) -> dict[str, Any]:
+        artifacts = context.config.artifacts
+        output_format = artifacts.tabular_output_format
+        export_policy = artifacts.large_data_export_policy
+        sample_rows = min(len(dataframe), artifacts.large_data_sample_rows)
+        metadata: dict[str, Any] = {
+            "dataset_name": dataset_name,
+            "row_count": int(len(dataframe)),
+            "column_count": int(dataframe.shape[1]),
+            "output_format": output_format.value,
+            "export_policy": export_policy.value,
+            "sample_rows": int(sample_rows),
+            "csv_path": None,
+            "parquet_path": None,
+            "primary_path": None,
+        }
+
+        if export_policy == LargeDataExportPolicy.METADATA_ONLY:
+            self._record_tabular_export(context, metadata)
+            return metadata
+
+        csv_frame = dataframe
+        if export_policy == LargeDataExportPolicy.SAMPLED and len(dataframe) > sample_rows:
+            csv_frame = dataframe.sample(
+                sample_rows,
+                random_state=context.config.split.random_state,
+            ).reset_index(drop=True)
+
+        if output_format in {TabularOutputFormat.CSV, TabularOutputFormat.BOTH}:
+            csv_frame.to_csv(csv_path, index=False)
+            metadata["csv_path"] = str(csv_path)
+            metadata["primary_path"] = str(csv_path)
+
+        if output_format in {TabularOutputFormat.PARQUET, TabularOutputFormat.BOTH}:
+            self._write_parquet(
+                dataframe,
+                parquet_path,
+                compression=artifacts.parquet_compression,
+            )
+            metadata["parquet_path"] = str(parquet_path)
+            if (
+                output_format == TabularOutputFormat.PARQUET
+                or export_policy == LargeDataExportPolicy.SAMPLED
+            ):
+                metadata["primary_path"] = str(parquet_path)
+
+        self._record_tabular_export(context, metadata)
+        return metadata
+
+    def _export_table(
+        self,
+        *,
+        context: PipelineContext,
+        table: pd.DataFrame,
+        csv_path: Path,
+    ) -> None:
+        output_format = context.config.artifacts.tabular_output_format
+        if output_format in {TabularOutputFormat.CSV, TabularOutputFormat.BOTH}:
+            table.to_csv(csv_path, index=False)
+        if output_format in {TabularOutputFormat.PARQUET, TabularOutputFormat.BOTH}:
+            self._write_parquet(
+                table,
+                csv_path.with_suffix(".parquet"),
+                compression=context.config.artifacts.parquet_compression,
+            )
+
+    def _record_tabular_export(
+        self,
+        context: PipelineContext,
+        metadata: dict[str, Any],
+    ) -> None:
+        export_rows = context.metadata.setdefault("tabular_export_policy", [])
+        if isinstance(export_rows, list):
+            export_rows.append(metadata)
+
+    def _publish_tabular_export_policy_table(self, context: PipelineContext) -> None:
+        export_rows = context.metadata.get("tabular_export_policy")
+        if isinstance(export_rows, list) and export_rows:
+            context.diagnostics_tables["tabular_export_policy"] = pd.DataFrame(export_rows)
+
+    def _primary_export_path(self, export_metadata: dict[str, Any]) -> Path | None:
+        primary_path = export_metadata.get("primary_path")
+        if not primary_path:
+            return None
+        return Path(primary_path)
+
+    def _path_string(self, path: Path | None) -> str | None:
+        return str(path) if path is not None else None
+
+    def _write_parquet(
+        self,
+        dataframe: pd.DataFrame,
+        path: Path,
+        *,
+        compression: str,
+    ) -> None:
+        try:
+            dataframe.to_parquet(path, index=False, compression=compression)
+        except Exception:
+            safe_frame = dataframe.copy(deep=True)
+            for column_name in safe_frame.columns:
+                series = safe_frame[column_name]
+                if (
+                    pd.api.types.is_object_dtype(series)
+                    or pd.api.types.is_string_dtype(series)
+                    or isinstance(series.dtype, pd.IntervalDtype)
+                ):
+                    safe_frame[column_name] = series.map(self._parquet_safe_value).astype(
+                        "string"
+                    )
+            safe_frame.to_parquet(path, index=False, compression=compression)
+
+    def _parquet_safe_value(self, value: Any) -> Any:
+        if value is None:
+            return None
+        if isinstance(value, pd.Timestamp):
+            return value.isoformat()
+        if isinstance(value, pd.Interval):
+            return str(value)
+        if isinstance(value, pd.Period):
+            return str(value)
+        if isinstance(value, (list, tuple, set, dict)):
+            return json.dumps(value, default=str)
+        try:
+            if pd.isna(value):
+                return None
+        except (TypeError, ValueError):
+            return str(value)
+        return str(value)
 
     def _run_subset_search_export(
         self,
@@ -361,11 +547,26 @@ class ArtifactExportStep(BasePipelineStep):
         self._write_json(metrics_path, context.metrics)
         self._write_json(config_path, context.config.to_dict())
         self._write_json(tests_path, context.statistical_tests)
+        input_snapshot_parquet_path = (
+            output_root / context.config.artifacts.input_snapshot_parquet_file_name
+        )
+        input_snapshot_exports: dict[str, Any] = {}
         if self._input_snapshot_enabled(context) and context.raw_data is not None:
-            context.raw_data.to_csv(input_snapshot_path, index=False)
+            input_snapshot_exports = self._export_tabular_dataframe(
+                context=context,
+                dataframe=context.raw_data,
+                dataset_name="input_snapshot",
+                csv_path=input_snapshot_path,
+                parquet_path=input_snapshot_parquet_path,
+            )
+        self._publish_tabular_export_policy_table(context)
 
         for table_name, table in context.diagnostics_tables.items():
-            table.to_csv(tables_dir / f"{self._sanitize_name(table_name)}.csv", index=False)
+            self._export_table(
+                context=context,
+                table=table,
+                csv_path=tables_dir / f"{self._sanitize_name(table_name)}.csv",
+            )
 
         visualization_manifest = self._export_visualizations(context, html_dir, png_dir)
         report_path.write_text(self._build_subset_search_report(context), encoding="utf-8")
@@ -399,14 +600,26 @@ class ArtifactExportStep(BasePipelineStep):
             },
             **visualization_manifest,
         }
-        if self._input_snapshot_enabled(context) and input_snapshot_path.exists():
-            manifest["core_artifacts"]["input_snapshot"] = str(input_snapshot_path)
+        if self._input_snapshot_enabled(context) and input_snapshot_exports:
+            manifest["core_artifacts"]["input_snapshot"] = self._path_string(
+                self._primary_export_path(input_snapshot_exports)
+            )
+            manifest["core_artifacts"]["input_snapshot_csv"] = (
+                str(input_snapshot_path) if input_snapshot_path.exists() else None
+            )
+            manifest["core_artifacts"]["input_snapshot_parquet"] = (
+                str(input_snapshot_parquet_path) if input_snapshot_parquet_path.exists() else None
+            )
         self._write_json(manifest_path, manifest)
 
         context.artifacts = {
             "output_root": output_root,
             "metrics": metrics_path,
-            "input_snapshot": input_snapshot_path if input_snapshot_path.exists() else None,
+            "input_snapshot": self._primary_export_path(input_snapshot_exports),
+            "input_snapshot_csv": input_snapshot_path if input_snapshot_path.exists() else None,
+            "input_snapshot_parquet": input_snapshot_parquet_path
+            if input_snapshot_parquet_path.exists()
+            else None,
             "report": report_path,
             "interactive_report": interactive_report_path,
             "config": config_path,
@@ -460,7 +673,7 @@ class ArtifactExportStep(BasePipelineStep):
         runner_script_path: Path,
         manifest_path: Path,
         input_snapshot_path: Path | None,
-        predictions_path: Path,
+        predictions_path: Path | None,
         code_snapshot_dir: Path | None,
     ) -> dict[str, Any]:
         bundle_dir = output_root / self.MONITORING_BUNDLE_DIRECTORY_NAME
@@ -487,19 +700,25 @@ class ArtifactExportStep(BasePipelineStep):
             source_path=manifest_path,
             destination_path=bundle_dir / manifest_path.name,
         )
-        bundled_paths["predictions.csv"] = self._copy_file_into_bundle(
-            source_path=predictions_path,
-            destination_path=bundle_dir / predictions_path.name,
-        )
+        if predictions_path is not None and predictions_path.exists():
+            bundled_paths[predictions_path.name] = self._copy_file_into_bundle(
+                source_path=predictions_path,
+                destination_path=bundle_dir / predictions_path.name,
+            )
+        else:
+            missing_name = context.config.artifacts.predictions_file_name
+            bundled_paths[missing_name] = None
+            missing_optional_artifacts.append(missing_name)
 
         if input_snapshot_path is not None and input_snapshot_path.exists():
-            bundled_paths["input_snapshot.csv"] = self._copy_file_into_bundle(
+            bundled_paths[input_snapshot_path.name] = self._copy_file_into_bundle(
                 source_path=input_snapshot_path,
                 destination_path=bundle_dir / input_snapshot_path.name,
             )
         else:
-            bundled_paths["input_snapshot.csv"] = None
-            missing_optional_artifacts.append("input_snapshot.csv")
+            missing_name = context.config.artifacts.input_snapshot_file_name
+            bundled_paths[missing_name] = None
+            missing_optional_artifacts.append(missing_name)
 
         if code_snapshot_dir is not None and code_snapshot_dir.exists():
             bundled_paths["code_snapshot"] = self._copy_directory_into_bundle(
@@ -1409,9 +1628,14 @@ class ArtifactExportStep(BasePipelineStep):
                         str(THIS_DIR / "{artifacts.config_file_name}"),
                     ] + arguments
                 if not _has_option(arguments, "--input"):
-                    default_input = THIS_DIR / "{artifacts.input_snapshot_file_name}"
-                    if default_input.exists():
-                        arguments = ["--input", str(default_input)] + arguments
+                    for default_input_name in [
+                        "{artifacts.input_snapshot_file_name}",
+                        "{artifacts.input_snapshot_parquet_file_name}",
+                    ]:
+                        default_input = THIS_DIR / default_input_name
+                        if default_input.exists():
+                            arguments = ["--input", str(default_input)] + arguments
+                            break
                 if not _has_option(arguments, "--output-root"):
                     arguments = ["--output-root", str(THIS_DIR / "reruns")] + arguments
                 return arguments
@@ -1441,7 +1665,8 @@ class ArtifactExportStep(BasePipelineStep):
             The generated launcher automatically:
 
             - uses `{artifacts.config_file_name}` as the saved framework config
-            - uses `{artifacts.input_snapshot_file_name}` as the default input when that file exists
+            - uses `{artifacts.input_snapshot_file_name}` or
+              `{artifacts.input_snapshot_parquet_file_name}` as the default input
             - writes new rerun artifacts under `reruns/`
             - imports the local `code_snapshot/src/` copy first, so step-level
               edits apply immediately

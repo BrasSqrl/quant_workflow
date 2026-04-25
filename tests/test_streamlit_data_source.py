@@ -11,6 +11,7 @@ from quant_pd_framework.steps.ingestion import IngestionStep
 from quant_pd_framework.streamlit_ui.data import (
     INPUT_SOURCE_METADATA_ATTR,
     attach_input_source_metadata,
+    convert_data_load_csv_to_parquet,
     describe_data_file,
     list_data_load_files,
     load_data_load_dataframe,
@@ -22,6 +23,7 @@ def test_list_data_load_files_returns_supported_direct_children() -> None:
     with temporary_artifact_root("data_load_listing") as data_load_dir:
         (data_load_dir / "b.csv").write_text("x\n1\n", encoding="utf-8")
         (data_load_dir / "a.xlsx").write_bytes(b"placeholder")
+        (data_load_dir / "c.parquet").write_bytes(b"placeholder")
         (data_load_dir / ".hidden.csv").write_text("x\n1\n", encoding="utf-8")
         (data_load_dir / "notes.txt").write_text(
             "not a supported data file",
@@ -33,7 +35,7 @@ def test_list_data_load_files_returns_supported_direct_children() -> None:
 
         files = list_data_load_files(data_load_dir)
 
-    assert [path.name for path in files] == ["a.xlsx", "b.csv"]
+    assert [path.name for path in files] == ["a.xlsx", "b.csv", "c.parquet"]
 
 
 def test_data_load_csv_metadata_flows_into_ingestion_context() -> None:
@@ -64,6 +66,48 @@ def test_data_load_csv_metadata_flows_into_ingestion_context() -> None:
     assert result.metadata["input_source"]["source_kind"] == "data_load"
     assert result.metadata["input_source"]["file_name"] == "loans.csv"
     assert result.metadata["input_shape"] == {"rows": 2, "columns": 2}
+
+
+def test_data_load_parquet_metadata_flows_into_ingestion_context() -> None:
+    with temporary_artifact_root("data_load_parquet_metadata") as data_load_dir:
+        path = data_load_dir / "loans.parquet"
+        pd.DataFrame(
+            {
+                "balance": [100, 200],
+                "default_status": [0, 1],
+            }
+        ).to_parquet(path, index=False)
+        metadata = describe_data_file(path)
+
+        dataframe = load_data_load_dataframe(
+            str(path),
+            metadata["suffix"],
+            metadata["modified_ns"],
+            metadata["size_bytes"],
+        )
+        attach_input_source_metadata(dataframe, metadata)
+
+        context = SimpleNamespace(raw_input=dataframe, metadata={})
+        result = IngestionStep().run(context)
+
+    assert result.metadata["input_source"]["suffix"] == ".parquet"
+    assert result.metadata["input_source"]["file_name"] == "loans.parquet"
+    assert result.metadata["input_shape"] == {"rows": 2, "columns": 2}
+
+
+def test_data_load_csv_can_convert_to_parquet() -> None:
+    with temporary_artifact_root("data_load_csv_conversion") as data_load_dir:
+        path = data_load_dir / "loans.csv"
+        path.write_text("balance,default_status\n100,0\n200,1\n", encoding="utf-8")
+
+        converted_path = convert_data_load_csv_to_parquet(path)
+        converted = pd.read_parquet(converted_path)
+
+    assert converted_path.name == "loans.parquet"
+    assert converted.to_dict(orient="list") == {
+        "balance": [100, 200],
+        "default_status": [0, 1],
+    }
 
 
 def test_reproducibility_manifest_rows_include_input_source_metadata() -> None:

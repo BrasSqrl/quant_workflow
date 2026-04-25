@@ -129,6 +129,7 @@ class TransformationStep(BasePipelineStep):
 
         context.split_frames = working_splits
         context.working_data = working_dataframe
+        context.metadata["resolved_transformation_objects"] = resolved_transformations
         context.diagnostics_tables["governed_transformations"] = pd.DataFrame(audit_rows)
         context.metadata["transformation_summary"] = {
             "count": len(resolved_transformations),
