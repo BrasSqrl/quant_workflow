@@ -362,5 +362,5 @@ them using:
 
 - The authoritative model dispatch is `build_model_adapter(...)`.
 - Model eligibility is enforced in `ModelConfig.validate(...)`.
-- The exported `model_summary.txt` and `model_documentation_pack.md` should be
+- The exported `model/model_summary.txt` and `reports/model_documentation_pack.md` should be
   read together for audit review.

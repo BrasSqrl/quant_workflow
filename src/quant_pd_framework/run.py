@@ -71,9 +71,14 @@ def _resolve_input_path(
         return Path(input_path)
 
     for default_input_name in default_input_names:
-        default_input = config_path.parent / default_input_name
-        if default_input.exists():
-            return default_input
+        for base_dir in [
+            config_path.parent,
+            config_path.parent / "data" / "input",
+            config_path.parent.parent / "data" / "input",
+        ]:
+            default_input = base_dir / default_input_name
+            if default_input.exists():
+                return default_input
 
     raise ValueError(
         "No input data was supplied. Pass --input or place the exported "

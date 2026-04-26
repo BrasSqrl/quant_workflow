@@ -159,13 +159,32 @@ The framework exports both tables and figures for common diagnostic curves.
 | Curve | Purpose | Main output names |
 | --- | --- | --- |
 | ROC | Classification ranking curve | `roc_curve`, `roc_curve` figure |
+| Annotated ROC | ROC curve with random-model reference and AUC annotation | `roc_curve_annotated` |
 | Precision-recall | Imbalanced-class tradeoff | `precision_recall_curve`, `precision_recall_curve` figure |
+| Annotated precision-recall | Precision-recall curve with average-precision annotation | `precision_recall_curve_annotated` |
+| KS separation | Event and non-event cumulative distribution gap | `ks_curve_annotated` |
 | Calibration curve | Observed vs predicted by bin | `calibration`, `calibration_curve` figure |
+| Calibration residual bars | Observed-minus-predicted calibration residual by bin | `calibration_residual_bars` |
 | Gain curve | Cumulative capture of defaults | `gain_chart` |
 | Lift chart | Relative lift by ranked bucket | `lift_chart` |
+| Score distribution violin | Score distribution shape by development split | `score_distribution_violin` |
+| Split metric slope chart | Train, validation, and test metric movement | `split_metric_slope_chart` |
+| Segment dumbbell | Observed-versus-predicted segment gaps | `segment_performance_dumbbell` |
+| Feature-importance waterfall | Signed coefficient or importance ranking | `feature_importance_waterfall` |
+| PSI threshold bars | Stability review bands for PSI values | `psi_threshold_bars` |
+| VIF threshold bars | Multicollinearity review bands for VIF values | `vif_threshold_bars` |
+| Scenario tornado | Ranked average score impact by scenario | `scenario_tornado` |
+| Cross-validation violin | Fold-metric distribution shape | `cross_validation_metric_violin` |
+| Feature-effect small multiples | Split-level feature-effect stability | `feature_effect_stability_small_multiples` |
 | Residuals vs predicted | Regression error shape | `residuals_vs_predicted` |
 | Actual vs predicted | Regression fit sanity check | `actual_vs_predicted` |
 | QQ plot | Residual distribution review | `qq_plot_data`, `qq_plot` |
+
+The annotated and companion chart outputs are presentation-layer additions:
+they reuse existing run tables, metrics, and predictions and do not change the
+model object, fitted coefficients, statistical test calculations, or exported
+source tables. They are controlled by `ArtifactConfig.include_enhanced_report_visuals`
+and the GUI toggle `Include enhanced report visuals`.
 
 ## 7. Explainability Metrics
 
@@ -296,9 +315,8 @@ Potential policy types include:
 
 ## 9. Distribution, Dependency, and Outlier Outputs
 
-The expanded roadmap added several framework-level diagnostics that are not
-single model-performance metrics but are still exported as first-class review
-tables.
+Quant Studio includes several framework-level diagnostics that are not single
+model-performance metrics but are still exported as first-class review tables.
 
 Common outputs now include:
 
@@ -391,11 +409,11 @@ The same metric family often appears in more than one place:
 
 | Artifact | Content |
 | --- | --- |
-| `metrics.json` | split-level metric dictionary |
-| `analysis_workbook.xlsx` | diagnostic tables |
-| `interactive_report.html` | grouped visual presentation |
+| `metadata/metrics.json` | split-level metric dictionary |
+| `workbooks/analysis_workbook.xlsx` | diagnostic tables |
+| `reports/interactive_report.html` | grouped visual presentation |
 | `tables/*.csv` | individual diagnostic tables |
-| `run_report.md` | run narrative summary |
+| `reports/run_report.md` | run narrative summary |
 
 ## 14. Workflow Guardrails And Governance Readiness
 
@@ -521,7 +539,7 @@ Primary figures:
 
 These are calculated in `CrossValidationStep` after the standard diagnostics
 finish. They fit temporary fold-level models and do not replace the final model
-artifact saved as `quant_model.joblib`.
+artifact saved as `model/quant_model.joblib`.
 
 Primary exported tables:
 

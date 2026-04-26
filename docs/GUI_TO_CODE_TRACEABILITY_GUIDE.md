@@ -61,7 +61,7 @@ Enterprise UX chain:
 
 | GUI location | Main controls | Config or runtime target | Code path | Audit surface |
 | --- | --- | --- | --- | --- |
-| `Data Source` expander | bundled sample, `Data_Load/` file selection, CSV/Excel/Parquet upload, `Large Data Mode` | runtime dataframe or file-backed `DatasetHandle` plus input-source metadata | `select_input_dataframe`, `list_data_load_files`, `load_data_load_dataframe`, `load_uploaded_dataframe_bytes`, `build_dataset_handle` | `input_snapshot.csv`, `input_snapshot.parquet`, `sample_development/`, `full_data_scoring/`, `large_data_metadata/`, `input_shape`, `input_source::*` rows in `reproducibility_manifest.json` |
+| Step 1 `Dataset & Schema` data-source section | bundled sample, `Data_Load/` file selection, CSV/Excel/Parquet upload, `Large Data Mode` | runtime dataframe or file-backed `DatasetHandle` plus input-source metadata | `select_input_dataframe`, `list_data_load_files`, `load_data_load_dataframe`, `load_uploaded_dataframe_bytes`, `build_dataset_handle` | `data/input/input_snapshot.csv`, `data/input/input_snapshot.parquet`, `data/sample_development/`, `data/full_data_scoring/`, `metadata/large_data/`, `input_shape`, `input_source::*` rows in `metadata/reproducibility_manifest.json` |
 
 Notes:
 
@@ -115,9 +115,9 @@ The main workspace now includes dedicated sections beyond the column designer.
 
 | Workspace tab | Config field(s) | Main implementation | Export evidence |
 | --- | --- | --- | --- |
-| `Feature Dictionary` | `FeatureDictionaryConfig.entries` | `parse_feature_dictionary_frame(...)`, diagnostics feature-dictionary output | `feature_dictionary`, `validation_pack.md` |
+| `Feature Dictionary` | `FeatureDictionaryConfig.entries` | `parse_feature_dictionary_frame(...)`, diagnostics feature-dictionary output | `feature_dictionary`, `reports/validation_pack.md` |
 | `Transformations` | `TransformationConfig.transformations` | `parse_transformation_frame(...)`, `TransformationStep` | `governed_transformations`, `interaction_candidates` |
-| `Template Workbook` | none directly; imports/exports editor tables | `build_template_workbook_bytes(...)`, `load_template_workbook(...)`, `streamlit_ui/workspace.py` | `configuration_template.xlsx` |
+| `Template Workbook` | none directly; imports/exports editor tables | `build_template_workbook_bytes(...)`, `load_template_workbook(...)`, `streamlit_ui/workspace.py` | `config/configuration_template.xlsx` |
 
 Implementation note:
 
@@ -126,7 +126,7 @@ Implementation note:
 - The build workspace and result surfaces now render one active section at a
   time instead of rendering every tab body on every rerun.
 
-The transformation editor now supports the expanded roadmap families as values
+The transformation editor supports the expanded transformation families as values
 of `TransformationSpec.transform_type`, including `box_cox`,
 `natural_spline`, `piecewise_linear`, `difference`, `ewma`,
 `rolling_median`, `rolling_min`, `rolling_max`, and `rolling_std`.
@@ -138,7 +138,7 @@ configuration surface is editable.
 
 | GUI control | Config or runtime target | Main implementation | Audit surface |
 | --- | --- | --- | --- |
-| `Workspace mode` | runtime-only UI state | `app/streamlit_app.py` Step 2 control gating advanced expanders | indirect; preserved by the resolved preset-backed `run_config.json` |
+| `Workspace mode` | runtime-only UI state | `streamlit_ui/app_controller.py` Step 2 control gating advanced sections | indirect; preserved by the resolved preset-backed `config/run_config.json` |
 
 Notes:
 
@@ -234,8 +234,8 @@ Execution-mode meaning:
 | `Train size` | `SplitConfig.train_size` | `SplitStep` | `split_summary` |
 | `Validation size` | `SplitConfig.validation_size` | `SplitStep` | `split_summary` |
 | `Test size` | `SplitConfig.test_size` | `SplitStep` | `split_summary` |
-| `Random state` | `SplitConfig.random_state` | `SplitStep`, sampling helpers | `run_config.json` |
-| `Stratify cross-sectional split` | `SplitConfig.stratify` | `SplitStep._split_cross_sectional` | `run_config.json` |
+| `Random state` | `SplitConfig.random_state` | `SplitStep`, sampling helpers | `config/run_config.json` |
+| `Stratify cross-sectional split` | `SplitConfig.stratify` | `SplitStep._split_cross_sectional` | `config/run_config.json` |
 
 Date and identifier columns are not collected here. They are derived from the
 column designer role assignments.
@@ -306,6 +306,7 @@ These controls only matter when `ExecutionConfig.mode` is
 | `Large-data training sample rows` | `PerformanceConfig.large_data_training_sample_rows` | sample-fit row cap for file-backed runs |
 | `Full-data scoring chunk rows` | `PerformanceConfig.large_data_score_chunk_rows` | chunk size for `LargeDataFullScoringStep` |
 | `Export individual figure HTML and PNG files` | `ArtifactConfig.export_individual_figure_files`; default `False` | `ArtifactExportStep._export_visualizations` |
+| `Include enhanced report visuals` | `ArtifactConfig.include_enhanced_report_visuals`; default `True` | `presentation.enhance_report_visualizations`, live Results & Artifacts view, `reports/interactive_report.html` |
 | `Diagnostic suites` | `DiagnosticConfig.*` booleans | `DiagnosticsStep.run(...)` |
 | `Export surfaces` | `DiagnosticConfig.interactive_visualizations`, `static_image_exports`, `export_excel_workbook` | `ArtifactExportStep` |
 | `Top features for analysis` | `DiagnosticConfig.top_n_features` | diagnostics feature ranking |
@@ -406,6 +407,7 @@ These controls only matter when `ExecutionConfig.mode` is
 | `Min events per feature` | `SuitabilityCheckConfig.min_events_per_feature` | `AssumptionCheckStep` | `assumption_checks` |
 | `Min/Max class rate` | `SuitabilityCheckConfig.min_class_rate`, `max_class_rate` | `AssumptionCheckStep` | `assumption_checks` |
 | `Max dominant category share` | `SuitabilityCheckConfig.max_dominant_category_share` | `AssumptionCheckStep` | `assumption_checks` |
+| Results `Suitability Checks` panel | `diagnostics_tables["assumption_checks"]` | `render_suitability_checks_panel(...)` | failure-first reviewer table with `interpretation`, `why_it_matters`, and `recommended_action` |
 | `Enable workflow guardrails` | `WorkflowGuardrailConfig.enabled` | `build_framework_config_from_editor(...)`, `FrameworkConfig.validate`, `DiagnosticsStep._add_workflow_guardrail_outputs` | `workflow_guardrails` |
 | `Block run on guardrail errors` | `WorkflowGuardrailConfig.fail_on_error` | `FrameworkConfig.validate` | run failure if violated |
 | `Require preset documentation fields` | `WorkflowGuardrailConfig.enforce_documentation_requirements` | `workflow_guardrails.py` | `workflow_guardrails` |
@@ -464,14 +466,15 @@ These controls only matter when `ExecutionConfig.mode` is
 Each run writes to a readable UTC timestamped folder under the artifact root,
 for example `run_2026-04-24_15-42-10_UTC`.
 
-The large-run audit surfaces are `run_config.json`, `run_debug_trace.json`,
-`large_data_memory_estimate`, `dtype_optimization`, optional
+The large-run audit surfaces are `config/run_config.json`,
+`metadata/run_debug_trace.json`, `large_data_memory_estimate`,
+`dtype_optimization`, optional
 `csv_to_parquet_conversion`, `large_data_full_scoring_summary`,
 `large_data_full_score_distribution`, and the `tabular_export_policy` metadata
 recorded in the run context. The Streamlit results viewer may keep sampled
 in-memory previews for large runs when `PerformanceConfig.lazy_streamlit_results`
 is enabled; full-data predictions are written separately under
-`full_data_scoring/`.
+`data/full_data_scoring/`.
 
 The GUI output-location table is assembled by
 `streamlit_ui/artifact_summary.py`. It prioritizes the run folder, interactive
@@ -552,21 +555,23 @@ Notes:
 
 For an audit review, the most important files are:
 
-- `run_config.json`
-- `step_manifest.json`
+- `config/run_config.json`
+- `metadata/step_manifest.json`
 - `artifact_manifest.json`
   This now includes `core_artifacts`, `directories`, interactive figure paths,
-  regulator-ready report paths, and the rerun bundle map.
-- `metrics.json`
-- `run_report.md`
-- `model_documentation_pack.md`
-- `validation_pack.md`
-- `reproducibility_manifest.json`
-- `configuration_template.xlsx`
-- `interactive_report.html`
-- `subset_search_candidates.csv`, `subset_search_frontier.csv`,
-  `subset_search_feature_frequency.csv`, and
-  `subset_search_significance_tests.csv` when the third execution mode is used
+  regulator-ready report paths, the artifact index, and the rerun bundle map.
+- `metadata/metrics.json`
+- `reports/run_report.md`
+- `reports/model_documentation_pack.md`
+- `reports/validation_pack.md`
+- `metadata/reproducibility_manifest.json`
+- `config/configuration_template.xlsx`
+- `reports/interactive_report.html`
+- `tables/feature_subset_search/subset_search_candidates.csv`,
+  `tables/feature_subset_search/subset_search_frontier.csv`,
+  `tables/feature_subset_search/subset_search_feature_frequency.csv`, and
+  `tables/feature_subset_search/subset_search_significance_tests.csv` when
+  the third execution mode is used
 
 Together these create the formal record of what the GUI settings actually
 became in code.

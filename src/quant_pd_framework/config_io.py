@@ -679,9 +679,7 @@ def _build_preset_recommendation_config(
 ) -> PresetRecommendationConfig:
     return PresetRecommendationConfig(
         enabled=payload.get("enabled", True),
-        include_imputation_recommendations=payload.get(
-            "include_imputation_recommendations", True
-        ),
+        include_imputation_recommendations=payload.get("include_imputation_recommendations", True),
         include_transformation_recommendations=payload.get(
             "include_transformation_recommendations", True
         ),
@@ -844,8 +842,8 @@ def _build_artifact_config(payload: dict[str, Any]) -> ArtifactConfig:
         figures_directory_name=payload.get("figures_directory_name", "figures"),
         html_directory_name=payload.get("html_directory_name", "html"),
         png_directory_name=payload.get("png_directory_name", "png"),
-        json_directory_name=payload.get("json_directory_name", "json"),
         code_snapshot_directory_name=payload.get("code_snapshot_directory_name", "code_snapshot"),
+        include_enhanced_report_visuals=payload.get("include_enhanced_report_visuals", True),
         export_individual_figure_files=payload.get("export_individual_figure_files", False),
         export_input_snapshot=payload.get("export_input_snapshot", True),
         export_code_snapshot=payload.get("export_code_snapshot", True),

@@ -1,8 +1,10 @@
-# Quant Studio Performance And Maintainability Roadmap
+# Quant Studio Implemented Optimization Ledger
 
-This roadmap defines the current optimization phase. The objective is to keep
-Quant Studio focused on model development and documentation while making large
-runs faster, easier to debug, and easier to audit.
+This file is a historical implementation ledger for completed performance,
+large-data, maintainability, and enterprise-workflow work. It is not an active
+planning document. The objective of these completed items was to keep Quant
+Studio focused on model development and documentation while making large runs
+faster, easier to debug, and easier to audit.
 
 ## 1. Run-Level Debug Trace
 
@@ -263,8 +265,8 @@ Delivered:
 - Replay deterministic preprocessing and learned imputation/transformation
   contracts on full-file chunks.
 - Score the full file in chunks and write predictions directly to Parquet.
-- Export `sample_development/`, `full_data_scoring/`, and
-  `large_data_metadata/` folders for audit separation.
+- Export `data/sample_development/`, `data/full_data_scoring/`, and
+  `metadata/large_data/` folders for audit separation.
 
 Primary code:
 

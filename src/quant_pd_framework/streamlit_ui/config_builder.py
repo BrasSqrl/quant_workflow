@@ -142,9 +142,7 @@ def build_preview_configuration(
                 ranking_metric=values["subset_search_ranking_metric"],
                 top_candidate_count=int(values["subset_search_top_candidate_count"]),
                 top_curve_count=int(values["subset_search_top_curve_count"]),
-                include_significance_tests=values[
-                    "subset_search_include_significance_tests"
-                ],
+                include_significance_tests=values["subset_search_include_significance_tests"],
             ),
             feature_policy=FeaturePolicyConfig(
                 enabled=values["feature_policy_enabled"],
@@ -219,9 +217,7 @@ def build_preview_configuration(
                 if values["suitability_checks_enabled"]
                 and TargetMode(values["target_mode"]) == TargetMode.BINARY
                 else None,
-                max_dominant_category_share=float(
-                    values["suitability_max_dominant_category_share"]
-                )
+                max_dominant_category_share=float(values["suitability_max_dominant_category_share"])
                 if values["suitability_checks_enabled"]
                 else None,
                 error_on_failure=values["suitability_error_on_failure"],
@@ -345,14 +341,16 @@ def build_preview_configuration(
             performance=values.get("performance_config", preset_inputs.performance),
             artifacts=ArtifactConfig(
                 output_root=Path(values["output_root"].strip() or "artifacts"),
+                include_enhanced_report_visuals=values.get(
+                    "include_enhanced_report_visuals",
+                    preset_inputs.artifacts.include_enhanced_report_visuals,
+                ),
                 export_individual_figure_files=values["export_individual_figure_files"],
                 export_input_snapshot=values["export_input_snapshot"],
                 export_code_snapshot=values["export_code_snapshot"],
                 export_profile=ExportProfile(values["export_profile"]),
                 tabular_output_format=TabularOutputFormat(values["tabular_output_format"]),
-                large_data_export_policy=LargeDataExportPolicy(
-                    values["large_data_export_policy"]
-                ),
+                large_data_export_policy=LargeDataExportPolicy(values["large_data_export_policy"]),
                 large_data_sample_rows=int(values["large_data_sample_rows"]),
                 parquet_compression=values["parquet_compression"],
             ),

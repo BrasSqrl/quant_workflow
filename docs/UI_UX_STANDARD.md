@@ -33,17 +33,23 @@ The interface should avoid:
 
 ## 2. Layout Standard
 
-The GUI and exported report should follow the same top-level structure:
+The GUI and exported report should use the same diagnostic taxonomy, with Step
+4 `Results & Artifacts` acting as the live reviewer workspace and
+`reports/interactive_report.html` acting as the distribution-ready companion report.
+The current reporting sections are:
 
-1. Overview
-2. Data Quality
-3. Sample / Segmentation
-4. Model Performance
-5. Scorecard / Binning Workbench (when scorecard outputs are present)
-6. Calibration / Thresholds
-7. Stability / Drift
-8. Backtesting / Time Diagnostics
-9. Governance / Export Bundle
+1. Model Performance
+2. Calibration / Thresholds
+3. Stability / Drift
+4. Sample / Segmentation
+5. Feature Effects / Explainability
+6. Statistical Tests
+7. Feature Subset Search
+8. Scorecard / Binning Workbench
+9. Credit-Risk Development
+10. Data Quality
+11. Backtesting / Time Diagnostics
+12. Governance / Export Bundle
 
 Each section should include:
 
@@ -72,10 +78,33 @@ All charts should:
 Chart types should match the analytical question:
 
 - bars for ranked comparisons and segment summaries
+- waterfall bars for signed coefficient or importance review
 - lines for trends, calibration, and backtests
 - heatmaps for correlation-style matrix views
+- violin plots for score and fold-metric distribution shape
+- dumbbell plots for observed-versus-predicted segment gaps
+- tornado charts for scenario sensitivity ranking
+- small multiples for split-by-split feature-effect stability
 - histograms for score distributions
 - scatter plots for residual and actual-vs-predicted analysis
+
+Report-only companion charts may be generated during presentation assembly when
+the underlying diagnostics already exist. These companion views do not change
+model fitting, metrics, or exported tables; they make the existing evidence
+easier to review. The `Include enhanced report visuals` toggle controls this
+presentation layer. Current companion views include annotated ROC, annotated
+precision-recall, KS separation, calibration residual bars, PSI threshold bars,
+VIF threshold bars, missingness-by-split heatmaps, feature-importance
+waterfalls, score-distribution violins, segment-performance dumbbells,
+scenario tornados, cross-validation metric violins, and feature-effect
+stability small multiples.
+
+Charts that include practical thresholds should use interpretation badges:
+
+- `Great` for strong diagnostic evidence
+- `Good` for generally acceptable evidence
+- `Watch` for borderline or context-dependent evidence
+- `Bad` for likely remediation, justification, or rejection
 
 When labels are unavailable, the interface must avoid implying realized performance and should instead emphasize score distributions, stability review, and documentation-safe summaries.
 
@@ -114,6 +143,12 @@ The exported report should:
 
 - use the same grouping taxonomy as the GUI
 - repeat the same visual language and chart styling
+- use a formal regulatory-report cover treatment
+- show chart badges and concise interpretation guidance only when the guidance is
+  chart-specific and helps the reviewer interpret the result
+- use collapsible diagnostic sections so dense evidence is easier to scan
+- avoid static image fallback generation inside the report because dynamic
+  Plotly rendering is faster and individual PNG exports are optional
 - include KPI cards near the top
 - present warnings and pipeline events clearly
 - remain useful as a standalone validation artifact that can be shared directly

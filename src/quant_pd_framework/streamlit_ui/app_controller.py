@@ -501,8 +501,7 @@ def render_configuration_profile_manager(
             )
         elif preview_error:
             st.warning(
-                "Resolve the current readiness error before saving a profile: "
-                f"{preview_error}"
+                f"Resolve the current readiness error before saving a profile: {preview_error}"
             )
         else:
             st.warning("Complete the configuration before saving a profile.")
@@ -530,12 +529,16 @@ def render_configuration_profile_manager(
         library_frame = ui_build_profile_library_frame()
         if not library_frame.empty:
             st.markdown("#### Profile Library")
-            search_text = st.text_input(
-                "Search profiles",
-                value="",
-                key="configuration_profile_search",
-                help="Search profile name, tags, model purpose, target mode, or model type.",
-            ).strip().lower()
+            search_text = (
+                st.text_input(
+                    "Search profiles",
+                    value="",
+                    key="configuration_profile_search",
+                    help="Search profile name, tags, model purpose, target mode, or model type.",
+                )
+                .strip()
+                .lower()
+            )
             filtered_library = library_frame
             if search_text:
                 searchable = library_frame.fillna("").astype(str).agg(" ".join, axis=1).str.lower()
@@ -932,13 +935,13 @@ def run_app() -> None:
                 existing_model_path_text = st.text_input(
                     "Existing model artifact path",
                     value="",
-                    help="Path to an exported quant_model.joblib artifact.",
+                    help="Path to an exported model/quant_model.joblib artifact.",
                 )
                 existing_config_path_text = st.text_input(
                     "Existing run config path",
                     value="",
                     help=(
-                        "Optional path to a prior run_config.json. If supplied, "
+                        "Optional path to a prior config/run_config.json. If supplied, "
                         "the framework reuses the prior schema, target, split, "
                         "feature, and model settings while keeping the current "
                         "diagnostics and output selections."
@@ -1239,9 +1242,7 @@ def run_app() -> None:
                     if feature_name in subset_search_feature_options
                 ],
                 disabled=not subset_search_enabled,
-                help=(
-                    "Leave empty to search across every enabled schema row marked as a feature."
-                ),
+                help=("Leave empty to search across every enabled schema row marked as a feature."),
             )
             subset_search_locked_include = st.multiselect(
                 "Locked include features",
@@ -1268,9 +1269,8 @@ def run_app() -> None:
                 max(1, int(preset_inputs.subset_search.min_subset_size)),
                 subset_search_feature_count,
             )
-            configured_max_subset_size = (
-                preset_inputs.subset_search.max_subset_size
-                or min(4, subset_search_feature_count)
+            configured_max_subset_size = preset_inputs.subset_search.max_subset_size or min(
+                4, subset_search_feature_count
             )
             default_max_subset_size = min(
                 max(default_min_subset_size, int(configured_max_subset_size)),
@@ -1318,9 +1318,7 @@ def run_app() -> None:
             subset_search_ranking_split = st.selectbox(
                 "Ranking split",
                 options=["validation", "test"],
-                index=["validation", "test"].index(
-                    preset_inputs.subset_search.ranking_split
-                ),
+                index=["validation", "test"].index(preset_inputs.subset_search.ranking_split),
                 disabled=not subset_search_enabled,
             )
             subset_search_ranking_metric = st.selectbox(
@@ -1429,9 +1427,7 @@ def run_app() -> None:
                 step=1.0,
                 format="%.1f",
             )
-            memory_limit_gb = (
-                None if memory_limit_gb_input <= 0 else float(memory_limit_gb_input)
-            )
+            memory_limit_gb = None if memory_limit_gb_input <= 0 else float(memory_limit_gb_input)
             optimize_dtypes = st.checkbox(
                 "Optimize dtypes during ingestion",
                 value=large_data_mode or preset_inputs.performance.optimize_dtypes,
@@ -1518,6 +1514,16 @@ def run_app() -> None:
                     "the per-figure HTML and PNG files to reduce runtime and artifact volume."
                 ),
             )
+            include_enhanced_report_visuals = st.toggle(
+                "Include enhanced report visuals",
+                value=preset_inputs.artifacts.include_enhanced_report_visuals,
+                help=(
+                    "When on, Quant Studio adds presentation-layer companion charts such as "
+                    "annotated ROC/KS, calibration residuals, PSI/VIF bands, and segment "
+                    "dumbbells to the live results view and interactive report. Turn this off "
+                    "for faster development runs."
+                ),
+            )
             default_diagnostic_labels = (
                 [
                     label
@@ -1537,9 +1543,7 @@ def run_app() -> None:
             selected_export_surfaces = st.multiselect(
                 "Export surfaces",
                 options=[label for label, _ in EXPORT_SURFACE_OPTIONS],
-                default=[]
-                if large_data_mode
-                else [label for label, _ in EXPORT_SURFACE_OPTIONS],
+                default=[] if large_data_mode else [label for label, _ in EXPORT_SURFACE_OPTIONS],
             )
             if not export_individual_figure_files:
                 st.caption(
@@ -2027,24 +2031,16 @@ def run_app() -> None:
         regulatory_reporting_enabled = preset_inputs.regulatory_reporting.enabled
         regulatory_export_docx = preset_inputs.regulatory_reporting.export_docx
         regulatory_export_pdf = preset_inputs.regulatory_reporting.export_pdf
-        regulatory_committee_template = (
-            preset_inputs.regulatory_reporting.committee_template_name
-        )
-        regulatory_validation_template = (
-            preset_inputs.regulatory_reporting.validation_template_name
-        )
+        regulatory_committee_template = preset_inputs.regulatory_reporting.committee_template_name
+        regulatory_validation_template = preset_inputs.regulatory_reporting.validation_template_name
         regulatory_include_assumptions = (
             preset_inputs.regulatory_reporting.include_assumptions_section
         )
         regulatory_include_challengers = (
             preset_inputs.regulatory_reporting.include_challenger_section
         )
-        regulatory_include_scenarios = (
-            preset_inputs.regulatory_reporting.include_scenario_section
-        )
-        regulatory_include_appendix = (
-            preset_inputs.regulatory_reporting.include_appendix_section
-        )
+        regulatory_include_scenarios = preset_inputs.regulatory_reporting.include_scenario_section
+        regulatory_include_appendix = preset_inputs.regulatory_reporting.include_appendix_section
         suitability_checks_enabled = preset_inputs.suitability_checks.enabled
         suitability_error_on_failure = preset_inputs.suitability_checks.error_on_failure
         suitability_min_events_per_feature = float(
@@ -2073,12 +2069,8 @@ def run_app() -> None:
         centered_ice_curves_enabled = preset_inputs.explainability.centered_ice_curves
         ale_enabled = preset_inputs.explainability.accumulated_local_effects
         two_way_effects_enabled = preset_inputs.explainability.two_way_effects
-        effect_confidence_bands_enabled = (
-            preset_inputs.explainability.effect_confidence_bands
-        )
-        effect_monotonicity_enabled = (
-            preset_inputs.explainability.monotonicity_diagnostics
-        )
+        effect_confidence_bands_enabled = preset_inputs.explainability.effect_confidence_bands
+        effect_monotonicity_enabled = preset_inputs.explainability.monotonicity_diagnostics
         segmented_effects_enabled = preset_inputs.explainability.segmented_effects
         effect_stability_enabled = preset_inputs.explainability.effect_stability
         marginal_effects_enabled = preset_inputs.explainability.marginal_effects
@@ -2785,8 +2777,7 @@ def run_app() -> None:
                     max_value=100,
                     value=preset_inputs.explainability.effect_band_resamples,
                     step=1,
-                    disabled=not explainability_enabled
-                    or not effect_confidence_bands_enabled,
+                    disabled=not explainability_enabled or not effect_confidence_bands_enabled,
                 )
             )
             two_way_grid_points = int(
@@ -3066,8 +3057,7 @@ def run_app() -> None:
         with readiness_tab:
             if preview_error or preview_config is None:
                 st.error(
-                    preview_error
-                    or "Resolve the readiness issues before running the workflow."
+                    preview_error or "Resolve the readiness issues before running the workflow."
                 )
                 ui_set_last_run_snapshot(None)
             else:
@@ -3106,6 +3096,7 @@ def run_app() -> None:
             ui_render_run_results(last_run_snapshot)
         else:
             st.info("Run a valid workflow from Step 3 to populate results and artifacts.")
+
 
 if __name__ == "__main__":
     run_app()

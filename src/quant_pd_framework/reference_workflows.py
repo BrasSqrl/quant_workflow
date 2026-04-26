@@ -612,10 +612,10 @@ REFERENCE_WORKFLOWS: dict[str, ReferenceWorkflowDefinition] = {
             "Are the selected features, assumptions, and scenario responses defensible for the target definition?",
         ],
         artifact_read_order=[
-            "Start with `committee_report.pdf` for the concise story of fit, scope, and decision-ready highlights.",
-            "Then open `validation_report.pdf` to review guardrails, suitability, calibration, and appendix detail.",
-            "Use `interactive_report.html` to inspect ROC, PR, calibration, threshold, and governance views interactively.",
-            "Read `model_documentation_pack.md` and `validation_pack.md` for the development and validator narratives, then use `analysis_workbook.xlsx` for the detailed tables.",
+            "Start with `reports/committee_report.pdf` for the concise story of fit, scope, and decision-ready highlights.",
+            "Then open `reports/validation_report.pdf` to review guardrails, suitability, calibration, and appendix detail.",
+            "Use `reports/interactive_report.html` to inspect ROC, PR, calibration, threshold, and governance views interactively.",
+            "Read `reports/model_documentation_pack.md` and `reports/validation_pack.md` for the development and validator narratives, then use `workbooks/analysis_workbook.xlsx` for the detailed tables.",
         ],
         interpretation_notes=[
             "Start with held-out ROC AUC, average precision, Brier score, and the calibration summary before reviewing secondary diagnostics.",
@@ -645,10 +645,10 @@ REFERENCE_WORKFLOWS: dict[str, ReferenceWorkflowDefinition] = {
             "Are recovery and LGD segment views directionally consistent with the intended severity story?",
         ],
         artifact_read_order=[
-            "Start with `validation_report.pdf` for the model form, guardrails, and residual-focused validation view.",
-            "Then inspect `interactive_report.html` for residual plots, QQ behavior, segment views, and scenario outputs.",
-            "Use `model_documentation_pack.md` for the development narrative and `analysis_workbook.xlsx` for the exact tables.",
-            "Open `committee_report.pdf` when you need the concise committee-facing framing after the validation readout.",
+            "Start with `reports/validation_report.pdf` for the model form, guardrails, and residual-focused validation view.",
+            "Then inspect `reports/interactive_report.html` for residual plots, QQ behavior, segment views, and scenario outputs.",
+            "Use `reports/model_documentation_pack.md` for the development narrative and `workbooks/analysis_workbook.xlsx` for the exact tables.",
+            "Open `reports/committee_report.pdf` when you need the concise committee-facing framing after the validation readout.",
         ],
         interpretation_notes=[
             "Read RMSE, MAE, and R-squared together with residual and QQ diagnostics; fit metrics alone are not enough for severity models.",
@@ -678,10 +678,10 @@ REFERENCE_WORKFLOWS: dict[str, ReferenceWorkflowDefinition] = {
             "Are roll-rate, migration, and cohort outputs consistent with the intended lifetime-PD story?",
         ],
         artifact_read_order=[
-            "Start with `validation_report.pdf` to review the use case, guardrails, calibration, and lifetime-PD diagnostics in one place.",
-            "Open `interactive_report.html` next to inspect lifetime curves, time diagnostics, migration, and macro-sensitivity visuals.",
-            "Read `model_documentation_pack.md` for the development narrative and `validation_pack.md` for assumptions and exclusions.",
-            "Use `analysis_workbook.xlsx`, `tables/`, and `statistical_tests.json` for the supporting detail behind the published views.",
+            "Start with `reports/validation_report.pdf` to review the use case, guardrails, calibration, and lifetime-PD diagnostics in one place.",
+            "Open `reports/interactive_report.html` next to inspect lifetime curves, time diagnostics, migration, and macro-sensitivity visuals.",
+            "Read `reports/model_documentation_pack.md` for the development narrative and `reports/validation_pack.md` for assumptions and exclusions.",
+            "Use `workbooks/analysis_workbook.xlsx`, `tables/`, and `metadata/statistical_tests.json` for the supporting detail behind the published views.",
         ],
         interpretation_notes=[
             "Prioritize the lifetime-PD curve, calibration summary, and time-backtest outputs before reading secondary diagnostics.",
@@ -711,10 +711,10 @@ REFERENCE_WORKFLOWS: dict[str, ReferenceWorkflowDefinition] = {
             "Are the scenario outputs directionally sensible for a stress-testing workflow?",
         ],
         artifact_read_order=[
-            "Start with `committee_report.pdf` for the high-level forecasting story and the core held-out metrics.",
-            "Then read `validation_report.pdf` for assumption checks, numerical diagnostics, and the detailed appendix trail.",
-            "Open `interactive_report.html` for macro-sensitivity, quantile backtesting, and forecasting diagnostics.",
-            "Use `analysis_workbook.xlsx`, `metrics.json`, and `tables/` when you need exact values behind the report narrative.",
+            "Start with `reports/committee_report.pdf` for the high-level forecasting story and the core held-out metrics.",
+            "Then read `reports/validation_report.pdf` for assumption checks, numerical diagnostics, and the detailed appendix trail.",
+            "Open `reports/interactive_report.html` for macro-sensitivity, quantile backtesting, and forecasting diagnostics.",
+            "Use `workbooks/analysis_workbook.xlsx`, `metadata/metrics.json`, and `tables/` when you need exact values behind the report narrative.",
         ],
         interpretation_notes=[
             "Read performance diagnostics together with time-series statistical tests; strong fit without stable residual behavior is not enough.",

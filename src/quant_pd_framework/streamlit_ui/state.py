@@ -106,8 +106,7 @@ def read_binary_artifact(path_value: str) -> bytes:
 
 def build_run_snapshot(context, config_dict: dict[str, Any]) -> dict[str, Any]:
     artifact_paths = {
-        key: (str(value) if value is not None else "")
-        for key, value in context.artifacts.items()
+        key: (str(value) if value is not None else "") for key, value in context.artifacts.items()
     }
     score_column = infer_snapshot_score_column(context)
     lazy_results = bool(context.config.performance.lazy_streamlit_results)
@@ -189,11 +188,12 @@ def build_run_snapshot(context, config_dict: dict[str, Any]) -> dict[str, Any]:
         ),
         "threshold": context.config.model.threshold,
         "score_column": score_column,
-        "prediction_column": str(
-            context.metadata.get("prediction_column", "predicted_class")
-        ),
+        "prediction_column": str(context.metadata.get("prediction_column", "predicted_class")),
         "date_column": context.config.split.date_column,
         "default_segment_column": context.config.diagnostics.default_segment_column,
+        "include_enhanced_report_visuals": bool(
+            context.config.artifacts.include_enhanced_report_visuals
+        ),
     }
 
 

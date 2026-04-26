@@ -10,6 +10,7 @@ import pandas as pd
 from ..base import BasePipelineStep
 from ..config import ArtifactConfig, ColumnRole, PerformanceConfig
 from ..context import PipelineContext
+from ..export_layout import build_export_path_layout
 from ..large_data import (
     DatasetHandle,
     build_memory_estimate_table,
@@ -139,14 +140,10 @@ class IngestionStep(BasePipelineStep):
         read_path = path
         performance = self._performance_config(context)
         artifacts = self._artifact_config(context)
-        if (
-            path.suffix.lower() == ".csv"
-            and performance.convert_csv_to_parquet
-        ):
+        if path.suffix.lower() == ".csv" and performance.convert_csv_to_parquet:
+            output_root = artifacts.output_root / getattr(context, "run_id", "standalone_ingestion")
             converted_dir = (
-                artifacts.output_root
-                / getattr(context, "run_id", "standalone_ingestion")
-                / "converted_inputs"
+                build_export_path_layout(artifacts, output_root).data_input_dir / "converted_inputs"
             )
             converted_path = converted_dir / f"{path.stem}.parquet"
             conversion_metadata = convert_csv_to_parquet(
@@ -170,12 +167,14 @@ class IngestionStep(BasePipelineStep):
     ) -> list[str] | None:
         if not context.config.performance.large_data_project_columns:
             return None
-        preview_columns = set(read_dataset_sample(
-            handle,
-            rows=1,
-            columns=None,
-            random_state=context.config.split.random_state,
-        ).columns)
+        preview_columns = set(
+            read_dataset_sample(
+                handle,
+                rows=1,
+                columns=None,
+                random_state=context.config.split.random_state,
+            ).columns
+        )
         projected: list[str] = []
         for candidate in [
             context.config.target.source_column,
@@ -207,7 +206,13 @@ class IngestionStep(BasePipelineStep):
         dataframe: pd.DataFrame,
     ) -> None:
         output_root = context.config.artifacts.output_root / context.run_id
-        sample_dir = output_root / "sample_development"
+        sample_dir = (
+            build_export_path_layout(
+                context.config.artifacts,
+                output_root,
+            ).data_dir
+            / "sample_development"
+        )
         sample_dir.mkdir(parents=True, exist_ok=True)
         sample_path = sample_dir / "training_sample.parquet"
         try:

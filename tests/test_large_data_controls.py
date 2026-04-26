@@ -230,7 +230,7 @@ def test_file_backed_large_data_run_trains_on_sample_and_scores_full_file() -> N
         assert len(full_predictions) == len(dataframe)
         assert context.artifacts["sample_development_dir"].name == "sample_development"
         assert context.artifacts["full_data_scoring_dir"].name == "full_data_scoring"
-        assert context.artifacts["large_data_metadata_dir"].name == "large_data_metadata"
+        assert context.artifacts["large_data_metadata_dir"].name == "large_data"
         assert "large_data_full_scoring_summary" in context.diagnostics_tables
         assert "diagnostic_registry" in context.diagnostics_tables
         assert Path(context.artifacts["large_data_full_scoring_progress"]).exists()

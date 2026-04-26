@@ -12,21 +12,25 @@ from typing import Any
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
-import plotly.io as pio
 from plotly.offline.offline import get_plotlyjs
+from plotly.subplots import make_subplots
 
 FINTECH_COLORWAY = [
     "#16324F",
     "#2A6F97",
     "#2C8C7B",
     "#C28A2C",
-    "#7C5CFC",
+    "#4F6FB7",
     "#D46A6A",
+    "#0F7B6C",
+    "#E09F3E",
+    "#3C5A73",
+    "#9A6B2F",
     "#607089",
     "#0E7490",
 ]
 FINTECH_NEUTRAL = {
-    "bg": "#F6F4EF",
+    "bg": "#F5F1EA",
     "surface": "#FFFDFC",
     "surface_alt": "#F3EEE5",
     "line": "#D8D1C4",
@@ -34,15 +38,41 @@ FINTECH_NEUTRAL = {
     "muted": "#5F6B7A",
     "accent": "#C28A2C",
 }
+REPORT_SEVERITY_COLORS = {
+    "great": "#0F8B5F",
+    "good": "#2A6F97",
+    "watch": "#D99A2B",
+    "bad": "#C44536",
+    "info": "#607089",
+}
 
 SECTION_SPECS: OrderedDict[str, dict[str, str]] = OrderedDict(
     [
         (
-            "data_quality",
+            "model_performance",
             {
-                "title": "Data Quality",
+                "title": "Model Performance",
                 "description": (
-                    "Schema integrity, completeness, summary statistics, and feature health."
+                    "Ranking power, predictive strength, residual behavior, and feature importance."
+                ),
+            },
+        ),
+        (
+            "calibration_thresholds",
+            {
+                "title": "Calibration / Thresholds",
+                "description": (
+                    "Probability alignment, decision thresholds, lift, gain, "
+                    "and credit-risk diagnostics."
+                ),
+            },
+        ),
+        (
+            "stability_drift",
+            {
+                "title": "Stability / Drift",
+                "description": (
+                    "Population stability and feature drift between development and scored samples."
                 ),
             },
         ),
@@ -56,31 +86,22 @@ SECTION_SPECS: OrderedDict[str, dict[str, str]] = OrderedDict(
             },
         ),
         (
-            "credit_risk_development",
-            {
-                "title": "Credit-Risk Development",
-                "description": (
-                    "Vintage curves, migration views, recovery segmentation, and "
-                    "macro-sensitivity diagnostics for credit development workflows."
-                ),
-            },
-        ),
-        (
-            "model_performance",
-            {
-                "title": "Model Performance",
-                "description": (
-                    "Ranking power, predictive strength, residual behavior, and feature importance."
-                ),
-            },
-        ),
-        (
             "feature_effects",
             {
                 "title": "Feature Effects / Explainability",
                 "description": (
                     "Partial dependence, ICE, ALE, marginal effects, interaction strength, "
                     "and effect stability diagnostics."
+                ),
+            },
+        ),
+        (
+            "statistical_tests",
+            {
+                "title": "Statistical Tests",
+                "description": (
+                    "Hypothesis-test and test-like evidence for stationarity, specification, "
+                    "distribution shifts, dependency, and challenger significance."
                 ),
             },
         ),
@@ -104,21 +125,21 @@ SECTION_SPECS: OrderedDict[str, dict[str, str]] = OrderedDict(
             },
         ),
         (
-            "calibration_thresholds",
+            "credit_risk_development",
             {
-                "title": "Calibration / Thresholds",
+                "title": "Credit-Risk Development",
                 "description": (
-                    "Probability alignment, decision thresholds, lift, gain, "
-                    "and credit-risk diagnostics."
+                    "Vintage curves, migration views, recovery segmentation, and "
+                    "macro-sensitivity diagnostics for credit development workflows."
                 ),
             },
         ),
         (
-            "stability_drift",
+            "data_quality",
             {
-                "title": "Stability / Drift",
+                "title": "Data Quality",
                 "description": (
-                    "Population stability and feature drift between development and scored samples."
+                    "Schema integrity, completeness, summary statistics, and feature health."
                 ),
             },
         ),
@@ -282,11 +303,16 @@ FIGURE_LABELS = {
     "threshold_analysis": "Threshold Performance Sweep",
     "calibration_curve": "Calibration Curve",
     "calibration_method_comparison": "Calibration Method Comparison",
+    "calibration_residual_bars": "Calibration Residual Review",
     "roc_curve": "ROC Curve",
+    "roc_curve_annotated": "ROC Curve With Review Bands",
     "precision_recall_curve": "Precision-Recall Curve",
+    "precision_recall_curve_annotated": "Precision-Recall Curve With Average Precision",
+    "ks_curve_annotated": "KS Separation Curve",
     "gain_chart": "Cumulative Gain",
     "lift_chart": "Lift by Quantile",
     "feature_importance_overview": "Feature Importance Overview",
+    "feature_importance_waterfall": "Feature Importance Waterfall",
     "subset_search_auc_frontier": "Subset Search ROC AUC Frontier",
     "subset_search_ks_frontier": "Subset Search KS Frontier",
     "subset_search_metric_frontier": "Subset Search Performance Frontier",
@@ -294,8 +320,11 @@ FIGURE_LABELS = {
     "subset_search_selected_ks_curve": "Selected Candidate KS Curve",
     "subset_search_feature_frequency_chart": "Subset Search Feature Frequency",
     "split_metric_overview": "Metric Comparison by Split",
+    "split_metric_slope_chart": "Split Metric Slope Chart",
     "score_distribution_overview": "Score Distribution by Split",
+    "score_distribution_violin": "Score Distribution Violin",
     "segment_performance_chart": "Segment Performance",
+    "segment_performance_dumbbell": "Segment Performance Dumbbell",
     "segment_volume": "Segment Observation Mix",
     "vintage_curve": "Vintage Curve",
     "cohort_pd_curve": "Cohort PD Curve",
@@ -304,6 +333,9 @@ FIGURE_LABELS = {
     "recovery_segment_chart": "Recovery Segmentation",
     "macro_sensitivity_chart": "Macro Sensitivity",
     "psi_profile": "Population Stability Profile",
+    "psi_threshold_bars": "PSI Threshold Review",
+    "vif_threshold_bars": "VIF Threshold Review",
+    "missingness_split_heatmap": "Missingness Heatmap by Split",
     "imputation_sensitivity_impact": "Imputation Sensitivity Impact",
     "residuals_vs_predicted": "Residuals vs Predicted",
     "actual_vs_predicted": "Actual vs Predicted",
@@ -316,18 +348,21 @@ FIGURE_LABELS = {
     "average_marginal_effects": "Average Marginal Effects",
     "interaction_strength": "Interaction Strength",
     "scenario_summary_chart": "Scenario Summary",
+    "scenario_tornado": "Scenario Impact Tornado",
     "scenario_segment_impact": "Scenario Impact by Segment",
     "lifetime_pd_curve": "Lifetime PD Curve",
     "robustness_metric_boxplot": "Robustness Metric Distribution",
     "robustness_metric_summary_chart": "Robustness Metric Summary",
     "robustness_feature_stability": "Feature Stability Profile",
     "cross_validation_metric_boxplot": "Cross-Validation Metric Distribution",
+    "cross_validation_metric_violin": "Cross-Validation Metric Violin",
     "cross_validation_metric_summary_chart": "Cross-Validation Metric Summary",
     "cross_validation_feature_stability": "Cross-Validation Feature Stability",
     "feature_construction_association": "Constructed Feature Association",
     "manual_binning_distribution": "Manual Binning Distribution",
     "seasonality_profile": "Seasonality Profile",
     "structural_break_profile": "Structural Break / Regime Profile",
+    "feature_effect_stability_small_multiples": "Feature Effect Stability Small Multiples",
     "scorecard_feature_iv": "Scorecard Feature Information Value",
     "scorecard_score_distribution": "Scorecard Points Distribution",
     "scorecard_reason_code_frequency_chart": "Reason Code Frequency",
@@ -463,6 +498,9 @@ ASSET_DESCRIPTIONS = {
     "calibration_method_comparison": (
         "Comparison of base and challenger recalibration methods on the held-out test split."
     ),
+    "calibration_residual_bars": (
+        "Observed-minus-predicted calibration residuals colored by practical review bands."
+    ),
     "threshold_analysis": ("Decision threshold tradeoffs across key classification metrics."),
     "lift_gain": "Captured defaults by ranked score bucket.",
     "psi": "Population shift between development and current scored populations.",
@@ -492,8 +530,7 @@ ASSET_DESCRIPTIONS = {
         "Average residual profile by repeating seasonal bucket on the aggregated time series."
     ),
     "structural_break_tests": (
-        "Candidate breakpoint table for Chow-style, CUSUM, and CUSUM-squares "
-        "stability review."
+        "Candidate breakpoint table for Chow-style, CUSUM, and CUSUM-squares stability review."
     ),
     "structural_break_profile": (
         "Rolling regime signal used to visualize potential structural breaks over time."
@@ -549,9 +586,7 @@ ASSET_DESCRIPTIONS = {
     "interaction_strength": (
         "Strength of non-additive two-feature effects across response-surface grids."
     ),
-    "feature_effect_calibration": (
-        "Actual-versus-predicted calibration by feature bucket."
-    ),
+    "feature_effect_calibration": ("Actual-versus-predicted calibration by feature bucket."),
     "permutation_importance": "Held-out metric degradation when each top feature is shuffled.",
     "feature_policy_checks": (
         "Governance checks for required, excluded, monotonic, and sign-constrained features."
@@ -643,7 +678,13 @@ ASSET_DESCRIPTIONS = {
     "split_metric_overview": (
         "Comparison of the primary metrics across train, validation, and test."
     ),
+    "split_metric_slope_chart": (
+        "Train, validation, and test metric movement shown as a slope chart to highlight drift."
+    ),
     "feature_importance_overview": "Top drivers highlighted for executive scanning.",
+    "feature_importance_waterfall": (
+        "Signed feature contributions or importances displayed as a waterfall-style ranking."
+    ),
     "subset_search_auc_frontier": (
         "Relationship between held-out ROC AUC and subset size for the top-ranked candidates."
     ),
@@ -653,26 +694,37 @@ ASSET_DESCRIPTIONS = {
     "subset_search_metric_frontier": (
         "Performance-versus-parsimony scatter used to choose a candidate subset to carry forward."
     ),
-    "subset_search_selected_roc_curve": (
-        "Held-out ROC curve for the winning candidate subset."
-    ),
-    "subset_search_selected_ks_curve": (
-        "Held-out KS curve for the winning candidate subset."
-    ),
+    "subset_search_selected_roc_curve": ("Held-out ROC curve for the winning candidate subset."),
+    "subset_search_selected_ks_curve": ("Held-out KS curve for the winning candidate subset."),
     "subset_search_feature_frequency_chart": (
         "Frequency with which each feature appears across the top-ranked candidates."
     ),
     "score_distribution_overview": "Modeled score density across available splits.",
+    "score_distribution_violin": (
+        "Score distribution shape by split, including median and tail behavior."
+    ),
     "segment_performance_chart": ("Observed and predicted rates across the selected segment view."),
+    "segment_performance_dumbbell": (
+        "Observed-versus-predicted segment gaps shown as a dumbbell comparison."
+    ),
     "segment_volume": "Relative concentration of observations by segment.",
     "psi_profile": "Feature-level PSI detail for stability review.",
+    "psi_threshold_bars": "PSI values colored by common stability review bands.",
     "vif_profile": "Visual view of multicollinearity pressure across top features.",
+    "vif_threshold_bars": "VIF values colored by common multicollinearity review bands.",
+    "missingness_split_heatmap": "Missing-value rates across split and feature.",
+    "roc_curve_annotated": "ROC curve with random-model reference and AUC annotation.",
+    "precision_recall_curve_annotated": (
+        "Precision-recall curve with average precision annotation."
+    ),
+    "ks_curve_annotated": "KS separation curve with maximum gap marker.",
     "actual_vs_predicted": "Regression fit of observed versus predicted values.",
     "qq_plot": "Residual distribution against a normal reference line.",
     "model_comparison_chart": (
         "Validation or test metric comparison across champion and challengers."
     ),
     "scenario_summary_chart": "Average predicted-score impact from each configured scenario.",
+    "scenario_tornado": "Scenario impacts ranked as a tornado chart.",
     "scenario_segment_impact": "Segment-level differences under each configured scenario.",
     "scorecard_feature_iv": "Top scorecard features ranked by information value.",
     "scorecard_score_distribution": "Distribution of total scorecard points on the scored split.",
@@ -686,8 +738,14 @@ ASSET_DESCRIPTIONS = {
     "cross_validation_metric_boxplot": (
         "Distribution of fold-level validation metrics from cross-validation."
     ),
+    "cross_validation_metric_violin": (
+        "Fold-level validation metric distribution shown as a violin plot."
+    ),
     "cross_validation_metric_summary_chart": (
         "Average and standard deviation of validation metrics across folds."
+    ),
+    "feature_effect_stability_small_multiples": (
+        "Feature-effect stability curves faceted by feature for split-by-split review."
     ),
 }
 
@@ -707,6 +765,7 @@ FEATURED_ASSETS = {
     "split_metrics",
     "feature_importance",
     "feature_importance_overview",
+    "feature_importance_waterfall",
     "subset_search_candidates",
     "subset_search_frontier",
     "subset_search_auc_frontier",
@@ -715,9 +774,22 @@ FEATURED_ASSETS = {
     "subset_search_selected_coefficients",
     "subset_search_selected_roc_curve",
     "roc_curve_chart",
+    "roc_curve_annotated",
+    "precision_recall_curve_annotated",
+    "ks_curve_annotated",
     "calibration_curve",
     "calibration_summary",
     "calibration_method_comparison",
+    "calibration_residual_bars",
+    "score_distribution_violin",
+    "split_metric_slope_chart",
+    "segment_performance_dumbbell",
+    "psi_threshold_bars",
+    "vif_threshold_bars",
+    "missingness_split_heatmap",
+    "scenario_tornado",
+    "cross_validation_metric_violin",
+    "feature_effect_stability_small_multiples",
     "quantile_backtest",
     "psi_profile",
     "adf_tests",
@@ -740,6 +812,113 @@ class AssetDescriptor:
     section: str
     description: str
     featured: bool
+
+
+CHART_GUIDANCE = {
+    "threshold_analysis": (
+        "Choose thresholds against the operating objective. Watch for cliff points where "
+        "small threshold moves sharply change recall, precision, or approval volume."
+    ),
+    "calibration_curve": (
+        "Closer to the diagonal is better. Curves above the line indicate observed risk "
+        "is higher than predicted in those bins."
+    ),
+    "calibration_method_comparison": (
+        "Lower Brier and log-loss values are better. Prefer recalibration only when it "
+        "improves probability alignment without weakening discrimination."
+    ),
+    "gain_chart": (
+        "Steeper early capture is better because more observed events are found in the "
+        "highest-risk ranked groups."
+    ),
+    "lift_chart": (
+        "Higher lift in top quantiles is better. Rapid decay suggests the score is most "
+        "useful for prioritizing the riskiest accounts."
+    ),
+    "roc_curve_annotated": (
+        "Higher lift above the diagonal is better. Use AUC with KS and calibration rather "
+        "than treating one discrimination metric as sufficient."
+    ),
+    "precision_recall_curve_annotated": (
+        "Most useful when events are rare. Better models hold higher precision as recall increases."
+    ),
+    "ks_curve_annotated": (
+        "The highlighted maximum gap shows separation between event and non-event score "
+        "distributions."
+    ),
+    "calibration_residual_bars": (
+        "Bars near zero are best. Watch and bad colors indicate bins where observed outcomes "
+        "depart materially from predicted risk."
+    ),
+    "psi_threshold_bars": (
+        "Great is generally below 0.05, good below 0.10, watch begins near 0.10, and bad "
+        "typically starts near 0.25."
+    ),
+    "vif_threshold_bars": (
+        "Great is generally below 2.5, good below 5, watch begins near 5, and bad generally "
+        "starts near 10."
+    ),
+    "segment_performance_dumbbell": (
+        "Shorter observed-versus-predicted gaps are better. Large gaps identify segments "
+        "needing calibration or policy review."
+    ),
+    "score_distribution_violin": (
+        "Review whether train, validation, and test score distributions have similar shape, "
+        "center, and tail behavior."
+    ),
+    "split_metric_slope_chart": (
+        "Stable movement from train to validation to test supports generalization. Sharp "
+        "drops are a watch item."
+    ),
+    "feature_importance_waterfall": (
+        "Use this as a ranked driver view. Signed bars show direction where the model family "
+        "supports signed coefficients."
+    ),
+    "scenario_tornado": (
+        "Larger absolute bars indicate stronger sensitivity to scenario assumptions and may "
+        "need narrative support."
+    ),
+    "cross_validation_metric_violin": (
+        "Narrower fold distributions are better. Wide distributions indicate validation "
+        "instability."
+    ),
+    "feature_effect_stability_small_multiples": (
+        "Curves with similar shape across splits are more defensible than effects that reverse "
+        "or move sharply."
+    ),
+}
+
+
+def report_asset_badge(asset_key: str, *, featured: bool = False) -> tuple[str, str]:
+    """Returns the short interpretation badge used in reports and the live UI."""
+
+    if asset_key in {"psi_threshold_bars", "vif_threshold_bars", "calibration_residual_bars"}:
+        return "Review Bands", "watch"
+    if asset_key in {
+        "roc_curve_annotated",
+        "precision_recall_curve_annotated",
+        "ks_curve_annotated",
+    }:
+        return "Decision Metric", "good"
+    if asset_key in {
+        "feature_importance_waterfall",
+        "segment_performance_dumbbell",
+        "scenario_tornado",
+        "cross_validation_metric_violin",
+        "feature_effect_stability_small_multiples",
+        "score_distribution_violin",
+        "split_metric_slope_chart",
+    }:
+        return "Companion View", "info"
+    if featured:
+        return "Featured", "great"
+    return "Supporting Evidence", "info"
+
+
+def report_chart_guidance(asset_key: str) -> str:
+    """Returns concise reviewer guidance for a chart, when available."""
+
+    return CHART_GUIDANCE.get(asset_key, "")
 
 
 SUBSET_SEARCH_HIGHLIGHT_TABLE_KEYS = {
@@ -844,10 +1023,10 @@ def infer_asset_section(asset_key: str, *, kind: str) -> str:
         "descriptive_statistics",
         "missingness",
         "missingness_by_split",
+        "missingness_split_heatmap",
         "missingness_target_association",
         "missingness_indicator_correlation",
         "missingness_predictive_power",
-        "littles_mcar_test",
         "missingness_indicator_heatmap",
         "feature_construction_workbench",
         "feature_construction_association",
@@ -855,11 +1034,13 @@ def infer_asset_section(asset_key: str, *, kind: str) -> str:
         "correlation_heatmap",
         "vif",
         "vif_profile",
+        "vif_threshold_bars",
     }:
         return "data_quality"
     if asset_key in {
         "segment_performance",
         "segment_performance_chart",
+        "segment_performance_dumbbell",
         "segment_volume",
     }:
         return "sample_segmentation"
@@ -883,28 +1064,27 @@ def infer_asset_section(asset_key: str, *, kind: str) -> str:
         "split_metrics",
         "feature_importance",
         "feature_importance_overview",
+        "feature_importance_waterfall",
         "model_comparison",
-        "model_comparison_significance_tests",
         "model_comparison_chart",
         "split_metric_overview",
+        "split_metric_slope_chart",
         "score_distribution_overview",
+        "score_distribution_violin",
         "roc_curve",
         "roc_curve_chart",
+        "roc_curve_annotated",
         "precision_recall_curve",
         "precision_recall_curve_chart",
+        "precision_recall_curve_annotated",
+        "ks_curve_annotated",
         "residual_summary",
         "residuals_vs_predicted",
         "actual_vs_predicted",
         "qq_plot_data",
         "qq_plot",
-        "residual_diagnostics",
         "residual_segment_bias",
-        "outlier_flags",
         "outlier_influence_map",
-        "model_specification_tests",
-        "model_influence_summary",
-        "model_dfbetas_summary",
-        "model_dffits_summary",
         "model_influence_plot",
         "lgd_stage_one_coefficients",
         "lgd_stage_two_coefficients",
@@ -922,6 +1102,7 @@ def infer_asset_section(asset_key: str, *, kind: str) -> str:
         "feature_effect_monotonicity",
         "segmented_feature_effects",
         "feature_effect_stability",
+        "feature_effect_stability_small_multiples",
         "average_marginal_effects",
         "interaction_strength",
         "feature_effect_calibration",
@@ -933,6 +1114,7 @@ def infer_asset_section(asset_key: str, *, kind: str) -> str:
         "scenario_definitions",
         "scenario_segment_impacts",
         "scenario_summary_chart",
+        "scenario_tornado",
         "scenario_segment_impact",
     }:
         return "model_performance"
@@ -974,6 +1156,7 @@ def infer_asset_section(asset_key: str, *, kind: str) -> str:
         "calibration_summary",
         "calibration_curve",
         "calibration_method_comparison",
+        "calibration_residual_bars",
         "lift_gain",
         "gain_chart",
         "lift_chart",
@@ -984,11 +1167,7 @@ def infer_asset_section(asset_key: str, *, kind: str) -> str:
     if asset_key in {
         "psi",
         "psi_profile",
-        "distribution_tests",
-        "distribution_shift_tests",
         "distribution_shift_overview",
-        "dependency_cluster_summary",
-        "condition_index_detail",
         "dependency_cluster_heatmap",
         "imputation_sensitivity_impact",
         "robustness_metric_distribution",
@@ -1002,6 +1181,7 @@ def infer_asset_section(asset_key: str, *, kind: str) -> str:
         "cross_validation_metric_distribution",
         "cross_validation_metric_summary",
         "cross_validation_metric_boxplot",
+        "cross_validation_metric_violin",
         "cross_validation_metric_summary_chart",
         "cross_validation_feature_distribution",
         "cross_validation_feature_stability",
@@ -1011,7 +1191,23 @@ def infer_asset_section(asset_key: str, *, kind: str) -> str:
         "backtest_summary",
         "quantile_summary",
         "quantile_backtest",
+        "lifetime_pd_curve",
+    }:
+        return "backtesting_time"
+    if asset_key in {
         "adf_tests",
+        "distribution_tests",
+        "distribution_shift_tests",
+        "littles_mcar_test",
+        "dependency_cluster_summary",
+        "condition_index_detail",
+        "residual_diagnostics",
+        "outlier_flags",
+        "model_specification_tests",
+        "model_influence_summary",
+        "model_dfbetas_summary",
+        "model_dffits_summary",
+        "model_comparison_significance_tests",
         "forecasting_statistical_tests",
         "cointegration_tests",
         "granger_causality_tests",
@@ -1019,9 +1215,8 @@ def infer_asset_section(asset_key: str, *, kind: str) -> str:
         "seasonality_profile",
         "structural_break_tests",
         "structural_break_profile",
-        "lifetime_pd_curve",
     }:
-        return "backtesting_time"
+        return "statistical_tests"
     if asset_key in {
         "preset_imputation_recommendations",
         "preset_transformation_recommendations",
@@ -1190,6 +1385,38 @@ def apply_fintech_figure_theme(
     return figure
 
 
+def _prepare_report_card_figure(figure: go.Figure) -> None:
+    """Optimizes a themed figure for card rendering inside the HTML report."""
+
+    legend_trace_count = sum(
+        1
+        for trace in figure.data
+        if getattr(trace, "showlegend", None) is not False and getattr(trace, "name", None)
+    )
+    top_margin = 34
+    if legend_trace_count:
+        top_margin = 72
+    if legend_trace_count > 4:
+        top_margin = 94
+
+    figure.update_layout(
+        autosize=True,
+        height=max(int(figure.layout.height or 0), 470),
+        margin={"l": 56, "r": 24, "t": top_margin, "b": 58},
+        title={"text": ""},
+        legend={
+            "orientation": "h",
+            "yanchor": "bottom",
+            "y": 1.02,
+            "xanchor": "center",
+            "x": 0.5,
+            "bgcolor": "rgba(0,0,0,0)",
+            "font": {"size": 11, "color": FINTECH_NEUTRAL["text"]},
+            "itemsizing": "constant",
+        },
+    )
+
+
 def summarize_run_kpis(
     *,
     metrics: Mapping[str, Mapping[str, float | int | None]],
@@ -1224,9 +1451,7 @@ def summarize_run_kpis(
             },
             {
                 "label": "Best Validation KS",
-                "value": format_metric_value(
-                    search_summary.get("best_validation_ks_statistic")
-                ),
+                "value": format_metric_value(search_summary.get("best_validation_ks_statistic")),
             },
             {
                 "label": "Best Feature Count",
@@ -1337,6 +1562,850 @@ def prepare_display_table(table: pd.DataFrame) -> pd.DataFrame:
     return preview
 
 
+def enhance_report_visualizations(
+    *,
+    metrics: Mapping[str, Mapping[str, float | int | None]],
+    diagnostics_tables: Mapping[str, pd.DataFrame],
+    visualizations: Mapping[str, go.Figure],
+    target_mode: str,
+    labels_available: bool,
+    predictions: Mapping[str, pd.DataFrame] | None = None,
+) -> dict[str, go.Figure]:
+    """Adds report-only companion charts without changing pipeline calculations."""
+
+    enhanced = dict(visualizations)
+    builders = [
+        _build_split_metric_slope_chart,
+        _build_roc_curve_annotated,
+        _build_precision_recall_curve_annotated,
+        _build_ks_curve_annotated,
+        _build_score_distribution_violin,
+        _build_calibration_residual_bars,
+        _build_psi_threshold_bars,
+        _build_vif_threshold_bars,
+        _build_missingness_split_heatmap,
+        _build_feature_importance_waterfall,
+        _build_segment_performance_dumbbell,
+        _build_scenario_tornado,
+        _build_cross_validation_metric_violin,
+        _build_feature_effect_stability_small_multiples,
+    ]
+    for builder in builders:
+        try:
+            result = builder(
+                metrics=metrics,
+                diagnostics_tables=diagnostics_tables,
+                target_mode=target_mode,
+                labels_available=labels_available,
+                predictions=predictions,
+            )
+        except Exception:
+            continue
+        if result is None:
+            continue
+        figure_key, figure = result
+        enhanced.setdefault(figure_key, figure)
+    return enhanced
+
+
+def _build_split_metric_slope_chart(
+    *,
+    metrics: Mapping[str, Mapping[str, float | int | None]],
+    diagnostics_tables: Mapping[str, pd.DataFrame],
+    target_mode: str,
+    labels_available: bool,
+    predictions: Mapping[str, pd.DataFrame] | None,
+) -> tuple[str, go.Figure] | None:
+    del diagnostics_tables, labels_available, predictions
+    metric_names = (
+        ["roc_auc", "average_precision", "ks_statistic", "brier_score"]
+        if target_mode == "binary"
+        else ["rmse", "mae", "r2", "explained_variance"]
+    )
+    split_order = ["train", "validation", "test"]
+    available_splits = [split for split in split_order if split in metrics]
+    if len(available_splits) < 2:
+        available_splits = list(metrics.keys())
+    if len(available_splits) < 2:
+        return None
+    figure = go.Figure()
+    for index, metric_name in enumerate(metric_names):
+        values = [
+            metrics.get(split, {}).get(metric_name)
+            for split in available_splits
+            if metrics.get(split, {}).get(metric_name) is not None
+        ]
+        if len(values) < 2:
+            continue
+        x_values = [
+            split.title()
+            for split in available_splits
+            if metrics.get(split, {}).get(metric_name) is not None
+        ]
+        figure.add_trace(
+            go.Scatter(
+                x=x_values,
+                y=[float(value) for value in values],
+                mode="lines+markers",
+                name=metric_name.replace("_", " ").title(),
+                line={"color": FINTECH_COLORWAY[index % len(FINTECH_COLORWAY)]},
+            )
+        )
+    if not figure.data:
+        return None
+    figure.update_layout(
+        title="Split Metric Slope Chart",
+        xaxis_title="Split",
+        yaxis_title="Metric Value",
+    )
+    return "split_metric_slope_chart", apply_fintech_figure_theme(
+        figure,
+        title="Split Metric Slope Chart",
+    )
+
+
+def _build_roc_curve_annotated(
+    *,
+    metrics: Mapping[str, Mapping[str, float | int | None]],
+    diagnostics_tables: Mapping[str, pd.DataFrame],
+    target_mode: str,
+    labels_available: bool,
+    predictions: Mapping[str, pd.DataFrame] | None,
+) -> tuple[str, go.Figure] | None:
+    del predictions
+    table = diagnostics_tables.get("roc_curve")
+    if target_mode != "binary" or not labels_available or table is None or table.empty:
+        return None
+    if not {"fpr", "tpr"}.issubset(table.columns):
+        return None
+    auc_value = (metrics.get("test") or {}).get("roc_auc")
+    figure = go.Figure()
+    figure.add_trace(
+        go.Scatter(
+            x=table["fpr"],
+            y=table["tpr"],
+            mode="lines",
+            name="Model ROC",
+            fill="tozeroy",
+            line={"color": REPORT_SEVERITY_COLORS["good"], "width": 3},
+        )
+    )
+    figure.add_trace(
+        go.Scatter(
+            x=[0, 1],
+            y=[0, 1],
+            mode="lines",
+            name="Random Model",
+            line={"color": REPORT_SEVERITY_COLORS["info"], "dash": "dash"},
+        )
+    )
+    if auc_value is not None:
+        figure.add_annotation(
+            x=0.62,
+            y=0.18,
+            text=f"AUC {format_metric_value(auc_value)}",
+            showarrow=False,
+            bgcolor="#FFFFFF",
+            bordercolor="#D8D1C4",
+            borderwidth=1,
+        )
+    figure.update_layout(
+        title="ROC Curve With Review Bands",
+        xaxis_title="False Positive Rate",
+        yaxis_title="True Positive Rate",
+    )
+    return "roc_curve_annotated", apply_fintech_figure_theme(
+        figure,
+        title="ROC Curve With Review Bands",
+    )
+
+
+def _build_precision_recall_curve_annotated(
+    *,
+    metrics: Mapping[str, Mapping[str, float | int | None]],
+    diagnostics_tables: Mapping[str, pd.DataFrame],
+    target_mode: str,
+    labels_available: bool,
+    predictions: Mapping[str, pd.DataFrame] | None,
+) -> tuple[str, go.Figure] | None:
+    del predictions
+    table = diagnostics_tables.get("precision_recall_curve")
+    if target_mode != "binary" or not labels_available or table is None or table.empty:
+        return None
+    if not {"precision", "recall"}.issubset(table.columns):
+        return None
+    average_precision = (metrics.get("test") or {}).get("average_precision")
+    figure = go.Figure()
+    figure.add_trace(
+        go.Scatter(
+            x=table["recall"],
+            y=table["precision"],
+            mode="lines",
+            name="Precision-Recall",
+            line={"color": REPORT_SEVERITY_COLORS["great"], "width": 3},
+        )
+    )
+    if average_precision is not None:
+        figure.add_annotation(
+            x=0.62,
+            y=0.15,
+            text=f"Average Precision {format_metric_value(average_precision)}",
+            showarrow=False,
+            bgcolor="#FFFFFF",
+            bordercolor="#D8D1C4",
+            borderwidth=1,
+        )
+    figure.update_layout(
+        title="Precision-Recall Curve With Average Precision",
+        xaxis_title="Recall",
+        yaxis_title="Precision",
+    )
+    return "precision_recall_curve_annotated", apply_fintech_figure_theme(
+        figure,
+        title="Precision-Recall Curve With Average Precision",
+    )
+
+
+def _build_ks_curve_annotated(
+    *,
+    metrics: Mapping[str, Mapping[str, float | int | None]],
+    diagnostics_tables: Mapping[str, pd.DataFrame],
+    target_mode: str,
+    labels_available: bool,
+    predictions: Mapping[str, pd.DataFrame] | None,
+) -> tuple[str, go.Figure] | None:
+    del metrics, diagnostics_tables
+    if target_mode != "binary" or not labels_available or predictions is None:
+        return None
+    frame = _select_prediction_frame(predictions)
+    score_column = _resolve_prediction_score_column(frame)
+    target_column = _resolve_prediction_target_column(frame)
+    if score_column is None or target_column is None:
+        return None
+    scored = frame[[score_column, target_column]].dropna()
+    if scored[target_column].nunique(dropna=True) < 2:
+        return None
+    positives = np.sort(scored.loc[scored[target_column].astype(int) == 1, score_column])
+    negatives = np.sort(scored.loc[scored[target_column].astype(int) == 0, score_column])
+    if len(positives) == 0 or len(negatives) == 0:
+        return None
+    all_scores = np.sort(scored[score_column].dropna().unique())
+    positive_cdf = np.searchsorted(positives, all_scores, side="right") / len(positives)
+    negative_cdf = np.searchsorted(negatives, all_scores, side="right") / len(negatives)
+    gaps = np.abs(positive_cdf - negative_cdf)
+    max_index = int(np.argmax(gaps))
+    figure = go.Figure()
+    figure.add_trace(go.Scatter(x=all_scores, y=positive_cdf, mode="lines", name="Event CDF"))
+    figure.add_trace(go.Scatter(x=all_scores, y=negative_cdf, mode="lines", name="Non-Event CDF"))
+    figure.add_trace(
+        go.Scatter(
+            x=[all_scores[max_index], all_scores[max_index]],
+            y=[positive_cdf[max_index], negative_cdf[max_index]],
+            mode="lines",
+            name=f"Max KS {gaps[max_index]:.3f}",
+            line={"color": REPORT_SEVERITY_COLORS["watch"], "dash": "dash", "width": 4},
+        )
+    )
+    figure.update_layout(
+        title="KS Separation Curve", xaxis_title="Predicted Score", yaxis_title="Cumulative Share"
+    )
+    return "ks_curve_annotated", apply_fintech_figure_theme(figure, title="KS Separation Curve")
+
+
+def _build_score_distribution_violin(
+    *,
+    metrics: Mapping[str, Mapping[str, float | int | None]],
+    diagnostics_tables: Mapping[str, pd.DataFrame],
+    target_mode: str,
+    labels_available: bool,
+    predictions: Mapping[str, pd.DataFrame] | None,
+) -> tuple[str, go.Figure] | None:
+    del metrics, diagnostics_tables, target_mode, labels_available
+    if predictions is None:
+        return None
+    frame = _combine_prediction_frames(predictions, max_rows=50000)
+    score_column = _resolve_prediction_score_column(frame)
+    if frame.empty or score_column is None or "split" not in frame.columns:
+        return None
+    figure = go.Figure()
+    for index, split_name in enumerate(_ordered_unique(frame["split"])):
+        split_values = pd.to_numeric(
+            frame.loc[frame["split"] == split_name, score_column],
+            errors="coerce",
+        ).dropna()
+        if split_values.empty:
+            continue
+        figure.add_trace(
+            go.Violin(
+                x=[str(split_name).title()] * len(split_values),
+                y=split_values,
+                name=str(split_name).title(),
+                box_visible=True,
+                meanline_visible=True,
+                points=False,
+                line_color=FINTECH_COLORWAY[index % len(FINTECH_COLORWAY)],
+            )
+        )
+    if not figure.data:
+        return None
+    figure.update_layout(
+        title="Score Distribution Violin", xaxis_title="Split", yaxis_title="Predicted Score"
+    )
+    return "score_distribution_violin", apply_fintech_figure_theme(
+        figure,
+        title="Score Distribution Violin",
+    )
+
+
+def _build_calibration_residual_bars(
+    *,
+    metrics: Mapping[str, Mapping[str, float | int | None]],
+    diagnostics_tables: Mapping[str, pd.DataFrame],
+    target_mode: str,
+    labels_available: bool,
+    predictions: Mapping[str, pd.DataFrame] | None,
+) -> tuple[str, go.Figure] | None:
+    del metrics, predictions
+    table = diagnostics_tables.get("calibration")
+    if target_mode != "binary" or not labels_available or table is None or table.empty:
+        return None
+    required = {"mean_predicted_probability", "observed_default_rate"}
+    if not required.issubset(table.columns):
+        return None
+    working = table.copy(deep=True)
+    working["calibration_gap"] = pd.to_numeric(
+        working["observed_default_rate"], errors="coerce"
+    ) - pd.to_numeric(working["mean_predicted_probability"], errors="coerce")
+    label_column = "method_label" if "method_label" in working.columns else "method_name"
+    if label_column not in working.columns:
+        working[label_column] = "Model"
+    x_values = (
+        working["bin"].astype(str)
+        if "bin" in working.columns
+        else working.groupby(label_column).cumcount().add(1).astype(str)
+    )
+    figure = go.Figure()
+    for method_name in _ordered_unique(working[label_column]):
+        method_frame = working.loc[working[label_column] == method_name]
+        colors = [
+            REPORT_SEVERITY_COLORS["bad"]
+            if abs(value) > 0.10
+            else REPORT_SEVERITY_COLORS["watch"]
+            if abs(value) > 0.05
+            else REPORT_SEVERITY_COLORS["great"]
+            for value in method_frame["calibration_gap"].fillna(0.0)
+        ]
+        figure.add_trace(
+            go.Bar(
+                x=x_values.loc[method_frame.index],
+                y=method_frame["calibration_gap"],
+                name=str(method_name),
+                marker={"color": colors},
+            )
+        )
+    figure.add_hline(y=0.0, line_dash="dash", line_color=REPORT_SEVERITY_COLORS["info"])
+    figure.update_layout(
+        title="Calibration Residual Bars",
+        xaxis_title="Calibration Bin",
+        yaxis_title="Observed - Predicted",
+    )
+    return "calibration_residual_bars", apply_fintech_figure_theme(
+        figure,
+        title="Calibration Residual Bars",
+    )
+
+
+def _build_psi_threshold_bars(
+    *,
+    metrics: Mapping[str, Mapping[str, float | int | None]],
+    diagnostics_tables: Mapping[str, pd.DataFrame],
+    target_mode: str,
+    labels_available: bool,
+    predictions: Mapping[str, pd.DataFrame] | None,
+) -> tuple[str, go.Figure] | None:
+    del metrics, target_mode, labels_available, predictions
+    table = diagnostics_tables.get("psi")
+    if table is None or table.empty or not {"feature_name", "psi"}.issubset(table.columns):
+        return None
+    working = table.copy(deep=True).sort_values("psi", ascending=True).tail(20)
+    colors = [_psi_color(value) for value in pd.to_numeric(working["psi"], errors="coerce")]
+    figure = go.Figure(
+        go.Bar(
+            x=working["psi"],
+            y=working["feature_name"].astype(str),
+            orientation="h",
+            marker={"color": colors},
+            name="PSI",
+        )
+    )
+    figure.add_vline(
+        x=0.10,
+        line_dash="dash",
+        line_color=REPORT_SEVERITY_COLORS["watch"],
+        annotation_text="Watch",
+    )
+    figure.add_vline(
+        x=0.25,
+        line_dash="dash",
+        line_color=REPORT_SEVERITY_COLORS["bad"],
+        annotation_text="Concern",
+    )
+    figure.update_layout(title="PSI Threshold Review", xaxis_title="PSI", yaxis_title="Feature")
+    return "psi_threshold_bars", apply_fintech_figure_theme(figure, title="PSI Threshold Review")
+
+
+def _build_vif_threshold_bars(
+    *,
+    metrics: Mapping[str, Mapping[str, float | int | None]],
+    diagnostics_tables: Mapping[str, pd.DataFrame],
+    target_mode: str,
+    labels_available: bool,
+    predictions: Mapping[str, pd.DataFrame] | None,
+) -> tuple[str, go.Figure] | None:
+    del metrics, target_mode, labels_available, predictions
+    table = diagnostics_tables.get("vif")
+    if table is None or table.empty or not {"feature_name", "vif"}.issubset(table.columns):
+        return None
+    working = table.copy(deep=True).replace([np.inf, -np.inf], np.nan).dropna(subset=["vif"])
+    if working.empty:
+        return None
+    working = working.sort_values("vif", ascending=True).tail(20)
+    colors = [_vif_color(value) for value in pd.to_numeric(working["vif"], errors="coerce")]
+    figure = go.Figure(
+        go.Bar(
+            x=working["vif"],
+            y=working["feature_name"].astype(str),
+            orientation="h",
+            marker={"color": colors},
+            name="VIF",
+        )
+    )
+    figure.add_vline(
+        x=5, line_dash="dash", line_color=REPORT_SEVERITY_COLORS["watch"], annotation_text="Watch"
+    )
+    figure.add_vline(
+        x=10, line_dash="dash", line_color=REPORT_SEVERITY_COLORS["bad"], annotation_text="Concern"
+    )
+    figure.update_layout(title="VIF Threshold Review", xaxis_title="VIF", yaxis_title="Feature")
+    return "vif_threshold_bars", apply_fintech_figure_theme(figure, title="VIF Threshold Review")
+
+
+def _build_missingness_split_heatmap(
+    *,
+    metrics: Mapping[str, Mapping[str, float | int | None]],
+    diagnostics_tables: Mapping[str, pd.DataFrame],
+    target_mode: str,
+    labels_available: bool,
+    predictions: Mapping[str, pd.DataFrame] | None,
+) -> tuple[str, go.Figure] | None:
+    del metrics, target_mode, labels_available, predictions
+    table = diagnostics_tables.get("missingness_by_split")
+    if (
+        table is None
+        or table.empty
+        or not {"split", "column_name", "missing_pct"}.issubset(table.columns)
+    ):
+        return None
+    working = table.copy(deep=True)
+    top_columns = (
+        working.groupby("column_name")["missing_pct"]
+        .max()
+        .sort_values(ascending=False)
+        .head(25)
+        .index
+    )
+    pivot = (
+        working.loc[working["column_name"].isin(top_columns)]
+        .pivot_table(index="column_name", columns="split", values="missing_pct", aggfunc="max")
+        .fillna(0.0)
+    )
+    if pivot.empty:
+        return None
+    figure = go.Figure(
+        go.Heatmap(
+            z=pivot.to_numpy(dtype=float),
+            x=[str(column).title() for column in pivot.columns],
+            y=pivot.index.astype(str),
+            colorscale=[[0, "#F8FAFC"], [0.5, "#E09F3E"], [1, "#C44536"]],
+            colorbar={"title": "Missing %"},
+        )
+    )
+    figure.update_layout(
+        title="Missingness Heatmap by Split", xaxis_title="Split", yaxis_title="Feature"
+    )
+    return "missingness_split_heatmap", apply_fintech_figure_theme(
+        figure,
+        title="Missingness Heatmap by Split",
+    )
+
+
+def _build_feature_importance_waterfall(
+    *,
+    metrics: Mapping[str, Mapping[str, float | int | None]],
+    diagnostics_tables: Mapping[str, pd.DataFrame],
+    target_mode: str,
+    labels_available: bool,
+    predictions: Mapping[str, pd.DataFrame] | None,
+) -> tuple[str, go.Figure] | None:
+    del metrics, target_mode, labels_available, predictions
+    table = diagnostics_tables.get("feature_importance")
+    if table is None or table.empty or "feature_name" not in table.columns:
+        return None
+    value_column = "coefficient" if "coefficient" in table.columns else "importance_value"
+    if value_column not in table.columns:
+        return None
+    working = table[["feature_name", value_column]].copy(deep=True)
+    working[value_column] = pd.to_numeric(working[value_column], errors="coerce")
+    working = working.dropna(subset=[value_column])
+    if working.empty:
+        return None
+    if value_column == "coefficient":
+        working["rank_value"] = working[value_column].abs()
+        measure = ["relative"] * len(working.head(12))
+        y_values = working.sort_values("rank_value", ascending=False).head(12)[value_column]
+    else:
+        working["rank_value"] = working[value_column]
+        measure = ["relative"] * len(working.head(12))
+        y_values = working.sort_values("rank_value", ascending=False).head(12)[value_column]
+    chart = working.sort_values("rank_value", ascending=False).head(12)
+    figure = go.Figure(
+        go.Waterfall(
+            x=chart["feature_name"].astype(str),
+            y=y_values,
+            measure=measure,
+            connector={"line": {"color": "#D8D1C4"}},
+            increasing={"marker": {"color": REPORT_SEVERITY_COLORS["great"]}},
+            decreasing={"marker": {"color": REPORT_SEVERITY_COLORS["bad"]}},
+            totals={"marker": {"color": REPORT_SEVERITY_COLORS["info"]}},
+            name="Feature Effect",
+        )
+    )
+    figure.update_layout(
+        title="Feature Importance Waterfall",
+        xaxis_title="Feature",
+        yaxis_title=value_column.replace("_", " ").title(),
+    )
+    return "feature_importance_waterfall", apply_fintech_figure_theme(
+        figure,
+        title="Feature Importance Waterfall",
+        height=470,
+    )
+
+
+def _build_segment_performance_dumbbell(
+    *,
+    metrics: Mapping[str, Mapping[str, float | int | None]],
+    diagnostics_tables: Mapping[str, pd.DataFrame],
+    target_mode: str,
+    labels_available: bool,
+    predictions: Mapping[str, pd.DataFrame] | None,
+) -> tuple[str, go.Figure] | None:
+    del metrics, target_mode, labels_available, predictions
+    table = diagnostics_tables.get("segment_performance")
+    if (
+        table is None
+        or table.empty
+        or not {"average_score", "average_actual"}.issubset(table.columns)
+    ):
+        return None
+    segment_candidates = [
+        column
+        for column in table.columns
+        if column not in {"split", "observation_count", "average_score", "average_actual"}
+    ]
+    if not segment_candidates:
+        return None
+    segment_column = segment_candidates[0]
+    working = table.copy(deep=True)
+    if "split" in working.columns and "test" in set(working["split"].astype(str)):
+        working = working.loc[working["split"].astype(str) == "test"]
+    working = working.sort_values("observation_count", ascending=False).head(15)
+    if working.empty:
+        return None
+    y_values = working[segment_column].fillna("Missing").astype(str)
+    figure = go.Figure()
+    for _, row in working.iterrows():
+        figure.add_trace(
+            go.Scatter(
+                x=[row["average_actual"], row["average_score"]],
+                y=[str(row[segment_column]), str(row[segment_column])],
+                mode="lines",
+                showlegend=False,
+                line={"color": "#D8D1C4", "width": 3},
+            )
+        )
+    figure.add_trace(
+        go.Scatter(
+            x=working["average_actual"],
+            y=y_values,
+            mode="markers",
+            name="Observed",
+            marker={"color": REPORT_SEVERITY_COLORS["great"], "size": 10},
+        )
+    )
+    figure.add_trace(
+        go.Scatter(
+            x=working["average_score"],
+            y=y_values,
+            mode="markers",
+            name="Predicted",
+            marker={"color": REPORT_SEVERITY_COLORS["good"], "size": 10},
+        )
+    )
+    figure.update_layout(
+        title="Segment Performance Dumbbell", xaxis_title="Rate", yaxis_title="Segment"
+    )
+    return "segment_performance_dumbbell", apply_fintech_figure_theme(
+        figure,
+        title="Segment Performance Dumbbell",
+    )
+
+
+def _build_scenario_tornado(
+    *,
+    metrics: Mapping[str, Mapping[str, float | int | None]],
+    diagnostics_tables: Mapping[str, pd.DataFrame],
+    target_mode: str,
+    labels_available: bool,
+    predictions: Mapping[str, pd.DataFrame] | None,
+) -> tuple[str, go.Figure] | None:
+    del metrics, target_mode, labels_available, predictions
+    table = diagnostics_tables.get("scenario_summary")
+    if table is None or table.empty or not {"scenario_name", "mean_delta"}.issubset(table.columns):
+        return None
+    working = table.copy(deep=True)
+    working["mean_delta"] = pd.to_numeric(working["mean_delta"], errors="coerce")
+    working = working.dropna(subset=["mean_delta"])
+    if working.empty:
+        return None
+    working["abs_delta"] = working["mean_delta"].abs()
+    working = working.sort_values("abs_delta", ascending=True).tail(20)
+    colors = [
+        REPORT_SEVERITY_COLORS["bad"] if value < 0 else REPORT_SEVERITY_COLORS["great"]
+        for value in working["mean_delta"]
+    ]
+    figure = go.Figure(
+        go.Bar(
+            x=working["mean_delta"],
+            y=working["scenario_name"].astype(str),
+            orientation="h",
+            marker={"color": colors},
+            name="Score Delta",
+        )
+    )
+    figure.add_vline(x=0.0, line_dash="dash", line_color=REPORT_SEVERITY_COLORS["info"])
+    figure.update_layout(
+        title="Scenario Impact Tornado", xaxis_title="Average Score Delta", yaxis_title="Scenario"
+    )
+    return "scenario_tornado", apply_fintech_figure_theme(figure, title="Scenario Impact Tornado")
+
+
+def _build_cross_validation_metric_violin(
+    *,
+    metrics: Mapping[str, Mapping[str, float | int | None]],
+    diagnostics_tables: Mapping[str, pd.DataFrame],
+    target_mode: str,
+    labels_available: bool,
+    predictions: Mapping[str, pd.DataFrame] | None,
+) -> tuple[str, go.Figure] | None:
+    del metrics, target_mode, labels_available, predictions
+    table = diagnostics_tables.get("cross_validation_metric_distribution")
+    if table is None or table.empty or not {"metric_name", "metric_value"}.issubset(table.columns):
+        return None
+    figure = go.Figure()
+    for index, metric_name in enumerate(_ordered_unique(table["metric_name"])):
+        values = pd.to_numeric(
+            table.loc[table["metric_name"] == metric_name, "metric_value"],
+            errors="coerce",
+        ).dropna()
+        if values.empty:
+            continue
+        figure.add_trace(
+            go.Violin(
+                x=[str(metric_name).replace("_", " ").title()] * len(values),
+                y=values,
+                name=str(metric_name).replace("_", " ").title(),
+                box_visible=True,
+                meanline_visible=True,
+                points="all",
+                line_color=FINTECH_COLORWAY[index % len(FINTECH_COLORWAY)],
+            )
+        )
+    if not figure.data:
+        return None
+    figure.update_layout(
+        title="Cross-Validation Metric Violin", xaxis_title="Metric", yaxis_title="Fold Value"
+    )
+    return "cross_validation_metric_violin", apply_fintech_figure_theme(
+        figure,
+        title="Cross-Validation Metric Violin",
+    )
+
+
+def _build_feature_effect_stability_small_multiples(
+    *,
+    metrics: Mapping[str, Mapping[str, float | int | None]],
+    diagnostics_tables: Mapping[str, pd.DataFrame],
+    target_mode: str,
+    labels_available: bool,
+    predictions: Mapping[str, pd.DataFrame] | None,
+) -> tuple[str, go.Figure] | None:
+    del metrics, target_mode, labels_available, predictions
+    table = diagnostics_tables.get("feature_effect_stability")
+    required = {"feature_name", "split", "feature_value", "average_prediction"}
+    if table is None or table.empty or not required.issubset(table.columns):
+        return None
+    features = table["feature_name"].dropna().astype(str).drop_duplicates().head(4).tolist()
+    if not features:
+        return None
+    figure = make_subplots(
+        rows=len(features),
+        cols=1,
+        shared_xaxes=False,
+        subplot_titles=features,
+        vertical_spacing=0.08,
+    )
+    for row_index, feature_name in enumerate(features, start=1):
+        feature_frame = table.loc[table["feature_name"].astype(str) == feature_name]
+        for split_index, split_name in enumerate(_ordered_unique(feature_frame["split"])):
+            split_frame = feature_frame.loc[feature_frame["split"] == split_name].sort_values(
+                "feature_value"
+            )
+            figure.add_trace(
+                go.Scatter(
+                    x=split_frame["feature_value"],
+                    y=split_frame["average_prediction"],
+                    mode="lines+markers",
+                    name=str(split_name).title(),
+                    legendgroup=str(split_name),
+                    showlegend=row_index == 1,
+                    line={"color": FINTECH_COLORWAY[split_index % len(FINTECH_COLORWAY)]},
+                ),
+                row=row_index,
+                col=1,
+            )
+    figure.update_layout(
+        title="Feature Effect Stability Small Multiples", height=max(420, 230 * len(features))
+    )
+    return "feature_effect_stability_small_multiples", apply_fintech_figure_theme(
+        figure,
+        title="Feature Effect Stability Small Multiples",
+        height=max(420, 230 * len(features)),
+    )
+
+
+def _combine_prediction_frames(
+    predictions: Mapping[str, pd.DataFrame],
+    *,
+    max_rows: int,
+) -> pd.DataFrame:
+    frames: list[pd.DataFrame] = []
+    for split_name, frame in predictions.items():
+        if frame is None or frame.empty:
+            continue
+        sampled = frame.copy(deep=False)
+        if "split" not in sampled.columns:
+            sampled = sampled.assign(split=split_name)
+        frames.append(sampled)
+    if not frames:
+        return pd.DataFrame()
+    combined = pd.concat(frames, ignore_index=True)
+    if len(combined) > max_rows:
+        return combined.sample(max_rows, random_state=42)
+    return combined
+
+
+def _select_prediction_frame(predictions: Mapping[str, pd.DataFrame]) -> pd.DataFrame:
+    for split_name in ("test", "validation", "train"):
+        frame = predictions.get(split_name)
+        if frame is not None and not frame.empty:
+            if "split" not in frame.columns:
+                return frame.assign(split=split_name)
+            return frame
+    return _combine_prediction_frames(predictions, max_rows=50000)
+
+
+def _resolve_prediction_score_column(frame: pd.DataFrame) -> str | None:
+    for column in (
+        "predicted_probability_recommended",
+        "predicted_probability",
+        "prediction_score",
+        "predicted_score",
+        "predicted_value",
+    ):
+        if column in frame.columns:
+            return column
+    numeric_columns = frame.select_dtypes(include="number").columns.tolist()
+    return numeric_columns[0] if numeric_columns else None
+
+
+def _resolve_prediction_target_column(frame: pd.DataFrame) -> str | None:
+    preferred = [
+        "target",
+        "default_flag",
+        "default_status",
+        "actual",
+        "observed",
+    ]
+    for column in preferred:
+        if column in frame.columns and frame[column].nunique(dropna=True) <= 2:
+            return column
+    binary_candidates = [
+        column
+        for column in frame.select_dtypes(include="number").columns
+        if column
+        not in {
+            "predicted_probability_recommended",
+            "predicted_probability",
+            "prediction_score",
+            "predicted_score",
+            "predicted_value",
+            "predicted_class",
+        }
+        and frame[column].nunique(dropna=True) <= 2
+    ]
+    return binary_candidates[0] if binary_candidates else None
+
+
+def _ordered_unique(series: pd.Series) -> list[Any]:
+    preferred = ["train", "validation", "test"]
+    values = [value for value in preferred if value in set(series.astype(str))]
+    values.extend(
+        value
+        for value in series.dropna().astype(str).drop_duplicates().tolist()
+        if value not in values
+    )
+    return values
+
+
+def _psi_color(value: Any) -> str:
+    try:
+        numeric = float(value)
+    except (TypeError, ValueError):
+        return REPORT_SEVERITY_COLORS["info"]
+    if numeric >= 0.25:
+        return REPORT_SEVERITY_COLORS["bad"]
+    if numeric >= 0.10:
+        return REPORT_SEVERITY_COLORS["watch"]
+    if numeric >= 0.05:
+        return REPORT_SEVERITY_COLORS["good"]
+    return REPORT_SEVERITY_COLORS["great"]
+
+
+def _vif_color(value: Any) -> str:
+    try:
+        numeric = float(value)
+    except (TypeError, ValueError):
+        return REPORT_SEVERITY_COLORS["info"]
+    if numeric >= 10:
+        return REPORT_SEVERITY_COLORS["bad"]
+    if numeric >= 5:
+        return REPORT_SEVERITY_COLORS["watch"]
+    if numeric >= 2.5:
+        return REPORT_SEVERITY_COLORS["good"]
+    return REPORT_SEVERITY_COLORS["great"]
+
+
 def build_interactive_report_html(
     *,
     run_id: str,
@@ -1356,15 +2425,29 @@ def build_interactive_report_html(
     table_preview_rows: int = 12,
     max_figures_per_section: int = 6,
     max_tables_per_section: int = 6,
+    include_enhanced_report_visuals: bool = True,
+    predictions: Mapping[str, pd.DataFrame] | None = None,
 ) -> str:
     """Builds the polished standalone HTML dashboard report for each run."""
 
-    asset_catalog = build_asset_catalog(diagnostics_tables, visualizations)
+    enhanced_visualizations = (
+        enhance_report_visualizations(
+            metrics=metrics,
+            diagnostics_tables=diagnostics_tables,
+            visualizations=visualizations,
+            target_mode=target_mode,
+            labels_available=labels_available,
+            predictions=predictions,
+        )
+        if include_enhanced_report_visuals
+        else dict(visualizations)
+    )
+    asset_catalog = build_asset_catalog(diagnostics_tables, enhanced_visualizations)
     subset_search_highlight_html = ""
     if execution_mode == "search_feature_subsets":
         subset_search_highlight_html = _build_subset_search_highlight_html(
             tables=diagnostics_tables,
-            figures=visualizations,
+            figures=enhanced_visualizations,
         )
         asset_catalog = prune_subset_search_highlight_assets(asset_catalog)
     metric_cards = summarize_run_kpis(
@@ -1404,7 +2487,7 @@ def build_interactive_report_html(
             section_description=section_payload["description"],
             figure_descriptors=section_payload["figures"],
             table_descriptors=section_payload["tables"],
-            figures=visualizations,
+            figures=enhanced_visualizations,
             tables=diagnostics_tables,
             table_preview_rows=table_preview_rows,
             max_figures_per_section=max_figures_per_section,
@@ -1437,6 +2520,11 @@ def build_interactive_report_html(
         --text: {FINTECH_NEUTRAL["text"]};
         --muted: {FINTECH_NEUTRAL["muted"]};
         --accent: {FINTECH_NEUTRAL["accent"]};
+        --great: {REPORT_SEVERITY_COLORS["great"]};
+        --good: {REPORT_SEVERITY_COLORS["good"]};
+        --watch: {REPORT_SEVERITY_COLORS["watch"]};
+        --bad: {REPORT_SEVERITY_COLORS["bad"]};
+        --info: {REPORT_SEVERITY_COLORS["info"]};
         --shadow: 0 20px 55px rgba(17, 32, 51, 0.08);
       }}
       * {{ box-sizing: border-box; }}
@@ -1464,6 +2552,12 @@ def build_interactive_report_html(
         border: 1px solid rgba(22, 50, 79, 0.10);
         box-shadow: var(--shadow);
       }}
+      .hero-head {{
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(280px, 0.42fr);
+        gap: 28px;
+        align-items: start;
+      }}
       .hero-kicker {{
         text-transform: uppercase;
         letter-spacing: 0.18em;
@@ -1487,6 +2581,29 @@ def build_interactive_report_html(
         display: flex;
         flex-wrap: wrap;
         gap: 10px;
+      }}
+      .report-status-grid {{
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 10px;
+      }}
+      .report-status-card {{
+        border-radius: 18px;
+        padding: 14px 16px;
+        background: rgba(255, 255, 255, 0.78);
+        border: 1px solid rgba(17, 32, 51, 0.08);
+      }}
+      .report-status-card span {{
+        display: block;
+        color: var(--muted);
+        font-size: 11px;
+        font-weight: 800;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        margin-bottom: 5px;
+      }}
+      .report-status-card strong {{
+        font-size: 15px;
       }}
       .meta-chip, .split-chip {{
         border-radius: 999px;
@@ -1534,6 +2651,18 @@ def build_interactive_report_html(
         border: 1px solid rgba(17, 32, 51, 0.08);
         box-shadow: var(--shadow);
       }}
+      details.section-shell {{
+        display: block;
+      }}
+      details.section-shell > summary {{
+        list-style: none;
+      }}
+      details.section-shell > summary::-webkit-details-marker {{
+        display: none;
+      }}
+      .section-summary {{
+        cursor: pointer;
+      }}
       .section-header {{
         display: flex;
         justify-content: space-between;
@@ -1567,7 +2696,7 @@ def build_interactive_report_html(
         min-width: 0;
         display: flex;
         flex-direction: column;
-        gap: 12px;
+        gap: 10px;
         padding: 18px;
         border-radius: 22px;
         background: var(--surface);
@@ -1575,14 +2704,59 @@ def build_interactive_report_html(
         overflow: hidden;
         isolation: isolate;
       }}
+      .asset-card__topline {{
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: -2px;
+      }}
+      .asset-kicker {{
+        color: var(--muted);
+        font-size: 11px;
+        font-weight: 800;
+        letter-spacing: 0.10em;
+        text-transform: uppercase;
+      }}
+      .asset-badge {{
+        display: inline-flex;
+        align-items: center;
+        border-radius: 999px;
+        padding: 5px 9px;
+        font-size: 11px;
+        font-weight: 800;
+        letter-spacing: 0.03em;
+        border: 1px solid rgba(17, 32, 51, 0.08);
+        background: rgba(96, 112, 137, 0.10);
+        color: var(--info);
+        white-space: nowrap;
+      }}
+      .asset-badge--great {{
+        background: rgba(15, 139, 95, 0.11);
+        color: var(--great);
+      }}
+      .asset-badge--good {{
+        background: rgba(42, 111, 151, 0.12);
+        color: var(--good);
+      }}
+      .asset-badge--watch {{
+        background: rgba(217, 154, 43, 0.14);
+        color: #8A5A09;
+      }}
+      .asset-badge--bad {{
+        background: rgba(196, 69, 54, 0.12);
+        color: var(--bad);
+      }}
       .asset-card h3 {{
-        margin: 0 0 8px;
+        margin: 0 0 4px;
         font-size: 18px;
+        line-height: 1.18;
       }}
       .asset-card p {{
-        margin: 0 0 14px;
+        margin: 0 0 8px;
         color: var(--muted);
         font-size: 14px;
+        line-height: 1.35;
       }}
       .asset-table {{
         width: 100%;
@@ -1601,7 +2775,7 @@ def build_interactive_report_html(
         width: 100%;
         min-width: 0;
         overflow: hidden;
-        min-height: 460px;
+        min-height: 470px;
         isolation: isolate;
       }}
       .plot-shell > div {{
@@ -1628,16 +2802,6 @@ def build_interactive_report_html(
         text-align: center;
         padding: 24px;
       }}
-      .static-plot-fallback {{
-        width: 100%;
-        overflow-x: auto;
-      }}
-      .static-plot-fallback svg {{
-        display: block;
-        width: 100%;
-        height: auto;
-        max-width: 100%;
-      }}
       .asset-table th {{
         text-align: left;
         background: var(--surface-alt);
@@ -1656,6 +2820,15 @@ def build_interactive_report_html(
         color: var(--muted);
         font-size: 12px;
       }}
+      .chart-guidance {{
+        margin: -2px 0 2px;
+        padding: 8px 10px;
+        border-radius: 14px;
+        background: rgba(243, 238, 229, 0.72);
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.35;
+      }}
       .asset-card ul, .asset-card ol {{
         margin: 10px 0 0 18px;
         color: var(--muted);
@@ -1667,6 +2840,9 @@ def build_interactive_report_html(
         }}
         .hero {{
           padding: 22px;
+        }}
+        .hero-head {{
+          grid-template-columns: 1fr;
         }}
         .section-shell {{
           padding: 22px;
@@ -1680,13 +2856,32 @@ def build_interactive_report_html(
   <body>
     <main class="page">
       <section class="hero">
-        <div>
-          <div class="hero-kicker">Quantitative Validation Dashboard</div>
-          <h1>Run {escape(run_id)}</h1>
-          <p>
-            Premium validation package for {escape(model_type.replace("_", " ").title())}
-            operating in {escape(execution_mode.replace("_", " ").title())}.
-          </p>
+        <div class="hero-head">
+          <div>
+            <div class="hero-kicker">Quant Studio Regulatory Model Development Report</div>
+            <h1>Run {escape(run_id)}</h1>
+            <p>
+              Formal model-development evidence package for
+              {escape(model_type.replace("_", " ").title())}, operating in
+              {escape(execution_mode.replace("_", " ").title())}. Review the
+              executive metrics first, then expand each diagnostic section for
+              supporting charts, tables, and export evidence.
+            </p>
+          </div>
+          <aside class="report-status-grid" aria-label="Report status">
+            <div class="report-status-card">
+              <span>Organization</span>
+              <strong>Model Development &amp; Validation</strong>
+            </div>
+            <div class="report-status-card">
+              <span>Report Style</span>
+              <strong>Formal Regulatory Review</strong>
+            </div>
+            <div class="report-status-card">
+              <span>Generated By</span>
+              <strong>Quant Studio</strong>
+            </div>
+          </aside>
         </div>
         <div class="hero-meta">
           <div class="meta-chip">Target: <strong>{escape(target_mode.title())}</strong></div>
@@ -1859,30 +3054,48 @@ def _build_section_html(
         return ""
 
     return f"""
-    <section class="section-shell" id="{escape(section_id)}">
-      <div class="section-header">
-        <div>
-          <h2>{escape(section_title)}</h2>
-          <p>{escape(section_description)}</p>
-          {
-              _build_section_limit_note(
-                  figure_descriptors,
-                  table_descriptors,
-                  max_figures_per_section,
-                  max_tables_per_section,
-              )
-          }
+    <details class="section-shell" id="{escape(section_id)}" open>
+      <summary class="section-summary">
+        <div class="section-header">
+          <div>
+            <h2>{escape(section_title)}</h2>
+            <p>{escape(section_description)}</p>
+            {
+        _build_section_limit_note(
+            figure_descriptors,
+            table_descriptors,
+            max_figures_per_section,
+            max_tables_per_section,
+        )
+    }
+          </div>
         </div>
-      </div>
+      </summary>
       {"<div class='figure-grid'>" + figure_cards + "</div>" if figure_cards else ""}
       {"<div class='table-grid'>" + table_cards + "</div>" if table_cards else ""}
-    </section>
+    </details>
     """
+
+
+def _build_asset_badge_html(descriptor: AssetDescriptor) -> str:
+    label, badge_class = report_asset_badge(
+        descriptor.key,
+        featured=descriptor.featured,
+    )
+    return f'<span class="asset-badge asset-badge--{escape(badge_class)}">{escape(label)}</span>'
+
+
+def _build_chart_guidance_html(descriptor: AssetDescriptor) -> str:
+    guidance = report_chart_guidance(descriptor.key)
+    if not guidance:
+        return ""
+    return f'<div class="chart-guidance">{escape(guidance)}</div>'
 
 
 def _build_figure_card_html(descriptor: AssetDescriptor, figure: go.Figure) -> str:
     safe_figure = go.Figure(figure)
     _make_figure_display_safe(safe_figure)
+    _prepare_report_card_figure(safe_figure)
     figure_payload = json.dumps(
         safe_figure.to_plotly_json(),
         default=_json_default,
@@ -1897,16 +3110,16 @@ def _build_figure_card_html(descriptor: AssetDescriptor, figure: go.Figure) -> s
         "Chart loading. If this remains visible, open the report in a modern "
         "browser or serve it from a local HTTP server."
     )
-    static_fallback_html = _build_static_figure_fallback_html(
-        safe_figure,
-        fallback_message=fallback,
-        height=figure_height,
-    )
     description = escape(descriptor.description or "")
     return f"""
     <article class="asset-card">
+      <div class="asset-card__topline">
+        <span class="asset-kicker">Chart</span>
+        {_build_asset_badge_html(descriptor)}
+      </div>
       <h3>{escape(descriptor.title)}</h3>
       {f"<p>{description}</p>" if description else ""}
+      {_build_chart_guidance_html(descriptor)}
       <div
         class="plot-shell plotly-lazy"
         id="{escape(figure_id)}"
@@ -1914,56 +3127,13 @@ def _build_figure_card_html(descriptor: AssetDescriptor, figure: go.Figure) -> s
         data-config="{config_payload_html}"
         style="min-height: {figure_height}px;"
       >
-        {static_fallback_html}
+        <div class="plot-fallback">{escape(fallback)}</div>
       </div>
       <script type="application/json" id="{escape(payload_id)}">
         {_safe_json_script(figure_payload)}
       </script>
     </article>
     """
-
-
-def _build_static_figure_fallback_html(
-    figure: go.Figure,
-    *,
-    fallback_message: str,
-    height: int,
-) -> str:
-    try:
-        svg = pio.to_image(
-            figure,
-            format="svg",
-            width=900,
-            height=max(height, 360),
-            validate=False,
-        ).decode("utf-8")
-    except Exception as exc:
-        message = (
-            f"{fallback_message} Static chart fallback was unavailable in the export "
-            f"environment: {_summarize_static_export_error(exc)}"
-        )
-        return f'<div class="plot-fallback">{escape(message)}</div>'
-    return f'<div class="static-plot-fallback">{_safe_svg_fragment(svg)}</div>'
-
-
-def _summarize_static_export_error(error: Exception) -> str:
-    message = " ".join(str(error).split())
-    if "Chrome" in message or "Kaleido" in message:
-        return (
-            "Plotly/Kaleido could not find Chrome. Re-run "
-            "`bash scripts/bootstrap_sagemaker.sh` in SageMaker so the bootstrap "
-            "can install Chrome for static chart export."
-        )
-    return message[:260] if message else error.__class__.__name__
-
-
-def _safe_svg_fragment(svg: str) -> str:
-    cleaned = svg.strip()
-    if cleaned.startswith("<?xml"):
-        end_index = cleaned.find("?>")
-        if end_index != -1:
-            cleaned = cleaned[end_index + 2 :].strip()
-    return cleaned.replace("</script", "<\\/script")
 
 
 def _build_table_card_html(
@@ -1976,6 +3146,10 @@ def _build_table_card_html(
     description = escape(descriptor.description or "")
     return f"""
     <article class="asset-card">
+      <div class="asset-card__topline">
+        <span class="asset-kicker">Table</span>
+        {_build_asset_badge_html(descriptor)}
+      </div>
       <h3>{escape(descriptor.title)}</h3>
       {f"<p>{description}</p>" if description else ""}
       <div class="table-shell">
@@ -2034,16 +3208,16 @@ def _build_governance_section_html(
         export_items = "".join(
             [
                 (
-                    "<li><strong>run_config.json</strong> stores the resolved subset-search "
-                    "configuration.</li>"
+                    "<li><strong>config/run_config.json</strong> stores the resolved "
+                    "subset-search configuration.</li>"
                 ),
                 (
                     "<li><strong>subset_search_candidates.csv</strong> and related tables in "
                     "<strong>tables/</strong> preserve the candidate ranking.</li>"
                 ),
                 (
-                    "<li><strong>interactive_report.html</strong> packages the comparison-only "
-                    "visuals for review outside the GUI.</li>"
+                    "<li><strong>reports/interactive_report.html</strong> packages the "
+                    "comparison-only visuals for review outside the GUI.</li>"
                 ),
                 (
                     "<li><strong>figures/</strong> stores ROC, KS, frontier, and feature-"
@@ -2055,18 +3229,21 @@ def _build_governance_section_html(
         export_items = "".join(
             [
                 (
-                    "<li><strong>run_config.json</strong> stores the fully resolved "
+                    "<li><strong>config/run_config.json</strong> stores the fully resolved "
                     "configuration.</li>"
                 ),
-                "<li><strong>generated_run.py</strong> reruns the bundle without the GUI.</li>",
                 (
-                    "<li><strong>input_snapshot.csv</strong> preserves the scored input "
-                    "when enabled.</li>"
+                    "<li><strong>code/generated_run.py</strong> reruns the bundle "
+                    "without the GUI.</li>"
                 ),
                 (
-                    "<li><strong>committee_report.docx/.pdf</strong> and "
-                    "<strong>validation_report.docx/.pdf</strong> package the run for "
-                    "committee and validation review.</li>"
+                    "<li><strong>data/input/input_snapshot.csv</strong> preserves the "
+                    "scored input when enabled.</li>"
+                ),
+                (
+                    "<li><strong>reports/committee_report.docx/.pdf</strong> and "
+                    "<strong>reports/validation_report.docx/.pdf</strong> package the "
+                    "run for committee and validation review.</li>"
                 ),
                 (
                     "<li><strong>tables/</strong> and <strong>figures/</strong> "

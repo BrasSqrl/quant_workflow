@@ -9,6 +9,7 @@ import pandas as pd
 
 PRIMARY_ARTIFACTS: tuple[tuple[str, str, str], ...] = (
     ("output_root", "Run folder", "Directory"),
+    ("start_here", "Start-here guide", "Orientation"),
     ("interactive_report", "Interactive HTML report", "Report"),
     ("model", "Model object", "Model"),
     ("config", "Run configuration", "Reproducibility"),
@@ -52,7 +53,7 @@ def build_primary_artifact_cards(artifacts: dict[str, Any]) -> list[dict[str, st
     """Returns compact card values for the most important post-run locations."""
 
     cards: list[dict[str, str]] = []
-    for key, label, _area in PRIMARY_ARTIFACTS[:7]:
+    for key, label, _area in PRIMARY_ARTIFACTS[:8]:
         value = artifacts.get(key)
         if not value:
             continue

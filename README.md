@@ -80,7 +80,7 @@ The framework now supports:
 - Tobit regression
 - XGBoost
 
-The framework can also reuse a previously exported `quant_model.joblib`
+The framework can also reuse a previously exported `model/quant_model.joblib`
 artifact so new data can be scored and validated without refitting the model.
 
 For targets, the framework supports:
@@ -160,6 +160,25 @@ The framework also includes development-focused workflow features:
   challenger review, scenario analysis, and documentation rather than ongoing
   production monitoring.
 
+## Documentation Map
+
+Start with [docs/README.md](./docs/README.md). It organizes the documentation
+by user need so model builders, validators, SageMaker users, and technical
+owners do not have to scan every reference file.
+
+The most practical user guides are:
+
+- [User Quick Start Guide](./docs/user_guides/QUICK_START.md)
+- [Data Requirements Guide](./docs/user_guides/DATA_REQUIREMENTS.md)
+- [Execution Mode Decision Guide](./docs/user_guides/EXECUTION_MODE_DECISION_GUIDE.md)
+- [Artifact Map](./docs/user_guides/ARTIFACT_MAP.md)
+- [Model Selection Guide](./docs/user_guides/MODEL_SELECTION_GUIDE.md)
+- [Configuration Cookbook](./docs/user_guides/CONFIGURATION_COOKBOOK.md)
+- [Validation Reviewer Guide](./docs/user_guides/VALIDATION_REVIEWER_GUIDE.md)
+- [Troubleshooting Guide](./docs/user_guides/TROUBLESHOOTING.md)
+- [Large Data Playbook](./docs/user_guides/LARGE_DATA_PLAYBOOK.md)
+- [Glossary](./docs/user_guides/GLOSSARY.md)
+
 ## Engineering Standards
 
 The repository now includes an explicit engineering rubric and alignment note:
@@ -168,7 +187,8 @@ The repository now includes an explicit engineering rubric and alignment note:
 - [docs/RUBRIC_ALIGNMENT.md](./docs/RUBRIC_ALIGNMENT.md)
 - [docs/UI_UX_STANDARD.md](./docs/UI_UX_STANDARD.md)
 - [docs/UI_ENTERPRISE_REDESIGN.md](./docs/UI_ENTERPRISE_REDESIGN.md)
-- [docs/DEVELOPMENT_ROADMAP.md](./docs/DEVELOPMENT_ROADMAP.md)
+- [docs/DEVELOPMENT_ROADMAP.md](./docs/DEVELOPMENT_ROADMAP.md) records the
+  completed optimization and maintainability ledger
 
 ## Transparency and Auditability Guides
 
@@ -231,20 +251,37 @@ quant/
     config.toml
   app/
     streamlit_app.py
+  Data_Load/
+    .gitkeep
   configs/
     saved_profiles/
       .gitkeep
   docs/
+    README.md
     DEVELOPMENT_ROADMAP.md
     ENGINEERING_RUBRIC.md
     GUI_TO_CODE_TRACEABILITY_GUIDE.md
+    LOGISTIC_REGRESSION_WALKTHROUGH.html
     METRIC_CATALOG.md
     MODEL_CATALOG.md
     PREPROCESSING_AND_DATA_TREATMENT_GUIDE.md
     RUBRIC_ALIGNMENT.md
+    SAGEMAKER_SETUP.md
     STATISTICAL_TEST_CATALOG.md
     UI_ENTERPRISE_REDESIGN.md
     UI_UX_STANDARD.md
+    user_guides/
+      README.md
+      ARTIFACT_MAP.md
+      CONFIGURATION_COOKBOOK.md
+      DATA_REQUIREMENTS.md
+      EXECUTION_MODE_DECISION_GUIDE.md
+      GLOSSARY.md
+      LARGE_DATA_PLAYBOOK.md
+      MODEL_SELECTION_GUIDE.md
+      QUICK_START.md
+      TROUBLESHOOTING.md
+      VALIDATION_REVIEWER_GUIDE.md
   examples/
     reference_workflows/
       expected/
@@ -273,11 +310,15 @@ quant/
       config_io.py
       config_serialization.py
       context.py
+      diagnostic_frameworks.py
       export_layout.py
+      export_profiles.py
       gui_launcher.py
       gui_support.py
+      large_data.py
       models.py
       orchestrator.py
+      presentation.py
       presets.py
       reporting.py
       reference_workflows.py
@@ -292,6 +333,7 @@ quant/
         app_controller.py
         config_builder.py
         data.py
+        enterprise_workflow.py
         error_guidance.py
         results.py
         run_execution.py
@@ -310,6 +352,9 @@ quant/
         cleaning.py
         feature_engineering.py
         feature_subset_search.py
+        cross_validation.py
+        imputation.py
+        large_data_scoring.py
         splitting.py
         transformations.py
         variable_selection.py
@@ -319,23 +364,8 @@ quant/
         diagnostics.py
         export.py
   tests/
-    test_artifact_contracts.py
-    test_calibration_workflow.py
-    test_existing_model_scoring.py
-    test_feature_subset_search_mode.py
-    test_development_features.py
-    test_governance_extensions.py
-    test_gui_launcher.py
-    test_gui_support.py
-    test_numerical_hardening_and_reporting.py
-    test_performance_controls.py
-    test_roadmap_features.py
-    test_pipeline_smoke.py
-    test_reference_workflows.py
-    test_saved_run_bundle.py
-    test_streamlit_app_e2e.py
-    test_workflow_guardrails.py
     support.py
+    test_*.py
   scripts/
     bootstrap_sagemaker.sh
     benchmark_large_data.py
@@ -482,11 +512,12 @@ plain-text copy is kept at [SAGEMAKER_SETUP.txt](./SAGEMAKER_SETUP.txt).
 If you already have an exported run folder, you can rerun it without the GUI:
 
 ```powershell
-python -m quant_pd_framework.run --config artifacts\20260418T000000Z\run_config.json
+python -m quant_pd_framework.run --config artifacts\20260418T000000Z\config\run_config.json
 ```
 
-If the run folder includes `input_snapshot.csv` or `input_snapshot.parquet`,
-the runner picks it up automatically. Otherwise supply `--input`.
+If the run folder includes `data/input/input_snapshot.csv` or
+`data/input/input_snapshot.parquet`, the runner picks it up automatically.
+Otherwise supply `--input`.
 
 ### Run Tests
 
@@ -559,6 +590,9 @@ That standard drives both the live GUI and the exported standalone HTML report. 
 - main-canvas model configuration, readiness, and artifact workspaces instead
   of persistent side panes
 - consistent Plotly theming across all charts
+- formal regulatory-report styling for `reports/interactive_report.html`
+- companion chart views that make existing diagnostics easier to interpret
+- practical chart badges and reviewer guidance for threshold-based outputs
 - metric cards, section shells, and filter controls that make scanning easier for model builders and validation teams
 - the same section taxonomy in both Streamlit and exported reports so users do not have to relearn the layout
 
@@ -711,8 +745,8 @@ The live result surface also supports interactive filters for:
 
 When `score_existing_model` is selected:
 
-- provide an exported `quant_model.joblib` path
-- optionally provide the matching prior `run_config.json`
+- provide an exported `model/quant_model.joblib` path
+- optionally provide the matching prior `config/run_config.json`
 - if the prior run config is supplied, its schema, target, feature, split, and model settings override the current GUI editor so the scoring run stays aligned with the original model contract
 
 When `search_feature_subsets` is selected:
@@ -922,10 +956,10 @@ from quant_pd_framework import ExecutionMode, QuantModelOrchestrator, load_frame
 
 new_dataframe = ...
 
-config = load_framework_config("artifacts/prior_run/run_config.json")
+config = load_framework_config("artifacts/prior_run/config/run_config.json")
 config.execution.mode = ExecutionMode.SCORE_EXISTING_MODEL
-config.execution.existing_model_path = "artifacts/prior_run/quant_model.joblib"
-config.execution.existing_config_path = "artifacts/prior_run/run_config.json"
+config.execution.existing_model_path = "artifacts/prior_run/model/quant_model.joblib"
+config.execution.existing_config_path = "artifacts/prior_run/config/run_config.json"
 config.artifacts.output_root = "artifacts/existing_model_scores"
 
 context = QuantModelOrchestrator(config=config).run(new_dataframe)
@@ -946,8 +980,8 @@ If you want to replay a previously exported run, you can load the saved config a
 from quant_pd_framework import run_saved_config
 
 context = run_saved_config(
-    config_path="artifacts/20260418T000000Z/run_config.json",
-    input_path="artifacts/20260418T000000Z/input_snapshot.parquet",
+    config_path="artifacts/20260418T000000Z/config/run_config.json",
+    input_path="artifacts/20260418T000000Z/data/input/input_snapshot.parquet",
     output_root="artifacts/reruns",
 )
 
@@ -1124,8 +1158,8 @@ Supported modes:
 
 Recommended scoring pattern:
 
-- point `existing_model_path` at a prior exported `quant_model.joblib`
-- point `existing_config_path` at the matching prior `run_config.json`
+- point `existing_model_path` at a prior exported `model/quant_model.joblib`
+- point `existing_config_path` at the matching prior `config/run_config.json`
 - let the framework reuse the prior schema, feature, target, split, and model settings so the new scoring run stays aligned with the original model contract
 
 If `mode="score_existing_model"`, `existing_model_path` is required.
@@ -1286,8 +1320,8 @@ the saved run config so existing-model scoring can replay the same features.
 
 ### `AdvancedImputationConfig` And Expanded Diagnostic Framework Configs
 
-The framework now also exposes typed config objects for the newer roadmap
-frameworks. The most important ones are:
+The framework exposes typed config objects for the expanded diagnostic and
+data-treatment frameworks. The most important ones are:
 
 - `AdvancedImputationConfig`
 - `DistributionDiagnosticConfig`
@@ -1299,10 +1333,10 @@ frameworks. The most important ones are:
 - `FeatureWorkbenchConfig`
 - `PresetRecommendationConfig`
 
-These configs control the deeper review surfaces added in the latest roadmap
-phase, including model-based imputation, distribution and dependency testing,
-residual and outlier analysis, structural-break review, engineered-feature
-workbench outputs, and preset-aligned recommendation tables.
+These configs control deeper review surfaces including model-based imputation,
+distribution and dependency testing, residual and outlier analysis,
+structural-break review, engineered-feature workbench outputs, and
+preset-aligned recommendation tables.
 
 ### `ExplainabilityConfig`
 
@@ -1546,11 +1580,11 @@ sampled or Parquet-first tabular outputs.
 
 For file-backed runs, the large-data workflow is intentionally split:
 
-- `sample_development/` contains the governed sample loaded into pandas for
+- `data/sample_development/` contains the governed sample loaded into pandas for
   model fitting, diagnostics, and documentation.
-- `full_data_scoring/` contains chunked full-file scoring outputs, including
+- `data/full_data_scoring/` contains chunked full-file scoring outputs, including
   full-data predictions written directly to Parquet.
-- `large_data_metadata/` contains metadata describing the source path, staged
+- `metadata/large_data/` contains metadata describing the source path, staged
   Parquet path, projected columns, sample size, chunk size, row counts, and
   chunk-progress status.
 
@@ -1629,7 +1663,12 @@ Run folders use a readable UTC date/time name such as
 
 Important behavior:
 
-- `interactive_report.html` is always exported for completed runs.
+- `reports/interactive_report.html` is always exported for completed runs. It uses the
+  formal Quant Studio report layout and can include presentation-only companion
+  charts generated from existing diagnostics tables, metrics, and predictions.
+- `include_enhanced_report_visuals` controls whether those companion charts are
+  added. Turn it off in the GUI with `Include enhanced report visuals` for
+  faster iteration runs.
 - `tabular_output_format` controls whether major tabular artifacts are written
   as CSV, Parquet, or both.
 - `large_data_export_policy` can write full tabular outputs, sampled CSV
@@ -1646,33 +1685,41 @@ Important behavior:
 - `run_debug_trace.json` is exported for every run and records step timing,
   completion status, shape snapshots, and error details when a step fails.
 
-Default artifact files:
+Default artifact layout:
 
-- `quant_model.joblib`
-- `metrics.json`
-- `input_snapshot.csv`
-- `input_snapshot.parquet` when Parquet or dual tabular output is selected
-- `predictions.csv`
-- `predictions.parquet` when Parquet or dual tabular output is selected
-- `feature_importance.csv`
-- `backtest_summary.csv`
-- `run_report.md`
-- `interactive_report.html`
-- `run_config.json`
-- `statistical_tests.json`
-- `analysis_workbook.xlsx`
+- `START_HERE.md`
+  Plain-English orientation for the run folder.
 - `artifact_manifest.json`
-  This now indexes the core run artifacts, export directories, figures, and
-  rerun bundle in one file.
-- `step_manifest.json`
-- `run_debug_trace.json`
-- `model_documentation_pack.md`
-- `validation_pack.md`
-- `reproducibility_manifest.json`
-- `configuration_template.xlsx`
-- `generated_run.py`
-- `HOW_TO_RERUN.md`
-- `code_snapshot/`
+  Versioned machine-readable index with `category`, `purpose`,
+  `relative_path`, and `send_to` fields for each artifact.
+- `reports/`
+  Contains `interactive_report.html`, `run_report.md`,
+  `model_documentation_pack.md`, `validation_pack.md`, and optional DOCX/PDF
+  regulatory reports.
+- `model/`
+  Contains `quant_model.joblib`, `model_summary.txt`, and
+  `feature_importance.csv`.
+- `data/input/`
+  Contains `input_snapshot.csv` and/or `input_snapshot.parquet` when input
+  snapshot export is enabled.
+- `data/predictions/`
+  Contains `predictions.csv`, `predictions.parquet`, and split-level
+  prediction files.
+- `tables/`
+  Contains diagnostic tables grouped by review topic, such as `diagnostics/`,
+  `calibration/`, `stability/`, `statistical_tests/`, `explainability/`, and
+  `backtesting/`.
+- `config/`
+  Contains `run_config.json` and `configuration_template.xlsx`.
+- `metadata/`
+  Contains `metrics.json`, `statistical_tests.json`, `step_manifest.json`,
+  `run_debug_trace.json`, and `reproducibility_manifest.json`.
+- `workbooks/`
+  Contains `analysis_workbook.xlsx` when Excel export is enabled.
+- `code/`
+  Contains `generated_run.py`, `HOW_TO_RERUN.md`, and `code_snapshot/`.
+- No `json/` folder is created. JSON artifacts are split between `config/`
+  and `metadata/` by purpose.
 - `model_bundle_for_monitoring/`
   A versioned handoff bundle for the separate monitoring application. It
   includes the approved model artifact, resolved run config, generated runner,
@@ -1884,9 +1931,13 @@ Builds validation tables and interactive Plotly visuals such as:
 - base-versus-recalibrated method comparison charts
 - challenger model comparison tables and charts
 - ROC and precision-recall curves
+- annotated ROC, precision-recall, and KS companion charts
+- calibration residual bar charts
+- score-distribution violin plots
 - threshold sweeps
 - lift and gain charts
 - missingness charts
+- missingness-by-split heatmaps
 - imputation rule tables
 - grouped imputation rule tables when segment-aware imputation is used
 - generated missingness-indicator features when enabled in the column designer
@@ -1895,6 +1946,7 @@ Builds validation tables and interactive Plotly visuals such as:
 - missingness stability, target-association, and indicator-correlation tables
 - correlation heatmaps
 - feature importance charts
+- feature-importance waterfall views
 - variable-selection tables
 - manual review decision tables
 - permutation importance charts
@@ -1905,19 +1957,24 @@ Builds validation tables and interactive Plotly visuals such as:
 - residual plots
 - QQ plots
 - segment summaries
+- observed-versus-predicted segment dumbbell charts
 - ADF test tables
 - model specification test tables and influence plots
 - forecasting statistical test tables for time-aware workflows
 - PSI tables
+- PSI and VIF threshold review bars
 - WoE/IV summaries
 - feature policy checks
 - reproducibility manifest tables
+- scenario tornado charts
+- cross-validation metric violin plots
+- feature-effect stability small multiples
 - scenario summaries and segment impacts
 
 ### 16. Cross-Validation Diagnostics
 
 Optionally fits temporary fold-level models on the training split to evaluate
-metric and feature stability. This step does not replace `quant_model.joblib`;
+metric and feature stability. This step does not replace `model/quant_model.joblib`;
 the exported model remains the model fit by the normal training step.
 
 Cross-sectional binary models use stratified k-fold validation by default.
@@ -1977,45 +2034,49 @@ Typical outputs include:
 
 ## Saved Run Bundles And Code Export
 
-Each exported run directory is now intended to be portable. A completed run folder contains both the results and the Python material needed to inspect or replay the process outside Streamlit.
+Each exported run directory is intended to be portable. A completed run folder
+contains the results and the Python material needed to inspect or replay the
+process outside Streamlit.
 
 ### What The Bundle Includes
 
-- `run_config.json`
+- `START_HERE.md`
+  The first file to open. It explains the run folder layout and common tasks.
+- `config/run_config.json`
   The fully resolved configuration used for the run.
-- `input_snapshot.csv`
+- `data/input/input_snapshot.csv`
   A CSV snapshot of the ingested dataframe, so the run can be reproduced without pointing back to the original upload.
-- `input_snapshot.parquet`
+- `data/input/input_snapshot.parquet`
   A full Parquet snapshot when Parquet or dual tabular output is selected.
-- `step_manifest.json`
+- `metadata/step_manifest.json`
   The exact ordered list of pipeline steps used, including module and class names.
-- `generated_run.py`
+- `code/generated_run.py`
   A Python launcher that defaults to the exported config and input snapshot.
-- `interactive_report.html`
+- `reports/interactive_report.html`
   A grouped standalone validation dashboard that mirrors the visual taxonomy used in the GUI.
-- `model_documentation_pack.md`
+- `reports/model_documentation_pack.md`
   A development-ready narrative pack built from the run configuration, metrics,
   calibration review, and selected-feature summary.
-- `validation_pack.md`
+- `reports/validation_pack.md`
   A validator-facing markdown pack focused on assumptions, review decisions,
   challenger outcomes, and artifact index.
-- `committee_report.docx/.pdf` and `validation_report.docx/.pdf`
+- `reports/committee_report.docx/.pdf` and `reports/validation_report.docx/.pdf`
   Polished regulator-ready documents with a cover page, report map, section
   summaries, split appendices, and estimation-health section.
 - `reference_example_pack.md`
   A workflow-specific reading guide included in each reference example run.
-- `reproducibility_manifest.json`
+- `metadata/reproducibility_manifest.json`
   Hashes, package versions, input source metadata, environment metadata, and
   optional git information.
-- `configuration_template.xlsx`
+- `config/configuration_template.xlsx`
   The editable workbook for schema, feature dictionary, transformations, and
   review tables.
 - `artifact_manifest.json`
   A machine-readable index of the core artifacts, export directories, figures,
   regulator-ready reports, and rerun-bundle assets.
-- `HOW_TO_RERUN.md`
+- `code/HOW_TO_RERUN.md`
   A short runbook describing the rerun path and the main editable files.
-- `code_snapshot/`
+- `code/code_snapshot/`
   A copy of the framework source, GUI, tests, examples, README, and `pyproject.toml`.
 - `model_bundle_for_monitoring/`
   A monitoring-ready handoff bundle containing `quant_model.joblib`,
@@ -2026,29 +2087,33 @@ Each exported run directory is now intended to be portable. A completed run fold
 
 ### Why The Code Snapshot Exists
 
-The GUI is useful for setup, but some users will want to inspect or modify step-level code after a run completes. The exported `code_snapshot/` addresses that concern directly.
+The GUI is useful for setup, but some users will want to inspect or modify
+step-level code after a run completes. The exported `code/code_snapshot/`
+addresses that concern directly.
 
 You can edit files such as:
 
-- `code_snapshot/src/quant_pd_framework/steps/diagnostics.py`
-- `code_snapshot/src/quant_pd_framework/steps/export.py`
-- `code_snapshot/src/quant_pd_framework/steps/training.py`
-- `code_snapshot/src/quant_pd_framework/orchestrator.py`
+- `code/code_snapshot/src/quant_pd_framework/steps/diagnostics.py`
+- `code/code_snapshot/src/quant_pd_framework/steps/export.py`
+- `code/code_snapshot/src/quant_pd_framework/steps/training.py`
+- `code/code_snapshot/src/quant_pd_framework/orchestrator.py`
 
-The generated runner prepends `code_snapshot/src/` to `sys.path`, so those edits apply immediately when the user reruns the bundle.
+The generated runner prepends `code/code_snapshot/src/` to `sys.path`, so those
+edits apply immediately when the user reruns the bundle.
 
 ### Easiest Non-GUI Rerun
 
 From inside the exported run directory:
 
 ```powershell
-python generated_run.py
+python code\generated_run.py
 ```
 
 By default this:
 
-- reads `run_config.json`
-- uses `input_snapshot.csv` or `input_snapshot.parquet` if either exists
+- reads `config/run_config.json`
+- uses `data/input/input_snapshot.csv` or `data/input/input_snapshot.parquet`
+  if either exists
 - writes the new results under `reruns/`
 - imports the local code snapshot first
 
@@ -2057,13 +2122,13 @@ By default this:
 The packaged runner can also be invoked explicitly:
 
 ```powershell
-python -m quant_pd_framework.run --config run_config.json --input input_snapshot.csv --output-root reruns
+python -m quant_pd_framework.run --config config\run_config.json --input data\input\input_snapshot.csv --output-root reruns
 ```
 
 or:
 
 ```powershell
-quant-pd-run --config run_config.json --input input_snapshot.csv --output-root reruns
+quant-pd-run --config config\run_config.json --input data\input\input_snapshot.csv --output-root reruns
 ```
 
 If you want to score or retrain on a different dataset, keep the same config and change `--input`.
@@ -2127,17 +2192,18 @@ or:
 Open the exported run folder and use:
 
 ```powershell
-python generated_run.py
+python code\generated_run.py
 ```
 
 If you prefer the packaged CLI instead:
 
 ```powershell
-python -m quant_pd_framework.run --config run_config.json --input input_snapshot.csv --output-root reruns
+python -m quant_pd_framework.run --config config\run_config.json --input data\input\input_snapshot.csv --output-root reruns
 ```
 
-If `input_snapshot.csv` and `input_snapshot.parquet` are missing because input
-export was disabled, supply your own CSV, Excel, or Parquet path with `--input`.
+If `data/input/input_snapshot.csv` and `data/input/input_snapshot.parquet` are
+missing because input export was disabled, supply your own CSV, Excel, or
+Parquet path with `--input`.
 
 ### Excel Files Do Not Load
 
@@ -2175,8 +2241,8 @@ performance safeguards through `PerformanceConfig`, including:
   exported row in memory
 - sampled CSV exports or full Parquet exports for predictions and input
   snapshots
-- separate `sample_development/`, `full_data_scoring/`, and
-  `large_data_metadata/` output folders for audit clarity
+- separate `data/sample_development/`, `data/full_data_scoring/`, and
+  `metadata/large_data/` output folders for audit clarity
 - export profiles that let users choose between faster development exports and
   fuller audit-oriented packaging
 
@@ -2208,7 +2274,7 @@ Two scripts support performance investigation without changing the application
 workflow:
 
 ```powershell
-python scripts/profile_workflow.py --config artifacts\run_id\run_config.json --input Data_Load\sample.parquet --profile-output artifacts\profile.json
+python scripts/profile_workflow.py --config artifacts\run_id\config\run_config.json --input Data_Load\sample.parquet --profile-output artifacts\profile.json
 ```
 
 This profiles a saved configuration run, records elapsed time, peak traced

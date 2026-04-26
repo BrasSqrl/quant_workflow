@@ -9,7 +9,11 @@ import pandas as pd
 from quant_pd_framework import TargetMode
 from quant_pd_framework.streamlit_ui.artifact_summary import build_artifact_summary_frame
 from quant_pd_framework.streamlit_ui.error_guidance import classify_workflow_exception
-from quant_pd_framework.streamlit_ui.results import resolve_score_column_for_display
+from quant_pd_framework.streamlit_ui.results import (
+    build_suitability_display_table,
+    resolve_score_column_for_display,
+    with_report_enhancement_visualizations,
+)
 from quant_pd_framework.streamlit_ui.state import infer_snapshot_score_column
 from tests.support import temporary_artifact_root
 
@@ -30,6 +34,60 @@ def test_resolve_score_column_for_display_falls_back_to_probability_column() -> 
     resolved = resolve_score_column_for_display(snapshot, prediction_frame)
 
     assert resolved == "predicted_probability"
+
+
+def test_report_enhancement_visualizations_respect_snapshot_toggle() -> None:
+    snapshot = {
+        "include_enhanced_report_visuals": False,
+        "metrics": {"test": {"roc_auc": 0.8}},
+        "diagnostics_tables": {"roc_curve": pd.DataFrame({"fpr": [0.0, 1.0], "tpr": [0.0, 1.0]})},
+        "visualizations": {},
+        "target_mode": TargetMode.BINARY.value,
+        "labels_available": True,
+        "predictions": {},
+    }
+
+    updated_snapshot = with_report_enhancement_visualizations(snapshot)
+
+    assert updated_snapshot["visualizations"] == {}
+
+
+def test_suitability_display_table_puts_failures_first_with_plain_language() -> None:
+    table = pd.DataFrame(
+        [
+            {
+                "check_name": "positive_class_rate",
+                "check_label": "Positive class rate",
+                "subject": "train_target",
+                "status": "pass",
+                "status_label": "Pass",
+                "observed_value": 0.25,
+                "threshold": "[0.01, 0.99]",
+                "interpretation": "The positive class rate is within range.",
+                "why_it_matters": "Class balance affects validation stability.",
+                "recommended_action": "No action required.",
+            },
+            {
+                "check_name": "events_per_feature",
+                "check_label": "Events per feature",
+                "subject": "train_target",
+                "status": "fail",
+                "status_label": "Fail",
+                "observed_value": 8.3,
+                "threshold": 10.0,
+                "interpretation": "The training split has fewer target events per feature.",
+                "why_it_matters": "Low events per feature increases overfitting risk.",
+                "recommended_action": "Reduce selected features or add more event observations.",
+            },
+        ]
+    )
+
+    display = build_suitability_display_table(table)
+
+    assert display.iloc[0]["status_label"] == "Fail"
+    assert display.iloc[0]["check_label"] == "Events per feature"
+    assert "recommended_action" in display.columns
+    assert "status" not in display.columns
 
 
 def test_infer_snapshot_score_column_uses_binary_prediction_outputs_when_metadata_missing() -> None:
@@ -66,10 +124,7 @@ def test_artifact_summary_frame_prioritizes_primary_locations() -> None:
 
     assert summary.iloc[0]["key"] == "output_root"
     assert summary.loc[summary["key"].eq("interactive_report"), "status"].iloc[0] == "Available"
-    assert (
-        summary.loc[summary["key"].eq("model"), "status"].iloc[0]
-        == "Recorded, not found"
-    )
+    assert summary.loc[summary["key"].eq("model"), "status"].iloc[0] == "Recorded, not found"
 
 
 def test_workflow_error_guidance_classifies_memory_failures() -> None:

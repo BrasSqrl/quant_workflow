@@ -54,7 +54,9 @@ def _build_artifact_contract_config(output_root: Path) -> FrameworkConfig:
 def _iter_manifest_paths(payload: Any) -> list[Path]:
     paths: list[Path] = []
     if isinstance(payload, dict):
-        for value in payload.values():
+        for key, value in payload.items():
+            if key == "artifact_index":
+                continue
             paths.extend(_iter_manifest_paths(value))
     elif isinstance(payload, list):
         for value in payload:
@@ -82,17 +84,23 @@ def test_artifact_manifest_indexes_core_outputs_and_rerun_bundle() -> None:
         assert "input_snapshot" in manifest["rerun_bundle"]
         assert "code_snapshot" in manifest["rerun_bundle"]
         assert "analysis_workbook" in manifest["core_artifacts"]
+        assert manifest["artifact_layout_version"] == "2.0"
+        assert manifest["core_artifacts"]["start_here"] == str(context.artifacts["start_here"])
+        assert any(
+            row["relative_path"] == "START_HERE.md" and row["send_to"] == "all reviewers"
+            for row in manifest["artifact_index"]
+        )
 
         for path in _iter_manifest_paths(manifest):
             assert path.exists(), path
 
         tables_dir = Path(manifest["directories"]["tables"])
         html_dir = Path(manifest["directories"]["figures_html"])
-        json_dir = Path(manifest["directories"]["json"])
         code_snapshot_dir = Path(manifest["rerun_bundle"]["code_snapshot"])
-        assert any(tables_dir.glob("*.csv"))
+        assert any(tables_dir.rglob("*.csv"))
         assert any(html_dir.glob("*.html"))
-        assert json_dir.exists()
+        assert Path(manifest["directories"]["metadata"]).exists()
+        assert Path(manifest["directories"]["config"]).exists()
         assert (code_snapshot_dir / "src" / "quant_pd_framework" / "run.py").exists()
         assert (code_snapshot_dir / "app" / "streamlit_app.py").exists()
 
@@ -139,6 +147,7 @@ def test_artifact_manifest_can_skip_individual_figure_exports() -> None:
 
 def test_individual_figure_exports_default_to_disabled() -> None:
     assert ArtifactConfig().export_individual_figure_files is False
+    assert ArtifactConfig().include_enhanced_report_visuals is True
 
 
 def test_reference_workflow_bundle_contract_contains_expected_sections() -> None:
@@ -158,6 +167,9 @@ def test_reference_workflow_bundle_contract_contains_expected_sections() -> None
         assert "Governance / Export Bundle" in interactive_report
         assert "Model Performance" in interactive_report
         assert "## Artifact Index" in validation_pack
-        assert "- `reproducibility_manifest.json` for run fingerprint metadata." in validation_pack
+        assert (
+            "- `metadata/reproducibility_manifest.json` for run fingerprint metadata."
+            in validation_pack
+        )
         assert "## Development Summary" in documentation_pack
         assert "## Calibration Review" in documentation_pack

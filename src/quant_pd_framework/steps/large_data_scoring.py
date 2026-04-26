@@ -12,6 +12,7 @@ import pandas as pd
 from ..base import BasePipelineStep
 from ..config import ExecutionMode, TargetMode
 from ..context import PipelineContext
+from ..export_layout import build_export_path_layout
 from ..large_data import iter_dataset_batches
 from .cleaning import CleaningStep
 from .feature_engineering import FeatureEngineeringStep
@@ -42,16 +43,15 @@ class LargeDataFullScoringStep(BasePipelineStep):
             raise ValueError("Large-data full scoring requires resolved model features.")
 
         output_root = context.config.artifacts.output_root / context.run_id
-        scoring_dir = output_root / "full_data_scoring"
-        metadata_dir = output_root / "large_data_metadata"
+        layout = build_export_path_layout(context.config.artifacts, output_root)
+        scoring_dir = layout.data_dir / "full_data_scoring"
+        metadata_dir = layout.metadata_dir / "large_data"
         scoring_dir.mkdir(parents=True, exist_ok=True)
         metadata_dir.mkdir(parents=True, exist_ok=True)
 
         predictions_path = scoring_dir / "predictions.parquet"
         progress_path = metadata_dir / "large_data_full_scoring_progress.json"
-        projected_columns = context.metadata.get("large_data_sample", {}).get(
-            "projected_columns"
-        )
+        projected_columns = context.metadata.get("large_data_sample", {}).get("projected_columns")
         if not isinstance(projected_columns, list):
             projected_columns = None
 
@@ -117,9 +117,7 @@ class LargeDataFullScoringStep(BasePipelineStep):
         context.diagnostics_tables["large_data_full_scoring_summary"] = summary_table
         score_distribution = summary.score_distribution_frame()
         if not score_distribution.empty:
-            context.diagnostics_tables["large_data_full_score_distribution"] = (
-                score_distribution
-            )
+            context.diagnostics_tables["large_data_full_score_distribution"] = score_distribution
 
         metadata = {
             "enabled": True,
@@ -261,9 +259,7 @@ class _RunningScoreSummary:
 
     def update(self, scored_chunk: pd.DataFrame, context: PipelineContext) -> None:
         score_column = (
-            "predicted_probability"
-            if self.target_mode == TargetMode.BINARY
-            else "predicted_value"
+            "predicted_probability" if self.target_mode == TargetMode.BINARY else "predicted_value"
         )
         scores = pd.to_numeric(scored_chunk[score_column], errors="coerce").dropna()
         self.prediction_sum += float(scores.sum())
@@ -296,9 +292,7 @@ class _RunningScoreSummary:
             "average_prediction": average_prediction,
             "prediction_std": prediction_std,
             "target_count": int(self.target_count),
-            "average_target": self.target_sum / self.target_count
-            if self.target_count
-            else None,
+            "average_target": self.target_sum / self.target_count if self.target_count else None,
         }
         if self.target_mode == TargetMode.BINARY:
             row["predicted_positive_rate"] = (

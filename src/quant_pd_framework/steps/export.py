@@ -21,7 +21,7 @@ import plotly.io as pio
 from ..base import BasePipelineStep
 from ..config import ExecutionMode, LargeDataExportPolicy, TabularOutputFormat
 from ..context import PipelineContext
-from ..export_layout import build_export_path_layout
+from ..export_layout import ExportPathLayout, build_export_path_layout
 from ..export_profiles import (
     code_snapshot_enabled,
     excel_workbook_enabled,
@@ -37,8 +37,24 @@ from ..gui_support import (
     build_template_workbook_bytes,
     build_transformation_frame_from_config,
 )
-from ..presentation import build_interactive_report_html
+from ..presentation import build_interactive_report_html, infer_asset_section
 from ..reporting import build_regulatory_report_bundle
+
+ARTIFACT_LAYOUT_VERSION = "2.0"
+TABLE_SECTION_DIRECTORIES = {
+    "model_performance": "model_performance",
+    "calibration_thresholds": "calibration",
+    "stability_drift": "stability",
+    "sample_segmentation": "segmentation",
+    "feature_effects": "explainability",
+    "statistical_tests": "statistical_tests",
+    "feature_subset_search": "feature_subset_search",
+    "scorecard_workbench": "scorecard",
+    "credit_risk_development": "credit_risk",
+    "data_quality": "diagnostics",
+    "backtesting_time": "backtesting",
+    "governance_export": "governance",
+}
 
 
 class ArtifactExportStep(BasePipelineStep):
@@ -63,9 +79,8 @@ class ArtifactExportStep(BasePipelineStep):
         figures_dir = paths.figures_dir
         html_dir = paths.html_dir
         png_dir = paths.png_dir
-        json_dir = paths.json_dir
-        tables_dir.mkdir(parents=True, exist_ok=True)
-        json_dir.mkdir(parents=True, exist_ok=True)
+        metadata_dir = paths.metadata_dir
+        self._ensure_layout_directories(paths)
         if self._html_figure_exports_enabled(context):
             html_dir.mkdir(parents=True, exist_ok=True)
         if self._png_figure_exports_enabled(context):
@@ -108,9 +123,10 @@ class ArtifactExportStep(BasePipelineStep):
                 figures_dir=figures_dir,
                 html_dir=html_dir,
                 png_dir=png_dir,
-                json_dir=json_dir,
+                metadata_dir=metadata_dir,
                 metrics_path=metrics_path,
                 input_snapshot_path=input_snapshot_path,
+                input_snapshot_parquet_path=input_snapshot_parquet_path,
                 report_path=report_path,
                 interactive_report_path=interactive_report_path,
                 config_path=config_path,
@@ -159,13 +175,13 @@ class ArtifactExportStep(BasePipelineStep):
             self._export_table(
                 context=context,
                 table=split_frame,
-                csv_path=tables_dir / f"predictions_{split_name}.csv",
+                csv_path=paths.data_predictions_dir / f"predictions_{split_name}.csv",
             )
         for table_name, table in context.diagnostics_tables.items():
             self._export_table(
                 context=context,
                 table=table,
-                csv_path=tables_dir / f"{self._sanitize_name(table_name)}.csv",
+                csv_path=self._table_export_path(tables_dir, table_name),
             )
 
         visualization_manifest = self._export_visualizations(context, html_dir, png_dir)
@@ -215,9 +231,16 @@ class ArtifactExportStep(BasePipelineStep):
         step_manifest = self._build_step_manifest(context)
         self._write_json(step_manifest_path, step_manifest)
         self._write_json(run_debug_trace_path, self._build_run_debug_trace(context))
+        start_here_path = paths.start_here_path
+        start_here_path.write_text(
+            self._build_start_here_guide(context=context, paths=paths),
+            encoding="utf-8",
+        )
         manifest = {
+            "artifact_layout_version": ARTIFACT_LAYOUT_VERSION,
             "core_artifacts": {
                 "output_root": str(output_root),
+                "start_here": str(start_here_path),
                 "export_profile": context.config.artifacts.export_profile.value,
                 "model": str(model_path),
                 "metrics": str(metrics_path),
@@ -238,11 +261,20 @@ class ArtifactExportStep(BasePipelineStep):
                 "artifact_manifest": str(manifest_path),
             },
             "directories": {
+                "reports": str(paths.reports_dir),
+                "model": str(paths.model_dir),
+                "data": str(paths.data_dir),
+                "data_input": str(paths.data_input_dir),
+                "data_predictions": str(paths.data_predictions_dir),
                 "tables": str(tables_dir),
+                "table_groups": self._table_group_directories(tables_dir),
                 "figures": str(figures_dir) if figures_dir.exists() else None,
                 "figures_html": str(html_dir) if html_dir.exists() else None,
                 "figures_png": str(png_dir) if png_dir.exists() else None,
-                "json": str(json_dir),
+                "config": str(paths.config_dir),
+                "metadata": str(metadata_dir),
+                "workbooks": str(paths.workbooks_dir),
+                "code": str(paths.code_dir),
                 "sample_development": self._path_string(
                     context.artifacts.get("sample_development_dir")
                 ),
@@ -278,17 +310,22 @@ class ArtifactExportStep(BasePipelineStep):
             manifest["rerun_bundle"]["input_snapshot_parquet"] = (
                 str(input_snapshot_parquet_path) if input_snapshot_parquet_path.exists() else None
             )
-        self._write_json(manifest_path, manifest)
+        self._write_manifest(manifest_path, manifest, output_root=output_root)
 
         runner_script_path.write_text(
             self._build_generated_runner_script(context), encoding="utf-8"
         )
         rerun_readme_path.write_text(self._build_rerun_readme(context), encoding="utf-8")
+        start_here_path.write_text(
+            self._build_start_here_guide(context=context, paths=paths),
+            encoding="utf-8",
+        )
+        self._write_manifest(manifest_path, manifest, output_root=output_root)
 
         if self._code_snapshot_enabled(context):
             self._export_code_snapshot(code_snapshot_dir)
             manifest["rerun_bundle"]["code_snapshot"] = str(code_snapshot_dir)
-            self._write_json(manifest_path, manifest)
+            self._write_manifest(manifest_path, manifest, output_root=output_root)
 
         monitoring_bundle: dict[str, Any] | None = None
         if context.config.execution.mode == ExecutionMode.FIT_NEW_MODEL:
@@ -310,7 +347,7 @@ class ArtifactExportStep(BasePipelineStep):
                 "metadata": str(monitoring_bundle["metadata_path"]),
                 "bundle_version": monitoring_bundle["metadata"]["bundle_version"],
             }
-            self._write_json(manifest_path, manifest)
+            self._write_manifest(manifest_path, manifest, output_root=output_root)
             self._refresh_monitoring_bundle_manifest_copy(
                 bundle_dir=monitoring_bundle["bundle_dir"],
                 manifest_path=manifest_path,
@@ -318,6 +355,7 @@ class ArtifactExportStep(BasePipelineStep):
 
         context.artifacts = {
             "output_root": output_root,
+            "start_here": start_here_path,
             "model": model_path,
             "metrics": metrics_path,
             "input_snapshot": self._primary_export_path(input_snapshot_exports),
@@ -420,6 +458,7 @@ class ArtifactExportStep(BasePipelineStep):
             ).reset_index(drop=True)
 
         if output_format in {TabularOutputFormat.CSV, TabularOutputFormat.BOTH}:
+            csv_path.parent.mkdir(parents=True, exist_ok=True)
             csv_frame.to_csv(csv_path, index=False)
             metadata["csv_path"] = str(csv_path)
             metadata["primary_path"] = str(csv_path)
@@ -449,6 +488,7 @@ class ArtifactExportStep(BasePipelineStep):
     ) -> None:
         output_format = context.config.artifacts.tabular_output_format
         if output_format in {TabularOutputFormat.CSV, TabularOutputFormat.BOTH}:
+            csv_path.parent.mkdir(parents=True, exist_ok=True)
             table.to_csv(csv_path, index=False)
         if output_format in {TabularOutputFormat.PARQUET, TabularOutputFormat.BOTH}:
             self._write_parquet(
@@ -487,6 +527,7 @@ class ArtifactExportStep(BasePipelineStep):
         *,
         compression: str,
     ) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
         try:
             dataframe.to_parquet(path, index=False, compression=compression)
         except Exception:
@@ -498,9 +539,7 @@ class ArtifactExportStep(BasePipelineStep):
                     or pd.api.types.is_string_dtype(series)
                     or isinstance(series.dtype, pd.IntervalDtype)
                 ):
-                    safe_frame[column_name] = series.map(self._parquet_safe_value).astype(
-                        "string"
-                    )
+                    safe_frame[column_name] = series.map(self._parquet_safe_value).astype("string")
             safe_frame.to_parquet(path, index=False, compression=compression)
 
     def _parquet_safe_value(self, value: Any) -> Any:
@@ -530,9 +569,10 @@ class ArtifactExportStep(BasePipelineStep):
         figures_dir: Path,
         html_dir: Path,
         png_dir: Path,
-        json_dir: Path,
+        metadata_dir: Path,
         metrics_path: Path,
         input_snapshot_path: Path,
+        input_snapshot_parquet_path: Path,
         report_path: Path,
         interactive_report_path: Path,
         config_path: Path,
@@ -547,9 +587,6 @@ class ArtifactExportStep(BasePipelineStep):
         self._write_json(metrics_path, context.metrics)
         self._write_json(config_path, context.config.to_dict())
         self._write_json(tests_path, context.statistical_tests)
-        input_snapshot_parquet_path = (
-            output_root / context.config.artifacts.input_snapshot_parquet_file_name
-        )
         input_snapshot_exports: dict[str, Any] = {}
         if self._input_snapshot_enabled(context) and context.raw_data is not None:
             input_snapshot_exports = self._export_tabular_dataframe(
@@ -565,7 +602,7 @@ class ArtifactExportStep(BasePipelineStep):
             self._export_table(
                 context=context,
                 table=table,
-                csv_path=tables_dir / f"{self._sanitize_name(table_name)}.csv",
+                csv_path=self._table_export_path(tables_dir, table_name),
             )
 
         visualization_manifest = self._export_visualizations(context, html_dir, png_dir)
@@ -577,10 +614,17 @@ class ArtifactExportStep(BasePipelineStep):
         step_manifest = self._build_step_manifest(context)
         self._write_json(step_manifest_path, step_manifest)
         self._write_json(run_debug_trace_path, self._build_run_debug_trace(context))
+        paths = build_export_path_layout(context.config.artifacts, output_root)
+        paths.start_here_path.write_text(
+            self._build_start_here_guide(context=context, paths=paths),
+            encoding="utf-8",
+        )
 
         manifest = {
+            "artifact_layout_version": ARTIFACT_LAYOUT_VERSION,
             "core_artifacts": {
                 "output_root": str(output_root),
+                "start_here": str(paths.start_here_path),
                 "export_profile": context.config.artifacts.export_profile.value,
                 "metrics": str(metrics_path),
                 "report": str(report_path),
@@ -592,11 +636,16 @@ class ArtifactExportStep(BasePipelineStep):
                 "artifact_manifest": str(manifest_path),
             },
             "directories": {
+                "reports": str(paths.reports_dir),
+                "data": str(paths.data_dir),
+                "data_input": str(paths.data_input_dir),
                 "tables": str(tables_dir),
+                "table_groups": self._table_group_directories(tables_dir),
                 "figures": str(figures_dir) if figures_dir.exists() else None,
                 "figures_html": str(html_dir) if html_dir.exists() else None,
                 "figures_png": str(png_dir) if png_dir.exists() else None,
-                "json": str(json_dir),
+                "config": str(paths.config_dir),
+                "metadata": str(metadata_dir),
             },
             **visualization_manifest,
         }
@@ -610,10 +659,11 @@ class ArtifactExportStep(BasePipelineStep):
             manifest["core_artifacts"]["input_snapshot_parquet"] = (
                 str(input_snapshot_parquet_path) if input_snapshot_parquet_path.exists() else None
             )
-        self._write_json(manifest_path, manifest)
+        self._write_manifest(manifest_path, manifest, output_root=output_root)
 
         context.artifacts = {
             "output_root": output_root,
+            "start_here": paths.start_here_path,
             "metrics": metrics_path,
             "input_snapshot": self._primary_export_path(input_snapshot_exports),
             "input_snapshot_csv": input_snapshot_path if input_snapshot_path.exists() else None,
@@ -807,7 +857,164 @@ class ArtifactExportStep(BasePipelineStep):
             destination_path.unlink()
         shutil.copy2(manifest_path, destination_path)
 
+    def _ensure_layout_directories(self, paths: ExportPathLayout) -> None:
+        directories = [
+            paths.reports_dir,
+            paths.model_dir,
+            paths.data_input_dir,
+            paths.data_predictions_dir,
+            paths.tables_dir,
+            paths.config_dir,
+            paths.metadata_dir,
+            paths.workbooks_dir,
+            paths.code_dir,
+        ]
+        directories.extend(paths.tables_dir / name for name in TABLE_SECTION_DIRECTORIES.values())
+        for directory in dict.fromkeys(directories):
+            directory.mkdir(parents=True, exist_ok=True)
+
+    def _table_export_path(self, tables_dir: Path, table_name: str) -> Path:
+        section = infer_asset_section(table_name, kind="table")
+        directory_name = TABLE_SECTION_DIRECTORIES.get(section, "other")
+        return tables_dir / directory_name / f"{self._sanitize_name(table_name)}.csv"
+
+    def _table_group_directories(self, tables_dir: Path) -> dict[str, str | None]:
+        return {
+            group_name: str(tables_dir / group_name) if (tables_dir / group_name).exists() else None
+            for group_name in sorted(set(TABLE_SECTION_DIRECTORIES.values()))
+        }
+
+    def _write_manifest(self, path: Path, manifest: dict[str, Any], *, output_root: Path) -> None:
+        manifest["artifact_layout_version"] = ARTIFACT_LAYOUT_VERSION
+        manifest.pop("artifact_index", None)
+        manifest["artifact_index"] = self._build_artifact_index(manifest, output_root)
+        self._write_json(path, manifest)
+
+    def _build_artifact_index(
+        self,
+        manifest: dict[str, Any],
+        output_root: Path,
+    ) -> list[dict[str, str]]:
+        rows: list[dict[str, str]] = []
+        seen: set[str] = set()
+        for key_path, path in self._iter_manifest_file_paths(manifest):
+            try:
+                resolved = path.resolve()
+                relative_path = resolved.relative_to(output_root.resolve()).as_posix()
+            except ValueError:
+                relative_path = str(path)
+            if relative_path in seen:
+                continue
+            seen.add(relative_path)
+            category = self._artifact_category(relative_path)
+            rows.append(
+                {
+                    "key": key_path,
+                    "category": category,
+                    "purpose": self._artifact_purpose(key_path, relative_path),
+                    "relative_path": relative_path,
+                    "send_to": self._artifact_audience(category, relative_path),
+                }
+            )
+        return sorted(rows, key=lambda row: row["relative_path"])
+
+    def _iter_manifest_file_paths(
+        self,
+        payload: Any,
+        *,
+        prefix: str = "",
+    ) -> list[tuple[str, Path]]:
+        paths: list[tuple[str, Path]] = []
+        if isinstance(payload, dict):
+            for key, value in payload.items():
+                if key == "artifact_index":
+                    continue
+                next_prefix = f"{prefix}.{key}" if prefix else str(key)
+                paths.extend(self._iter_manifest_file_paths(value, prefix=next_prefix))
+        elif isinstance(payload, list):
+            for index, value in enumerate(payload):
+                paths.extend(self._iter_manifest_file_paths(value, prefix=f"{prefix}[{index}]"))
+        elif isinstance(payload, str) and (":" in payload or "\\" in payload or "/" in payload):
+            path = Path(payload)
+            if path.suffix or path.exists():
+                paths.append((prefix, path))
+        return paths
+
+    def _artifact_category(self, relative_path: str) -> str:
+        top_level = relative_path.split("/", 1)[0]
+        return {
+            "reports": "reports",
+            "model": "model",
+            "data": "data",
+            "tables": "tables",
+            "config": "configuration",
+            "metadata": "metadata",
+            "workbooks": "workbooks",
+            "code": "rerun_code",
+            "figures": "figures",
+            self.MONITORING_BUNDLE_DIRECTORY_NAME: "monitoring_bundle",
+            "artifact_manifest.json": "manifest",
+            "START_HERE.md": "orientation",
+        }.get(top_level, "other")
+
+    def _artifact_audience(self, category: str, relative_path: str) -> str:
+        if category == "reports":
+            return "model builders, validators, business reviewers"
+        if category == "model":
+            return "model builders, scoring workflows"
+        if category == "data":
+            return "model builders, validators, downstream scoring users"
+        if category == "tables":
+            return "validators, auditors, technical reviewers"
+        if category in {"configuration", "metadata", "manifest"}:
+            return "auditors, technical reviewers"
+        if category == "rerun_code":
+            return "developers"
+        if category == "monitoring_bundle":
+            return "monitoring application"
+        if relative_path == "START_HERE.md":
+            return "all reviewers"
+        return "technical reviewers"
+
+    def _artifact_purpose(self, key_path: str, relative_path: str) -> str:
+        file_name = Path(relative_path).name
+        purpose_by_name = {
+            "START_HERE.md": "Plain-English orientation guide for the run folder.",
+            "artifact_manifest.json": "Machine-readable index of exported artifacts.",
+            "interactive_report.html": "Standalone visual diagnostic report.",
+            "run_report.md": "Markdown summary of run metrics, warnings, and diagnostics.",
+            "model_documentation_pack.md": "Development-facing model documentation summary.",
+            "validation_pack.md": "Validator-facing evidence index and review summary.",
+            "quant_model.joblib": "Serialized fitted model object.",
+            "feature_importance.csv": "Feature-level coefficients or importance values.",
+            "model_summary.txt": "Text model summary from the fitted estimator.",
+            "run_config.json": "Resolved configuration used for the run.",
+            "configuration_template.xlsx": "Offline review workbook for configuration edits.",
+            "metrics.json": "Structured metrics by split.",
+            "statistical_tests.json": "Structured statistical-test payloads.",
+            "step_manifest.json": "Ordered pipeline step stack.",
+            "run_debug_trace.json": "Per-step debug trace and timing metadata.",
+            "reproducibility_manifest.json": "Hashes, package versions, and environment metadata.",
+            "analysis_workbook.xlsx": (
+                "Excel workbook containing metrics, predictions, and diagnostics."
+            ),
+            "generated_run.py": "Python entry point for rerunning the workflow without the GUI.",
+            "HOW_TO_RERUN.md": "Plain-English rerun instructions.",
+        }
+        if file_name in purpose_by_name:
+            return purpose_by_name[file_name]
+        if "predictions" in file_name:
+            return "Row-level model scoring output."
+        if relative_path.startswith("tables/"):
+            return "Diagnostic table exported from the model-development workflow."
+        if relative_path.startswith("figures/"):
+            return "Individual chart export."
+        if relative_path.startswith(self.MONITORING_BUNDLE_DIRECTORY_NAME):
+            return "Copied artifact for the separate monitoring application."
+        return f"Exported artifact recorded from `{key_path}`."
+
     def _write_json(self, path: Path, payload: Any) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
         with path.open("w", encoding="utf-8") as handle:
             json.dump(payload, handle, indent=2, default=self._json_default)
 
@@ -866,9 +1073,7 @@ class ArtifactExportStep(BasePipelineStep):
             recommended_model = context.metadata.get("comparison_recommended_model")
             if recommended_model:
                 lines.append(f"- Recommended model: `{recommended_model}`")
-            lines.append(
-                f"- Challenger rows exported: `{len(context.comparison_results)}`"
-            )
+            lines.append(f"- Challenger rows exported: `{len(context.comparison_results)}`")
             lines.append("")
 
         recommended_calibration_method = context.metadata.get("recommended_calibration_method")
@@ -878,9 +1083,7 @@ class ArtifactExportStep(BasePipelineStep):
                 "predicted_probability",
             )
             lines.extend(["## Calibration", ""])
-            lines.append(
-                f"- Recommended method: `{recommended_calibration_method}`"
-            )
+            lines.append(f"- Recommended method: `{recommended_calibration_method}`")
             lines.append(
                 f"- Ranking metric: `{context.metadata.get('calibration_ranking_metric', 'n/a')}`"
             )
@@ -915,23 +1118,26 @@ class ArtifactExportStep(BasePipelineStep):
             [
                 "## Rerun Bundle",
                 "",
-                "- `generated_run.py` replays the run bundle outside the GUI.",
-                "- `run_config.json` stores the resolved config for the run.",
-                "- `input_snapshot.csv` stores the ingested dataset when input export is enabled.",
-                "- `step_manifest.json` stores the exact ordered pipeline step stack.",
+                "- `code/generated_run.py` replays the run bundle outside the GUI.",
+                "- `config/run_config.json` stores the resolved config for the run.",
                 (
-                    "- `reproducibility_manifest.json` captures hashes, versions, "
+                    "- `data/input/input_snapshot.csv` stores the ingested dataset "
+                    "when input export is enabled."
+                ),
+                "- `metadata/step_manifest.json` stores the exact ordered pipeline step stack.",
+                (
+                    "- `metadata/reproducibility_manifest.json` captures hashes, versions, "
                     "and environment metadata."
                 ),
                 (
-                    "- `configuration_template.xlsx` exports the review workbook "
+                    "- `config/configuration_template.xlsx` exports the review workbook "
                     "used for offline edits."
                 ),
-                "- `committee_report.docx` and `committee_report.pdf` provide "
+                "- `reports/committee_report.docx` and `reports/committee_report.pdf` provide "
                 "committee-ready packaging when regulatory reporting is enabled.",
-                "- `validation_report.docx` and `validation_report.pdf` provide "
+                "- `reports/validation_report.docx` and `reports/validation_report.pdf` provide "
                 "validator-ready packaging when regulatory reporting is enabled.",
-                "- `code_snapshot/` stores a Python copy of the framework, GUI, "
+                "- `code/code_snapshot/` stores a Python copy of the framework, GUI, "
                 "tests, and examples for editing.",
                 "",
             ]
@@ -1011,8 +1217,8 @@ class ArtifactExportStep(BasePipelineStep):
             )
         lines.extend(
             [
-            "## Comparison Assets",
-            "",
+                "## Comparison Assets",
+                "",
             ]
         )
         for table_name in sorted(context.diagnostics_tables):
@@ -1112,12 +1318,8 @@ class ArtifactExportStep(BasePipelineStep):
         if comparison_table is not None:
             lines.extend(["## Challenger Review", ""])
             recommended_model = context.metadata.get("comparison_recommended_model", "n/a")
-            lines.append(
-                f"- Recommended model: `{recommended_model}`"
-            )
-            lines.append(
-                f"- Ranking split: `{context.config.comparison.ranking_split}`"
-            )
+            lines.append(f"- Recommended model: `{recommended_model}`")
+            lines.append(f"- Ranking split: `{context.config.comparison.ranking_split}`")
             lines.append("")
 
         if not calibration_summary.empty:
@@ -1130,9 +1332,7 @@ class ArtifactExportStep(BasePipelineStep):
                 f"- Recommended calibration method: "
                 f"`{context.metadata.get('recommended_calibration_method', 'n/a')}`"
             )
-            lines.append(
-                f"- Recommended score column: `{recommended_score_column}`"
-            )
+            lines.append(f"- Recommended score column: `{recommended_score_column}`")
             lines.append("")
 
         lines.extend(["## Assumptions", ""])
@@ -1170,21 +1370,21 @@ class ArtifactExportStep(BasePipelineStep):
             lines.append("")
 
         lines.extend(["## Audit Assets", ""])
-        lines.append("- `validation_pack.md` provides the validator-facing summary.")
+        lines.append("- `reports/validation_pack.md` provides the validator-facing summary.")
         lines.append(
-            "- `committee_report.docx` / `committee_report.pdf` provide "
+            "- `reports/committee_report.docx` / `reports/committee_report.pdf` provide "
             "committee-ready distribution assets."
         )
         lines.append(
-            "- `validation_report.docx` / `validation_report.pdf` provide "
+            "- `reports/validation_report.docx` / `reports/validation_report.pdf` provide "
             "validator-ready distribution assets."
         )
         lines.append(
-            "- `reproducibility_manifest.json` provides hashes, package versions, "
+            "- `metadata/reproducibility_manifest.json` provides hashes, package versions, "
             "and run fingerprint metadata."
         )
         lines.append(
-            "- `configuration_template.xlsx` exports the editable review workbook "
+            "- `config/configuration_template.xlsx` exports the editable review workbook "
             "for offline governance."
         )
         lines.append("")
@@ -1346,19 +1546,19 @@ class ArtifactExportStep(BasePipelineStep):
             [
                 "## Artifact Index",
                 "",
-                "- `run_report.md` for the narrative run summary.",
-                "- `model_documentation_pack.md` for the development-facing documentation.",
-                "- `validation_pack.md` for validator-oriented review packaging.",
+                "- `reports/run_report.md` for the narrative run summary.",
+                "- `reports/model_documentation_pack.md` for development-facing documentation.",
+                "- `reports/validation_pack.md` for validator-oriented review packaging.",
                 (
-                    "- `committee_report.docx` / `committee_report.pdf` "
+                    "- `reports/committee_report.docx` / `reports/committee_report.pdf` "
                     "for committee-facing delivery."
                 ),
                 (
-                    "- `validation_report.docx` / `validation_report.pdf` "
+                    "- `reports/validation_report.docx` / `reports/validation_report.pdf` "
                     "for validator-facing delivery."
                 ),
-                "- `reproducibility_manifest.json` for run fingerprint metadata.",
-                "- `configuration_template.xlsx` for offline governance editing.",
+                "- `metadata/reproducibility_manifest.json` for run fingerprint metadata.",
+                "- `config/configuration_template.xlsx` for offline governance editing.",
                 "",
             ]
         )
@@ -1463,9 +1663,65 @@ class ArtifactExportStep(BasePipelineStep):
     ) -> dict[str, Any]:
         exported_config = deepcopy(context.config)
         if exported_config.execution.mode == ExecutionMode.SCORE_EXISTING_MODEL:
-            exported_config.execution.existing_model_path = Path(model_path.name)
+            exported_config.execution.existing_model_path = Path("..") / "model" / model_path.name
             exported_config.execution.existing_config_path = None
         return exported_config.to_dict()
+
+    def _build_start_here_guide(
+        self,
+        *,
+        context: PipelineContext,
+        paths: ExportPathLayout,
+    ) -> str:
+        mode = context.config.execution.mode.value
+        model_type = context.config.model.model_type.value
+        lines = [
+            "# Quant Studio Run Folder",
+            "",
+            f"Run ID: `{context.run_id}`",
+            f"Execution mode: `{mode}`",
+            f"Model family: `{model_type}`",
+            f"Artifact layout version: `{ARTIFACT_LAYOUT_VERSION}`",
+            "",
+            "## Open First",
+            "",
+            "- `reports/interactive_report.html` for the visual diagnostic report.",
+            "- `reports/validation_pack.md` for validator-facing evidence.",
+            "- `artifact_manifest.json` for the machine-readable artifact index.",
+            "",
+            "## Folder Map",
+            "",
+            "- `reports/` contains HTML, Markdown, DOCX, and PDF reports.",
+            "- `model/` contains the fitted model object, model summary, and feature importance.",
+            "- `data/input/` contains the exported input snapshot when enabled.",
+            "- `data/predictions/` contains row-level predictions and split predictions.",
+            "- `tables/` contains diagnostic CSV/Parquet tables grouped by review topic.",
+            "- `config/` contains the resolved run configuration and offline template workbook.",
+            "- `metadata/` contains metrics, test payloads, manifests, and debug traces.",
+            "- `workbooks/` contains the optional analysis workbook.",
+            "- `code/` contains rerun instructions, generated Python launcher, and code snapshot.",
+            "- `figures/` contains optional individual chart HTML/PNG exports.",
+            "- `model_bundle_for_monitoring/` is the handoff bundle for the monitoring app.",
+            "",
+            "## Common Tasks",
+            "",
+            "- Review results: open `reports/interactive_report.html`.",
+            "- Reuse the model: use `model/quant_model.joblib`.",
+            "- Rerun outside the GUI: open `code/HOW_TO_RERUN.md`.",
+            "- Audit exact values: inspect `tables/` and `metadata/`.",
+            "- Send to monitoring: use `model_bundle_for_monitoring/`.",
+            "",
+            "## Key Paths",
+            "",
+            f"- Manifest: `{paths.manifest_path.relative_to(paths.output_root).as_posix()}`",
+            f"- Config: `{paths.config_path.relative_to(paths.output_root).as_posix()}`",
+            f"- Metrics: `{paths.metrics_path.relative_to(paths.output_root).as_posix()}`",
+            (
+                "- Report: "
+                f"`{paths.interactive_report_path.relative_to(paths.output_root).as_posix()}`"
+            ),
+        ]
+        return "\n".join(lines) + "\n"
 
     def _build_interactive_report(self, context: PipelineContext) -> str:
         input_shape = context.metadata.get("input_shape", {})
@@ -1490,6 +1746,10 @@ class ArtifactExportStep(BasePipelineStep):
             table_preview_rows=report_limits["table_preview_rows"],
             max_figures_per_section=report_limits["max_figures_per_section"],
             max_tables_per_section=report_limits["max_tables_per_section"],
+            include_enhanced_report_visuals=(
+                context.config.artifacts.include_enhanced_report_visuals
+            ),
+            predictions=context.predictions,
         )
 
     def _export_excel_workbook(
@@ -1607,6 +1867,7 @@ class ArtifactExportStep(BasePipelineStep):
             from pathlib import Path
 
             THIS_DIR = Path(__file__).resolve().parent
+            RUN_ROOT = THIS_DIR.parent
             SNAPSHOT_SRC = THIS_DIR / "{artifacts.code_snapshot_directory_name}" / "src"
             if SNAPSHOT_SRC.exists():
                 sys.path.insert(0, str(SNAPSHOT_SRC))
@@ -1625,19 +1886,19 @@ class ArtifactExportStep(BasePipelineStep):
                 if not _has_option(arguments, "--config"):
                     arguments = [
                         "--config",
-                        str(THIS_DIR / "{artifacts.config_file_name}"),
+                        str(RUN_ROOT / "config" / "{artifacts.config_file_name}"),
                     ] + arguments
                 if not _has_option(arguments, "--input"):
                     for default_input_name in [
                         "{artifacts.input_snapshot_file_name}",
                         "{artifacts.input_snapshot_parquet_file_name}",
                     ]:
-                        default_input = THIS_DIR / default_input_name
+                        default_input = RUN_ROOT / "data" / "input" / default_input_name
                         if default_input.exists():
                             arguments = ["--input", str(default_input)] + arguments
                             break
                 if not _has_option(arguments, "--output-root"):
-                    arguments = ["--output-root", str(THIS_DIR / "reruns")] + arguments
+                    arguments = ["--output-root", str(RUN_ROOT / "reruns")] + arguments
                 return arguments
 
 
@@ -1664,10 +1925,10 @@ class ArtifactExportStep(BasePipelineStep):
 
             The generated launcher automatically:
 
-            - uses `{artifacts.config_file_name}` as the saved framework config
-            - uses `{artifacts.input_snapshot_file_name}` or
-              `{artifacts.input_snapshot_parquet_file_name}` as the default input
-            - writes new rerun artifacts under `reruns/`
+            - uses `../config/{artifacts.config_file_name}` as the saved framework config
+            - uses `../data/input/{artifacts.input_snapshot_file_name}` or
+              `../data/input/{artifacts.input_snapshot_parquet_file_name}` as the default input
+            - writes new rerun artifacts under `../reruns/`
             - imports the local `code_snapshot/src/` copy first, so step-level
               edits apply immediately
 
@@ -1677,18 +1938,18 @@ class ArtifactExportStep(BasePipelineStep):
 
             ```powershell
             python -m quant_pd_framework.run ^
-              --config {artifacts.config_file_name} ^
-              --input {artifacts.input_snapshot_file_name} ^
-              --output-root reruns
+              --config ..\\config\\{artifacts.config_file_name} ^
+              --input ..\\data\\input\\{artifacts.input_snapshot_file_name} ^
+              --output-root ..\\reruns
             ```
 
             If you want to rerun on a different dataset, change the input path:
 
             ```powershell
             python -m quant_pd_framework.run ^
-              --config {artifacts.config_file_name} ^
+              --config ..\\config\\{artifacts.config_file_name} ^
               --input path\\to\\new_data.csv ^
-              --output-root reruns
+              --output-root ..\\reruns
             ```
 
             ## Editing The Python Code
@@ -1709,7 +1970,7 @@ class ArtifactExportStep(BasePipelineStep):
             ## Step Manifest
 
             The exact ordered step stack used for this run is recorded in
-            `{artifacts.step_manifest_file_name}`.
+            `../metadata/{artifacts.step_manifest_file_name}`.
             """
         )
 

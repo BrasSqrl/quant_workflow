@@ -1,20 +1,20 @@
 # Quant Studio Enterprise UI Redesign Standard
 
-This document governs the Streamlit UI cosmetic redesign. It is intentionally
-limited to presentation, layout, and user-flow clarity. It must not change model
-configuration behavior, pipeline execution, exported artifacts, or available
-controls.
+This document governs the current Streamlit enterprise workflow shell. It is
+limited to presentation, layout, workflow navigation, and review surfaces. It
+must not change model configuration behavior, pipeline execution, exported
+artifacts, or available controls.
 
 ## Objective
 
-Make the existing Streamlit application feel like a polished enterprise model
-development product while replacing static side panes with a four-step workflow
-that keeps the active work in the main canvas.
+Make the Streamlit application feel like a polished enterprise model
+development product by using a four-step workflow that keeps active work in the
+main canvas instead of persistent side panels.
 
 Primary goals:
 
 - make the workflow easier to follow
-- reduce visual clutter by removing persistent side panes
+- reduce visual clutter by avoiding persistent side panels
 - improve the perceived speed of moving through the workflow
 - surface next actions and output expectations without adding functionality
 - expose workflow status, issue, preflight, diff, artifact, review, and model-card
@@ -38,7 +38,7 @@ The UI uses four clickable workflow stages:
    governed transformations, and the review workbook live here.
 
 2. **Model Configuration**
-   Former sidebar controls live in grouped main-canvas expanders: core setup,
+   Model setup controls live in grouped main-canvas expanders: core setup,
    split strategy, model settings, feature subset search, preparation,
    diagnostics/export settings, governance, explainability, and documentation.
    The configuration-profile panel also lives here because it saves and reloads

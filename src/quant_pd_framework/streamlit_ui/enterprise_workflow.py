@@ -60,7 +60,7 @@ class ReviewerRecord:
 GUIDANCE_TOPICS: dict[str, str] = {
     "Execution modes": (
         "`fit_new_model` trains a new model. `score_existing_model` reuses an exported "
-        "`quant_model.joblib` for new data. `search_feature_subsets` compares feature "
+        "`model/quant_model.joblib` for new data. `search_feature_subsets` compares feature "
         "sets before committing to a development run."
     ),
     "Column roles": (
@@ -104,12 +104,10 @@ def build_workflow_step_states(
     """Builds the four-step status model shown above the workflow tabs."""
 
     has_blocking_findings = any(
-        str(getattr(finding, "severity", "")).lower() == "error"
-        for finding in preview_findings
+        str(getattr(finding, "severity", "")).lower() == "error" for finding in preview_findings
     )
     has_warnings = any(
-        str(getattr(finding, "severity", "")).lower() == "warning"
-        for finding in preview_findings
+        str(getattr(finding, "severity", "")).lower() == "warning" for finding in preview_findings
     )
 
     if not dataframe_loaded:
@@ -298,6 +296,10 @@ def build_preflight_summary(
         ("Split strategy", preview_config.split.data_structure.value),
         ("Train/validation/test", _split_text(preview_config)),
         ("Output root", str(preview_config.artifacts.output_root)),
+        (
+            "Enhanced report visuals",
+            preview_config.artifacts.include_enhanced_report_visuals,
+        ),
         ("Individual figure files", preview_config.artifacts.export_individual_figure_files),
         ("Input snapshot", preview_config.artifacts.export_input_snapshot),
         ("Code snapshot", preview_config.artifacts.export_code_snapshot),

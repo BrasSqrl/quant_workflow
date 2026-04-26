@@ -976,8 +976,8 @@ class TransformationConfig:
         if transformation.transform_type == TransformationType.BOX_COX:
             return f"{transformation.source_feature}_box_cox"
         if transformation.transform_type == TransformationType.NATURAL_SPLINE:
-            spline_df = 4 if transformation.parameter_value is None else int(
-                transformation.parameter_value
+            spline_df = (
+                4 if transformation.parameter_value is None else int(transformation.parameter_value)
             )
             return f"{transformation.source_feature}_spline_df_{spline_df}"
         if transformation.transform_type == TransformationType.CAPPED_ZSCORE:
@@ -1036,9 +1036,7 @@ class AdvancedImputationConfig:
         if self.knn_neighbors <= 0:
             raise ValueError("AdvancedImputationConfig.knn_neighbors must be greater than 0.")
         if self.iterative_max_iter <= 0:
-            raise ValueError(
-                "AdvancedImputationConfig.iterative_max_iter must be greater than 0."
-            )
+            raise ValueError("AdvancedImputationConfig.iterative_max_iter must be greater than 0.")
         if self.max_auxiliary_numeric_features <= 0:
             raise ValueError(
                 "AdvancedImputationConfig.max_auxiliary_numeric_features must be greater than 0."
@@ -1058,8 +1056,7 @@ class AdvancedImputationConfig:
             )
         if self.multiple_imputation_top_features <= 0:
             raise ValueError(
-                "AdvancedImputationConfig.multiple_imputation_top_features must be "
-                "greater than 0."
+                "AdvancedImputationConfig.multiple_imputation_top_features must be greater than 0."
             )
 
 
@@ -1111,9 +1108,7 @@ class OutlierDiagnosticConfig:
         if self.leverage_multiplier <= 0:
             raise ValueError("OutlierDiagnosticConfig.leverage_multiplier must be positive.")
         if self.cooks_distance_multiplier <= 0:
-            raise ValueError(
-                "OutlierDiagnosticConfig.cooks_distance_multiplier must be positive."
-            )
+            raise ValueError("OutlierDiagnosticConfig.cooks_distance_multiplier must be positive.")
         if self.max_rows <= 0:
             raise ValueError("OutlierDiagnosticConfig.max_rows must be greater than 0.")
 
@@ -1133,13 +1128,9 @@ class DependencyDiagnosticConfig:
                 "DependencyDiagnosticConfig.clustering_correlation_threshold must be in (0, 1]."
             )
         if self.maximum_features <= 1:
-            raise ValueError(
-                "DependencyDiagnosticConfig.maximum_features must be greater than 1."
-            )
+            raise ValueError("DependencyDiagnosticConfig.maximum_features must be greater than 1.")
         if self.condition_index_warning <= 0:
-            raise ValueError(
-                "DependencyDiagnosticConfig.condition_index_warning must be positive."
-            )
+            raise ValueError("DependencyDiagnosticConfig.condition_index_warning must be positive.")
 
 
 @dataclass(slots=True)
@@ -1157,9 +1148,7 @@ class TimeSeriesDiagnosticConfig:
         if self.seasonal_period <= 1:
             raise ValueError("TimeSeriesDiagnosticConfig.seasonal_period must be at least 2.")
         if self.minimum_series_length <= 0:
-            raise ValueError(
-                "TimeSeriesDiagnosticConfig.minimum_series_length must be positive."
-            )
+            raise ValueError("TimeSeriesDiagnosticConfig.minimum_series_length must be positive.")
 
 
 @dataclass(slots=True)
@@ -1177,9 +1166,7 @@ class StructuralBreakConfig:
         if self.minimum_segment_size <= 2:
             raise ValueError("StructuralBreakConfig.minimum_segment_size must be at least 3.")
         if not 0 < self.rolling_window_fraction <= 0.5:
-            raise ValueError(
-                "StructuralBreakConfig.rolling_window_fraction must be in (0, 0.5]."
-            )
+            raise ValueError("StructuralBreakConfig.rolling_window_fraction must be in (0, 0.5].")
 
 
 @dataclass(slots=True)
@@ -1637,8 +1624,8 @@ class ArtifactConfig:
     figures_directory_name: str = "figures"
     html_directory_name: str = "html"
     png_directory_name: str = "png"
-    json_directory_name: str = "json"
     code_snapshot_directory_name: str = "code_snapshot"
+    include_enhanced_report_visuals: bool = True
     export_individual_figure_files: bool = False
     export_input_snapshot: bool = True
     export_code_snapshot: bool = True
@@ -1699,9 +1686,7 @@ class FrameworkConfig:
     subset_search: FeatureSubsetSearchConfig = field(default_factory=FeatureSubsetSearchConfig)
     feature_policy: FeaturePolicyConfig = field(default_factory=FeaturePolicyConfig)
     feature_dictionary: FeatureDictionaryConfig = field(default_factory=FeatureDictionaryConfig)
-    advanced_imputation: AdvancedImputationConfig = field(
-        default_factory=AdvancedImputationConfig
-    )
+    advanced_imputation: AdvancedImputationConfig = field(default_factory=AdvancedImputationConfig)
     transformations: TransformationConfig = field(default_factory=TransformationConfig)
     manual_review: ManualReviewConfig = field(default_factory=ManualReviewConfig)
     suitability_checks: SuitabilityCheckConfig = field(default_factory=SuitabilityCheckConfig)
@@ -1721,9 +1706,7 @@ class FrameworkConfig:
     distribution_diagnostics: DistributionDiagnosticConfig = field(
         default_factory=DistributionDiagnosticConfig
     )
-    residual_diagnostics: ResidualDiagnosticConfig = field(
-        default_factory=ResidualDiagnosticConfig
-    )
+    residual_diagnostics: ResidualDiagnosticConfig = field(default_factory=ResidualDiagnosticConfig)
     outlier_diagnostics: OutlierDiagnosticConfig = field(default_factory=OutlierDiagnosticConfig)
     dependency_diagnostics: DependencyDiagnosticConfig = field(
         default_factory=DependencyDiagnosticConfig

@@ -262,6 +262,44 @@ def inject_styles() -> None:
             font-size: 0.72rem;
             font-weight: 700;
           }
+          .chart-review-context {
+            margin: -0.2rem 0 0.55rem;
+            padding: 0.62rem 0.72rem;
+            border: 1px solid var(--qs-line);
+            border-radius: 15px;
+            background: rgba(255, 255, 255, 0.72);
+            box-shadow: 0 8px 20px rgba(31, 67, 131, 0.04);
+          }
+          .chart-review-context span {
+            display: inline-flex;
+            margin-bottom: 0.25rem;
+            padding: 0.18rem 0.48rem;
+            border-radius: 999px;
+            background: rgba(31, 110, 245, 0.10);
+            color: var(--qs-blue);
+            font-size: 0.62rem;
+            font-weight: 900;
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+          }
+          .chart-review-context p {
+            margin: 0;
+            color: var(--qs-muted);
+            font-size: 0.78rem;
+            line-height: 1.38;
+          }
+          .chart-review-context--great span {
+            background: rgba(15, 159, 110, 0.12);
+            color: var(--qs-green);
+          }
+          .chart-review-context--watch span {
+            background: rgba(217, 154, 43, 0.15);
+            color: #8a5a09;
+          }
+          .chart-review-context--bad span {
+            background: rgba(227, 59, 75, 0.12);
+            color: var(--qs-red);
+          }
           .filter-note {
             margin-top: 1.5rem;
             padding: 0.78rem 0.9rem;

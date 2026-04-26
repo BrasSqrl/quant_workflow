@@ -60,8 +60,9 @@ The framework accepts:
 - an Excel file
 - a Parquet file
 
-The GUI upload path lives in `app/streamlit_app.py` and the pipeline ingestion
-step lives in `src/quant_pd_framework/steps/ingestion.py`.
+The GUI upload and Data_Load path lives in
+`src/quant_pd_framework/streamlit_ui/data.py`; the pipeline ingestion step
+lives in `src/quant_pd_framework/steps/ingestion.py`.
 
 When `PerformanceConfig.convert_csv_to_parquet=True`, file-path CSV inputs are
 converted to Parquet in chunks before the dataframe is loaded. This is intended
@@ -85,12 +86,12 @@ recorded in an audit table.
 - `large_data_memory_estimate`
 - optional `dtype_optimization`
 - optional `csv_to_parquet_conversion`
-- optional `sample_development/training_sample.parquet`
-- optional `full_data_scoring/predictions.parquet`
-- optional `large_data_metadata/large_data_full_scoring.json`
-- optional `large_data_metadata/large_data_full_scoring_progress.json`
-- optional exported `input_snapshot.csv`
-- optional exported `input_snapshot.parquet`
+- optional `data/sample_development/training_sample.parquet`
+- optional `data/full_data_scoring/predictions.parquet`
+- optional `metadata/large_data/large_data_full_scoring.json`
+- optional `metadata/large_data/large_data_full_scoring_progress.json`
+- optional exported `data/input/input_snapshot.csv`
+- optional exported `data/input/input_snapshot.parquet`
 
 ## 2. Schema Management
 
@@ -320,6 +321,12 @@ validation and test results remain leakage-safe.
 - table `assumption_checks`
 - metadata `assumption_check_summary`
 
+The `assumption_checks` table is intentionally reviewer-readable. It includes
+the technical check name, a plain-English `check_label`, `status_label`, the
+observed value, configured threshold, `interpretation`, `why_it_matters`, and
+`recommended_action`. The Results tab also surfaces this table in a dedicated
+Suitability Checks panel with failed checks shown first.
+
 ## 9. Imputation
 
 ### What happens
@@ -516,10 +523,10 @@ The workspace also includes dedicated editors for:
 
 The preprocessing and data-treatment audit trail is spread across:
 
-- `run_config.json`
-- `step_manifest.json`
-- `input_snapshot.csv`
-- `input_snapshot.parquet`
+- `config/run_config.json`
+- `metadata/step_manifest.json`
+- `data/input/input_snapshot.csv`
+- `data/input/input_snapshot.parquet`
 - `large_data_memory_estimate`
 - `dtype_optimization`
 - `csv_to_parquet_conversion`
@@ -529,12 +536,12 @@ The preprocessing and data-treatment audit trail is spread across:
 - `variable_selection`
 - `manual_review_feature_decisions`
 - `feature_dictionary`
-- `reproducibility_manifest.json`
+- `metadata/reproducibility_manifest.json`
 - `data_quality_summary`
-- `run_report.md`
-- `model_documentation_pack.md`
-- `validation_pack.md`
-- `configuration_template.xlsx`
+- `reports/run_report.md`
+- `reports/model_documentation_pack.md`
+- `reports/validation_pack.md`
+- `config/configuration_template.xlsx`
 
 ## 14. Review Questions for Validators
 

@@ -18,9 +18,12 @@ from quant_pd_framework.presentation import (
     SECTION_SPECS,
     apply_fintech_figure_theme,
     build_asset_catalog,
+    enhance_report_visualizations,
     format_metric_value,
     friendly_asset_title,
     prune_subset_search_highlight_assets,
+    report_asset_badge,
+    report_chart_guidance,
     summarize_run_kpis,
 )
 from quant_pd_framework.streamlit_ui.data import sample_frame
@@ -42,6 +45,18 @@ from quant_pd_framework.workflow_guardrails import (
     build_guardrail_table,
     summarize_guardrail_counts,
 )
+
+SUITABILITY_DISPLAY_COLUMNS = [
+    "status_label",
+    "check_label",
+    "subject",
+    "observed_value",
+    "threshold",
+    "interpretation",
+    "why_it_matters",
+    "recommended_action",
+    "details",
+]
 
 
 def render_workflow_readiness(
@@ -140,7 +155,28 @@ def render_readiness_blocker(message: str) -> None:
     )
 
 
+def with_report_enhancement_visualizations(snapshot: dict[str, Any]) -> dict[str, Any]:
+    """Returns a view snapshot with report-grade companion charts added."""
+
+    if not snapshot.get("include_enhanced_report_visuals", True):
+        return snapshot
+    if snapshot.get("_report_enhancements_applied"):
+        return snapshot
+    enhanced_visualizations = enhance_report_visualizations(
+        metrics=snapshot["metrics"],
+        diagnostics_tables=snapshot["diagnostics_tables"],
+        visualizations=snapshot["visualizations"],
+        target_mode=snapshot["target_mode"],
+        labels_available=snapshot["labels_available"],
+        predictions=snapshot.get("predictions"),
+    )
+    snapshot["visualizations"] = enhanced_visualizations
+    snapshot["_report_enhancements_applied"] = True
+    return snapshot
+
+
 def render_run_results(snapshot: dict[str, Any]) -> None:
+    snapshot = with_report_enhancement_visualizations(snapshot)
     if snapshot["execution_mode"] == ExecutionMode.SEARCH_FEATURE_SUBSETS.value:
         render_subset_search_results(snapshot)
         return
@@ -385,6 +421,7 @@ def render_subset_search_section(
                 continue
             with columns[index % 2]:
                 st.markdown(f"#### {descriptor.title}")
+                render_chart_review_context(descriptor)
                 if descriptor.description:
                     st.caption(descriptor.description)
                 render_plotly_figure(
@@ -623,6 +660,27 @@ def apply_prediction_filters(
     return filtered_predictions
 
 
+def render_chart_review_context(descriptor: Any) -> None:
+    """Adds compact interpretation context above live report charts."""
+
+    guidance = report_chart_guidance(descriptor.key)
+    if not guidance:
+        return
+    label, badge_class = report_asset_badge(
+        descriptor.key,
+        featured=bool(getattr(descriptor, "featured", False)),
+    )
+    st.markdown(
+        f"""
+        <div class="chart-review-context chart-review-context--{escape(badge_class)}">
+          <span>{escape(label)}</span>
+          <p>{escape(guidance)}</p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
 def render_overview_panel(
     snapshot: dict[str, Any],
     filtered_predictions: pd.DataFrame,
@@ -650,6 +708,8 @@ def render_overview_panel(
                 "Stability, segmentation, and score distribution outputs "
                 "remain valid, while label-dependent diagnostics were skipped."
             )
+
+    render_suitability_checks_panel(snapshot)
 
     if (
         snapshot["labels_available"]
@@ -899,6 +959,94 @@ def render_dynamic_threshold_strip(
     render_metric_strip(cards, compact=True)
 
 
+def build_suitability_display_table(table: pd.DataFrame) -> pd.DataFrame:
+    """Returns a reviewer-friendly suitability table with failures first."""
+
+    if table.empty:
+        return table
+    display_table = table.copy()
+    if "check_label" not in display_table.columns and "check_name" in display_table.columns:
+        display_table["check_label"] = (
+            display_table["check_name"]
+            .astype(str)
+            .str.replace(
+                "_",
+                " ",
+            )
+            .str.title()
+        )
+    if "status_label" not in display_table.columns and "status" in display_table.columns:
+        display_table["status_label"] = display_table["status"].map(
+            {"fail": "Fail", "warn": "Watch", "pass": "Pass"}
+        )
+    status_rank = display_table.get("status", pd.Series(index=display_table.index, dtype=str)).map(
+        {"fail": 0, "warn": 1, "pass": 2}
+    )
+    display_table = display_table.assign(_status_rank=status_rank.fillna(3))
+    sort_columns = ["_status_rank"]
+    for column_name in ["check_label", "check_name", "subject"]:
+        if column_name in display_table.columns:
+            sort_columns.append(column_name)
+    display_table = display_table.sort_values(sort_columns, kind="stable").drop(
+        columns=["_status_rank"]
+    )
+    columns = [
+        column_name for column_name in SUITABILITY_DISPLAY_COLUMNS if column_name in display_table
+    ]
+    if not columns:
+        return display_table
+    return display_table[columns]
+
+
+def render_suitability_checks_panel(snapshot: dict[str, Any]) -> None:
+    """Highlights suitability failures in plain English in the Results overview."""
+
+    table = snapshot["diagnostics_tables"].get("assumption_checks")
+    if table is None or table.empty:
+        return
+
+    fail_count = int((table["status"] == "fail").sum()) if "status" in table.columns else 0
+    warn_count = int((table["status"] == "warn").sum()) if "status" in table.columns else 0
+    pass_count = int((table["status"] == "pass").sum()) if "status" in table.columns else 0
+    st.markdown("### Suitability Checks")
+    render_metric_strip(
+        [
+            {"label": "Failed Checks", "value": f"{fail_count:,}"},
+            {"label": "Watch Checks", "value": f"{warn_count:,}"},
+            {"label": "Passed Checks", "value": f"{pass_count:,}"},
+        ],
+        compact=True,
+    )
+
+    display_table = build_suitability_display_table(table)
+    if fail_count:
+        st.warning(
+            "One or more model-suitability checks failed. Review the failed rows below "
+            "before relying on the model evidence."
+        )
+        failed_table = display_table.loc[
+            display_table.get("status_label", pd.Series(index=display_table.index)).eq("Fail")
+        ]
+        if failed_table.empty and "status" in table.columns:
+            failed_table = build_suitability_display_table(table.loc[table["status"] == "fail"])
+        st.dataframe(
+            prepare_table_for_display(failed_table),
+            width="stretch",
+            hide_index=True,
+        )
+    elif warn_count:
+        st.warning("Suitability checks passed without failures, but watch conditions need review.")
+    else:
+        st.success("Suitability checks passed against the configured thresholds.")
+
+    with st.expander("All suitability check details", expanded=bool(fail_count)):
+        st.dataframe(
+            prepare_table_for_display(display_table),
+            width="stretch",
+            hide_index=True,
+        )
+
+
 def compute_binary_threshold_metrics(
     *,
     filtered_predictions: pd.DataFrame,
@@ -973,6 +1121,7 @@ def render_section_panel(
                 continue
             with columns[index % 2]:
                 st.markdown(f"#### {descriptor.title}")
+                render_chart_review_context(descriptor)
                 if descriptor.description:
                     st.caption(descriptor.description)
                 render_plotly_figure(

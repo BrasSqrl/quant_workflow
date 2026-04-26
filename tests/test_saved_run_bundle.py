@@ -81,9 +81,13 @@ def test_saved_run_bundle_exports_rerun_assets() -> None:
         assert "Calibration / Thresholds" in interactive_report_text
         assert "Governance / Export Bundle" in interactive_report_text
 
-        assert (bundle_root / "code_snapshot" / "src" / "quant_pd_framework" / "run.py").exists()
-        assert (bundle_root / "code_snapshot" / "tests" / "test_pipeline_smoke.py").exists()
-        assert (bundle_root / "code_snapshot" / "app" / "streamlit_app.py").exists()
+        assert (
+            bundle_root / "code" / "code_snapshot" / "src" / "quant_pd_framework" / "run.py"
+        ).exists()
+        assert (
+            bundle_root / "code" / "code_snapshot" / "tests" / "test_pipeline_smoke.py"
+        ).exists()
+        assert (bundle_root / "code" / "code_snapshot" / "app" / "streamlit_app.py").exists()
 
 
 def test_saved_run_bundle_exports_model_bundle_for_monitoring() -> None:
@@ -114,16 +118,13 @@ def test_saved_run_bundle_exports_model_bundle_for_monitoring() -> None:
         for expected_path in expected_bundle_paths:
             assert expected_path.exists()
 
-        monitoring_metadata = json.loads(
-            Path(monitoring_metadata_path).read_text(encoding="utf-8")
-        )
+        monitoring_metadata = json.loads(Path(monitoring_metadata_path).read_text(encoding="utf-8"))
         assert monitoring_metadata["bundle_version"] == "1.0"
         assert monitoring_metadata["created_by_run_id"] == context.run_id
         assert monitoring_metadata["score_column"] == "predicted_probability"
         assert monitoring_metadata["prediction_column"] == "predicted_class"
         assert (
-            monitoring_metadata["bundled_artifacts"]["quant_model.joblib"]
-            == "quant_model.joblib"
+            monitoring_metadata["bundled_artifacts"]["quant_model.joblib"] == "quant_model.joblib"
         )
         assert monitoring_metadata["bundled_artifacts"]["monitoring_metadata.json"] == (
             "monitoring_metadata.json"
@@ -150,9 +151,7 @@ def test_saved_run_bundle_monitoring_bundle_respects_optional_export_settings() 
         assert not (monitoring_bundle_dir / "input_snapshot.csv").exists()
         assert not (monitoring_bundle_dir / "code_snapshot").exists()
 
-        monitoring_metadata = json.loads(
-            Path(monitoring_metadata_path).read_text(encoding="utf-8")
-        )
+        monitoring_metadata = json.loads(Path(monitoring_metadata_path).read_text(encoding="utf-8"))
         assert sorted(monitoring_metadata["missing_optional_artifacts"]) == [
             "code_snapshot",
             "input_snapshot.csv",
@@ -184,6 +183,6 @@ def test_saved_run_bundle_cli_reruns_without_gui() -> None:
             rerun_directories = [path for path in rerun_output_root.iterdir() if path.is_dir()]
             assert rerun_directories
             latest_rerun = max(rerun_directories, key=lambda path: path.name)
-            assert (latest_rerun / "metrics.json").exists()
-            assert (latest_rerun / "generated_run.py").exists()
-            assert (latest_rerun / "step_manifest.json").exists()
+            assert (latest_rerun / "metadata" / "metrics.json").exists()
+            assert (latest_rerun / "code" / "generated_run.py").exists()
+            assert (latest_rerun / "metadata" / "step_manifest.json").exists()
