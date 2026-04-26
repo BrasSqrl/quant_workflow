@@ -135,6 +135,8 @@ The framework also includes development-focused workflow features:
 - polished regulator-ready reports with cover pages, section maps, section
   summaries, split appendices, and explicit numerical-stability sections
 - Excel-based template import/export for offline governance edits
+- reusable GUI configuration profiles for saving and reloading validated setup
+  decisions across app launches
 - feature policy checks for required/excluded features, missingness, VIF, IV,
   expected signs, and monotonicity
 - explainability outputs such as coefficient breakdowns, permutation
@@ -229,6 +231,9 @@ quant/
     config.toml
   app/
     streamlit_app.py
+  configs/
+    saved_profiles/
+      .gitkeep
   docs/
     DEVELOPMENT_ROADMAP.md
     ENGINEERING_RUBRIC.md
@@ -523,6 +528,7 @@ The GUI is now organized as a thin entrypoint plus shared UI modules:
 - `streamlit_ui/workspace.py` renders the dataset/schema workspace
 - `streamlit_ui/results.py` renders readiness, results, and governance views
 - `streamlit_ui/config_builder.py` assembles the preview configuration outside the raw UI flow
+- `streamlit_ui/config_profiles.py` saves and reloads reusable GUI configuration profiles
 - `streamlit_ui/theme.py` holds the shared visual system helpers
 - `streamlit_ui/theme.py` also owns the command bar, four-step workflow tabs,
   main-canvas cards, and shared visual styling
@@ -554,6 +560,7 @@ The GUI exposes the following decision areas:
 
 - workspace mode (`guided` vs `advanced`)
 - workflow preset
+- reusable configuration profile save/load
 - execution mode
 - file upload with a configured 50 GB per-file Streamlit limit
 - `Data_Load/` landing-zone file selection for CSV, Excel, and Parquet datasets
@@ -618,6 +625,30 @@ target mode, data structure, comparison defaults, feature-policy defaults, and
 explainability defaults so the user starts from a workflow-specific baseline.
 They now also seed calibration, variable-selection, documentation, and
 scorecard-development defaults where those are relevant to the workflow.
+
+### Configuration Profiles
+
+Step 2 includes a `Configuration Profiles` panel for saving and reloading GUI
+setup decisions across app launches. A profile captures the resolved
+`FrameworkConfig`, the column designer, feature dictionary, transformation
+table, manual-review table, scorecard override table, and dataset fingerprint
+metadata. It does not store raw source data rows.
+
+Profiles can be:
+
+- saved locally under `configs/saved_profiles/`
+- downloaded as portable JSON
+- loaded from the local saved-profile list
+- imported from a downloaded JSON profile
+
+Saved profile JSON files are git-ignored by default because they are
+user-specific working artifacts. The folder is kept in the repository with a
+`.gitkeep` file so the local save location is obvious.
+
+When a profile is loaded against a different dataset, the GUI applies the saved
+configuration but shows non-blocking warnings for missing columns, new columns,
+or row-count changes. This supports reuse while keeping the dataset mismatch
+visible before execution.
 
 ### Diagnostic Studio Layout
 

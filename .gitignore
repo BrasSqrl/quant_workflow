@@ -10,6 +10,7 @@ __pycache__/
 
 .pytest_tmp/
 .profile_tmp/
+test_tmp_configuration_profiles/
 .pytest_cache/
 pytest-cache-files-*/
 .ruff_cache/
@@ -22,6 +23,8 @@ htmlcov/
 artifacts/
 Data_Load/*
 !Data_Load/.gitkeep
+configs/saved_profiles/*
+!configs/saved_profiles/.gitkeep
 build/
 dist/
 pip-wheel-metadata/

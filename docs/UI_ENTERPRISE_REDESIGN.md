@@ -39,6 +39,8 @@ The UI uses four clickable workflow stages:
    Former sidebar controls live in grouped main-canvas expanders: core setup,
    split strategy, model settings, feature subset search, preparation,
    diagnostics/export settings, governance, explainability, and documentation.
+   The configuration-profile panel also lives here because it saves and reloads
+   the Step 2 setup contract.
    On desktop, the groups render in two side-by-side columns so setup/model
    controls and governance/output controls can be scanned without a long single
    vertical stack.

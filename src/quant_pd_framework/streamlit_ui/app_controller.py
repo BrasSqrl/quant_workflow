@@ -50,6 +50,39 @@ from quant_pd_framework.gui_support import (
 from quant_pd_framework.streamlit_ui.config_builder import (
     build_preview_configuration as ui_build_preview_configuration,
 )
+from quant_pd_framework.streamlit_ui.config_profiles import (
+    build_configuration_profile as ui_build_configuration_profile,
+)
+from quant_pd_framework.streamlit_ui.config_profiles import (
+    compare_profile_to_dataset as ui_compare_profile_to_dataset,
+)
+from quant_pd_framework.streamlit_ui.config_profiles import (
+    framework_config_from_profile as ui_framework_config_from_profile,
+)
+from quant_pd_framework.streamlit_ui.config_profiles import (
+    gui_inputs_from_framework_config as ui_gui_inputs_from_framework_config,
+)
+from quant_pd_framework.streamlit_ui.config_profiles import (
+    list_configuration_profiles as ui_list_configuration_profiles,
+)
+from quant_pd_framework.streamlit_ui.config_profiles import (
+    load_configuration_profile as ui_load_configuration_profile,
+)
+from quant_pd_framework.streamlit_ui.config_profiles import (
+    profile_display_name as ui_profile_display_name,
+)
+from quant_pd_framework.streamlit_ui.config_profiles import (
+    profile_file_name as ui_profile_file_name,
+)
+from quant_pd_framework.streamlit_ui.config_profiles import (
+    profile_table_to_frame as ui_profile_table_to_frame,
+)
+from quant_pd_framework.streamlit_ui.config_profiles import (
+    profile_to_download_bytes as ui_profile_to_download_bytes,
+)
+from quant_pd_framework.streamlit_ui.config_profiles import (
+    save_configuration_profile as ui_save_configuration_profile,
+)
 from quant_pd_framework.streamlit_ui.data import (
     build_editor_key as ui_build_editor_key,
 )
@@ -165,6 +198,8 @@ SCENARIO_EDITOR_COLUMNS = [
     "value",
 ]
 MAX_UPLOAD_SIZE_MB = 51_200
+CONFIGURATION_PROFILE_STATE_KEY = "active_configuration_profile"
+CONFIGURATION_PROFILE_MESSAGE_KEY = "configuration_profile_message"
 
 
 def initialize_preset_state() -> GUIBuildInputs:
@@ -298,6 +333,194 @@ def store_workspace_frame(state_key: str, frame: pd.DataFrame) -> None:
     """Persists the latest editor value into session state."""
 
     st.session_state[state_key] = frame.copy(deep=True)
+
+
+def apply_configuration_profile_to_workspace(
+    *,
+    profile_payload: dict[str, Any],
+    workspace_keys: WorkspaceStateKeys,
+    dataframe: pd.DataFrame,
+) -> None:
+    """Applies profile editor tables and stores active profile defaults."""
+
+    table_bindings = {
+        "schema": (workspace_keys.schema_frame, workspace_keys.editor_key),
+        "feature_dictionary": (
+            workspace_keys.feature_dictionary_frame,
+            workspace_keys.feature_dictionary_widget,
+        ),
+        "transformations": (
+            workspace_keys.transformation_frame,
+            workspace_keys.transformation_widget,
+        ),
+        "feature_review": (
+            workspace_keys.feature_review_frame,
+            workspace_keys.feature_review_widget,
+        ),
+        "scorecard_overrides": (
+            workspace_keys.scorecard_override_frame,
+            workspace_keys.scorecard_override_widget,
+        ),
+    }
+    for table_name, (frame_key, widget_key) in table_bindings.items():
+        profile_frame = ui_profile_table_to_frame(profile_payload, table_name)
+        if profile_frame is not None:
+            ui_store_workspace_frame(frame_key, profile_frame)
+        st.session_state.pop(widget_key, None)
+
+    st.session_state[CONFIGURATION_PROFILE_STATE_KEY] = profile_payload
+    warnings = ui_compare_profile_to_dataset(profile_payload, dataframe)
+    st.session_state[CONFIGURATION_PROFILE_MESSAGE_KEY] = {
+        "profile_name": ui_profile_display_name(profile_payload),
+        "warnings": warnings,
+    }
+
+
+def render_configuration_profile_manager(
+    *,
+    dataframe: pd.DataFrame,
+    data_source_label: str,
+    source_metadata: dict[str, Any],
+    workspace_keys: WorkspaceStateKeys,
+    preview_config: Any,
+    preview_error: str | None,
+    edited_schema: pd.DataFrame,
+    feature_dictionary_frame: pd.DataFrame,
+    transformation_frame: pd.DataFrame,
+    feature_review_frame: pd.DataFrame,
+    scorecard_override_frame: pd.DataFrame,
+) -> None:
+    """Renders local save/load controls for reusable GUI configuration profiles."""
+
+    with st.expander("Configuration Profiles", expanded=False):
+        st.caption(
+            "Save and reload validated GUI selections across app launches. Profiles store "
+            "the resolved configuration and editor tables, but they do not store raw data rows."
+        )
+        profile_message = st.session_state.pop(CONFIGURATION_PROFILE_MESSAGE_KEY, None)
+        if profile_message:
+            profile_name = profile_message.get("profile_name", "configuration profile")
+            warnings = profile_message.get("warnings", [])
+            if warnings:
+                st.warning(
+                    f"Loaded {profile_name}, but the current dataset differs from the "
+                    "dataset used when the profile was saved."
+                )
+                for warning in warnings:
+                    st.caption(warning)
+            else:
+                st.success(f"Loaded {profile_name}.")
+
+        active_profile = st.session_state.get(CONFIGURATION_PROFILE_STATE_KEY)
+        if active_profile:
+            st.info(f"Active profile defaults: {ui_profile_display_name(active_profile)}")
+            active_warnings = ui_compare_profile_to_dataset(active_profile, dataframe)
+            for warning in active_warnings:
+                st.caption(warning)
+            if st.button("Clear active profile defaults", key="clear_configuration_profile"):
+                st.session_state.pop(CONFIGURATION_PROFILE_STATE_KEY, None)
+                st.session_state[CONFIGURATION_PROFILE_MESSAGE_KEY] = {
+                    "profile_name": "configuration profile",
+                    "warnings": [],
+                }
+                st.rerun()
+
+        profile_name = st.text_input(
+            "Profile name",
+            value="Quant Studio Configuration",
+            key="configuration_profile_name",
+        )
+        profile_notes = st.text_area(
+            "Profile notes",
+            value="",
+            height=80,
+            key="configuration_profile_notes",
+            help="Optional business context, portfolio notes, or intended use.",
+        )
+        profile_payload = None
+        if preview_config is not None:
+            profile_payload = ui_build_configuration_profile(
+                profile_name=profile_name,
+                notes=profile_notes,
+                dataframe=dataframe,
+                data_source_label=data_source_label,
+                source_metadata=source_metadata,
+                framework_config=preview_config,
+                schema_frame=edited_schema,
+                feature_dictionary_frame=feature_dictionary_frame,
+                transformation_frame=transformation_frame,
+                feature_review_frame=feature_review_frame,
+                scorecard_override_frame=scorecard_override_frame,
+            )
+        elif preview_error:
+            st.warning(
+                "Resolve the current readiness error before saving a profile: "
+                f"{preview_error}"
+            )
+        else:
+            st.warning("Complete the configuration before saving a profile.")
+
+        save_column, download_column = st.columns(2)
+        if save_column.button(
+            "Save profile locally",
+            disabled=profile_payload is None,
+            key="save_configuration_profile",
+        ):
+            assert profile_payload is not None
+            output_path = ui_save_configuration_profile(profile_payload)
+            st.session_state[CONFIGURATION_PROFILE_STATE_KEY] = profile_payload
+            st.success(f"Saved profile to {output_path}.")
+        if profile_payload is not None:
+            download_column.download_button(
+                "Download profile JSON",
+                data=ui_profile_to_download_bytes(profile_payload),
+                file_name=ui_profile_file_name(profile_payload),
+                mime="application/json",
+                key="download_configuration_profile",
+            )
+
+        st.divider()
+        saved_profiles = ui_list_configuration_profiles()
+        if saved_profiles:
+            selected_profile_path = st.selectbox(
+                "Saved local profiles",
+                options=[str(path) for path in saved_profiles],
+                format_func=lambda value: str(value).replace("\\", "/"),
+                key="saved_configuration_profile_path",
+            )
+            if st.button("Load selected saved profile", key="load_saved_configuration_profile"):
+                try:
+                    loaded_profile = ui_load_configuration_profile(selected_profile_path)
+                    apply_configuration_profile_to_workspace(
+                        profile_payload=loaded_profile,
+                        workspace_keys=workspace_keys,
+                        dataframe=dataframe,
+                    )
+                    st.rerun()
+                except Exception as exc:
+                    st.error(f"Could not load the selected profile: {exc}")
+        else:
+            st.caption("No local profiles have been saved yet.")
+
+        uploaded_profile = st.file_uploader(
+            "Import profile JSON",
+            type=["json"],
+            key="uploaded_configuration_profile",
+        )
+        if uploaded_profile is not None and st.button(
+            "Load imported profile",
+            key="load_uploaded_configuration_profile",
+        ):
+            try:
+                loaded_profile = ui_load_configuration_profile(uploaded_profile.getvalue())
+                apply_configuration_profile_to_workspace(
+                    profile_payload=loaded_profile,
+                    workspace_keys=workspace_keys,
+                    dataframe=dataframe,
+                )
+                st.rerun()
+            except Exception as exc:
+                st.error(f"Could not import the uploaded profile: {exc}")
 
 
 def schema_editor_column_config() -> dict[str, Any]:
@@ -472,6 +695,7 @@ def run_app() -> None:
             """,
             unsafe_allow_html=True,
         )
+        profile_manager_container = st.container()
         preset_options = [
             ("custom", "Custom Configuration", "Start from the current manual controls."),
             *[
@@ -512,6 +736,22 @@ def run_app() -> None:
             if selected_preset is not None
             else GUIBuildInputs()
         )
+        active_profile_payload = st.session_state.get(CONFIGURATION_PROFILE_STATE_KEY)
+        if active_profile_payload and selected_preset_name_value == "custom":
+            try:
+                active_profile_config = ui_framework_config_from_profile(active_profile_payload)
+                preset_inputs = ui_gui_inputs_from_framework_config(active_profile_config)
+                selected_preset = active_profile_config.preset_name
+                selected_preset_name_value = (
+                    selected_preset.value if selected_preset is not None else "custom"
+                )
+                st.caption(
+                    "Using saved configuration profile defaults. You can adjust the "
+                    "controls below or clear the active profile in Configuration Profiles."
+                )
+            except Exception as exc:
+                st.warning(f"Could not apply the active configuration profile: {exc}")
+                st.session_state.pop(CONFIGURATION_PROFILE_STATE_KEY, None)
         left_config_column, right_config_column = st.columns(2, gap="large")
 
         with left_config_column.expander("Core Setup", expanded=True):
@@ -2581,6 +2821,21 @@ def run_app() -> None:
             "scorecard_override_frame": scorecard_override_frame,
         },
     )
+    with configuration_tab:
+        with profile_manager_container:
+            render_configuration_profile_manager(
+                dataframe=dataframe,
+                data_source_label=data_source_label,
+                source_metadata=selected_input.metadata,
+                workspace_keys=workspace_keys,
+                preview_config=preview_config,
+                preview_error=preview_error,
+                edited_schema=edited_schema,
+                feature_dictionary_frame=feature_dictionary_frame,
+                transformation_frame=transformation_frame,
+                feature_review_frame=feature_review_frame,
+                scorecard_override_frame=scorecard_override_frame,
+            )
     run_button_label = (
         "Run Feature Subset Search"
         if execution_mode == ExecutionMode.SEARCH_FEATURE_SUBSETS.value

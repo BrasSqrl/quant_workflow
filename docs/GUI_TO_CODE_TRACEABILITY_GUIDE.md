@@ -16,6 +16,7 @@ Primary implementation files:
 - `src/quant_pd_framework/streamlit_ui/app_controller.py`
 - `src/quant_pd_framework/streamlit_ui/artifact_summary.py`
 - `src/quant_pd_framework/streamlit_ui/config_builder.py`
+- `src/quant_pd_framework/streamlit_ui/config_profiles.py`
 - `src/quant_pd_framework/streamlit_ui/data.py`
 - `src/quant_pd_framework/streamlit_ui/error_guidance.py`
 - `src/quant_pd_framework/streamlit_ui/results.py`
@@ -142,7 +143,40 @@ Notes:
 - The authoritative audit surface is still the resolved `FrameworkConfig`,
   not the UI mode itself.
 
-## 5. Step 2 Group: Core Setup
+## 5. Configuration Profiles
+
+Step 2 includes a reusable profile manager for saving and restoring GUI setup
+decisions across app launches.
+
+| GUI control | Config or runtime target | Main implementation | Audit surface |
+| --- | --- | --- | --- |
+| `Save profile locally` | current validated `FrameworkConfig` plus workspace editor tables | `build_configuration_profile(...)`, `save_configuration_profile(...)` | `configs/saved_profiles/*.json` |
+| `Download profile JSON` | same profile payload as the local save path | `profile_to_download_bytes(...)` | downloaded JSON profile |
+| `Load selected saved profile` | session defaults and editor tables for the current workspace | `load_configuration_profile(...)`, `apply_configuration_profile_to_workspace(...)` | active profile message and pre-run readiness |
+| `Load imported profile` | same as saved-profile loading, from uploaded JSON bytes | `load_configuration_profile(...)`, `apply_configuration_profile_to_workspace(...)` | active profile message and pre-run readiness |
+| `Clear active profile defaults` | runtime-only profile state | `st.session_state` key `active_configuration_profile` | none; subsequent config preview uses current controls |
+
+Profile contents:
+
+- `framework_config` is the resolved configuration produced by the same builder
+  path used for execution.
+- `workspace_tables` stores the column designer, feature dictionary,
+  transformations, manual review, and scorecard override editor tables.
+- `dataset_fingerprint` stores source label, row count, columns, dtypes, schema
+  hash, and input metadata.
+- Raw input data rows are intentionally not stored in the profile.
+
+Loading behavior:
+
+- loading a profile applies the saved editor tables to the current dataset
+  workspace
+- loading clears the associated data-editor widget state so the restored tables
+  render cleanly on the next rerun
+- dataset differences are non-blocking but visible through missing-column,
+  new-column, and row-count warnings
+- saved profile JSON files are git-ignored under `configs/saved_profiles/`
+
+## 6. Step 2 Group: Core Setup
 
 | GUI control | Config field(s) | Main implementation |
 | --- | --- | --- |
@@ -166,7 +200,7 @@ Execution-mode meaning:
   Runs the dedicated feature-subset-search workflow and exports only
   comparison-ready ranking evidence.
 
-## 6. Step 2 Group: Split Strategy
+## 7. Step 2 Group: Split Strategy
 
 | GUI control | Config field(s) | Main implementation | Export evidence |
 | --- | --- | --- | --- |
@@ -179,7 +213,7 @@ Execution-mode meaning:
 Date and identifier columns are not collected here. They are derived from the
 column designer role assignments.
 
-## 7. Step 2 Group: Model Settings
+## 8. Step 2 Group: Model Settings
 
 | GUI control | Config field(s) | Main implementation |
 | --- | --- | --- |
@@ -200,7 +234,7 @@ column designer role assignments.
 | `XGBoost ...` controls | `ModelConfig.xgboost_*` | `XGBoostAdapter` |
 | `Tobit ...` controls | `ModelConfig.tobit_*` | `TobitRegressionAdapter` |
 
-## 8. Step 2 Group: Feature Subset Search
+## 9. Step 2 Group: Feature Subset Search
 
 These controls only matter when `ExecutionConfig.mode` is
 `search_feature_subsets`.
@@ -218,7 +252,7 @@ These controls only matter when `ExecutionConfig.mode` is
 | `Top candidates to retain` | `FeatureSubsetSearchConfig.top_candidate_count` | `FeatureSubsetSearchStep` | `subset_search_candidates`, `subset_search_feature_frequency`, `subset_search_significance_tests` |
 | `Include paired significance tests ...` | `FeatureSubsetSearchConfig.include_significance_tests` | `FeatureSubsetSearchStep` | `subset_search_significance_tests` |
 
-## 9. Step 2 Group: Data Preparation
+## 10. Step 2 Group: Data Preparation
 
 | GUI control | Config field(s) | Main implementation |
 | --- | --- | --- |
@@ -231,7 +265,7 @@ These controls only matter when `ExecutionConfig.mode` is
 | `Drop raw date columns ...` | `FeatureEngineeringConfig.drop_raw_date_columns` | `FeatureEngineeringStep` |
 | `Date parts` | `FeatureEngineeringConfig.date_parts` | `FeatureEngineeringStep` |
 
-## 10. Step 2 Group: Diagnostics & Exports
+## 11. Step 2 Group: Diagnostics & Exports
 
 | GUI control | Config field(s) | Main implementation |
 | --- | --- | --- |
@@ -285,7 +319,7 @@ These controls only matter when `ExecutionConfig.mode` is
 | `Top credit-risk segments` | `CreditRiskDiagnosticConfig.top_segments` | segment-limited credit diagnostics |
 | `Macro shock std multiplier` | `CreditRiskDiagnosticConfig.shock_std_multiplier` | macro sensitivity diagnostics |
 
-## 11. Step 2 Group: Challengers & Policies
+## 12. Step 2 Group: Challengers & Policies
 
 | GUI control | Config field(s) | Main implementation | Export evidence |
 | --- | --- | --- | --- |
@@ -302,7 +336,7 @@ These controls only matter when `ExecutionConfig.mode` is
 | `Minimum IV` | `FeaturePolicyConfig.minimum_information_value` | policy checks | `feature_policy_checks` |
 | `Fail run on policy violation` | `FeaturePolicyConfig.error_on_violation` | policy checks | run failure if violated |
 
-## 12. Step 2 Group: Selection & Documentation
+## 13. Step 2 Group: Selection & Documentation
 
 | GUI control | Config field(s) | Main implementation |
 | --- | --- | --- |
@@ -336,7 +370,7 @@ These controls only matter when `ExecutionConfig.mode` is
 | `Validation template name` | `RegulatoryReportConfig.validation_template_name` | validation-ready report export |
 | report section toggles | `RegulatoryReportConfig.include_*` | regulator-ready report assembly |
 
-## 13. Step 2 Group: Governance & Review
+## 14. Step 2 Group: Governance & Review
 
 | GUI control | Config field(s) | Main implementation | Export evidence |
 | --- | --- | --- | --- |
@@ -354,7 +388,7 @@ These controls only matter when `ExecutionConfig.mode` is
 | feature review editor rows | `ManualReviewConfig.feature_decisions` | `parse_manual_review_frames(...)`, `VariableSelectionStep` | `manual_review_feature_decisions` |
 | scorecard override rows | `ManualReviewConfig.scorecard_bin_overrides` | `parse_manual_review_frames(...)`, `ScorecardLogisticRegressionAdapter` | `scorecard_bin_overrides` |
 
-## 14. Step 2 Group: Explainability & Scenarios
+## 15. Step 2 Group: Explainability & Scenarios
 
 | GUI control | Config field(s) | Main implementation |
 | --- | --- | --- |
@@ -383,7 +417,7 @@ These controls only matter when `ExecutionConfig.mode` is
 | `Scenario evaluation split` | `ScenarioTestConfig.evaluation_split` | scenario testing |
 | scenario editor rows | `ScenarioTestConfig.scenarios` | scenario testing |
 
-## 15. Step 2 Group: Output Options
+## 16. Step 2 Group: Output Options
 
 | GUI control | Config field(s) | Main implementation |
 | --- | --- | --- |
@@ -428,7 +462,7 @@ the config path that controls it, expected tables and figures, target-mode
 limits, label requirements, large-data behavior, and whether the diagnostic was
 emitted, disabled, or skipped for the run.
 
-## 16. Run Button
+## 17. Run Button
 
 The `Run Quant Model Workflow` button performs this chain:
 
@@ -452,7 +486,7 @@ Relevant code path:
 - `QuantModelOrchestrator(config=config).run(run_input)`
 - `build_run_snapshot(...)`
 
-## 17. Result-Viewer Filters
+## 18. Result-Viewer Filters
 
 The controls under `Interactive Filters` do not change the model or rerun the
 pipeline. They only change the live display of exported run outputs.
@@ -471,7 +505,7 @@ Examples:
 
 These are presentation controls, not modeling controls.
 
-## 18. Authoritative Export Files for Traceability
+## 19. Authoritative Export Files for Traceability
 
 For an audit review, the most important files are:
 
