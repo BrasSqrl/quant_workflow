@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+from dataclasses import asdict
 from html import escape
 from pathlib import Path
 from typing import Any
@@ -21,8 +23,12 @@ from quant_pd_framework.presentation import (
     prune_subset_search_highlight_assets,
     summarize_run_kpis,
 )
-from quant_pd_framework.streamlit_ui.artifact_summary import build_artifact_summary_frame
 from quant_pd_framework.streamlit_ui.data import sample_frame
+from quant_pd_framework.streamlit_ui.enterprise_workflow import (
+    ReviewerRecord,
+    build_artifact_explorer_frame,
+    build_model_card_markdown,
+)
 from quant_pd_framework.streamlit_ui.state import (
     build_plotly_key,
     prepare_table_for_display,
@@ -435,6 +441,7 @@ def render_subset_search_governance(snapshot: dict[str, Any]) -> None:
             st.markdown("### Warnings")
             for warning in snapshot["warnings"]:
                 st.warning(warning)
+        render_reviewer_workspace(snapshot)
         render_artifact_locations(snapshot)
         render_download_button(
             "Download Run Config",
@@ -1353,6 +1360,7 @@ def render_governance_panel(snapshot: dict[str, Any], filtered_predictions: pd.D
             st.markdown("### Warnings")
             for warning in snapshot["warnings"]:
                 st.warning(warning)
+        render_reviewer_workspace(snapshot)
         render_artifact_locations(snapshot)
         render_download_button(
             "Download Run Config",
@@ -1713,19 +1721,114 @@ def render_lazy_artifact_downloads(
 
 
 def render_artifact_locations(snapshot: dict[str, Any]) -> None:
-    st.markdown("### Artifact Locations")
-    artifact_table = build_artifact_summary_frame(snapshot["artifacts"])
+    st.markdown("### Artifact Explorer")
+    artifact_table = build_artifact_explorer_frame(snapshot["artifacts"])
     available_count = int(artifact_table["status"].eq("Available").sum())
     st.caption(
         f"{available_count:,} artifact locations are available for this run. "
         "Use this table to find the run folder, model object, reports, manifests, "
         "and any Large Data Mode output folders."
     )
+    area_options = ["All", *sorted(artifact_table["area"].dropna().unique().tolist())]
+    selected_area = st.selectbox(
+        "Artifact group",
+        options=area_options,
+        key=f"{snapshot['run_id']}_artifact_explorer_group",
+    )
+    display_table = artifact_table
+    if selected_area != "All":
+        display_table = artifact_table.loc[artifact_table["area"] == selected_area]
     st.dataframe(
-        prepare_table_for_display(artifact_table),
+        prepare_table_for_display(display_table),
         width="stretch",
         hide_index=True,
     )
+    available_downloads = display_table.loc[
+        display_table["status"].eq("Available") & display_table["path"].astype(bool)
+    ]
+    if available_downloads.empty:
+        return
+    selected_key = st.selectbox(
+        "Download available artifact",
+        options=available_downloads["key"].tolist(),
+        format_func=lambda value: str(value).replace("_", " ").title(),
+        key=f"{snapshot['run_id']}_artifact_explorer_download",
+    )
+    selected_path = str(
+        available_downloads.loc[available_downloads["key"] == selected_key, "path"].iloc[0]
+    )
+    selected_path_obj = Path(selected_path)
+    if selected_path_obj.is_file():
+        st.download_button(
+            f"Download {selected_key.replace('_', ' ').title()}",
+            data=read_binary_artifact(selected_path),
+            file_name=selected_path_obj.name,
+            mime="application/octet-stream",
+            key=f"{snapshot['run_id']}_{selected_key}_explorer_download_button",
+        )
+    else:
+        st.caption("Directory artifacts are shown for navigation and are not downloaded directly.")
+
+
+def render_reviewer_workspace(snapshot: dict[str, Any]) -> None:
+    with st.expander("Reviewer / Approval Workspace", expanded=False):
+        reviewer_name = st.text_input(
+            "Reviewer name",
+            value="",
+            key=f"{snapshot['run_id']}_reviewer_name",
+        )
+        approval_status = st.selectbox(
+            "Approval status",
+            options=[
+                "Not reviewed",
+                "Approved",
+                "Approved with exceptions",
+                "Rejected",
+                "Needs remediation",
+            ],
+            key=f"{snapshot['run_id']}_approval_status",
+        )
+        review_notes = st.text_area(
+            "Review notes",
+            value="",
+            height=90,
+            key=f"{snapshot['run_id']}_review_notes",
+        )
+        exception_notes = st.text_area(
+            "Exception notes",
+            value="",
+            height=90,
+            key=f"{snapshot['run_id']}_exception_notes",
+        )
+        reviewer_record = ReviewerRecord(
+            reviewer_name=reviewer_name.strip(),
+            approval_status=approval_status,
+            review_notes=review_notes.strip(),
+            exception_notes=exception_notes.strip(),
+        )
+        model_card = build_model_card_markdown(
+            snapshot=snapshot,
+            reviewer_record=reviewer_record,
+        )
+        st.download_button(
+            "Download model card",
+            data=model_card,
+            file_name=f"{snapshot['run_id']}_model_card.md",
+            mime="text/markdown",
+            key=f"{snapshot['run_id']}_download_model_card",
+        )
+        if st.button(
+            "Save review record to run folder",
+            key=f"{snapshot['run_id']}_save_review_record",
+        ):
+            output_root = snapshot.get("artifacts", {}).get("output_root")
+            if not output_root:
+                st.error("No run folder is recorded for this snapshot.")
+                return
+            review_path = Path(output_root) / "review_workspace.json"
+            review_path.parent.mkdir(parents=True, exist_ok=True)
+            review_path.write_text(json.dumps(asdict(reviewer_record), indent=2), encoding="utf-8")
+            st.success(f"Saved review record to {review_path}.")
 
 
 def _report_text(snapshot: dict[str, Any]) -> str:

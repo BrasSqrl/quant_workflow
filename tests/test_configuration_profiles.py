@@ -15,6 +15,7 @@ from quant_pd_framework.gui_support import (
 )
 from quant_pd_framework.streamlit_ui.config_profiles import (
     build_configuration_profile,
+    build_profile_library_frame,
     compare_profile_to_dataset,
     framework_config_from_profile,
     gui_inputs_from_framework_config,
@@ -185,3 +186,37 @@ def test_compare_profile_to_dataset_reports_non_blocking_mismatch() -> None:
     assert any("missing profile columns" in warning for warning in warnings)
     assert any("not present in the profile" in warning for warning in warnings)
     assert any("rows" in warning for warning in warnings)
+
+
+def test_profile_library_frame_includes_tags_and_purpose() -> None:
+    dataframe = pd.DataFrame({"feature": [1, 2, 3], "default_status": [0, 1, 0]})
+    schema_frame = build_column_editor_frame(dataframe)
+    schema_frame.loc[schema_frame["name"] == "default_status", "role"] = (
+        ColumnRole.TARGET_SOURCE.value
+    )
+    config = build_framework_config_from_editor(
+        schema_frame,
+        GUIBuildInputs(output_root=TEST_OUTPUT_ROOT / "library_artifacts"),
+    )
+    profile = build_configuration_profile(
+        profile_name="library profile",
+        notes="",
+        tags="PD, retail",
+        model_purpose="Development baseline",
+        dataframe=dataframe,
+        data_source_label="Unit Test Data",
+        source_metadata=None,
+        framework_config=config,
+        schema_frame=schema_frame,
+        feature_dictionary_frame=pd.DataFrame(),
+        transformation_frame=pd.DataFrame(),
+        feature_review_frame=pd.DataFrame(),
+        scorecard_override_frame=pd.DataFrame(),
+    )
+    directory = TEST_OUTPUT_ROOT / "library_profiles"
+    save_configuration_profile(profile, directory=directory)
+
+    library = build_profile_library_frame(directory)
+
+    assert "PD, retail" in library["tags"].tolist()
+    assert "Development baseline" in library["model_purpose"].tolist()

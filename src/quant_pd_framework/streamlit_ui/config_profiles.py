@@ -32,6 +32,8 @@ def build_configuration_profile(
     *,
     profile_name: str,
     notes: str,
+    tags: str = "",
+    model_purpose: str = "",
     dataframe: pd.DataFrame,
     data_source_label: str,
     source_metadata: dict[str, Any] | None,
@@ -51,6 +53,11 @@ def build_configuration_profile(
         "metadata": {
             "profile_name": resolved_name,
             "notes": notes.strip(),
+            "tags": [tag.strip() for tag in tags.split(",") if tag.strip()],
+            "model_purpose": model_purpose.strip(),
+            "target_mode": framework_config.target.mode.value,
+            "model_type": framework_config.model.model_type.value,
+            "execution_mode": framework_config.execution.mode.value,
             "created_at_utc": created_at_utc,
             "application": "Quant Studio",
         },
@@ -147,6 +154,68 @@ def list_configuration_profiles(directory: Path = SAVED_PROFILE_DIR) -> list[Pat
     if not directory.exists():
         return []
     return sorted(directory.glob("*.json"), key=lambda path: path.stat().st_mtime, reverse=True)
+
+
+def build_profile_library_frame(directory: Path = SAVED_PROFILE_DIR) -> pd.DataFrame:
+    """Summarizes local profiles for searchable display in the GUI."""
+
+    rows: list[dict[str, Any]] = []
+    for path in list_configuration_profiles(directory):
+        try:
+            profile_payload = load_configuration_profile(path)
+        except Exception as exc:
+            rows.append(
+                {
+                    "profile_name": path.stem,
+                    "created_at_utc": "",
+                    "target_mode": "",
+                    "model_type": "",
+                    "execution_mode": "",
+                    "tags": "",
+                    "model_purpose": "",
+                    "path": str(path),
+                    "status": f"Invalid: {exc}",
+                }
+            )
+            continue
+        metadata = profile_payload.get("metadata", {})
+        tags_value = metadata.get("tags", [])
+        tags_text = tags_value if isinstance(tags_value, str) else ", ".join(tags_value)
+        rows.append(
+            {
+                "profile_name": str(metadata.get("profile_name", path.stem)),
+                "created_at_utc": str(metadata.get("created_at_utc", "")),
+                "target_mode": str(metadata.get("target_mode", "")),
+                "model_type": str(metadata.get("model_type", "")),
+                "execution_mode": str(metadata.get("execution_mode", "")),
+                "tags": tags_text,
+                "model_purpose": str(metadata.get("model_purpose", "")),
+                "path": str(path),
+                "status": "Ready",
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+def duplicate_configuration_profile(
+    source_path: str | Path,
+    *,
+    new_profile_name: str | None = None,
+) -> Path:
+    """Copies an existing profile with updated metadata."""
+
+    profile_payload = load_configuration_profile(source_path)
+    metadata = profile_payload.setdefault("metadata", {})
+    original_name = str(metadata.get("profile_name") or "Quant Studio Configuration")
+    metadata["profile_name"] = new_profile_name or f"{original_name} Copy"
+    metadata["created_at_utc"] = _utc_timestamp()
+    return save_configuration_profile(profile_payload, directory=Path(source_path).parent)
+
+
+def delete_configuration_profile(source_path: str | Path) -> None:
+    """Deletes a local saved profile file."""
+
+    Path(source_path).unlink(missing_ok=True)
 
 
 def load_configuration_profile(source: str | Path | bytes | bytearray) -> dict[str, Any]:

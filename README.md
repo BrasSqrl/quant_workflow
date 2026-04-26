@@ -529,6 +529,8 @@ The GUI is now organized as a thin entrypoint plus shared UI modules:
 - `streamlit_ui/results.py` renders readiness, results, and governance views
 - `streamlit_ui/config_builder.py` assembles the preview configuration outside the raw UI flow
 - `streamlit_ui/config_profiles.py` saves and reloads reusable GUI configuration profiles
+- `streamlit_ui/enterprise_workflow.py` owns workflow status, issue-center,
+  preflight, diff, artifact-explorer, reviewer, model-card, and guidance helpers
 - `streamlit_ui/theme.py` holds the shared visual system helpers
 - `streamlit_ui/theme.py` also owns the command bar, four-step workflow tabs,
   main-canvas cards, and shared visual styling
@@ -546,8 +548,14 @@ That standard drives both the live GUI and the exported standalone HTML report. 
 
 - a light enterprise-fintech palette with stronger visual hierarchy
 - a command-bar header and four large clickable workflow steps
+- a workflow status strip with step-level readiness and next-action guidance
 - a two-column Step 2 model-configuration workspace for faster scanning
 - grouped diagnostics instead of one long undifferentiated result page
+- a centralized readiness issue center instead of scattered warnings only
+- a pre-run summary that makes execution scope explicit before the run starts
+- configuration diffs against active profiles and the last completed run
+- a post-run artifact explorer grouped by evidence purpose
+- reviewer signoff and model-card generation inside the development workflow
 - main-canvas model configuration, readiness, and artifact workspaces instead
   of persistent side panes
 - consistent Plotly theming across all charts
@@ -640,6 +648,10 @@ Profiles can be:
 - downloaded as portable JSON
 - loaded from the local saved-profile list
 - imported from a downloaded JSON profile
+- searched in the profile library by name, tag, purpose, target mode, or model type
+- duplicated for variant development
+- deleted when no longer needed
+- compared against the current configuration
 
 Saved profile JSON files are git-ignored by default because they are
 user-specific working artifacts. The folder is kept in the repository with a
@@ -649,6 +661,28 @@ When a profile is loaded against a different dataset, the GUI applies the saved
 configuration but shows non-blocking warnings for missing columns, new columns,
 or row-count changes. This supports reuse while keeping the dataset mismatch
 visible before execution.
+
+### Enterprise Workflow Surfaces
+
+The GUI now includes several development-focused enterprise UX surfaces:
+
+- `Workflow status` shows each of the four steps as not started, needs
+  attention, ready, or complete.
+- `Readiness Issue Center` consolidates build errors, guardrail findings, and
+  profile/dataset mismatch warnings into one table with recommended actions.
+- `Run Preflight Summary` summarizes dataset shape, target, model family,
+  feature count, transformations, diagnostics, and export settings before
+  execution.
+- `Configuration Diff Viewer` compares the current setup against the active
+  profile and last completed run.
+- `Artifact Explorer` groups completed outputs by purpose and provides direct
+  downloads for file artifacts.
+- `Reviewer / Approval Workspace` records reviewer status, notes, and
+  exceptions and can save a `review_workspace.json` file into the run folder.
+- `Model Card` download creates a concise Markdown summary of run purpose,
+  target, model family, metrics, feature set, warnings, and reviewer decision.
+- `Guidance Library` provides compact in-app explanations for major workflow
+  choices without requiring users to leave the GUI.
 
 ### Diagnostic Studio Layout
 

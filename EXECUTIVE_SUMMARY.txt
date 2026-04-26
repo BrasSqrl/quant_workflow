@@ -54,6 +54,9 @@ file and guides the run through the major stages of model development:
 - user-facing error recovery guidance and clearer post-run output-location
   panels so users can find reports, model objects, debug traces, and large-data
   folders without inspecting raw artifact JSON
+- workflow status, issue-center, preflight-summary, and configuration-diff
+  surfaces that make the guided Streamlit process easier to review before
+  execution
 - diagnostic registry outputs, profiling utilities, and synthetic large-data
   benchmarks that make future performance and audit reviews easier to repeat
 
@@ -130,6 +133,10 @@ Each run can produce a structured output package that includes:
   folders for large file runs
 - run debug traces showing per-step timing, status, and shape changes
 - readable artifact-location tables and key output summaries in the GUI
+- grouped artifact explorer views with direct file downloads for completed run
+  evidence
+- reviewer signoff records and downloadable model-card summaries for
+  development-stage governance
 - diagnostic registry tables that explain which validation surfaces were
   emitted, disabled, or skipped
 - fast, standard, and audit export profile support
@@ -172,6 +179,10 @@ features include:
 - deterministic reference workflows for core use cases
 - walkthrough-style example packs that explain how to read the exported
   artifact bundles for those reference workflows
+- reusable configuration profiles with library search, tags, duplication,
+  comparison, and local profile management
+- reviewer workspace and model-card output that capture human review context
+  alongside model-development evidence
 
 Business Value
 --------------

@@ -17,6 +17,7 @@ Primary implementation files:
 - `src/quant_pd_framework/streamlit_ui/artifact_summary.py`
 - `src/quant_pd_framework/streamlit_ui/config_builder.py`
 - `src/quant_pd_framework/streamlit_ui/config_profiles.py`
+- `src/quant_pd_framework/streamlit_ui/enterprise_workflow.py`
 - `src/quant_pd_framework/streamlit_ui/data.py`
 - `src/quant_pd_framework/streamlit_ui/error_guidance.py`
 - `src/quant_pd_framework/streamlit_ui/results.py`
@@ -51,6 +52,10 @@ Execution and recovery chain:
 
 If execution fails, `error_guidance.py` classifies the exception into a likely
 cause, recommended recovery action, and expandable technical traceback.
+
+Enterprise UX chain:
+
+`FrameworkConfig / run snapshot -> enterprise_workflow.py -> status, issues, preflight, diffs, model card, artifact explorer`
 
 ## 1. Data Source Controls
 
@@ -154,6 +159,10 @@ decisions across app launches.
 | `Download profile JSON` | same profile payload as the local save path | `profile_to_download_bytes(...)` | downloaded JSON profile |
 | `Load selected saved profile` | session defaults and editor tables for the current workspace | `load_configuration_profile(...)`, `apply_configuration_profile_to_workspace(...)` | active profile message and pre-run readiness |
 | `Load imported profile` | same as saved-profile loading, from uploaded JSON bytes | `load_configuration_profile(...)`, `apply_configuration_profile_to_workspace(...)` | active profile message and pre-run readiness |
+| `Search profiles` | local profile metadata filter | `build_profile_library_frame(...)` | local profile JSON metadata |
+| `Duplicate selected profile` | copied profile JSON with refreshed metadata | `duplicate_configuration_profile(...)` | new file under `configs/saved_profiles/` |
+| `Delete selected profile` | local saved profile removal | `delete_configuration_profile(...)` | removed local profile JSON |
+| `Compare selected profile` | current config vs selected profile config | `build_config_diff_frame(...)` | on-screen diff table |
 | `Clear active profile defaults` | runtime-only profile state | `st.session_state` key `active_configuration_profile` | none; subsequent config preview uses current controls |
 
 Profile contents:
@@ -164,6 +173,8 @@ Profile contents:
   transformations, manual review, and scorecard override editor tables.
 - `dataset_fingerprint` stores source label, row count, columns, dtypes, schema
   hash, and input metadata.
+- `metadata` stores profile name, tags, model purpose, target mode, model type,
+  execution mode, notes, and creation timestamp.
 - Raw input data rows are intentionally not stored in the profile.
 
 Loading behavior:
@@ -176,7 +187,23 @@ Loading behavior:
   new-column, and row-count warnings
 - saved profile JSON files are git-ignored under `configs/saved_profiles/`
 
-## 6. Step 2 Group: Core Setup
+## 6. Enterprise Workflow Status And Guidance
+
+| GUI surface | Config or runtime target | Main implementation | Audit surface |
+| --- | --- | --- | --- |
+| `Workflow status` | current dataset availability, config preview, guardrail findings, and last-run snapshot | `build_workflow_step_states(...)`, `render_workflow_status_strip(...)` | runtime-only status table |
+| `Guidance Library` | runtime-only help topics | `GUIDANCE_TOPICS`, `render_guidance_center(...)` | none |
+| `Readiness Issue Center` | config build errors, guardrail findings, and profile mismatch warnings | `collect_readiness_issues(...)`, `render_issue_center(...)` | visible pre-run issue table |
+| `Run Preflight Summary` | resolved `FrameworkConfig`, editor tables, and dataset shape | `build_preflight_summary(...)`, `render_preflight_summary(...)` | visible pre-run summary |
+| `Configuration Diff Viewer` | current config vs active profile and last completed run | `build_config_diff_frame(...)` | visible diff table |
+
+Notes:
+
+- These surfaces do not change the model or pipeline.
+- They make the current workflow state, remaining issues, and configuration
+  changes more transparent before execution.
+
+## 7. Step 2 Group: Core Setup
 
 | GUI control | Config field(s) | Main implementation |
 | --- | --- | --- |
@@ -200,7 +227,7 @@ Execution-mode meaning:
   Runs the dedicated feature-subset-search workflow and exports only
   comparison-ready ranking evidence.
 
-## 7. Step 2 Group: Split Strategy
+## 8. Step 2 Group: Split Strategy
 
 | GUI control | Config field(s) | Main implementation | Export evidence |
 | --- | --- | --- | --- |
@@ -213,7 +240,7 @@ Execution-mode meaning:
 Date and identifier columns are not collected here. They are derived from the
 column designer role assignments.
 
-## 8. Step 2 Group: Model Settings
+## 9. Step 2 Group: Model Settings
 
 | GUI control | Config field(s) | Main implementation |
 | --- | --- | --- |
@@ -234,7 +261,7 @@ column designer role assignments.
 | `XGBoost ...` controls | `ModelConfig.xgboost_*` | `XGBoostAdapter` |
 | `Tobit ...` controls | `ModelConfig.tobit_*` | `TobitRegressionAdapter` |
 
-## 9. Step 2 Group: Feature Subset Search
+## 10. Step 2 Group: Feature Subset Search
 
 These controls only matter when `ExecutionConfig.mode` is
 `search_feature_subsets`.
@@ -252,7 +279,7 @@ These controls only matter when `ExecutionConfig.mode` is
 | `Top candidates to retain` | `FeatureSubsetSearchConfig.top_candidate_count` | `FeatureSubsetSearchStep` | `subset_search_candidates`, `subset_search_feature_frequency`, `subset_search_significance_tests` |
 | `Include paired significance tests ...` | `FeatureSubsetSearchConfig.include_significance_tests` | `FeatureSubsetSearchStep` | `subset_search_significance_tests` |
 
-## 10. Step 2 Group: Data Preparation
+## 11. Step 2 Group: Data Preparation
 
 | GUI control | Config field(s) | Main implementation |
 | --- | --- | --- |
@@ -265,7 +292,7 @@ These controls only matter when `ExecutionConfig.mode` is
 | `Drop raw date columns ...` | `FeatureEngineeringConfig.drop_raw_date_columns` | `FeatureEngineeringStep` |
 | `Date parts` | `FeatureEngineeringConfig.date_parts` | `FeatureEngineeringStep` |
 
-## 11. Step 2 Group: Diagnostics & Exports
+## 12. Step 2 Group: Diagnostics & Exports
 
 | GUI control | Config field(s) | Main implementation |
 | --- | --- | --- |
@@ -319,7 +346,7 @@ These controls only matter when `ExecutionConfig.mode` is
 | `Top credit-risk segments` | `CreditRiskDiagnosticConfig.top_segments` | segment-limited credit diagnostics |
 | `Macro shock std multiplier` | `CreditRiskDiagnosticConfig.shock_std_multiplier` | macro sensitivity diagnostics |
 
-## 12. Step 2 Group: Challengers & Policies
+## 13. Step 2 Group: Challengers & Policies
 
 | GUI control | Config field(s) | Main implementation | Export evidence |
 | --- | --- | --- | --- |
@@ -336,7 +363,7 @@ These controls only matter when `ExecutionConfig.mode` is
 | `Minimum IV` | `FeaturePolicyConfig.minimum_information_value` | policy checks | `feature_policy_checks` |
 | `Fail run on policy violation` | `FeaturePolicyConfig.error_on_violation` | policy checks | run failure if violated |
 
-## 13. Step 2 Group: Selection & Documentation
+## 14. Step 2 Group: Selection & Documentation
 
 | GUI control | Config field(s) | Main implementation |
 | --- | --- | --- |
@@ -370,7 +397,7 @@ These controls only matter when `ExecutionConfig.mode` is
 | `Validation template name` | `RegulatoryReportConfig.validation_template_name` | validation-ready report export |
 | report section toggles | `RegulatoryReportConfig.include_*` | regulator-ready report assembly |
 
-## 14. Step 2 Group: Governance & Review
+## 15. Step 2 Group: Governance & Review
 
 | GUI control | Config field(s) | Main implementation | Export evidence |
 | --- | --- | --- | --- |
@@ -388,7 +415,7 @@ These controls only matter when `ExecutionConfig.mode` is
 | feature review editor rows | `ManualReviewConfig.feature_decisions` | `parse_manual_review_frames(...)`, `VariableSelectionStep` | `manual_review_feature_decisions` |
 | scorecard override rows | `ManualReviewConfig.scorecard_bin_overrides` | `parse_manual_review_frames(...)`, `ScorecardLogisticRegressionAdapter` | `scorecard_bin_overrides` |
 
-## 15. Step 2 Group: Explainability & Scenarios
+## 16. Step 2 Group: Explainability & Scenarios
 
 | GUI control | Config field(s) | Main implementation |
 | --- | --- | --- |
@@ -417,7 +444,7 @@ These controls only matter when `ExecutionConfig.mode` is
 | `Scenario evaluation split` | `ScenarioTestConfig.evaluation_split` | scenario testing |
 | scenario editor rows | `ScenarioTestConfig.scenarios` | scenario testing |
 
-## 16. Step 2 Group: Output Options
+## 17. Step 2 Group: Output Options
 
 | GUI control | Config field(s) | Main implementation |
 | --- | --- | --- |
@@ -462,7 +489,7 @@ the config path that controls it, expected tables and figures, target-mode
 limits, label requirements, large-data behavior, and whether the diagnostic was
 emitted, disabled, or skipped for the run.
 
-## 17. Run Button
+## 18. Run Button
 
 The `Run Quant Model Workflow` button performs this chain:
 
@@ -486,7 +513,7 @@ Relevant code path:
 - `QuantModelOrchestrator(config=config).run(run_input)`
 - `build_run_snapshot(...)`
 
-## 18. Result-Viewer Filters
+## 19. Result-Viewer Filters
 
 The controls under `Interactive Filters` do not change the model or rerun the
 pipeline. They only change the live display of exported run outputs.
@@ -505,7 +532,23 @@ Examples:
 
 These are presentation controls, not modeling controls.
 
-## 19. Authoritative Export Files for Traceability
+## 20. Results Artifact Explorer, Reviewer Workspace, And Model Card
+
+| GUI surface | Config or runtime target | Main implementation | Audit surface |
+| --- | --- | --- | --- |
+| `Artifact Explorer` | completed run artifact path map | `build_artifact_explorer_frame(...)`, `render_artifact_locations(...)` | artifact paths and file downloads |
+| `Reviewer / Approval Workspace` | reviewer name, approval status, notes, exceptions | `ReviewerRecord`, `render_reviewer_workspace(...)` | optional `review_workspace.json` in run folder |
+| `Download model card` | run snapshot plus reviewer record | `build_model_card_markdown(...)` | downloaded Markdown model card |
+
+Notes:
+
+- The reviewer workspace is development-stage governance, not production
+  monitoring.
+- The model card is generated from the completed run snapshot and current
+  reviewer inputs so it can be attached to model documentation or validation
+  review material.
+
+## 21. Authoritative Export Files for Traceability
 
 For an audit review, the most important files are:
 

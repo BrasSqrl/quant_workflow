@@ -17,6 +17,8 @@ Primary goals:
 - reduce visual clutter by removing persistent side panes
 - improve the perceived speed of moving through the workflow
 - surface next actions and output expectations without adding functionality
+- expose workflow status, issue, preflight, diff, artifact, review, and model-card
+  surfaces without changing the underlying modeling engine
 - keep the current Python and Streamlit functionality intact
 
 ## Non-Goals
@@ -46,13 +48,14 @@ The UI uses four clickable workflow stages:
    vertical stack.
 
 3. **Readiness Check**
-   Preview validation, guardrail findings, execution-plan cards, and the primary
-   run button live here.
+   Preview validation, centralized issue center, preflight summary,
+   guardrail findings, execution-plan cards, and the primary run button live here.
 
 4. **Results & Artifacts**
    Completed run diagnostics, tables, charts, downloads, artifact locations, and
-   stale-result warnings live here. Before a run exists, this stage shows an
-   empty state.
+   stale-result warnings live here. The artifact explorer, reviewer workspace,
+   and model-card download also live here. Before a run exists, this stage shows
+   an empty state.
 
 ## Visual Language
 
@@ -81,6 +84,14 @@ Avoid:
 - Configuration expanders should look like structured setup groups, not
   unrelated drawers.
 - The four top workflow stages should look like large segmented workflow pills.
+- The workflow status strip should provide a compact management view of
+  not-started, needs-attention, ready, and complete states.
+- Readiness issues should appear in one consolidated table with recommended
+  actions.
+- Configuration profiles should behave like a small local library, not just a
+  raw file picker.
+- Artifact review should start from a grouped explorer before a user has to
+  inspect file-system paths directly.
 - Errors should appear as action-oriented cards, not flat bars when styling can
   improve readability.
 - The run button remains prominent and visually tied to the Readiness Check step.
@@ -96,6 +107,8 @@ unchanged:
 - compact metric cards
 - immediate guidance on the next action
 - concise output-location summaries after execution
+- local model-card generation and reviewer notes that reduce external
+  documentation work
 
 ## Implementation Boundaries
 
@@ -105,6 +118,8 @@ Allowed implementation changes:
 - markup wrappers for visual cards and workflow sections
 - labels, captions, and non-functional guidance text
 - workflow tabs that preserve existing widgets and widget keys
+- runtime-only workflow status, issue center, preflight summary, diff viewer,
+  artifact explorer, reviewer workspace, and model-card generation
 - documentation updates
 
 Disallowed implementation changes:

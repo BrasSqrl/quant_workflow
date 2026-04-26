@@ -54,7 +54,16 @@ from quant_pd_framework.streamlit_ui.config_profiles import (
     build_configuration_profile as ui_build_configuration_profile,
 )
 from quant_pd_framework.streamlit_ui.config_profiles import (
+    build_profile_library_frame as ui_build_profile_library_frame,
+)
+from quant_pd_framework.streamlit_ui.config_profiles import (
     compare_profile_to_dataset as ui_compare_profile_to_dataset,
+)
+from quant_pd_framework.streamlit_ui.config_profiles import (
+    delete_configuration_profile as ui_delete_configuration_profile,
+)
+from quant_pd_framework.streamlit_ui.config_profiles import (
+    duplicate_configuration_profile as ui_duplicate_configuration_profile,
 )
 from quant_pd_framework.streamlit_ui.config_profiles import (
     framework_config_from_profile as ui_framework_config_from_profile,
@@ -91,6 +100,30 @@ from quant_pd_framework.streamlit_ui.data import (
 )
 from quant_pd_framework.streamlit_ui.data import (
     select_input_dataframe as ui_select_input_dataframe,
+)
+from quant_pd_framework.streamlit_ui.enterprise_workflow import (
+    build_config_diff_frame as ui_build_config_diff_frame,
+)
+from quant_pd_framework.streamlit_ui.enterprise_workflow import (
+    build_preflight_summary as ui_build_preflight_summary,
+)
+from quant_pd_framework.streamlit_ui.enterprise_workflow import (
+    build_workflow_step_states as ui_build_workflow_step_states,
+)
+from quant_pd_framework.streamlit_ui.enterprise_workflow import (
+    collect_readiness_issues as ui_collect_readiness_issues,
+)
+from quant_pd_framework.streamlit_ui.enterprise_workflow import (
+    render_guidance_center as ui_render_guidance_center,
+)
+from quant_pd_framework.streamlit_ui.enterprise_workflow import (
+    render_issue_center as ui_render_issue_center,
+)
+from quant_pd_framework.streamlit_ui.enterprise_workflow import (
+    render_preflight_summary as ui_render_preflight_summary,
+)
+from quant_pd_framework.streamlit_ui.enterprise_workflow import (
+    render_workflow_status_strip as ui_render_workflow_status_strip,
 )
 from quant_pd_framework.streamlit_ui.error_guidance import (
     classify_workflow_exception as ui_classify_workflow_exception,
@@ -430,6 +463,18 @@ def render_configuration_profile_manager(
             value="Quant Studio Configuration",
             key="configuration_profile_name",
         )
+        profile_tags = st.text_input(
+            "Profile tags",
+            value="",
+            key="configuration_profile_tags",
+            help="Optional comma-separated tags such as PD, CECL, retail, challenger.",
+        )
+        profile_purpose = st.text_input(
+            "Model purpose",
+            value="",
+            key="configuration_profile_purpose",
+            help="Optional business purpose or intended model-development use.",
+        )
         profile_notes = st.text_area(
             "Profile notes",
             value="",
@@ -442,6 +487,8 @@ def render_configuration_profile_manager(
             profile_payload = ui_build_configuration_profile(
                 profile_name=profile_name,
                 notes=profile_notes,
+                tags=profile_tags,
+                model_purpose=profile_purpose,
                 dataframe=dataframe,
                 data_source_label=data_source_label,
                 source_metadata=source_metadata,
@@ -480,6 +527,25 @@ def render_configuration_profile_manager(
             )
 
         st.divider()
+        library_frame = ui_build_profile_library_frame()
+        if not library_frame.empty:
+            st.markdown("#### Profile Library")
+            search_text = st.text_input(
+                "Search profiles",
+                value="",
+                key="configuration_profile_search",
+                help="Search profile name, tags, model purpose, target mode, or model type.",
+            ).strip().lower()
+            filtered_library = library_frame
+            if search_text:
+                searchable = library_frame.fillna("").astype(str).agg(" ".join, axis=1).str.lower()
+                filtered_library = library_frame.loc[searchable.str.contains(search_text)]
+            st.dataframe(
+                filtered_library.drop(columns=["path"], errors="ignore"),
+                width="stretch",
+                hide_index=True,
+            )
+
         saved_profiles = ui_list_configuration_profiles()
         if saved_profiles:
             selected_profile_path = st.selectbox(
@@ -499,6 +565,55 @@ def render_configuration_profile_manager(
                     st.rerun()
                 except Exception as exc:
                     st.error(f"Could not load the selected profile: {exc}")
+            action_columns = st.columns(3)
+            if action_columns[0].button(
+                "Duplicate selected profile",
+                key="duplicate_saved_configuration_profile",
+            ):
+                try:
+                    copied_path = ui_duplicate_configuration_profile(selected_profile_path)
+                    st.success(f"Duplicated profile to {copied_path}.")
+                    st.rerun()
+                except Exception as exc:
+                    st.error(f"Could not duplicate the selected profile: {exc}")
+            if action_columns[1].button(
+                "Delete selected profile",
+                key="delete_saved_configuration_profile",
+                disabled=not st.session_state.get("confirm_configuration_profile_delete", False),
+            ):
+                try:
+                    ui_delete_configuration_profile(selected_profile_path)
+                    st.success("Deleted the selected local profile.")
+                    st.rerun()
+                except Exception as exc:
+                    st.error(f"Could not delete the selected profile: {exc}")
+            st.checkbox(
+                "Confirm selected profile deletion",
+                value=False,
+                key="confirm_configuration_profile_delete",
+                help="Required before deleting a local saved profile JSON file.",
+            )
+            if (
+                action_columns[2].button(
+                    "Compare selected profile",
+                    key="compare_saved_configuration_profile",
+                    disabled=preview_config is None,
+                )
+                and preview_config is not None
+            ):
+                try:
+                    selected_payload = ui_load_configuration_profile(selected_profile_path)
+                    diff_frame = ui_build_config_diff_frame(
+                        current_config=preview_config.to_dict(),
+                        baseline_config=selected_payload.get("framework_config"),
+                        baseline_label="Selected profile",
+                    )
+                    if diff_frame.empty:
+                        st.success("The selected profile matches the current configuration.")
+                    else:
+                        st.dataframe(diff_frame, width="stretch", hide_index=True)
+                except Exception as exc:
+                    st.error(f"Could not compare the selected profile: {exc}")
         else:
             st.caption("No local profiles have been saved yet.")
 
@@ -521,6 +636,39 @@ def render_configuration_profile_manager(
                 st.rerun()
             except Exception as exc:
                 st.error(f"Could not import the uploaded profile: {exc}")
+
+
+def render_configuration_diff_viewer(
+    *,
+    current_config: dict[str, Any] | None,
+    active_profile: dict[str, Any] | None,
+    last_run_snapshot: dict[str, Any] | None,
+) -> None:
+    """Renders grouped differences against profile and prior-run baselines."""
+
+    with st.expander("Configuration Diff Viewer", expanded=False):
+        if current_config is None:
+            st.info("Resolve the current configuration before comparing settings.")
+            return
+        baselines: list[tuple[str, dict[str, Any] | None]] = []
+        if active_profile:
+            baselines.append(("Active profile", active_profile.get("framework_config")))
+        if last_run_snapshot:
+            baselines.append(("Last completed run", last_run_snapshot.get("config")))
+        if not baselines:
+            st.info("Load a profile or complete a run to compare configuration changes.")
+            return
+        for label, baseline_config in baselines:
+            st.markdown(f"#### {label}")
+            diff_frame = ui_build_config_diff_frame(
+                current_config=current_config,
+                baseline_config=baseline_config,
+                baseline_label=label,
+            )
+            if diff_frame.empty:
+                st.success(f"No differences from {label.lower()}.")
+            else:
+                st.dataframe(diff_frame, width="stretch", hide_index=True)
 
 
 def schema_editor_column_config() -> dict[str, Any]:
@@ -621,6 +769,7 @@ def run_app() -> None:
         workspace_mode="guided",
         run_label="",
     )
+    workflow_status_container = st.container()
     data_tab, configuration_tab, readiness_tab, results_tab = st.tabs(
         [
             "1  Dataset & Schema",
@@ -636,6 +785,17 @@ def run_app() -> None:
     data_source_label = selected_input.label
     source_large_data_mode = selected_input.large_data_mode
     if dataframe is None:
+        with workflow_status_container:
+            ui_render_workflow_status_strip(
+                ui_build_workflow_step_states(
+                    dataframe_loaded=False,
+                    preview_config=None,
+                    preview_error=None,
+                    preview_findings=[],
+                    last_run_snapshot=ui_get_last_run_snapshot(),
+                    current_config=None,
+                )
+            )
         with data_tab:
             st.info(
                 "Select a Data_Load file, upload a CSV/Excel/Parquet file, or use the "
@@ -696,6 +856,7 @@ def run_app() -> None:
             unsafe_allow_html=True,
         )
         profile_manager_container = st.container()
+        ui_render_guidance_center()
         preset_options = [
             ("custom", "Custom Configuration", "Start from the current manual controls."),
             *[
@@ -2821,6 +2982,30 @@ def run_app() -> None:
             "scorecard_override_frame": scorecard_override_frame,
         },
     )
+    current_config = preview_config.to_dict() if preview_config is not None else None
+    last_run_snapshot = ui_get_last_run_snapshot()
+    active_profile_payload = st.session_state.get(CONFIGURATION_PROFILE_STATE_KEY)
+    profile_warnings = (
+        ui_compare_profile_to_dataset(active_profile_payload, dataframe)
+        if active_profile_payload
+        else []
+    )
+    readiness_issues = ui_collect_readiness_issues(
+        preview_error=preview_error,
+        preview_findings=preview_findings,
+        profile_warnings=profile_warnings,
+    )
+    with workflow_status_container:
+        ui_render_workflow_status_strip(
+            ui_build_workflow_step_states(
+                dataframe_loaded=True,
+                preview_config=preview_config,
+                preview_error=preview_error,
+                preview_findings=preview_findings,
+                last_run_snapshot=last_run_snapshot,
+                current_config=current_config,
+            )
+        )
     with configuration_tab:
         with profile_manager_container:
             render_configuration_profile_manager(
@@ -2836,6 +3021,11 @@ def run_app() -> None:
                 feature_review_frame=feature_review_frame,
                 scorecard_override_frame=scorecard_override_frame,
             )
+        render_configuration_diff_viewer(
+            current_config=current_config,
+            active_profile=active_profile_payload,
+            last_run_snapshot=last_run_snapshot,
+        )
     run_button_label = (
         "Run Feature Subset Search"
         if execution_mode == ExecutionMode.SEARCH_FEATURE_SUBSETS.value
@@ -2847,6 +3037,16 @@ def run_app() -> None:
             preview_findings=preview_findings,
             preview_error=preview_error,
         )
+        ui_render_issue_center(readiness_issues)
+        if preview_config is not None:
+            preflight_cards, preflight_details = ui_build_preflight_summary(
+                dataframe=dataframe,
+                data_source_label=data_source_label,
+                preview_config=preview_config,
+                edited_schema=edited_schema,
+                transformation_frame=transformation_frame,
+            )
+            ui_render_preflight_summary(cards=preflight_cards, details=preflight_details)
         ui_render_execution_plan(
             ui_build_execution_plan_cards(
                 preview_config=preview_config,
