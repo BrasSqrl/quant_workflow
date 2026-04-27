@@ -29,3 +29,21 @@ def test_setup_gui_script_rebuilds_incomplete_venv() -> None:
     )
     assert "quant_pd_launcher_fallback.pth" in script_text
     assert 'rmdir /s /q "%VENV_DIR%"' in script_text
+
+
+def test_macos_bootstrap_script_creates_local_venv_and_installs_gui_extra() -> None:
+    script_text = (PROJECT_ROOT / "scripts" / "bootstrap_macos.sh").read_text(encoding="utf-8")
+
+    assert 'VENV_DIR="${VENV_DIR:-$PROJECT_ROOT/.venv}"' in script_text
+    assert '"$PYTHON_BIN" -m venv "$VENV_DIR"' in script_text
+    assert '"$VENV_PYTHON" -m pip install -e ".[gui]"' in script_text
+    assert "Streamlit" in script_text
+
+
+def test_macos_run_script_launches_streamlit_with_upload_limits() -> None:
+    script_text = (PROJECT_ROOT / "scripts" / "run_macos_streamlit.sh").read_text(encoding="utf-8")
+
+    assert 'PYTHON_BIN="$VENV_DIR/bin/python"' in script_text
+    assert 'HOST="${HOST:-localhost}"' in script_text
+    assert 'MAX_UPLOAD_MB="${MAX_UPLOAD_MB:-51200}"' in script_text
+    assert '-m streamlit run "$PROJECT_ROOT/app/streamlit_app.py"' in script_text

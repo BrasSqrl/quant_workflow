@@ -367,13 +367,16 @@ quant/
     support.py
     test_*.py
   scripts/
+    bootstrap_macos.sh
     bootstrap_sagemaker.sh
     benchmark_large_data.py
     profile_workflow.py
+    run_macos_streamlit.sh
     run_sagemaker_streamlit.sh
     sagemaker_code_editor_lifecycle.sh
   requirements-sagemaker.txt
   EXECUTIVE_SUMMARY.txt
+  MACOS_SETUP.txt
   SAGEMAKER_SETUP.txt
   launch_gui.bat
   setup_gui.bat
@@ -460,6 +463,27 @@ If you prefer the raw Streamlit command, this still works:
 ```powershell
 streamlit run app/streamlit_app.py
 ```
+
+### Run On macOS
+
+From Terminal in the repo root, prepare the local virtual environment:
+
+```bash
+bash scripts/bootstrap_macos.sh
+```
+
+Then start the Streamlit app:
+
+```bash
+bash scripts/run_macos_streamlit.sh
+```
+
+Open `http://localhost:8501` if the browser does not open automatically.
+
+The macOS bootstrap creates `.venv/` in the repo and installs Quant Studio with
+GUI dependencies. The detailed guide is at
+[docs/MACOS_SETUP.md](./docs/MACOS_SETUP.md), and a plain-text copy is kept at
+[MACOS_SETUP.txt](./MACOS_SETUP.txt).
 
 ### Run The Example Pipeline
 

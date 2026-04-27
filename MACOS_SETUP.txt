@@ -1,0 +1,41 @@
+macOS Setup For Quant Studio
+============================
+
+Use this when running Quant Studio locally on a Mac.
+
+1. Install Python 3.11 or newer.
+2. Open Terminal in the repo folder.
+3. Run:
+
+   bash scripts/bootstrap_macos.sh
+
+4. Start the app:
+
+   bash scripts/run_macos_streamlit.sh
+
+5. Open:
+
+   http://localhost:8501
+
+The setup script creates `.venv/`, installs the local project with GUI
+dependencies, and verifies Streamlit.
+
+If you need a specific Python:
+
+   PYTHON_BIN=/opt/homebrew/bin/python3 bash scripts/bootstrap_macos.sh
+
+If a pip install fails because native compilation is needed:
+
+   xcode-select --install
+
+If port 8501 is already in use:
+
+   PORT=8502 bash scripts/run_macos_streamlit.sh
+
+If the repo came from a downloaded zip and macOS blocks scripts:
+
+   xattr -dr com.apple.quarantine .
+
+Full guide:
+
+   docs/MACOS_SETUP.md

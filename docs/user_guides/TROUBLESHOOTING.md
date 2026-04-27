@@ -11,6 +11,8 @@ fixes.
 | Streamlit command not found | GUI dependencies are not installed in the active environment | Run `.\setup_gui.bat` or install with `python -m pip install -e .[gui]`. |
 | `pyproject.toml` not found | Command was run outside repo root | `cd` to the folder that contains `pyproject.toml`. |
 | Git says dubious ownership | Repo was created or modified by another Windows identity | Run the safe-directory command shown by Git from your own terminal. |
+| macOS script says permission denied | Shell script is not executable or was downloaded with restrictive flags | Run with `bash scripts/bootstrap_macos.sh`, or use `chmod +x scripts/*.sh`. |
+| macOS cannot find Python | Python 3.11+ is not on PATH | Install Python, then run `PYTHON_BIN=/path/to/python3 bash scripts/bootstrap_macos.sh`. |
 
 ## Data Load Problems
 
@@ -59,6 +61,16 @@ fixes.
 | Browser proxy returns 404 | Wrong SageMaker proxy path or app not running | Prefer VS Code port forwarding. Otherwise follow [SageMaker Setup](../SAGEMAKER_SETUP.md). |
 | Pip dependency resolver warning about JupyterLab | Base SageMaker environment has its own Jupyter packages | Current bootstrap uses `.sagemaker_venv`; warning should not block app if install completes. |
 | Cannot install from PyPI | Network or private package restrictions | Use approved package source, lifecycle config, or custom SageMaker image. |
+
+## macOS Problems
+
+| Symptom | Likely cause | Fix |
+| --- | --- | --- |
+| Native package build fails | Xcode Command Line Tools are missing | Run `xcode-select --install`, then rerun `bash scripts/bootstrap_macos.sh`. |
+| SSL certificate errors | Python.org certificates were not installed | Run `Install Certificates.command` from the Python installer folder. |
+| Scripts are blocked after downloading zip | macOS quarantine attribute is present | From repo root, run `xattr -dr com.apple.quarantine .`. |
+| Port 8501 is already in use | Another local process is using Streamlit's default port | Run `PORT=8502 bash scripts/run_macos_streamlit.sh`. |
+| Apple Silicon install behaves inconsistently | Mixed x86/Rosetta and arm64 Python environments | Use a native arm64 terminal and Python, for example `/opt/homebrew/bin/python3`. |
 
 ## Large Data Problems
 

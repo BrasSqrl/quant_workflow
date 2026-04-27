@@ -34,7 +34,15 @@ If dependencies need to be prepared first, use:
 .\setup_gui.bat
 ```
 
-In SageMaker or Linux, follow [SageMaker Setup](../SAGEMAKER_SETUP.md).
+On macOS, use:
+
+```bash
+bash scripts/bootstrap_macos.sh
+bash scripts/run_macos_streamlit.sh
+```
+
+For macOS details, follow [macOS Setup](../MACOS_SETUP.md). In SageMaker or
+Linux, follow [SageMaker Setup](../SAGEMAKER_SETUP.md).
 
 ## The Five-Step Workflow
 
