@@ -15,10 +15,10 @@ A successful first run writes a timestamped folder under `artifacts/` with:
 - `config/run_config.json`
 - `metadata/metrics.json`
 - `data/predictions/predictions.csv` or `data/predictions/predictions.parquet`
+- `metadata/run_debug_trace.json` with timing and memory estimates
 - `reports/model_documentation_pack.md`
 - `reports/validation_pack.md`
 - `artifact_manifest.json`
-- `metadata/run_debug_trace.json`
 
 ## Launch The App
 
@@ -74,13 +74,16 @@ Quant Studio opens to Step 1 by default.
 14. Keep `Include enhanced report visuals` on for a polished first report, or turn it off for faster iteration runs.
 15. Leave `Advanced Visual Analytics` off for the first run unless you want the
     extra exploratory chart section.
-16. Open Step 3, `Readiness Check`.
-17. Resolve blocking readiness issues if any appear.
-18. Click `Run Quant Model Workflow`.
-19. Open Step 4, `Results & Artifacts`.
-20. Review the overview, model performance, calibration, governance, and artifact explorer sections.
-21. Open Step 5, `Decision Summary`.
-22. Review the recommendation, decision issues, primary metrics, feature drivers, and evidence index.
+16. Leave `Compact prediction exports` on unless you need every modeled feature repeated in the scored output.
+17. Leave `Retain full diagnostic working dataframe` off unless the machine has enough RAM and full-row diagnostic tables are required.
+18. Open Step 3, `Readiness Check`.
+19. Resolve blocking readiness issues if any appear.
+20. Click `Run Quant Model Workflow`.
+21. Watch the `Run Status` panel for elapsed time, current stage, and step progress.
+22. Open Step 4, `Results & Artifacts`.
+23. Review the overview, model performance, calibration, governance, and artifact explorer sections.
+24. Open Step 5, `Decision Summary`.
+25. Review the recommendation, decision issues, primary metrics, feature drivers, and evidence index.
 
 ## First Real-Data Run
 

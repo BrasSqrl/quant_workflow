@@ -117,7 +117,7 @@ def build_run_snapshot(context, config_dict: dict[str, Any]) -> dict[str, Any]:
     )
     prediction_snapshots = {
         key: _snapshot_frame_for_session(
-            value,
+            _compact_prediction_frame_for_session(context, value),
             lazy=lazy_results,
             row_cap=prediction_row_cap,
             random_state=context.config.split.random_state,
@@ -179,6 +179,13 @@ def build_run_snapshot(context, config_dict: dict[str, Any]) -> dict[str, Any]:
         "target_mode": context.config.target.mode.value,
         "execution_mode": context.config.execution.mode.value,
         "model_type": context.config.model.model_type.value,
+        "run_timing": {
+            "started_at_utc": context.metadata.get("run_started_at_utc", ""),
+            "completed_at_utc": context.metadata.get("run_completed_at_utc", ""),
+            "elapsed_seconds": context.metadata.get("run_elapsed_seconds"),
+            "backtest_split": context.metadata.get("backtest_split", ""),
+        },
+        "run_diagnostics": build_run_diagnostics(context),
         "labels_available": bool(context.metadata.get("labels_available", False)),
         "input_shape": dict(context.metadata.get("input_shape", {})),
         "feature_summary": dict(context.metadata.get("feature_summary", {})),
@@ -200,6 +207,49 @@ def build_run_snapshot(context, config_dict: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def build_run_diagnostics(context) -> dict[str, Any]:
+    """Summarizes run-level timing and tracked dataframe memory for the UI."""
+
+    memory_records: list[dict[str, Any]] = []
+    for step_record in getattr(context, "debug_trace", []):
+        if not isinstance(step_record, dict):
+            continue
+        for snapshot_key in ("before", "after"):
+            snapshot = step_record.get(snapshot_key)
+            if isinstance(snapshot, dict):
+                memory_records.append(snapshot)
+    peak_tracked_bytes = _max_debug_memory_value(
+        memory_records,
+        "tracked_dataframe_memory_bytes",
+    )
+    return {
+        "elapsed_seconds": context.metadata.get("run_elapsed_seconds"),
+        "peak_tracked_dataframe_memory_bytes": peak_tracked_bytes,
+        "peak_tracked_dataframe_memory_gb": (
+            round(peak_tracked_bytes / (1024**3), 6)
+            if peak_tracked_bytes is not None
+            else None
+        ),
+        "memory_profile_available": peak_tracked_bytes is not None,
+    }
+
+
+def _max_debug_memory_value(
+    memory_records: list[dict[str, Any]],
+    field_name: str,
+) -> int | None:
+    values: list[int] = []
+    for record in memory_records:
+        value = record.get(field_name)
+        if value is None:
+            continue
+        try:
+            values.append(int(value))
+        except (TypeError, ValueError):
+            continue
+    return max(values) if values else None
+
+
 def _snapshot_frame_for_session(
     frame: pd.DataFrame,
     *,
@@ -210,6 +260,53 @@ def _snapshot_frame_for_session(
     if not lazy or len(frame) <= row_cap:
         return frame.copy(deep=True)
     return frame.sample(row_cap, random_state=random_state).sort_index().copy(deep=True)
+
+
+def _compact_prediction_frame_for_session(context, frame: pd.DataFrame) -> pd.DataFrame:
+    """Keeps GUI session state focused on scores and audit identifiers."""
+
+    if not context.config.artifacts.compact_prediction_exports:
+        return frame
+    preferred_columns = _prediction_display_columns(context, frame)
+    if not preferred_columns:
+        return frame
+    return frame.loc[:, preferred_columns].copy(deep=False)
+
+
+def _prediction_display_columns(context, frame: pd.DataFrame) -> list[str]:
+    schema_columns = []
+    for spec in context.config.schema.column_specs:
+        if spec.role.value in {"identifier", "date"} and spec.name in frame.columns:
+            schema_columns.append(spec.name)
+    configured_columns = [
+        context.config.split.date_column,
+        context.config.split.entity_column,
+        context.target_column,
+        context.config.diagnostics.default_segment_column,
+        *context.metadata.get("hazard_time_features", []),
+        *_low_cardinality_segment_columns(context, frame),
+        "split",
+        "predicted_probability",
+        "predicted_probability_recommended",
+        "predicted_class",
+        "predicted_value",
+        "residual",
+        "prediction_score",
+        "scorecard_score",
+        "scorecard_points",
+    ]
+    columns = [*schema_columns, *configured_columns]
+    return list(dict.fromkeys(column for column in columns if column and column in frame.columns))
+
+
+def _low_cardinality_segment_columns(context, frame: pd.DataFrame) -> list[str]:
+    return [
+        feature_name
+        for feature_name in context.categorical_features
+        if feature_name in frame.columns
+        and frame[feature_name].nunique(dropna=True)
+        <= context.config.performance.max_categorical_cardinality
+    ]
 
 
 def infer_snapshot_score_column(context) -> str:

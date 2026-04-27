@@ -54,13 +54,27 @@ class ImputationStep(BasePipelineStep):
         if not context.feature_columns:
             raise ValueError("Imputation requires resolved feature columns.")
 
-        context.metadata["pre_imputation_split_frames"] = {
-            split_name: split_frame.copy(deep=True)
-            for split_name, split_frame in context.split_frames.items()
-        }
+        retain_pre_imputation_frames = (
+            context.config.imputation_sensitivity.enabled
+            or (
+                context.config.advanced_imputation.enabled
+                and context.config.advanced_imputation.multiple_imputation_enabled
+            )
+        )
+        if retain_pre_imputation_frames:
+            context.metadata["pre_imputation_split_frames"] = {
+                split_name: split_frame.copy(deep=True)
+                for split_name, split_frame in context.split_frames.items()
+            }
+        else:
+            context.metadata.pop("pre_imputation_split_frames", None)
+        context.diagnostics_tables["pre_imputation_missingness_by_split"] = (
+            self._build_pre_imputation_missingness_table(context)
+        )
         context.metadata["pre_imputation_feature_columns"] = list(context.feature_columns)
         context.metadata["pre_imputation_numeric_features"] = list(context.numeric_features)
         context.metadata["pre_imputation_categorical_features"] = list(context.categorical_features)
+        context.working_data = None
         train_frame = context.split_frames["train"]
         spec_map = {
             spec.name: spec
@@ -84,7 +98,7 @@ class ImputationStep(BasePipelineStep):
         updated_splits: dict[str, pd.DataFrame] = {}
         missing_after_imputation: dict[str, dict[str, int]] = {}
         for split_name, split_frame in context.split_frames.items():
-            updated_frame = split_frame.copy(deep=True)
+            updated_frame = split_frame.copy(deep=False)
             for rule in rules:
                 if rule.feature_name not in updated_frame.columns:
                     continue
@@ -139,7 +153,7 @@ class ImputationStep(BasePipelineStep):
             context.metadata["generated_missing_indicator_columns"] = generated_indicator_columns
 
         context.split_frames = updated_splits
-        context.working_data = pd.concat(updated_splits.values(), ignore_index=True)
+        context.working_data = self._build_working_data_snapshot(context, updated_splits)
         context.metadata["imputation_summary"] = {
             "feature_count": len(rules),
             "policies": {
@@ -203,6 +217,76 @@ class ImputationStep(BasePipelineStep):
         context.log(f"Applied missing-value rules to {len(rules)} feature columns.")
         return context
 
+    def _build_working_data_snapshot(
+        self,
+        context: PipelineContext,
+        split_frames: dict[str, pd.DataFrame],
+    ) -> pd.DataFrame:
+        """Keeps diagnostics useful without retaining a second full modeled dataset."""
+
+        performance = context.config.performance
+        total_rows = sum(len(frame) for frame in split_frames.values())
+        if performance.retain_full_working_data or total_rows <= performance.diagnostic_sample_rows:
+            snapshot = pd.concat(split_frames.values(), ignore_index=True)
+            sample_strategy = "full"
+        else:
+            sampled_frames: list[pd.DataFrame] = []
+            sample_cap = max(1, int(performance.diagnostic_sample_rows))
+            random_state = int(context.config.split.random_state)
+            remaining_rows = sample_cap
+            remaining_total = total_rows
+            ordered_splits = list(split_frames.items())
+            for index, (split_name, frame) in enumerate(ordered_splits):
+                if frame.empty:
+                    continue
+                if index == len(ordered_splits) - 1:
+                    split_sample_rows = min(len(frame), max(1, remaining_rows))
+                else:
+                    split_share = len(frame) / max(remaining_total, 1)
+                    split_sample_rows = min(
+                        len(frame),
+                        max(1, round(remaining_rows * split_share)),
+                    )
+                sampled_frame = (
+                    frame
+                    if len(frame) <= split_sample_rows
+                    else frame.sample(split_sample_rows, random_state=random_state).sort_index()
+                )
+                sampled_frames.append(sampled_frame)
+                remaining_rows = max(0, remaining_rows - len(sampled_frame))
+                remaining_total = max(0, remaining_total - len(frame))
+            snapshot = pd.concat(sampled_frames, ignore_index=True) if sampled_frames else pd.DataFrame()
+            sample_strategy = "stratified_split_sample"
+
+        context.metadata["working_data_snapshot"] = {
+            "retain_full_working_data": bool(performance.retain_full_working_data),
+            "source_rows": int(total_rows),
+            "snapshot_rows": int(len(snapshot)),
+            "diagnostic_sample_rows": int(performance.diagnostic_sample_rows),
+            "sample_strategy": sample_strategy,
+        }
+        context.diagnostics_tables["working_data_snapshot"] = pd.DataFrame(
+            [context.metadata["working_data_snapshot"]]
+        )
+        return snapshot
+
+    def _build_pre_imputation_missingness_table(self, context: PipelineContext) -> pd.DataFrame:
+        rows: list[dict[str, object]] = []
+        for split_name, split_frame in context.split_frames.items():
+            missing_counts = split_frame.isna().sum()
+            missing_rates = split_frame.isna().mean().mul(100)
+            for column_name in split_frame.columns:
+                rows.append(
+                    {
+                        "split": split_name,
+                        "column_name": column_name,
+                        "row_count": int(len(split_frame)),
+                        "missing_count": int(missing_counts[column_name]),
+                        "missing_pct": float(missing_rates[column_name]),
+                    }
+                )
+        return pd.DataFrame(rows)
+
     def apply_rules_to_frame(
         self,
         *,
@@ -212,7 +296,7 @@ class ImputationStep(BasePipelineStep):
     ) -> pd.DataFrame:
         """Applies already-fitted imputation rules to a new frame."""
 
-        updated_frame = frame.copy(deep=True)
+        updated_frame = frame.copy(deep=False)
         for rule in rules:
             if rule.feature_name not in updated_frame.columns:
                 continue

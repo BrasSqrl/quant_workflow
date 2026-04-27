@@ -281,7 +281,7 @@ class VariableSelectionStep(BasePipelineStep):
             numeric_series = pd.to_numeric(series, errors="coerce")
             return numeric_series.fillna(numeric_series.median())
 
-        bucket = series.fillna("Missing").astype(str)
+        bucket = series.astype("object").fillna("Missing").astype(str)
         target_numeric = pd.to_numeric(y_train, errors="coerce")
         mean_map = target_numeric.groupby(bucket, dropna=False).mean().to_dict()
         fallback = float(target_numeric.mean())

@@ -87,6 +87,7 @@ class FeatureSubsetSearchStep(BasePipelineStep):
                     adapter,
                     context.config.model.threshold,
                     True,
+                    context,
                 )
                 test_scored: pd.DataFrame | None = None
                 test_metrics: dict[str, float | int | None] = {}
@@ -99,6 +100,7 @@ class FeatureSubsetSearchStep(BasePipelineStep):
                         adapter,
                         context.config.model.threshold,
                         True,
+                        context,
                     )
 
                 ranking_predictions[candidate_id] = ranking_scored

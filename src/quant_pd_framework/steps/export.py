@@ -173,23 +173,15 @@ class ArtifactExportStep(BasePipelineStep):
                 parquet_path=input_snapshot_parquet_path,
             )
 
-        predictions = pd.concat(context.predictions.values(), ignore_index=True)
-        prediction_exports = self._export_tabular_dataframe(
+        prediction_exports = self._export_prediction_dataframes(
             context=context,
-            dataframe=predictions,
-            dataset_name="predictions",
             csv_path=predictions_path,
             parquet_path=predictions_parquet_path,
+            split_output_dir=paths.data_predictions_dir,
         )
         self._publish_tabular_export_policy_table(context)
         context.feature_importance.to_csv(feature_importance_path, index=False)
         context.backtest_summary.to_csv(backtest_path, index=False)
-        for split_name, split_frame in context.predictions.items():
-            self._export_table(
-                context=context,
-                table=split_frame,
-                csv_path=paths.data_predictions_dir / f"predictions_{split_name}.csv",
-            )
         for table_name, table in context.diagnostics_tables.items():
             self._export_table(
                 context=context,
@@ -205,6 +197,7 @@ class ArtifactExportStep(BasePipelineStep):
             visualizations=report_visualizations,
         )
         if self._excel_workbook_enabled(context):
+            predictions = self._combine_prediction_frames_for_export(context)
             self._export_excel_workbook(context, workbook_path, predictions)
         if context.model_summary is not None:
             if isinstance(context.model_summary, pd.DataFrame):
@@ -524,6 +517,220 @@ class ArtifactExportStep(BasePipelineStep):
         self._record_tabular_export(context, metadata)
         return metadata
 
+    def _export_prediction_dataframes(
+        self,
+        *,
+        context: PipelineContext,
+        csv_path: Path,
+        parquet_path: Path,
+        split_output_dir: Path,
+    ) -> dict[str, Any]:
+        artifacts = context.config.artifacts
+        output_format = artifacts.tabular_output_format
+        export_policy = artifacts.large_data_export_policy
+        compact_frames = {
+            split_name: self._compact_prediction_frame(context, split_frame)
+            for split_name, split_frame in context.predictions.items()
+        }
+        row_count = sum(len(frame) for frame in compact_frames.values())
+        sample_rows = min(row_count, artifacts.large_data_sample_rows)
+        metadata: dict[str, Any] = {
+            "dataset_name": "predictions",
+            "row_count": int(row_count),
+            "column_count": int(max((frame.shape[1] for frame in compact_frames.values()), default=0)),
+            "output_format": output_format.value,
+            "export_policy": export_policy.value,
+            "sample_rows": int(sample_rows),
+            "compact_prediction_exports": artifacts.compact_prediction_exports,
+            "csv_path": None,
+            "parquet_path": None,
+            "primary_path": None,
+            "split_paths": {},
+        }
+
+        if export_policy == LargeDataExportPolicy.METADATA_ONLY:
+            self._record_tabular_export(context, metadata)
+            return metadata
+
+        sampled_frames = self._sample_prediction_frames(
+            compact_frames,
+            sample_rows=sample_rows,
+            random_state=context.config.split.random_state,
+            sampled=export_policy == LargeDataExportPolicy.SAMPLED,
+        )
+        split_output_dir.mkdir(parents=True, exist_ok=True)
+        for split_name, frame in compact_frames.items():
+            split_csv_path = split_output_dir / f"predictions_{split_name}.csv"
+            if output_format in {TabularOutputFormat.CSV, TabularOutputFormat.BOTH}:
+                split_csv_path.parent.mkdir(parents=True, exist_ok=True)
+                sampled_frames[split_name].to_csv(split_csv_path, index=False)
+            if output_format in {TabularOutputFormat.PARQUET, TabularOutputFormat.BOTH}:
+                self._write_parquet(
+                    frame,
+                    split_csv_path.with_suffix(".parquet"),
+                    compression=artifacts.parquet_compression,
+                )
+            metadata["split_paths"][split_name] = {
+                "csv": str(split_csv_path)
+                if output_format in {TabularOutputFormat.CSV, TabularOutputFormat.BOTH}
+                else None,
+                "parquet": str(split_csv_path.with_suffix(".parquet"))
+                if output_format in {TabularOutputFormat.PARQUET, TabularOutputFormat.BOTH}
+                else None,
+            }
+
+        if output_format in {TabularOutputFormat.CSV, TabularOutputFormat.BOTH}:
+            self._write_csv_frames(sampled_frames.values(), csv_path)
+            metadata["csv_path"] = str(csv_path)
+            metadata["primary_path"] = str(csv_path)
+
+        if output_format in {TabularOutputFormat.PARQUET, TabularOutputFormat.BOTH}:
+            self._write_parquet_frames(
+                compact_frames.values(),
+                parquet_path,
+                compression=artifacts.parquet_compression,
+            )
+            metadata["parquet_path"] = str(parquet_path)
+            if (
+                output_format == TabularOutputFormat.PARQUET
+                or export_policy == LargeDataExportPolicy.SAMPLED
+            ):
+                metadata["primary_path"] = str(parquet_path)
+
+        self._record_tabular_export(context, metadata)
+        return metadata
+
+    def _compact_prediction_frame(
+        self,
+        context: PipelineContext,
+        frame: pd.DataFrame,
+    ) -> pd.DataFrame:
+        if not context.config.artifacts.compact_prediction_exports:
+            return frame
+        columns = self._prediction_export_columns(context, frame)
+        if not columns:
+            return frame
+        return frame.loc[:, columns].copy(deep=False)
+
+    def _prediction_export_columns(
+        self,
+        context: PipelineContext,
+        frame: pd.DataFrame,
+    ) -> list[str]:
+        role_columns = [
+            spec.name
+            for spec in context.config.schema.column_specs
+            if spec.role.value in {"identifier", "date"} and spec.name in frame.columns
+        ]
+        preferred_columns = [
+            *role_columns,
+            context.config.split.date_column,
+            context.config.split.entity_column,
+            context.target_column,
+            context.config.diagnostics.default_segment_column,
+            *context.metadata.get("hazard_time_features", []),
+            *self._low_cardinality_segment_columns(context, frame),
+            "split",
+            "predicted_probability",
+            "predicted_probability_recommended",
+            "predicted_class",
+            "predicted_value",
+            "residual",
+            "prediction_score",
+            "scorecard_score",
+            "scorecard_points",
+        ]
+        return list(
+            dict.fromkeys(
+                column_name
+                for column_name in preferred_columns
+                if column_name and column_name in frame.columns
+            )
+        )
+
+    def _low_cardinality_segment_columns(
+        self,
+        context: PipelineContext,
+        frame: pd.DataFrame,
+    ) -> list[str]:
+        return [
+            feature_name
+            for feature_name in context.categorical_features
+            if feature_name in frame.columns
+            and frame[feature_name].nunique(dropna=True)
+            <= context.config.performance.max_categorical_cardinality
+        ]
+
+    def _sample_prediction_frames(
+        self,
+        frames: dict[str, pd.DataFrame],
+        *,
+        sample_rows: int,
+        random_state: int,
+        sampled: bool,
+    ) -> dict[str, pd.DataFrame]:
+        if not sampled:
+            return frames
+        total_rows = sum(len(frame) for frame in frames.values())
+        if total_rows <= sample_rows:
+            return frames
+        sampled_frames: dict[str, pd.DataFrame] = {}
+        for split_name, frame in frames.items():
+            split_sample_rows = max(1, round(sample_rows * len(frame) / total_rows))
+            if len(frame) <= split_sample_rows:
+                sampled_frames[split_name] = frame
+            else:
+                sampled_frames[split_name] = frame.sample(
+                    split_sample_rows,
+                    random_state=random_state,
+                ).sort_index()
+        return sampled_frames
+
+    def _combine_prediction_frames_for_export(self, context: PipelineContext) -> pd.DataFrame:
+        frames = [
+            self._compact_prediction_frame(context, frame)
+            for frame in context.predictions.values()
+        ]
+        if not frames:
+            return pd.DataFrame()
+        return pd.concat(frames, ignore_index=True)
+
+    def _write_csv_frames(self, frames, path: Path) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        wrote_header = False
+        for frame in frames:
+            frame.to_csv(
+                path,
+                index=False,
+                mode="w" if not wrote_header else "a",
+                header=not wrote_header,
+            )
+            wrote_header = True
+
+    def _write_parquet_frames(self, frames, path: Path, *, compression: str) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            import pyarrow as pa
+            import pyarrow.parquet as pq
+        except ImportError:
+            combined = pd.concat(list(frames), ignore_index=True)
+            self._write_parquet(combined, path, compression=compression)
+            return
+
+        writer: pq.ParquetWriter | None = None
+        try:
+            for frame in frames:
+                safe_frame = self._prepare_parquet_safe_frame(frame)
+                table = pa.Table.from_pandas(safe_frame, preserve_index=False)
+                if writer is None:
+                    writer = pq.ParquetWriter(path, table.schema, compression=compression)
+                else:
+                    table = table.cast(writer.schema, safe=False)
+                writer.write_table(table)
+        finally:
+            if writer is not None:
+                writer.close()
+
     def _export_table(
         self,
         *,
@@ -576,16 +783,21 @@ class ArtifactExportStep(BasePipelineStep):
         try:
             dataframe.to_parquet(path, index=False, compression=compression)
         except Exception:
-            safe_frame = dataframe.copy(deep=True)
-            for column_name in safe_frame.columns:
-                series = safe_frame[column_name]
-                if (
-                    pd.api.types.is_object_dtype(series)
-                    or pd.api.types.is_string_dtype(series)
-                    or isinstance(series.dtype, pd.IntervalDtype)
-                ):
-                    safe_frame[column_name] = series.map(self._parquet_safe_value).astype("string")
+            safe_frame = self._prepare_parquet_safe_frame(dataframe)
             safe_frame.to_parquet(path, index=False, compression=compression)
+
+    def _prepare_parquet_safe_frame(self, dataframe: pd.DataFrame) -> pd.DataFrame:
+        safe_frame = dataframe.copy(deep=False)
+        for column_name in safe_frame.columns:
+            series = safe_frame[column_name]
+            if (
+                pd.api.types.is_object_dtype(series)
+                or pd.api.types.is_string_dtype(series)
+                or isinstance(series.dtype, pd.CategoricalDtype)
+                or isinstance(series.dtype, pd.IntervalDtype)
+            ):
+                safe_frame[column_name] = series.map(self._parquet_safe_value).astype("string")
+        return safe_frame
 
     def _parquet_safe_value(self, value: Any) -> Any:
         if value is None:
@@ -828,9 +1040,10 @@ class ArtifactExportStep(BasePipelineStep):
             destination_path=bundle_dir / manifest_path.name,
         )
         if predictions_path is not None and predictions_path.exists():
-            bundled_paths[predictions_path.name] = self._copy_file_into_bundle(
+            prediction_bundle_name = context.config.artifacts.predictions_file_name
+            bundled_paths[prediction_bundle_name] = self._copy_tabular_as_csv_into_bundle(
                 source_path=predictions_path,
-                destination_path=bundle_dir / predictions_path.name,
+                destination_path=bundle_dir / prediction_bundle_name,
             )
         else:
             missing_name = context.config.artifacts.predictions_file_name
@@ -838,9 +1051,10 @@ class ArtifactExportStep(BasePipelineStep):
             missing_optional_artifacts.append(missing_name)
 
         if input_snapshot_path is not None and input_snapshot_path.exists():
-            bundled_paths[input_snapshot_path.name] = self._copy_file_into_bundle(
+            input_bundle_name = context.config.artifacts.input_snapshot_file_name
+            bundled_paths[input_bundle_name] = self._copy_tabular_as_csv_into_bundle(
                 source_path=input_snapshot_path,
-                destination_path=bundle_dir / input_snapshot_path.name,
+                destination_path=bundle_dir / input_bundle_name,
             )
         else:
             missing_name = context.config.artifacts.input_snapshot_file_name
@@ -870,6 +1084,27 @@ class ArtifactExportStep(BasePipelineStep):
             "metadata_path": metadata_path,
             "metadata": monitoring_metadata,
         }
+
+    def _copy_tabular_as_csv_into_bundle(
+        self,
+        *,
+        source_path: Path,
+        destination_path: Path,
+    ) -> str:
+        if source_path.suffix.lower() == ".csv":
+            return self._copy_file_into_bundle(
+                source_path=source_path,
+                destination_path=destination_path,
+            )
+        if source_path.suffix.lower() in {".parquet", ".pq"}:
+            dataframe = pd.read_parquet(source_path)
+            destination_path.parent.mkdir(parents=True, exist_ok=True)
+            dataframe.to_csv(destination_path, index=False)
+            return destination_path.name
+        return self._copy_file_into_bundle(
+            source_path=source_path,
+            destination_path=destination_path,
+        )
 
     def _build_monitoring_metadata(
         self,
@@ -2043,6 +2278,8 @@ class ArtifactExportStep(BasePipelineStep):
             "execution_mode": context.config.execution.mode.value,
             "model_type": context.config.model.model_type.value,
             "export_profile": context.config.artifacts.export_profile.value,
+            "run_started_at_utc": context.metadata.get("run_started_at_utc", ""),
+            "run_completed_at_utc": context.metadata.get("run_completed_at_utc", ""),
             "step_count": len(context.debug_trace),
             "steps": context.debug_trace,
             "summary": {
@@ -2050,6 +2287,7 @@ class ArtifactExportStep(BasePipelineStep):
                     sum(float(row.get("elapsed_seconds", 0.0)) for row in context.debug_trace),
                     6,
                 ),
+                "total_run_seconds": context.metadata.get("run_elapsed_seconds"),
                 "diagnostic_table_count": len(context.diagnostics_tables),
                 "visualization_count": len(context.visualizations),
                 "warning_count": len(context.warnings),

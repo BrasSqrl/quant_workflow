@@ -28,7 +28,7 @@ reviewing offline.
 2. Confirm dataset, target, and scope.
 3. Review schema, feature dictionary, and excluded fields.
 4. Review missing-value treatment and transformations.
-5. Review train/validation/test split design.
+5. Review train/validation/test split design, including whether validation or test was intentionally set to `0`.
 6. Review model suitability and assumption checks.
 7. Review performance metrics and backtests.
 8. Review calibration and threshold behavior for binary models.
@@ -67,6 +67,26 @@ Important evidence:
 - `config/configuration_template.xlsx`
 - diagnostic tables for schema, imputation, and transformations
 - `reports/model_documentation_pack.md`
+
+## Memory And Large-Run Review
+
+For larger runs, distinguish model-fitting data from diagnostic/display data:
+
+- Full-data normal runs fit the model on the full configured training split.
+- The post-imputation `working_data` retained for diagnostics may be a capped
+  snapshot when `PerformanceConfig.retain_full_working_data=False`.
+- Compact prediction exports may omit raw model feature columns by design.
+- Large Data Mode is different: it fits on a governed sample and scores the full
+  file in chunks.
+
+Important evidence:
+
+- `metadata/run_debug_trace.json`
+- `tables/diagnostics/large_data_memory_estimate.*`
+- `tables/diagnostics/dtype_optimization.*` when dtype optimization changed columns
+- `tables/diagnostics/categorical_cardinality_profile.*`
+- `tables/diagnostics/working_data_snapshot.*`
+- `tabular_export_policy` table
 
 ## Model Performance Review
 

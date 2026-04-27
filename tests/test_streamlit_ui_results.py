@@ -11,10 +11,14 @@ from quant_pd_framework.streamlit_ui.artifact_summary import build_artifact_summ
 from quant_pd_framework.streamlit_ui.error_guidance import classify_workflow_exception
 from quant_pd_framework.streamlit_ui.results import (
     build_suitability_display_table,
+    format_memory_bytes,
     resolve_score_column_for_display,
     with_report_enhancement_visualizations,
 )
-from quant_pd_framework.streamlit_ui.state import infer_snapshot_score_column
+from quant_pd_framework.streamlit_ui.state import (
+    build_run_diagnostics,
+    infer_snapshot_score_column,
+)
 from tests.support import temporary_artifact_root
 
 
@@ -50,6 +54,34 @@ def test_report_enhancement_visualizations_respect_snapshot_toggle() -> None:
     updated_snapshot = with_report_enhancement_visualizations(snapshot)
 
     assert updated_snapshot["visualizations"] == {}
+
+
+def test_format_memory_bytes_uses_compact_units() -> None:
+    assert format_memory_bytes(None) == "Not captured"
+    assert format_memory_bytes("not-a-number") == "Not captured"
+    assert format_memory_bytes(0) == "0 B"
+    assert format_memory_bytes(1536) == "1.5 KB"
+    assert format_memory_bytes(1024**3) == "1.0 GB"
+
+
+def test_build_run_diagnostics_uses_peak_tracked_dataframe_memory() -> None:
+    context = SimpleNamespace(
+        metadata={"run_elapsed_seconds": 12.3},
+        debug_trace=[
+            {
+                "before": {"tracked_dataframe_memory_bytes": 1024},
+                "after": {"tracked_dataframe_memory_bytes": 4096},
+            },
+            {"before": {"tracked_dataframe_memory_bytes": 2048}, "after": {}},
+            "unexpected-record",
+        ],
+    )
+
+    diagnostics = build_run_diagnostics(context)
+
+    assert diagnostics["elapsed_seconds"] == 12.3
+    assert diagnostics["peak_tracked_dataframe_memory_bytes"] == 4096
+    assert diagnostics["memory_profile_available"] is True
 
 
 def test_advanced_visual_analytics_respects_snapshot_toggle() -> None:

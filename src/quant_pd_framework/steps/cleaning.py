@@ -30,7 +30,7 @@ class CleaningStep(BasePipelineStep):
         )
 
         config = context.config.cleaning
-        working = dataframe.copy(deep=True)
+        working = dataframe.copy(deep=False)
 
         # Standardize blank strings early so missing-value logic sees a single null marker.
         if config.blank_strings_as_null:

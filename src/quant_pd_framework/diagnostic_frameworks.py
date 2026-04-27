@@ -43,20 +43,88 @@ def add_expanded_framework_outputs(
 ) -> None:
     """Adds the deeper roadmap frameworks on top of the base diagnostics output."""
 
-    _add_imputation_framework_extensions(context)
-    _add_missingness_framework_extensions(context)
-    _add_distribution_framework_outputs(context, top_features)
-    _add_binning_framework_outputs(context)
-    _add_residual_framework_outputs(context, top_features, labels_available)
-    _add_outlier_framework_outputs(context, labels_available)
-    _add_dependency_framework_outputs(context, top_features)
-    _add_model_comparison_framework_outputs(context)
-    _add_specification_framework_extensions(context, top_features, labels_available)
-    _add_time_series_framework_outputs(context, top_features, labels_available)
-    _add_structural_break_framework_outputs(context, top_features, labels_available)
-    _add_robustness_framework_extensions(context)
-    _add_feature_workbench_outputs(context, labels_available)
-    _add_preset_recommendation_outputs(context)
+    _run_framework_task(
+        context,
+        "imputation_framework",
+        lambda: _add_imputation_framework_extensions(context),
+    )
+    _run_framework_task(
+        context,
+        "missingness_framework",
+        lambda: _add_missingness_framework_extensions(context),
+    )
+    _run_framework_task(
+        context,
+        "distribution_framework",
+        lambda: _add_distribution_framework_outputs(context, top_features),
+    )
+    _run_framework_task(
+        context,
+        "binning_framework",
+        lambda: _add_binning_framework_outputs(context),
+    )
+    _run_framework_task(
+        context,
+        "residual_framework",
+        lambda: _add_residual_framework_outputs(context, top_features, labels_available),
+    )
+    _run_framework_task(
+        context,
+        "outlier_framework",
+        lambda: _add_outlier_framework_outputs(context, labels_available),
+    )
+    _run_framework_task(
+        context,
+        "dependency_framework",
+        lambda: _add_dependency_framework_outputs(context, top_features),
+    )
+    _run_framework_task(
+        context,
+        "model_comparison_framework",
+        lambda: _add_model_comparison_framework_outputs(context),
+    )
+    _run_framework_task(
+        context,
+        "specification_framework",
+        lambda: _add_specification_framework_extensions(context, top_features, labels_available),
+    )
+    _run_framework_task(
+        context,
+        "time_series_framework",
+        lambda: _add_time_series_framework_outputs(context, top_features, labels_available),
+    )
+    _run_framework_task(
+        context,
+        "structural_break_framework",
+        lambda: _add_structural_break_framework_outputs(context, top_features, labels_available),
+    )
+    _run_framework_task(
+        context,
+        "robustness_framework",
+        lambda: _add_robustness_framework_extensions(context),
+    )
+    _run_framework_task(
+        context,
+        "feature_workbench",
+        lambda: _add_feature_workbench_outputs(context, labels_available),
+    )
+    _run_framework_task(
+        context,
+        "preset_recommendations",
+        lambda: _add_preset_recommendation_outputs(context),
+    )
+
+
+def _run_framework_task(context: PipelineContext, task_name: str, task_callable) -> None:
+    context.metadata["active_expanded_diagnostic"] = task_name
+    try:
+        task_callable()
+    except MemoryError as exc:
+        raise MemoryError(
+            f"Expanded diagnostic '{task_name}' exceeded available memory: {exc}"
+        ) from exc
+    except Exception as exc:
+        raise RuntimeError(f"Expanded diagnostic '{task_name}' failed: {exc}") from exc
 
 
 def score_column_name(context: PipelineContext) -> str:
@@ -697,6 +765,15 @@ def _add_dependency_framework_outputs(
     train_frame = context.split_frames.get("train")
     if train_frame is None:
         return
+    train_frame = _sample_expensive_framework_frame(
+        context=context,
+        frame=train_frame,
+        action_name="dependency_framework_sample",
+        detail=(
+            "Sampled the training split used for dependency diagnostics to keep "
+            "full-run memory usage bounded."
+        ),
+    )
     numeric_features = _numeric_features_for_framework(
         context,
         top_features,
@@ -1079,6 +1156,15 @@ def _add_specification_framework_extensions(
     train_frame = context.split_frames.get("train")
     if train_frame is None:
         return
+    train_frame = _sample_expensive_framework_frame(
+        context=context,
+        frame=train_frame,
+        action_name="specification_framework_sample",
+        detail=(
+            "Sampled the training split used for expanded specification and influence "
+            "diagnostics to keep full-run memory usage bounded."
+        ),
+    )
     numeric_features = _numeric_features_for_framework(
         context,
         top_features,
@@ -1673,7 +1759,11 @@ def _align_comparison_prediction_frames(
             and column_name in challenger_frame.columns
         )
     ]
-    if key_columns:
+    if key_columns and _prediction_alignment_keys_are_unique(
+        primary_frame,
+        challenger_frame,
+        key_columns,
+    ):
         left_columns = list(dict.fromkeys([*key_columns, *base_columns]))
         right_columns = list(dict.fromkeys([*key_columns, *challenger_columns]))
         left = primary_frame.loc[:, left_columns].copy(deep=True)
@@ -1700,6 +1790,21 @@ def _align_comparison_prediction_frames(
             f"{score_column}_primary",
             f"{score_column}_challenger",
         ]
+    )
+
+
+def _prediction_alignment_keys_are_unique(
+    primary_frame: pd.DataFrame,
+    challenger_frame: pd.DataFrame,
+    key_columns: list[str],
+) -> bool:
+    """Prevents accidental many-to-many joins on non-unique date-only keys."""
+
+    if not key_columns:
+        return False
+    return not (
+        primary_frame.duplicated(subset=key_columns).any()
+        or challenger_frame.duplicated(subset=key_columns).any()
     )
 
 
@@ -2323,6 +2428,31 @@ def _append_performance_action(
             [existing, row],
             ignore_index=True,
         )
+
+
+def _sample_expensive_framework_frame(
+    *,
+    context: PipelineContext,
+    frame: pd.DataFrame,
+    action_name: str,
+    detail: str,
+) -> pd.DataFrame:
+    """Caps framework diagnostics that use statsmodels influence calculations."""
+
+    if not context.config.performance.enabled:
+        return frame.reset_index(drop=True)
+    row_cap = int(context.config.performance.diagnostic_sample_rows)
+    if len(frame) <= row_cap:
+        return frame.reset_index(drop=True)
+    sampled = frame.sample(row_cap, random_state=context.config.split.random_state)
+    _append_performance_action(
+        context,
+        action_name=action_name,
+        detail=detail,
+        original_rows=len(frame),
+        effective_rows=len(sampled),
+    )
+    return sampled.reset_index(drop=True)
 
 
 def _render_preset_recommendation_rows(

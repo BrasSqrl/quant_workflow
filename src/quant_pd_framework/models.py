@@ -45,8 +45,14 @@ def build_preprocessor(
     categorical_features: list[str],
     *,
     scale_numeric: bool = True,
+    sparse_output: bool = False,
 ) -> ColumnTransformer:
-    """Builds a dense preprocessing pipeline shared by several model adapters."""
+    """Builds preprocessing shared by model adapters.
+
+    Sklearn-style estimators can keep one-hot encoded categoricals sparse, while
+    statsmodels-style estimators request dense output because statsmodels expects
+    dense design matrices.
+    """
 
     transformers = []
     if numeric_features:
@@ -66,7 +72,13 @@ def build_preprocessor(
                 "categorical",
                 Pipeline(
                     steps=[
-                        ("encoder", OneHotEncoder(handle_unknown="ignore", sparse_output=False)),
+                        (
+                            "encoder",
+                            OneHotEncoder(
+                                handle_unknown="ignore",
+                                sparse_output=sparse_output,
+                            ),
+                        ),
                     ]
                 ),
                 categorical_features,
@@ -76,7 +88,10 @@ def build_preprocessor(
     if not transformers:
         raise ValueError("Training requires at least one numeric or categorical feature.")
 
-    return ColumnTransformer(transformers=transformers, sparse_threshold=0.0)
+    return ColumnTransformer(
+        transformers=transformers,
+        sparse_threshold=1.0 if sparse_output else 0.0,
+    )
 
 
 class BaseModelAdapter(ABC):
@@ -359,11 +374,13 @@ class SklearnAdapter(BaseModelAdapter):
         estimator: Any,
         *,
         scale_numeric: bool = True,
+        sparse_preprocessor: bool = True,
     ) -> None:
         super().__init__(model_config, target_mode)
         self.preprocessor = None
         self.estimator = estimator
         self.scale_numeric = scale_numeric
+        self.sparse_preprocessor = sparse_preprocessor
 
     def fit(
         self,
@@ -379,6 +396,7 @@ class SklearnAdapter(BaseModelAdapter):
             numeric_features,
             categorical_features,
             scale_numeric=self.scale_numeric,
+            sparse_output=self.sparse_preprocessor,
         )
         x_matrix = self.preprocessor.fit_transform(x_frame)
         self.feature_names_ = list(self.preprocessor.get_feature_names_out())

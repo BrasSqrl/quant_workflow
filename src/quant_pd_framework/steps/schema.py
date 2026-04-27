@@ -26,7 +26,7 @@ class SchemaManagementStep(BasePipelineStep):
         if dataframe is None:
             raise ValueError("Schema management requires a dataframe in the context.")
 
-        working = dataframe.copy(deep=True)
+        working = dataframe.copy(deep=False)
         dropped_columns: list[str] = []
         role_map: dict[str, str] = {}
 

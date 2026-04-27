@@ -688,6 +688,9 @@ def _build_preset_recommendation_config(
 
 
 def _build_credit_risk_diagnostic_config(payload: dict[str, Any]) -> CreditRiskDiagnosticConfig:
+    migration_state_column = payload.get("migration_state_column")
+    if migration_state_column is not None:
+        migration_state_column = str(migration_state_column).strip() or None
     return CreditRiskDiagnosticConfig(
         enabled=payload.get("enabled", True),
         vintage_analysis=payload.get("vintage_analysis", True),
@@ -696,6 +699,7 @@ def _build_credit_risk_diagnostic_config(payload: dict[str, Any]) -> CreditRiskD
             "delinquency_transition_analysis",
             True,
         ),
+        migration_state_column=migration_state_column,
         cohort_pd_analysis=payload.get("cohort_pd_analysis", True),
         lgd_segment_analysis=payload.get("lgd_segment_analysis", True),
         recovery_analysis=payload.get("recovery_analysis", True),
@@ -746,9 +750,7 @@ def _build_performance_config(payload: dict[str, Any]) -> PerformanceConfig:
     return PerformanceConfig(
         enabled=payload.get("enabled", True),
         large_data_mode=payload.get("large_data_mode", False),
-        upload_warning_mb=payload.get("upload_warning_mb", 250),
-        dataframe_warning_rows=payload.get("dataframe_warning_rows", 200000),
-        dataframe_warning_columns=payload.get("dataframe_warning_columns", 150),
+        upload_warning_mb=payload.get("upload_warning_mb", 5120),
         ui_preview_rows=payload.get("ui_preview_rows", 50),
         html_table_preview_rows=payload.get("html_table_preview_rows", 12),
         html_max_figures_per_section=payload.get("html_max_figures_per_section", 6),
@@ -757,11 +759,21 @@ def _build_performance_config(payload: dict[str, Any]) -> PerformanceConfig:
         multiple_imputation_row_cap=payload.get("multiple_imputation_row_cap", 25000),
         lazy_html_figures=payload.get("lazy_html_figures", True),
         lazy_streamlit_results=payload.get("lazy_streamlit_results", True),
-        optimize_dtypes=payload.get("optimize_dtypes", False),
+        optimize_dtypes=payload.get("optimize_dtypes", True),
+        capture_memory_profile=payload.get("capture_memory_profile", True),
+        deep_memory_profile=payload.get("deep_memory_profile", False),
+        retain_full_working_data=payload.get("retain_full_working_data", False),
         downcast_numeric=payload.get("downcast_numeric", True),
         convert_low_cardinality_strings=payload.get("convert_low_cardinality_strings", True),
         category_max_unique_values=payload.get("category_max_unique_values", 500),
         category_max_unique_ratio=payload.get("category_max_unique_ratio", 0.5),
+        max_categorical_cardinality=payload.get("max_categorical_cardinality", 500),
+        max_categorical_cardinality_ratio=payload.get(
+            "max_categorical_cardinality_ratio", 0.2
+        ),
+        allow_high_cardinality_categoricals=payload.get(
+            "allow_high_cardinality_categoricals", False
+        ),
         convert_csv_to_parquet=payload.get("convert_csv_to_parquet", False),
         csv_conversion_chunk_rows=payload.get("csv_conversion_chunk_rows", 100000),
         large_data_training_sample_rows=payload.get("large_data_training_sample_rows", 250000),
@@ -853,11 +865,12 @@ def _build_artifact_config(payload: dict[str, Any]) -> ArtifactConfig:
             False,
         ),
         export_individual_figure_files=payload.get("export_individual_figure_files", False),
+        compact_prediction_exports=payload.get("compact_prediction_exports", True),
         export_input_snapshot=payload.get("export_input_snapshot", True),
         export_code_snapshot=payload.get("export_code_snapshot", True),
         export_profile=ExportProfile(payload.get("export_profile", ExportProfile.STANDARD.value)),
         tabular_output_format=TabularOutputFormat(
-            payload.get("tabular_output_format", TabularOutputFormat.CSV.value)
+            payload.get("tabular_output_format", TabularOutputFormat.PARQUET.value)
         ),
         large_data_export_policy=LargeDataExportPolicy(
             payload.get("large_data_export_policy", LargeDataExportPolicy.FULL.value)

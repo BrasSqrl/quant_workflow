@@ -9,6 +9,7 @@ from quant_pd_framework.streamlit_ui.artifact_summary import (
     build_primary_artifact_cards,
 )
 from quant_pd_framework.streamlit_ui.error_guidance import WorkflowErrorGuidance
+from quant_pd_framework.streamlit_ui.run_execution import format_elapsed_seconds
 from quant_pd_framework.streamlit_ui.state import prepare_table_for_display
 from quant_pd_framework.streamlit_ui.theme import render_metric_strip
 
@@ -32,7 +33,11 @@ def render_execution_plan(cards: list[dict[str, str]], *, large_data_mode: bool)
 
 
 def render_run_success(snapshot: dict[str, object]) -> None:
-    st.success(f"Completed run `{snapshot['run_id']}`.")
+    timing = snapshot.get("run_timing", {})
+    elapsed_text = ""
+    if isinstance(timing, dict) and timing.get("elapsed_seconds") is not None:
+        elapsed_text = f" in {format_elapsed_seconds(timing.get('elapsed_seconds'))}"
+    st.success(f"Completed run `{snapshot['run_id']}`{elapsed_text}.")
     artifacts = snapshot.get("artifacts", {})
     if not isinstance(artifacts, dict):
         return

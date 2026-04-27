@@ -1585,8 +1585,13 @@ Important fields include:
 - `large_data_mode`
 - `diagnostic_sample_rows`
 - `optimize_dtypes`
+- `retain_full_working_data`
+- `capture_memory_profile`
+- `deep_memory_profile`
 - `downcast_numeric`
 - `convert_low_cardinality_strings`
+- `max_categorical_cardinality`
+- `allow_high_cardinality_categoricals`
 - `convert_csv_to_parquet`
 - `csv_conversion_chunk_rows`
 - `large_data_training_sample_rows`
@@ -1597,12 +1602,20 @@ Important fields include:
 - `memory_estimate_file_multiplier`
 - `memory_estimate_dataframe_multiplier`
 
-When large-data mode is enabled in the GUI, Quant Studio defaults to safer
-settings: file-backed Data_Load intake, sampled diagnostics, disabled
-robustness and cross-validation refits, disabled per-figure file exports,
-optional dtype optimization, reusable CSV-to-Parquet staging for file-path
-inputs, configurable training sample size, chunked full-data scoring, and
-sampled or Parquet-first tabular outputs.
+Quant Studio now defaults to memory-oriented behavior for all runs:
+dtype optimization is on by default, prediction frames keep only audit
+identifiers, low-cardinality segment fields, target, split, and score outputs,
+and the post-imputation working dataframe is replaced by a capped diagnostic
+snapshot unless `retain_full_working_data=True`. Model fitting still uses the
+full train/validation/test split frames. `run_debug_trace.json` also includes
+per-step dataframe memory estimates when `capture_memory_profile=True`; deep
+pandas memory inspection remains off by default to avoid extra profiling cost.
+
+When large-data mode is enabled in the GUI, Quant Studio adds safer file-backed
+defaults: Data_Load intake, sampled diagnostics, disabled robustness and
+cross-validation refits, disabled per-figure file exports, reusable
+CSV-to-Parquet staging for file-path inputs, configurable training sample size,
+chunked full-data scoring, and sampled CSV or Parquet-first tabular outputs.
 
 For file-backed runs, the large-data workflow is intentionally split:
 
@@ -1710,6 +1723,10 @@ Important behavior:
 - `large_data_export_policy` can write full tabular outputs, sampled CSV
   outputs with full Parquet outputs, or metadata-only entries for very large
   tables.
+- `compact_prediction_exports` is on by default. It prevents the scored
+  prediction outputs from duplicating every modeled feature column and keeps
+  prediction artifacts focused on audit IDs, target/split fields, low-cardinality
+  segment fields, and model scores.
 - Individual figure `.html` and `.png` files are disabled by default and can be
   enabled through `ArtifactConfig.export_individual_figure_files` or the
   matching GUI toggle when separate chart files are needed. When enabled, the
@@ -1720,8 +1737,9 @@ Important behavior:
   distribution assets such as Excel workbooks, regulatory DOCX/PDF reports,
   input snapshots, and code snapshots, and `audit` is reserved for full-review
   runs.
-- `run_debug_trace.json` is exported for every run and records step timing,
-  completion status, shape snapshots, and error details when a step fails.
+- `run_debug_trace.json` is exported for every run and records start/completion
+  time, total elapsed runtime, step timing, completion status, shape snapshots,
+  and error details when a step fails.
 
 Default artifact layout:
 
@@ -1741,8 +1759,9 @@ Default artifact layout:
   Contains `input_snapshot.csv` and/or `input_snapshot.parquet` when input
   snapshot export is enabled.
 - `data/predictions/`
-  Contains `predictions.csv`, `predictions.parquet`, and split-level
-  prediction files.
+  Contains `predictions.csv`, `predictions.parquet`, and split-level prediction
+  files based on the selected tabular format. Prediction exports are compact by
+  default to avoid duplicating the full modeling matrix.
 - `tables/`
   Contains diagnostic tables grouped by review topic, such as `diagnostics/`,
   `calibration/`, `stability/`, `statistical_tests/`, `explainability/`, and
@@ -2272,7 +2291,13 @@ performance safeguards through `PerformanceConfig`, including:
   until the user opts back in
 - memory-estimate tables and configurable pre-run warning thresholds
 - dtype optimization audit tables for numeric downcasting and low-cardinality
-  string-to-category conversion
+  string-to-category conversion, enabled by default
+- compact prediction frames that avoid duplicating the full feature matrix in
+  scored outputs
+- capped post-imputation diagnostic working snapshots, with a user override to
+  retain the full diagnostics dataframe when needed
+- high-cardinality categorical guardrails before one-hot encoding expands the
+  model matrix
 - reusable chunked CSV-to-Parquet staging for file-path inputs
 - governed sample-fit / full-data-score execution, where the development model
   is fit on a configurable sample and the full file is scored in chunks
@@ -2281,7 +2306,7 @@ performance safeguards through `PerformanceConfig`, including:
 - truncated HTML report table and figure previews so standalone reports remain usable
 - lazy Streamlit result snapshots for large runs so the GUI does not keep every
   exported row in memory
-- sampled CSV exports or full Parquet exports for predictions and input
+- sampled CSV exports with full Parquet exports for predictions and input
   snapshots
 - separate `data/sample_development/`, `data/full_data_scoring/`, and
   `metadata/large_data/` output folders for audit clarity

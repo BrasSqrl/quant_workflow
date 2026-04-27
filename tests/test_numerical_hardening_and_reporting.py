@@ -92,7 +92,7 @@ from tests.support import (
                     max_iter=300,
                 ),
             ),
-            True,
+            False,
         ),
         (
             "two_stage_lgd",

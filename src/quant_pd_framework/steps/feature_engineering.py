@@ -26,7 +26,7 @@ class FeatureEngineeringStep(BasePipelineStep):
         if dataframe is None or target_column is None:
             raise ValueError("Feature engineering requires a dataframe and target column.")
 
-        working = dataframe.copy(deep=True)
+        working = dataframe.copy(deep=False)
         config = context.config.feature_engineering
         split_config = context.config.split
 
@@ -81,6 +81,7 @@ class FeatureEngineeringStep(BasePipelineStep):
         if not feature_columns:
             raise ValueError("No feature columns remain after feature engineering.")
 
+        self._profile_categorical_cardinality(context, working, categorical_features)
         context.working_data = working
         context.feature_columns = feature_columns
         context.numeric_features = numeric_features
@@ -91,6 +92,69 @@ class FeatureEngineeringStep(BasePipelineStep):
             "categorical_feature_count": len(categorical_features),
         }
         return context
+
+    def _profile_categorical_cardinality(
+        self,
+        context: PipelineContext,
+        dataframe: pd.DataFrame,
+        categorical_features: list[str],
+    ) -> None:
+        if not categorical_features:
+            return
+        performance = context.config.performance
+        rows: list[dict[str, object]] = []
+        high_cardinality_features: list[str] = []
+        row_count = max(int(len(dataframe)), 1)
+        for feature_name in categorical_features:
+            series = dataframe[feature_name]
+            unique_count = int(series.nunique(dropna=True))
+            unique_ratio = unique_count / row_count
+            exceeds_threshold = (
+                unique_count > performance.max_categorical_cardinality
+                and unique_ratio > performance.max_categorical_cardinality_ratio
+            )
+            if exceeds_threshold:
+                high_cardinality_features.append(feature_name)
+            rows.append(
+                {
+                    "feature_name": feature_name,
+                    "unique_count": unique_count,
+                    "unique_ratio": unique_ratio,
+                    "max_allowed_unique_count": performance.max_categorical_cardinality,
+                    "max_allowed_unique_ratio": performance.max_categorical_cardinality_ratio,
+                    "status": "high_cardinality" if exceeds_threshold else "ok",
+                }
+            )
+
+        profile = pd.DataFrame(rows).sort_values(
+            ["status", "unique_count"],
+            ascending=[True, False],
+            kind="stable",
+        )
+        context.diagnostics_tables["categorical_cardinality_profile"] = profile
+        context.metadata["categorical_cardinality_profile"] = {
+            "feature_count": len(categorical_features),
+            "high_cardinality_feature_count": len(high_cardinality_features),
+            "high_cardinality_features": high_cardinality_features,
+            "max_categorical_cardinality": performance.max_categorical_cardinality,
+            "max_categorical_cardinality_ratio": performance.max_categorical_cardinality_ratio,
+            "allow_high_cardinality_categoricals": (
+                performance.allow_high_cardinality_categoricals
+            ),
+        }
+        if not high_cardinality_features:
+            return
+
+        message = (
+            "High-cardinality categorical model features were detected: "
+            + ", ".join(high_cardinality_features[:10])
+            + ". Group rare levels, bin/encode the feature compactly, or explicitly allow "
+            "high-cardinality categoricals after confirming memory capacity."
+        )
+        if performance.allow_high_cardinality_categoricals:
+            context.warn(message)
+            return
+        raise ValueError(message)
 
     def _add_hazard_time_features(
         self,

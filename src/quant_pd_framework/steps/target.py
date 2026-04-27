@@ -54,7 +54,7 @@ class TargetConstructionStep(BasePipelineStep):
                 "float64"
             )
 
-        working = dataframe.copy(deep=True)
+        working = dataframe.copy(deep=False)
         working[output_column] = target_series
 
         if context.config.target.drop_source_column and source_column != output_column:

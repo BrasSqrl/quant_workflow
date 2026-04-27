@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 
+import numpy as np
 import pandas as pd
 
 from ..base import BasePipelineStep
@@ -44,6 +45,7 @@ class ModelComparisonStep(BasePipelineStep):
         )
         rows: list[dict[str, object]] = []
         prediction_snapshots: dict[str, pd.DataFrame] = {}
+        prediction_snapshot_positions: dict[str, np.ndarray] = {}
 
         for split_name in ["validation", "test"]:
             if split_name in context.metrics:
@@ -57,8 +59,13 @@ class ModelComparisonStep(BasePipelineStep):
                 )
         primary_snapshot = context.predictions.get(comparison_config.ranking_split)
         if primary_snapshot is not None:
-            prediction_snapshots[context.config.model.model_type.value] = primary_snapshot.copy(
-                deep=True
+            prediction_snapshots[context.config.model.model_type.value] = (
+                self._comparison_prediction_snapshot(
+                    context=context,
+                    frame=primary_snapshot,
+                    split_name=comparison_config.ranking_split,
+                    sampled_positions_by_split=prediction_snapshot_positions,
+                )
             )
 
         x_train = train_frame[context.feature_columns]
@@ -93,6 +100,7 @@ class ModelComparisonStep(BasePipelineStep):
                         challenger,
                         challenger_config.threshold,
                         True,
+                        context,
                     )
                 else:
                     scored_frame, metrics = evaluator._score_continuous_split(
@@ -102,9 +110,17 @@ class ModelComparisonStep(BasePipelineStep):
                         context.feature_columns,
                         challenger,
                         True,
+                        context,
                     )
                 if split_name == comparison_config.ranking_split:
-                    prediction_snapshots[challenger_type.value] = scored_frame.copy(deep=True)
+                    prediction_snapshots[challenger_type.value] = (
+                        self._comparison_prediction_snapshot(
+                            context=context,
+                            frame=scored_frame,
+                            split_name=split_name,
+                            sampled_positions_by_split=prediction_snapshot_positions,
+                        )
+                    )
                 rows.append(
                     {
                         "model_type": challenger_type.value,
@@ -143,3 +159,30 @@ class ModelComparisonStep(BasePipelineStep):
         if prediction_snapshots:
             context.metadata["comparison_prediction_snapshots"] = prediction_snapshots
         return context
+
+    def _comparison_prediction_snapshot(
+        self,
+        *,
+        context: PipelineContext,
+        frame: pd.DataFrame,
+        split_name: str,
+        sampled_positions_by_split: dict[str, np.ndarray],
+    ) -> pd.DataFrame:
+        """Stores only rows needed for comparison significance diagnostics."""
+
+        row_cap = int(context.config.performance.diagnostic_sample_rows)
+        if len(frame) <= row_cap:
+            return frame.reset_index(drop=True).copy(deep=False)
+        if split_name not in sampled_positions_by_split:
+            rng = np.random.default_rng(int(context.config.split.random_state))
+            sampled_positions_by_split[split_name] = np.sort(
+                rng.choice(len(frame), size=row_cap, replace=False)
+            )
+        sampled = frame.iloc[sampled_positions_by_split[split_name]]
+        context.metadata["comparison_prediction_snapshot_sample"] = {
+            "split": split_name,
+            "original_rows": int(len(frame)),
+            "snapshot_rows": int(len(sampled)),
+            "sample_strategy": "diagnostic_sample_rows",
+        }
+        return sampled.reset_index(drop=True).copy(deep=False)

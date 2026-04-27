@@ -135,6 +135,26 @@ def format_file_size(size_bytes: int) -> str:
     return f"{size:.1f} GB"
 
 
+def is_large_input_file(metadata: dict[str, Any]) -> bool:
+    """Returns whether file metadata crosses the advisory large-input threshold."""
+
+    try:
+        size_bytes = int(metadata.get("size_bytes") or 0)
+    except (TypeError, ValueError):
+        return False
+    return size_bytes > DEFAULT_PERFORMANCE_CONFIG.upload_warning_mb * 1024 * 1024
+
+
+def render_large_input_file_warning(metadata: dict[str, Any]) -> None:
+    if not is_large_input_file(metadata):
+        return
+    st.warning(
+        "Large input detected. The file is over 5 GB and is within the configured "
+        "upload limit, but practical runtime still depends on local memory, file type, "
+        "and pandas parsing cost. For the most stable run, use Data_Load with Large Data Mode."
+    )
+
+
 def format_data_load_file_option(path: Path) -> str:
     metadata = describe_data_file(path)
     modified_at = datetime.fromisoformat(metadata["modified_at_utc"]).strftime(
@@ -270,16 +290,6 @@ def select_input_dataframe() -> SelectedInputDataset:
                         "when pandas parses large CSV, Excel, or Parquet files."
                     ),
                 )
-                if (
-                    uploaded_file is not None
-                    and getattr(uploaded_file, "size", 0)
-                    > DEFAULT_PERFORMANCE_CONFIG.upload_warning_mb * 1024 * 1024
-                ):
-                    st.warning(
-                        "Large upload detected. The file is within the configured limit, but "
-                        "practical runtime still depends on local memory and pandas parsing cost."
-                    )
-
     if source_mode == "upload" and uploaded_file is not None:
         suffix = Path(uploaded_file.name).suffix.lower()
         uploaded_file.seek(0)
@@ -337,16 +347,8 @@ def render_dataset_overview(dataframe: pd.DataFrame, data_source_label: str) -> 
     third_column.metric("Source", file_label)
 
 
-def render_input_performance_notice(dataframe: pd.DataFrame) -> None:
-    performance = DEFAULT_PERFORMANCE_CONFIG
-    if (
-        dataframe.shape[0] >= performance.dataframe_warning_rows
-        or dataframe.shape[1] >= performance.dataframe_warning_columns
-    ):
-        st.warning(
-            "Large input detected. Quant Studio will sample heavy diagnostics and report "
-            "previews where needed, but full runtime still depends on local memory."
-        )
+def render_input_performance_notice(metadata: dict[str, Any]) -> None:
+    render_large_input_file_warning(metadata)
 
 
 def sample_frame(dataframe: pd.DataFrame, max_rows: int) -> pd.DataFrame:

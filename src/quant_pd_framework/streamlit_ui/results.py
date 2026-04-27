@@ -37,6 +37,7 @@ from quant_pd_framework.streamlit_ui.enterprise_workflow import (
     build_artifact_explorer_frame,
     build_model_card_markdown,
 )
+from quant_pd_framework.streamlit_ui.run_execution import format_elapsed_seconds
 from quant_pd_framework.streamlit_ui.state import (
     build_plotly_key,
     prepare_table_for_display,
@@ -62,6 +63,62 @@ SUITABILITY_DISPLAY_COLUMNS = [
     "recommended_action",
     "details",
 ]
+
+
+def format_memory_bytes(value: Any) -> str:
+    """Formats byte counts for compact UI diagnostics."""
+
+    if value is None:
+        return "Not captured"
+    try:
+        bytes_value = float(value)
+    except (TypeError, ValueError):
+        return "Not captured"
+    if bytes_value <= 0:
+        return "0 B"
+
+    units = ("B", "KB", "MB", "GB", "TB")
+    unit_index = 0
+    while bytes_value >= 1024 and unit_index < len(units) - 1:
+        bytes_value /= 1024
+        unit_index += 1
+    if unit_index == 0:
+        return f"{int(bytes_value)} B"
+    return f"{bytes_value:.1f} {units[unit_index]}"
+
+
+def render_run_diagnostics_strip(snapshot: dict[str, Any]) -> None:
+    """Renders run-level elapsed time and tracked dataframe memory diagnostics."""
+
+    diagnostics = snapshot.get("run_diagnostics") or {}
+    timing = snapshot.get("run_timing") or {}
+    elapsed_seconds = diagnostics.get("elapsed_seconds", timing.get("elapsed_seconds"))
+    peak_tracked_memory = diagnostics.get("peak_tracked_dataframe_memory_bytes")
+
+    st.markdown("#### Run Diagnostics")
+    render_metric_strip(
+        [
+            {
+                "label": "Total run time",
+                "value": format_elapsed_seconds(elapsed_seconds),
+            },
+            {
+                "label": "Peak tracked dataframe memory",
+                "value": format_memory_bytes(peak_tracked_memory),
+            },
+        ],
+        compact=True,
+    )
+    if diagnostics.get("memory_profile_available"):
+        st.caption(
+            "Memory shown is tracked pandas dataframe memory from the debug trace, "
+            "not total operating-system process RAM."
+        )
+    else:
+        st.caption(
+            "Peak tracked dataframe memory was not captured for this run. Enable "
+            "`Capture memory profile in debug trace` to populate this value."
+        )
 
 
 def render_workflow_readiness(
@@ -219,6 +276,8 @@ def render_run_results(snapshot: dict[str, Any]) -> None:
         unsafe_allow_html=True,
     )
 
+    render_run_diagnostics_strip(snapshot)
+
     asset_catalog = prune_subset_search_highlight_assets(
         build_asset_catalog(snapshot["diagnostics_tables"], snapshot["visualizations"])
     )
@@ -275,6 +334,8 @@ def render_subset_search_results(snapshot: dict[str, Any]) -> None:
         """,
         unsafe_allow_html=True,
     )
+
+    render_run_diagnostics_strip(snapshot)
 
     asset_catalog = build_asset_catalog(snapshot["diagnostics_tables"], snapshot["visualizations"])
     section_map: dict[str, str] = {"Overview": "overview", "Governance": "governance"}

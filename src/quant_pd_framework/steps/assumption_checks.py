@@ -404,7 +404,11 @@ class AssumptionCheckStep(BasePipelineStep):
             if feature_name not in train_frame.columns:
                 continue
             distribution = (
-                train_frame[feature_name].fillna("Missing").astype(str).value_counts(normalize=True)
+                train_frame[feature_name]
+                .astype("object")
+                .fillna("Missing")
+                .astype(str)
+                .value_counts(normalize=True)
             )
             if distribution.empty:
                 continue

@@ -26,7 +26,7 @@ from sklearn.metrics import (
 )
 
 from ..base import BasePipelineStep
-from ..config import TargetMode
+from ..config import ColumnRole, TargetMode
 from ..context import PipelineContext
 
 
@@ -60,6 +60,7 @@ class EvaluationStep(BasePipelineStep):
                     context.model,
                     threshold,
                     labels_available and context.target_column in frame.columns,
+                    context,
                 )
             else:
                 scored_frame, metrics = self._score_continuous_split(
@@ -69,6 +70,7 @@ class EvaluationStep(BasePipelineStep):
                     context.feature_columns,
                     context.model,
                     labels_available and context.target_column in frame.columns,
+                    context,
                 )
             context.predictions[split_name] = scored_frame
             context.metrics[split_name] = metrics
@@ -86,12 +88,13 @@ class EvaluationStep(BasePipelineStep):
         model,
         threshold: float,
         labels_available: bool,
+        context: PipelineContext,
     ) -> tuple[pd.DataFrame, dict[str, float | int | None]]:
         x_values = frame[feature_columns]
         probability = np.asarray(model.predict_score(x_values))
         predicted_class = np.asarray(model.predict_class(x_values, threshold))
 
-        scored_frame = frame.copy(deep=True).reset_index(drop=True)
+        scored_frame = self._build_scored_frame(frame, context, target_column)
         scored_frame["split"] = split_name
         scored_frame["predicted_probability"] = probability
         scored_frame["predicted_class"] = predicted_class
@@ -166,11 +169,12 @@ class EvaluationStep(BasePipelineStep):
         feature_columns: list[str],
         model,
         labels_available: bool,
+        context: PipelineContext,
     ) -> tuple[pd.DataFrame, dict[str, float | int | None]]:
         x_values = frame[feature_columns]
         prediction = np.asarray(model.predict_score(x_values))
 
-        scored_frame = frame.copy(deep=True).reset_index(drop=True)
+        scored_frame = self._build_scored_frame(frame, context, target_column)
         scored_frame["split"] = split_name
         scored_frame["predicted_value"] = prediction
         self._append_prediction_outputs(scored_frame, model, x_values)
@@ -205,6 +209,76 @@ class EvaluationStep(BasePipelineStep):
             ),
         }
         return scored_frame, metrics
+
+    def _build_scored_frame(
+        self,
+        frame: pd.DataFrame,
+        context: PipelineContext,
+        target_column: str,
+    ) -> pd.DataFrame:
+        if not context.config.artifacts.compact_prediction_exports:
+            return frame.copy(deep=False).reset_index(drop=True)
+
+        columns = self._prediction_base_columns(frame, context, target_column)
+        if not columns:
+            return pd.DataFrame(index=range(len(frame)))
+        return frame.loc[:, columns].copy(deep=False).reset_index(drop=True)
+
+    def _prediction_base_columns(
+        self,
+        frame: pd.DataFrame,
+        context: PipelineContext,
+        target_column: str,
+    ) -> list[str]:
+        role_columns = [
+            spec.name
+            for spec in context.config.schema.column_specs
+            if spec.role in {ColumnRole.IDENTIFIER, ColumnRole.DATE} and spec.name in frame.columns
+        ]
+        configured_columns = [
+            context.config.split.date_column,
+            context.config.split.entity_column,
+            target_column,
+            context.config.diagnostics.default_segment_column,
+            *context.metadata.get("hazard_time_features", []),
+            *self._transition_state_columns(frame, context),
+        ]
+        low_cardinality_segments = [
+            feature_name
+            for feature_name in context.categorical_features
+            if feature_name in frame.columns
+            and frame[feature_name].nunique(dropna=True)
+            <= context.config.performance.max_categorical_cardinality
+        ]
+        return list(
+            dict.fromkeys(
+                column_name
+                for column_name in [
+                    *role_columns,
+                    *configured_columns,
+                    *low_cardinality_segments,
+                ]
+                if column_name and column_name in frame.columns
+            )
+        )
+
+    def _transition_state_columns(
+        self,
+        frame: pd.DataFrame,
+        context: PipelineContext,
+    ) -> list[str]:
+        excluded = {
+            context.config.split.date_column,
+            context.config.split.entity_column,
+            context.target_column,
+        }
+        keywords = ("stage", "delinq", "delinquency", "dpd", "bucket", "rating", "grade")
+        return [
+            column_name
+            for column_name in frame.columns
+            if column_name not in excluded
+            and any(keyword in str(column_name).lower() for keyword in keywords)
+        ]
 
     def _safe_metric(self, metric_callable) -> float | None:
         try:

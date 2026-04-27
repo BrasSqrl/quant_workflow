@@ -42,7 +42,7 @@ class IngestionStep(BasePipelineStep):
         if isinstance(raw_input, DatasetHandle):
             dataframe = self._read_large_data_handle(context, raw_input)
         elif isinstance(raw_input, pd.DataFrame):
-            dataframe = raw_input.copy(deep=True)
+            dataframe = raw_input.copy(deep=False)
             context.metadata["input_type"] = "dataframe"
             source_metadata = raw_input.attrs.get(INPUT_SOURCE_METADATA_ATTR)
             if isinstance(source_metadata, dict):
@@ -58,7 +58,7 @@ class IngestionStep(BasePipelineStep):
 
         dataframe = self._apply_large_data_controls(context, dataframe)
         context.raw_data = dataframe
-        context.working_data = dataframe.copy(deep=True)
+        context.working_data = dataframe
         context.metadata["input_shape"] = {
             "rows": int(dataframe.shape[0]),
             "columns": int(dataframe.shape[1]),

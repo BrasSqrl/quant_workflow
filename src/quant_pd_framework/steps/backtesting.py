@@ -1,4 +1,4 @@
-"""Builds a simple score-band performance table on the test set."""
+"""Builds a simple score-band performance table on an evaluation split."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from ..context import PipelineContext
 
 class BacktestStep(BasePipelineStep):
     """
-    Summarizes out-of-sample performance by score band.
+    Summarizes holdout performance by score band when a holdout split exists.
 
     For binary models, comparing predicted probability bands against observed
     event rates is a useful first-pass backtesting and calibration check.
@@ -20,12 +20,14 @@ class BacktestStep(BasePipelineStep):
     name = "backtesting"
 
     def run(self, context: PipelineContext) -> PipelineContext:
-        if "test" not in context.predictions:
-            raise ValueError("Backtesting requires scored test-set predictions.")
+        backtest_split = self._select_backtest_split(context)
+        if backtest_split is None:
+            raise ValueError("Backtesting requires at least one scored split.")
         if context.target_column is None:
             raise ValueError("Backtesting requires a target column.")
 
-        scored_test = context.predictions["test"].copy(deep=True)
+        scored_test = context.predictions[backtest_split].copy(deep=False)
+        context.metadata["backtest_split"] = backtest_split
         labels_available = bool(context.metadata.get("labels_available", False)) and (
             context.target_column in scored_test.columns
         )
@@ -102,3 +104,9 @@ class BacktestStep(BasePipelineStep):
 
         context.backtest_summary = summary
         return context
+
+    def _select_backtest_split(self, context: PipelineContext) -> str | None:
+        for split_name in ("test", "validation", "train"):
+            if split_name in context.predictions and not context.predictions[split_name].empty:
+                return split_name
+        return None

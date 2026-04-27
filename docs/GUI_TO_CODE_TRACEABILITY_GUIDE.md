@@ -303,6 +303,10 @@ These controls only matter when `ExecutionConfig.mode` is
 | `Large-data diagnostic sample rows` | `PerformanceConfig.diagnostic_sample_rows` | diagnostics sampling helpers |
 | `Memory warning threshold` | `PerformanceConfig.memory_limit_gb` | `IngestionStep._record_memory_estimate` |
 | `Optimize dtypes during ingestion` | `PerformanceConfig.optimize_dtypes` | `IngestionStep._apply_large_data_controls` |
+| `Capture memory profile in debug trace` | `PerformanceConfig.capture_memory_profile` | `QuantModelOrchestrator._memory_profile` |
+| `Retain full diagnostic working dataframe` | `PerformanceConfig.retain_full_working_data` | `ImputationStep._build_working_data_snapshot` |
+| `Max categorical levels before approval` | `PerformanceConfig.max_categorical_cardinality` | `FeatureEngineeringStep._profile_categorical_cardinality` |
+| `Allow high-cardinality categorical model features` | `PerformanceConfig.allow_high_cardinality_categoricals` | `FeatureEngineeringStep._profile_categorical_cardinality` |
 | `Convert CSV file-path inputs to Parquet before ingestion` | `PerformanceConfig.convert_csv_to_parquet` | `IngestionStep._read_file`, `convert_csv_to_parquet` |
 | `CSV-to-Parquet chunk rows` | `PerformanceConfig.csv_conversion_chunk_rows` | chunked conversion helper |
 | `Large-data training sample rows` | `PerformanceConfig.large_data_training_sample_rows` | sample-fit row cap for file-backed runs |
@@ -343,6 +347,7 @@ These controls only matter when `ExecutionConfig.mode` is
 | `Enable credit-risk development diagnostics` | `CreditRiskDiagnosticConfig.enabled` | `DiagnosticsStep._add_credit_risk_outputs` |
 | `Vintage analysis` | `CreditRiskDiagnosticConfig.vintage_analysis` | credit-risk diagnostics |
 | `Migration and delinquency transitions` | `CreditRiskDiagnosticConfig.migration_analysis`, `delinquency_transition_analysis` | credit-risk diagnostics |
+| `Migration state column` | `CreditRiskDiagnosticConfig.migration_state_column` | explicit low-cardinality state field used for migration matrices; `(none)` skips transition diagnostics |
 | `Cohort PD analysis` | `CreditRiskDiagnosticConfig.cohort_pd_analysis` | credit-risk diagnostics |
 | `LGD segment and recovery views` | `CreditRiskDiagnosticConfig.lgd_segment_analysis`, `recovery_analysis` | credit-risk diagnostics |
 | `Macro sensitivity` | `CreditRiskDiagnosticConfig.macro_sensitivity_analysis` | credit-risk diagnostics |
@@ -456,6 +461,7 @@ These controls only matter when `ExecutionConfig.mode` is
 | `Export profile` | `ArtifactConfig.export_profile` | `ArtifactExportStep`, `export_profiles.py` |
 | `Export input snapshot` | `ArtifactConfig.export_input_snapshot` | `ArtifactExportStep._export_tabular_dataframe` |
 | `Export code snapshot` | `ArtifactConfig.export_code_snapshot` | `ArtifactExportStep._export_code_snapshot` |
+| `Compact prediction exports` | `ArtifactConfig.compact_prediction_exports` | `EvaluationStep._build_scored_frame`, `ArtifactExportStep._compact_prediction_frame` |
 | `Tabular artifact format` | `ArtifactConfig.tabular_output_format` | CSV/Parquet output branching in `ArtifactExportStep` |
 | `Large tabular export policy` | `ArtifactConfig.large_data_export_policy` | full, sampled, or metadata-only tabular export policy |
 | `Rows in sampled CSV exports` | `ArtifactConfig.large_data_sample_rows` | sampled CSV output size |
@@ -478,6 +484,12 @@ recorded in the run context. The Streamlit results viewer may keep sampled
 in-memory previews for large runs when `PerformanceConfig.lazy_streamlit_results`
 is enabled; full-data predictions are written separately under
 `data/full_data_scoring/`.
+
+Compact prediction exports are applied during scoring, not only during final
+file export. This keeps GUI session snapshots, diagnostics that use scored
+outputs, and exported prediction files from carrying a duplicate copy of the
+full feature matrix. Diagnostics that require model features read from
+`context.split_frames` instead.
 
 The GUI output-location table is assembled by
 `streamlit_ui/artifact_summary.py`. It prioritizes the run folder, interactive

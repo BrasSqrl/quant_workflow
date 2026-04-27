@@ -460,6 +460,10 @@ Primary outputs include:
 
 These outputs are intended for development and validation review in PD, LGD,
 CCAR, and CECL workflows when the available columns support them.
+Migration outputs require an explicitly selected low-cardinality migration state
+column, such as delinquency bucket, rating grade, or stage. Leaving the GUI
+control set to `(none)` skips the migration matrix so continuous score fields are
+not accidentally treated as states.
 
 ## 15. Numerical Stability And Estimation Health
 

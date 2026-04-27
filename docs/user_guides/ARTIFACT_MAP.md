@@ -30,14 +30,14 @@ and summarizes the completed run in Step 5, `Decision Summary`.
 | `model/quant_model.joblib` | Saved fitted model object. | Developer, future scoring workflow, monitoring handoff |
 | `config/run_config.json` | Effective configuration used for the run. | Developer, auditor, reproducibility review |
 | `metadata/metrics.json` | Model metrics by split. | Developer, validator |
-| `data/predictions/predictions.csv` or `data/predictions/predictions.parquet` | Row-level scores and predicted outputs. | Developer, reviewer, downstream user |
+| `data/predictions/predictions.csv` or `data/predictions/predictions.parquet` | Row-level scores and predicted outputs. Compact by default so it does not duplicate every feature column. | Developer, reviewer, downstream user |
 | `model/feature_importance.csv` | Coefficients, feature importance, or model-specific importance output. | Developer, validator |
 | `metadata/statistical_tests.json` | Machine-readable statistical test results. | Validator, auditor |
 | `reports/model_documentation_pack.md` | Development-facing written summary. | Developer, documentation owner |
 | `reports/validation_pack.md` | Validator-facing summary and evidence index. | Validation and risk teams |
 | `artifact_manifest.json` | Index of exported files and directories. | Auditor, technical reviewer |
 | `metadata/step_manifest.json` | Ordered pipeline step record. | Technical reviewer |
-| `metadata/run_debug_trace.json` | Per-step timing, shape snapshots, and failure details. | Developer, support, performance reviewer |
+| `metadata/run_debug_trace.json` | Run start/completion time, total elapsed runtime, per-step timing, shape snapshots, memory estimates, and failure details. | Developer, support, performance reviewer |
 | `metadata/reproducibility_manifest.json` | Hashes, package versions, environment, and input metadata. | Auditor, reproducibility reviewer |
 | `code/generated_run.py` | Python rerun script for running without the GUI. | Developer |
 | `code/HOW_TO_RERUN.md` | Plain-English rerun instructions. | Developer, reviewer |
@@ -96,6 +96,15 @@ individual figure export is off. The separate figure files are only duplicate
 distribution assets. If `Include enhanced report visuals` or `Advanced Visual
 Analytics` are enabled, the optional separate figure files mirror those same
 report-grade charts.
+
+Prediction exports are compact by default. They preserve audit identifiers,
+date/entity fields, target/split fields, low-cardinality segment fields, and
+model score outputs. Turn off `Compact prediction exports` only when downstream
+users explicitly need the full modeled feature matrix repeated in each scored
+row.
+
+When `Large tabular export policy = sampled`, CSV prediction files are sampled
+for reviewer convenience while Parquet prediction files remain full.
 
 ## Interactive Report Layout
 

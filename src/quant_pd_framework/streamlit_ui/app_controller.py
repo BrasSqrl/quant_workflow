@@ -144,6 +144,9 @@ from quant_pd_framework.streamlit_ui.run_execution import (
     execute_workflow as ui_execute_workflow,
 )
 from quant_pd_framework.streamlit_ui.run_execution import (
+    render_runtime_status as ui_render_runtime_status,
+)
+from quant_pd_framework.streamlit_ui.run_execution import (
     workflow_spinner_message as ui_workflow_spinner_message,
 )
 from quant_pd_framework.streamlit_ui.state import (
@@ -352,6 +355,21 @@ def parse_multiline_list(raw_text: str) -> list[str]:
     """Parses a textbox into a clean line-delimited list."""
 
     return [line.strip() for line in raw_text.splitlines() if line.strip()]
+
+
+def build_migration_state_column_options(
+    dataframe: pd.DataFrame,
+    *,
+    max_unique_count: int,
+) -> list[str]:
+    """Returns low-cardinality columns suitable for migration state matrices."""
+
+    options: list[str] = []
+    for column_name in dataframe.columns:
+        unique_count = int(dataframe[column_name].nunique(dropna=True))
+        if 1 < unique_count <= max_unique_count:
+            options.append(str(column_name))
+    return options
 
 
 def get_or_initialize_frame(
@@ -818,7 +836,7 @@ def run_app() -> None:
             st.info("Complete a run before reviewing the Step 5 decision summary.")
         return
     with data_tab:
-        ui_render_input_performance_notice(dataframe)
+        ui_render_input_performance_notice(selected_input.metadata)
 
     editor_key = ui_build_editor_key(dataframe, data_source_label)
     workspace_keys = WorkspaceStateKeys.from_editor_key(editor_key)
@@ -1011,17 +1029,25 @@ def run_app() -> None:
 
         with left_config_column.expander("Split Strategy", expanded=True):
             train_size = st.number_input(
-                "Train size", min_value=0.1, max_value=0.9, value=0.6, step=0.05
+                "Train size",
+                min_value=0.1,
+                max_value=1.0,
+                value=float(preset_inputs.train_size),
+                step=0.05,
             )
             validation_size = st.number_input(
                 "Validation size",
-                min_value=0.05,
-                max_value=0.8,
-                value=0.2,
+                min_value=0.0,
+                max_value=0.9,
+                value=float(preset_inputs.validation_size),
                 step=0.05,
             )
             test_size = st.number_input(
-                "Test size", min_value=0.05, max_value=0.8, value=0.2, step=0.05
+                "Test size",
+                min_value=0.0,
+                max_value=0.9,
+                value=float(preset_inputs.test_size),
+                step=0.05,
             )
             random_state = st.number_input(
                 "Random state", min_value=0, max_value=100000, value=42, step=1
@@ -1442,6 +1468,45 @@ def run_app() -> None:
                     "to categorical dtype where safe."
                 ),
             )
+            capture_memory_profile = st.checkbox(
+                "Capture memory profile in debug trace",
+                value=preset_inputs.performance.capture_memory_profile,
+                help=(
+                    "Records dataframe memory by pipeline step in run_debug_trace.json. "
+                    "The default uses lightweight pandas memory estimates to avoid "
+                    "adding heavy profiling overhead."
+                ),
+            )
+            retain_full_working_data = st.checkbox(
+                "Retain full diagnostic working dataframe",
+                value=preset_inputs.performance.retain_full_working_data,
+                help=(
+                    "Leave off to replace the post-imputation working dataframe with a capped "
+                    "diagnostic snapshot. Model fitting still uses the full train/validation/test "
+                    "splits, but charts and descriptive diagnostics use the snapshot to reduce RAM."
+                ),
+            )
+            max_categorical_cardinality = int(
+                st.number_input(
+                    "Max categorical levels before approval",
+                    min_value=10,
+                    max_value=100000,
+                    value=int(preset_inputs.performance.max_categorical_cardinality),
+                    step=10,
+                    help=(
+                        "Categorical model features above this level count are blocked "
+                        "unless explicitly approved because one-hot encoding can exhaust RAM."
+                    ),
+                )
+            )
+            allow_high_cardinality_categoricals = st.checkbox(
+                "Allow high-cardinality categorical model features",
+                value=preset_inputs.performance.allow_high_cardinality_categoricals,
+                help=(
+                    "Leave off by default. Turn on only after grouping, encoding, or "
+                    "documenting high-cardinality categorical features."
+                ),
+            )
             convert_csv_to_parquet = st.checkbox(
                 "Convert CSV file-path inputs to Parquet before ingestion",
                 value=large_data_mode or preset_inputs.performance.convert_csv_to_parquet,
@@ -1558,10 +1623,19 @@ def run_app() -> None:
             )
             if target_mode != TargetMode.BINARY.value:
                 st.caption("Binary-only suites are automatically skipped for continuous targets.")
+            default_export_surfaces = (
+                []
+                if large_data_mode
+                else [
+                    label
+                    for label, _ in EXPORT_SURFACE_OPTIONS
+                    if label != "Excel workbook"
+                ]
+            )
             selected_export_surfaces = st.multiselect(
                 "Export surfaces",
                 options=[label for label, _ in EXPORT_SURFACE_OPTIONS],
-                default=[] if large_data_mode else [label for label, _ in EXPORT_SURFACE_OPTIONS],
+                default=default_export_surfaces,
             )
             if not export_individual_figure_files:
                 st.caption(
@@ -1851,6 +1925,27 @@ def run_app() -> None:
                     disabled=not credit_risk_enabled,
                 )
             )
+            migration_state_candidates = build_migration_state_column_options(
+                dataframe,
+                max_unique_count=max(40, int(credit_risk_top_segments) * 5),
+            )
+            migration_state_options = ["(none)", *migration_state_candidates]
+            preferred_migration_state = (
+                preset_inputs.credit_risk.migration_state_column
+                if preset_inputs.credit_risk.migration_state_column
+                in migration_state_candidates
+                else "(none)"
+            )
+            selected_migration_state_column = st.selectbox(
+                "Migration state column",
+                options=migration_state_options,
+                index=migration_state_options.index(preferred_migration_state),
+                disabled=not credit_risk_enabled or not credit_risk_migration,
+                help=(
+                    "Select a low-cardinality state column such as delinquency bucket, "
+                    "rating grade, or stage. Leave as '(none)' for continuous score fields."
+                ),
+            )
             credit_risk_shock_std_multiplier = st.number_input(
                 "Macro shock std multiplier",
                 min_value=0.25,
@@ -1947,6 +2042,11 @@ def run_app() -> None:
                 vintage_analysis=credit_risk_vintage,
                 migration_analysis=credit_risk_migration,
                 delinquency_transition_analysis=credit_risk_migration,
+                migration_state_column=(
+                    None
+                    if selected_migration_state_column == "(none)"
+                    else selected_migration_state_column
+                ),
                 cohort_pd_analysis=credit_risk_cohort,
                 lgd_segment_analysis=credit_risk_lgd,
                 recovery_analysis=credit_risk_lgd,
@@ -1960,11 +2060,15 @@ def run_app() -> None:
                 large_data_mode=large_data_mode,
                 diagnostic_sample_rows=diagnostic_sample_rows,
                 optimize_dtypes=optimize_dtypes,
+                capture_memory_profile=capture_memory_profile,
+                retain_full_working_data=retain_full_working_data,
                 convert_csv_to_parquet=convert_csv_to_parquet,
                 csv_conversion_chunk_rows=csv_conversion_chunk_rows,
                 large_data_training_sample_rows=large_data_training_sample_rows,
                 large_data_score_chunk_rows=large_data_score_chunk_rows,
                 memory_limit_gb=memory_limit_gb,
+                max_categorical_cardinality=max_categorical_cardinality,
+                allow_high_cardinality_categoricals=allow_high_cardinality_categoricals,
             )
 
         comparison_enabled = preset_inputs.comparison.enabled
@@ -2875,10 +2979,23 @@ def run_app() -> None:
                 value=preset_inputs.artifacts.export_code_snapshot,
                 help="Copies the project code into the run folder for audit reruns.",
             )
+            compact_prediction_exports = st.checkbox(
+                "Compact prediction exports",
+                value=preset_inputs.artifacts.compact_prediction_exports,
+                help=(
+                    "Exports only ID/date/target/split/score/prediction columns instead "
+                    "of duplicating every model feature in the scored output. Leave on "
+                    "for lower RAM usage and smaller artifacts."
+                ),
+            )
             default_tabular_output_format = (
                 TabularOutputFormat.PARQUET.value
                 if large_data_mode
-                else preset_inputs.artifacts.tabular_output_format.value
+                else (
+                    preset_inputs.artifacts.tabular_output_format.value
+                    if preset_inputs.artifacts.tabular_output_format
+                    else TabularOutputFormat.PARQUET.value
+                )
             )
             tabular_output_format = st.selectbox(
                 "Tabular artifact format",
@@ -3080,12 +3197,23 @@ def run_app() -> None:
                 ui_set_last_run_snapshot(None)
             else:
                 try:
+                    status_placeholder = st.empty()
+                    progress_placeholder = st.empty()
+
+                    def render_progress(event: dict[str, Any]) -> None:
+                        ui_render_runtime_status(
+                            event,
+                            status_placeholder=status_placeholder,
+                            progress_placeholder=progress_placeholder,
+                        )
+
                     with st.spinner(ui_workflow_spinner_message(execution_mode)):
                         context = ui_execute_workflow(
                             preview_config=preview_config,
                             dataframe=dataframe,
                             selected_input=selected_input,
                             large_data_mode=large_data_mode,
+                            progress_callback=render_progress,
                         )
                     snapshot = ui_build_run_snapshot(
                         context,

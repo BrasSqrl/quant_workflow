@@ -260,6 +260,7 @@ class CrossValidationStep(BasePipelineStep):
                 fold_model,
                 context.config.model.threshold,
                 True,
+                context,
             )
             return metrics
 
@@ -270,6 +271,7 @@ class CrossValidationStep(BasePipelineStep):
             context.feature_columns,
             fold_model,
             True,
+            context,
         )
         return metrics
 

@@ -201,6 +201,17 @@ class DiagnosticsStep(BasePipelineStep):
         apply_visual_theme_to_context(context)
         return context
 
+    def _preferred_prediction_frame(
+        self,
+        context: PipelineContext,
+        split_order: tuple[str, ...] = ("test", "validation", "train"),
+    ) -> tuple[str | None, pd.DataFrame | None]:
+        for split_name in split_order:
+            frame = context.predictions.get(split_name)
+            if frame is not None and not frame.empty:
+                return split_name, frame
+        return None, None
+
     def _add_metric_overview_outputs(self, context: PipelineContext) -> None:
         metrics_table = pd.DataFrame(context.metrics).T.rename_axis("split").reset_index()
         numeric_columns = metrics_table.select_dtypes(include="number").columns.tolist()
@@ -408,10 +419,13 @@ class DiagnosticsStep(BasePipelineStep):
 
     def _add_missingness_outputs(self, context: PipelineContext) -> None:
         pre_imputation_frames = context.metadata.get("pre_imputation_split_frames", {})
+        precomputed_split_missingness = context.diagnostics_tables.get(
+            "pre_imputation_missingness_by_split"
+        )
         combined_rows: list[pd.DataFrame] = []
         split_rows: list[dict[str, Any]] = []
         for split_name, split_frame in pre_imputation_frames.items():
-            split_copy = split_frame.copy(deep=True)
+            split_copy = split_frame.copy(deep=False)
             split_copy["split"] = split_name
             combined_rows.append(split_copy)
             split_missingness = (
@@ -430,16 +444,39 @@ class DiagnosticsStep(BasePipelineStep):
         )
         if dataframe is None:
             return
-        missingness = (
-            dataframe.drop(columns=["split"], errors="ignore")
-            .isna()
-            .mean()
-            .mul(100)
-            .rename("missing_pct")
-            .rename_axis("column_name")
-            .reset_index()
-            .sort_values("missing_pct", ascending=False)
-        )
+        if (
+            isinstance(precomputed_split_missingness, pd.DataFrame)
+            and not precomputed_split_missingness.empty
+        ):
+            grouped_missingness = (
+                precomputed_split_missingness.groupby("column_name", dropna=False)
+                .agg(
+                    missing_count=("missing_count", "sum"),
+                    row_count=("row_count", "sum"),
+                )
+                .reset_index()
+            )
+            grouped_missingness["missing_pct"] = (
+                grouped_missingness["missing_count"]
+                / grouped_missingness["row_count"].clip(lower=1)
+                * 100
+            )
+            missingness = (
+                grouped_missingness[["column_name", "missing_pct"]]
+                .sort_values("missing_pct", ascending=False)
+            )
+            split_rows = precomputed_split_missingness.to_dict(orient="records")
+        else:
+            missingness = (
+                dataframe.drop(columns=["split"], errors="ignore")
+                .isna()
+                .mean()
+                .mul(100)
+                .rename("missing_pct")
+                .rename_axis("column_name")
+                .reset_index()
+                .sort_values("missing_pct", ascending=False)
+            )
         context.diagnostics_tables["missingness"] = missingness
         context.visualizations["missingness"] = px.bar(
             missingness.head(25),
@@ -578,7 +615,20 @@ class DiagnosticsStep(BasePipelineStep):
         if not candidate_features:
             return
 
-        baseline_scores = self._prediction_score_series(context.predictions[split_name], context)
+        baseline_frame = context.predictions[split_name].reset_index(drop=True)
+        evaluation_positions = self._diagnostic_row_positions(
+            context=context,
+            row_count=len(baseline_frame),
+            action_name="imputation_sensitivity_eval_sample",
+            detail=(
+                "Sampled the evaluation split used for imputation sensitivity scoring "
+                "to keep diagnostics memory bounded."
+            ),
+        )
+        baseline_scores = self._prediction_score_array(
+            baseline_frame.iloc[evaluation_positions],
+            context,
+        )
         baseline_metrics = context.metrics.get(split_name, {})
         detail_rows: list[dict[str, Any]] = []
         summary_rows: list[dict[str, Any]] = []
@@ -596,31 +646,30 @@ class DiagnosticsStep(BasePipelineStep):
                         feature_name=feature_name,
                         policy=alternative_policy,
                         evaluation_split=split_name,
+                        evaluation_positions=evaluation_positions,
                     )
                 except ValueError:
                     continue
                 if scored_frame is None:
                     continue
-                alternative_scores = self._prediction_score_series(scored_frame, context)
+                alternative_scores = self._prediction_score_array(scored_frame, context)
                 metric_delta = self._primary_metric_delta(
                     context,
                     baseline_metrics,
                     metrics,
+                )
+                score_delta = self._score_delta_statistics(
+                    baseline_scores=baseline_scores,
+                    alternative_scores=alternative_scores,
                 )
                 row = {
                     "feature_name": feature_name,
                     "baseline_policy": rule.get("applied_policy", ""),
                     "alternative_policy": alternative_policy.value,
                     "train_missing_count": int(rule.get("train_missing_count", 0)),
-                    "average_score_delta": float(
-                        alternative_scores.mean() - baseline_scores.mean()
-                    ),
-                    "average_abs_score_delta": float(
-                        (alternative_scores - baseline_scores).abs().mean()
-                    ),
-                    "max_abs_score_delta": float(
-                        (alternative_scores - baseline_scores).abs().max()
-                    ),
+                    "average_score_delta": score_delta["average_score_delta"],
+                    "average_abs_score_delta": score_delta["average_abs_score_delta"],
+                    "max_abs_score_delta": score_delta["max_abs_score_delta"],
                     "primary_metric_delta": metric_delta,
                 }
                 if context.config.target.mode == TargetMode.BINARY:
@@ -810,9 +859,11 @@ class DiagnosticsStep(BasePipelineStep):
         )
 
     def _add_threshold_outputs(self, context: PipelineContext) -> None:
-        scored_test = context.predictions["test"]
-        y_true = scored_test[context.target_column].astype(int).to_numpy()
-        probability = scored_test["predicted_probability"].to_numpy()
+        evaluation_split, scored_frame = self._preferred_prediction_frame(context)
+        if scored_frame is None:
+            return
+        y_true = scored_frame[context.target_column].astype(int).to_numpy()
+        probability = scored_frame["predicted_probability"].to_numpy()
         threshold_rows = []
         for threshold in np.arange(0.05, 1.0, 0.05):
             predicted_class = (probability >= threshold).astype(int)
@@ -833,6 +884,7 @@ class DiagnosticsStep(BasePipelineStep):
                     "recall": recall,
                     "accuracy": accuracy,
                     "f1_score": f1_score,
+                    "split": evaluation_split,
                 }
             )
 
@@ -848,15 +900,17 @@ class DiagnosticsStep(BasePipelineStep):
 
     def _add_calibration_outputs(self, context: PipelineContext) -> None:
         validation_frame = context.predictions.get("validation")
-        scored_test = context.predictions["test"]
-        y_true = scored_test[context.target_column].astype(int).to_numpy()
+        evaluation_split, scored_frame = self._preferred_prediction_frame(context)
+        if scored_frame is None:
+            return
+        y_true = scored_frame[context.target_column].astype(int).to_numpy()
         probability = self._clip_probability(
-            scored_test["predicted_probability"].to_numpy(dtype=float)
+            scored_frame["predicted_probability"].to_numpy(dtype=float)
         )
         if len(np.unique(y_true)) < 2:
             context.warn(
-                "Skipped calibration analysis because the test split does not contain both "
-                "target classes."
+                "Skipped calibration analysis because the selected evaluation split "
+                f"({evaluation_split}) does not contain both target classes."
             )
             return
 
@@ -1274,7 +1328,10 @@ class DiagnosticsStep(BasePipelineStep):
         return np.log(clipped_probability / (1.0 - clipped_probability))
 
     def _add_lift_gain_outputs(self, context: PipelineContext) -> None:
-        scored_test = context.predictions["test"].copy(deep=True)
+        evaluation_split, scored_frame = self._preferred_prediction_frame(context)
+        if scored_frame is None:
+            return
+        scored_test = scored_frame.copy(deep=True)
         scored_test = scored_test.sort_values("predicted_probability", ascending=False).reset_index(
             drop=True
         )
@@ -1295,6 +1352,7 @@ class DiagnosticsStep(BasePipelineStep):
             .reset_index()
             .sort_values("bucket")
         )
+        lift_gain.insert(0, "split", evaluation_split)
         total_defaults = float(lift_gain["default_count"].sum()) or 1.0
         lift_gain["capture_rate"] = lift_gain["default_count"] / total_defaults
         lift_gain["cumulative_capture_rate"] = lift_gain["capture_rate"].cumsum()
@@ -1377,7 +1435,7 @@ class DiagnosticsStep(BasePipelineStep):
                     max(3, min(10, context.config.diagnostics.quantile_bucket_count)),
                 )
             else:
-                bucketed = feature_series.fillna("Missing").astype(str)
+                bucketed = feature_series.astype("object").fillna("Missing").astype(str)
 
             summary = (
                 pd.DataFrame(
@@ -1420,17 +1478,25 @@ class DiagnosticsStep(BasePipelineStep):
         top_features: list[str],
     ) -> None:
         train_frame = context.split_frames.get("train")
-        test_frame = context.split_frames.get("test")
-        if train_frame is None or test_frame is None:
+        evaluation_split, evaluation_frame = self._preferred_prediction_frame(
+            context,
+            split_order=("test", "validation"),
+        )
+        if train_frame is None or evaluation_frame is None or evaluation_split is None:
+            return
+        evaluation_feature_frame = context.split_frames.get(evaluation_split)
+        if evaluation_feature_frame is None:
             return
 
         psi_rows = []
         for feature in top_features[: context.config.diagnostics.top_n_features]:
             psi_value = compute_population_stability_index(
                 train_frame[feature],
-                test_frame[feature],
+                evaluation_feature_frame[feature],
             )
-            psi_rows.append({"feature_name": feature, "psi": psi_value})
+            psi_rows.append(
+                {"feature_name": feature, "comparison_split": evaluation_split, "psi": psi_value}
+            )
 
         score_column = (
             "predicted_probability"
@@ -1440,9 +1506,10 @@ class DiagnosticsStep(BasePipelineStep):
         psi_rows.append(
             {
                 "feature_name": score_column,
+                "comparison_split": evaluation_split,
                 "psi": compute_population_stability_index(
                     context.predictions["train"][score_column],
-                    context.predictions["test"][score_column],
+                    evaluation_frame[score_column],
                 ),
             }
         )
@@ -1613,6 +1680,15 @@ class DiagnosticsStep(BasePipelineStep):
         train_frame = context.split_frames.get("train")
         if train_frame is None or context.target_column is None:
             return
+        train_frame = self._sample_expensive_diagnostic_frame(
+            context=context,
+            frame=train_frame,
+            action_name="model_specification_sample",
+            detail=(
+                "Sampled the training split used for model specification and influence "
+                "diagnostics to prevent full-sample statistical tests from exhausting memory."
+            ),
+        )
         numeric_features = [
             feature_name
             for feature_name in top_features
@@ -1826,10 +1902,14 @@ class DiagnosticsStep(BasePipelineStep):
             context.diagnostics_tables["granger_causality_tests"] = pd.DataFrame(granger_rows)
 
     def _add_residual_outputs(self, context: PipelineContext) -> None:
-        scored_test = context.predictions["test"].copy(deep=True)
-        scored_test["residual"] = (
-            scored_test[context.target_column] - scored_test["predicted_value"]
-        )
+        evaluation_split, scored_frame = self._preferred_prediction_frame(context)
+        if scored_frame is None:
+            return
+        scored_test = scored_frame.copy(deep=True)
+        scored_test["residual"] = scored_test[context.target_column] - scored_test[
+            "predicted_value"
+        ]
+        scored_test["evaluation_split"] = evaluation_split
         residual_summary = scored_test["residual"].describe().reset_index()
         residual_summary.columns = ["statistic", "value"]
         context.diagnostics_tables["residual_summary"] = residual_summary
@@ -1854,7 +1934,10 @@ class DiagnosticsStep(BasePipelineStep):
         )
 
     def _add_qq_outputs(self, context: PipelineContext) -> None:
-        scored_test = context.predictions["test"].copy(deep=True)
+        _, scored_frame = self._preferred_prediction_frame(context)
+        if scored_frame is None:
+            return
+        scored_test = scored_frame.copy(deep=True)
         qq = ProbPlot(scored_test["residual"].dropna().to_numpy())
         qq_table = pd.DataFrame(
             {
@@ -1974,6 +2057,7 @@ class DiagnosticsStep(BasePipelineStep):
                         resampled_model,
                         context.config.model.threshold,
                         True,
+                        context,
                     )
                     candidate_metrics = [
                         "roc_auc",
@@ -1995,6 +2079,7 @@ class DiagnosticsStep(BasePipelineStep):
                         context.feature_columns,
                         resampled_model,
                         True,
+                        context,
                     )
                     candidate_metrics = ["rmse", "mae", "r2", "explained_variance"]
             except Exception as exc:
@@ -2613,14 +2698,9 @@ class DiagnosticsStep(BasePipelineStep):
         context: PipelineContext,
         top_features: list[str],
     ) -> pd.DataFrame:
-        scored_frame = context.predictions.get("test")
-        if scored_frame is None:
+        sampled = self._effect_feature_frame(context, split_name="test")
+        if sampled.empty:
             return pd.DataFrame()
-        sampled = sample_rows_for_diagnostics(
-            scored_frame[context.feature_columns].copy(deep=True),
-            context.config.explainability.sample_size,
-            context,
-        )
         rows: list[dict[str, Any]] = []
         score_label = (
             "predicted_probability"
@@ -2659,7 +2739,8 @@ class DiagnosticsStep(BasePipelineStep):
                     )
             else:
                 categories = (
-                    series.fillna("Missing")
+                    series.astype("object")
+                    .fillna("Missing")
                     .astype(str)
                     .value_counts()
                     .head(context.config.diagnostics.top_n_categories)
@@ -3085,7 +3166,7 @@ class DiagnosticsStep(BasePipelineStep):
         context: PipelineContext,
         top_features: list[str],
     ) -> pd.DataFrame:
-        scored_frame = context.predictions.get("test")
+        scored_frame = self._feature_split_frame(context, "test")
         segment_column = context.config.diagnostics.default_segment_column or (
             context.categorical_features[0] if context.categorical_features else None
         )
@@ -3093,6 +3174,7 @@ class DiagnosticsStep(BasePipelineStep):
             return pd.DataFrame()
         segment_values = (
             scored_frame[segment_column]
+            .astype("object")
             .fillna("Missing")
             .astype(str)
             .value_counts()
@@ -3102,10 +3184,11 @@ class DiagnosticsStep(BasePipelineStep):
         rows: list[dict[str, Any]] = []
         for segment_value in segment_values:
             segment_frame = scored_frame.loc[
-                scored_frame[segment_column].fillna("Missing").astype(str) == segment_value
+                scored_frame[segment_column].astype("object").fillna("Missing").astype(str)
+                == segment_value
             ]
             base_frame = sample_rows_for_diagnostics(
-                segment_frame[context.feature_columns].copy(deep=True),
+                segment_frame[context.feature_columns].copy(deep=False),
                 context.config.explainability.sample_size,
                 context,
             )
@@ -3160,11 +3243,15 @@ class DiagnosticsStep(BasePipelineStep):
         context: PipelineContext,
         top_features: list[str],
     ) -> pd.DataFrame:
-        combined = self._combined_predictions(context)
+        combined = (
+            context.working_data
+            if context.working_data is not None and not context.working_data.empty
+            else self._combined_feature_split_frame(context)
+        )
         if combined.empty:
             return pd.DataFrame()
         base_frame = sample_rows_for_diagnostics(
-            combined[context.feature_columns].copy(deep=True),
+            combined[context.feature_columns].copy(deep=False),
             context.config.explainability.sample_size,
             context,
         )
@@ -3177,11 +3264,11 @@ class DiagnosticsStep(BasePipelineStep):
             for feature_name in numeric_features
         }
         rows: list[dict[str, Any]] = []
-        for split_name, split_frame in context.predictions.items():
+        for split_name, split_frame in context.split_frames.items():
             if not set(context.feature_columns).issubset(split_frame.columns):
                 continue
             split_features = sample_rows_for_diagnostics(
-                split_frame[context.feature_columns].copy(deep=True),
+                split_frame[context.feature_columns].copy(deep=False),
                 context.config.explainability.sample_size,
                 context,
             )
@@ -3348,8 +3435,10 @@ class DiagnosticsStep(BasePipelineStep):
         top_features: list[str],
     ) -> pd.DataFrame:
         scored_test = context.predictions.get("test")
+        feature_frame = self._feature_split_frame(context, "test")
         if (
             scored_test is None
+            or feature_frame is None
             or context.target_column is None
             or context.target_column not in scored_test.columns
         ):
@@ -3358,10 +3447,23 @@ class DiagnosticsStep(BasePipelineStep):
         if score_column not in scored_test.columns:
             return pd.DataFrame()
         rows: list[dict[str, Any]] = []
+        aligned_rows = min(len(feature_frame), len(scored_test))
         for feature_name in top_features[: context.config.explainability.top_n_features]:
-            if feature_name not in scored_test.columns:
+            if feature_name not in feature_frame.columns:
                 continue
-            feature_series = scored_test[feature_name]
+            analysis_frame = pd.DataFrame(
+                {
+                    "feature_value": feature_frame[feature_name].iloc[:aligned_rows].to_numpy(),
+                    "actual": scored_test[context.target_column].iloc[:aligned_rows].to_numpy(),
+                    "prediction": scored_test[score_column].iloc[:aligned_rows].to_numpy(),
+                }
+            )
+            analysis_frame = sample_rows_for_diagnostics(
+                analysis_frame,
+                context.config.explainability.sample_size,
+                context,
+            )
+            feature_series = analysis_frame["feature_value"]
             if pd.api.types.is_numeric_dtype(feature_series):
                 bucket = self._bucket_numeric_for_display(
                     feature_series,
@@ -3369,13 +3471,14 @@ class DiagnosticsStep(BasePipelineStep):
                 )
             else:
                 top_categories = (
-                    feature_series.fillna("Missing")
+                    feature_series.astype("object")
+                    .fillna("Missing")
                     .astype(str)
                     .value_counts()
                     .head(context.config.diagnostics.top_n_categories)
                     .index
                 )
-                categorical_series = feature_series.fillna("Missing").astype(str)
+                categorical_series = feature_series.astype("object").fillna("Missing").astype(str)
                 bucket = categorical_series.where(
                     categorical_series.isin(top_categories),
                     "Other",
@@ -3383,8 +3486,8 @@ class DiagnosticsStep(BasePipelineStep):
             frame = pd.DataFrame(
                 {
                     "feature_bucket": bucket.astype(str),
-                    "actual": scored_test[context.target_column],
-                    "prediction": scored_test[score_column],
+                    "actual": analysis_frame["actual"],
+                    "prediction": analysis_frame["prediction"],
                 }
             ).dropna()
             if frame.empty:
@@ -3449,22 +3552,44 @@ class DiagnosticsStep(BasePipelineStep):
         split_name: str,
         max_rows: int | None = None,
     ) -> pd.DataFrame:
-        scored_frame = context.predictions.get(split_name)
-        if scored_frame is None:
+        feature_frame = self._feature_split_frame(context, split_name)
+        if feature_frame is None:
             return pd.DataFrame()
         missing_features = [
             feature_name
             for feature_name in context.feature_columns
-            if feature_name not in scored_frame.columns
+            if feature_name not in feature_frame.columns
         ]
         if missing_features:
             return pd.DataFrame()
         row_limit = max_rows or context.config.explainability.sample_size
         return sample_rows_for_diagnostics(
-            scored_frame[context.feature_columns].copy(deep=True),
+            feature_frame[context.feature_columns].copy(deep=False),
             row_limit,
             context,
         )
+
+    def _feature_split_frame(
+        self,
+        context: PipelineContext,
+        split_name: str,
+    ) -> pd.DataFrame | None:
+        frame = context.split_frames.get(split_name)
+        if frame is not None and not frame.empty:
+            return frame
+        for fallback_split in ("test", "validation", "train"):
+            frame = context.split_frames.get(fallback_split)
+            if frame is not None and not frame.empty:
+                return frame
+        return None
+
+    def _combined_feature_split_frame(self, context: PipelineContext) -> pd.DataFrame:
+        frames = [frame for frame in context.split_frames.values() if not frame.empty]
+        if not frames:
+            return pd.DataFrame()
+        if len(frames) == 1:
+            return frames[0]
+        return pd.concat(frames, ignore_index=True)
 
     def _predict_modified_frames(
         self,
@@ -3538,12 +3663,12 @@ class DiagnosticsStep(BasePipelineStep):
         context: PipelineContext,
         top_features: list[str],
     ) -> pd.DataFrame:
-        scored_test = context.predictions.get("test")
+        scored_test = self._feature_split_frame(context, "test")
         if scored_test is None or context.target_column not in scored_test.columns:
             return pd.DataFrame()
 
         sampled = sample_rows_for_diagnostics(
-            scored_test[[*context.feature_columns, context.target_column]].copy(deep=True),
+            scored_test[[*context.feature_columns, context.target_column]].copy(deep=False),
             context.config.explainability.sample_size,
             context,
         )
@@ -3612,9 +3737,16 @@ class DiagnosticsStep(BasePipelineStep):
     def _add_scenario_outputs(self, context: PipelineContext) -> None:
         split_name = context.config.scenario_testing.evaluation_split
         scored_frame = context.predictions.get(split_name)
+        feature_frame = self._feature_split_frame(context, split_name)
         if scored_frame is None:
             context.warn(
                 f"Skipped scenario testing because the '{split_name}' split was unavailable."
+            )
+            return
+        if feature_frame is None:
+            context.warn(
+                "Skipped scenario testing because the "
+                f"'{split_name}' feature split was unavailable."
             )
             return
 
@@ -3623,7 +3755,7 @@ class DiagnosticsStep(BasePipelineStep):
             if context.config.target.mode == TargetMode.BINARY
             else "predicted_value"
         )
-        base_features = scored_frame[context.feature_columns].copy(deep=True)
+        base_features = feature_frame[context.feature_columns].copy(deep=False)
         summary_rows: list[dict[str, Any]] = []
         definition_rows: list[dict[str, Any]] = []
         segment_rows: list[dict[str, Any]] = []
@@ -3679,7 +3811,10 @@ class DiagnosticsStep(BasePipelineStep):
             if segment_column and segment_column in scored_frame.columns:
                 segment_frame = pd.DataFrame(
                     {
-                        "segment_value": scored_frame[segment_column].fillna("Missing").astype(str),
+                        "segment_value": scored_frame[segment_column]
+                        .astype("object")
+                        .fillna("Missing")
+                        .astype(str),
                         "baseline_score": baseline_score,
                         "scenario_score": np.asarray(scenario_score),
                     }
@@ -4134,10 +4269,10 @@ class DiagnosticsStep(BasePipelineStep):
         )
         context.diagnostics_tables["roll_rate_summary"] = roll_rate_summary
 
-        heatmap_table = (
-            grouped.groupby(["current_state", "next_state"], dropna=False)["transition_count"]
-            .sum()
-            .unstack(fill_value=0)
+        heatmap_table = self._build_transition_heatmap_table(
+            context=context,
+            grouped=grouped,
+            state_column=state_column,
         )
         if not heatmap_table.empty:
             context.visualizations["migration_heatmap"] = px.imshow(
@@ -4147,6 +4282,61 @@ class DiagnosticsStep(BasePipelineStep):
                 labels={"x": "Next State", "y": "Current State", "color": "Transitions"},
                 aspect="auto",
             )
+
+    def _build_transition_heatmap_table(
+        self,
+        *,
+        context: PipelineContext,
+        grouped: pd.DataFrame,
+        state_column: str,
+    ) -> pd.DataFrame:
+        """Builds a bounded migration heatmap without pandas unstack cartesian expansion."""
+
+        if grouped.empty:
+            return pd.DataFrame()
+        state_limit = self._transition_state_limit(context)
+        state_volume = pd.concat(
+            [
+                grouped[["current_state", "transition_count"]].rename(
+                    columns={"current_state": "state"}
+                ),
+                grouped[["next_state", "transition_count"]].rename(
+                    columns={"next_state": "state"}
+                ),
+            ],
+            ignore_index=True,
+        )
+        state_volume["state"] = state_volume["state"].astype(str)
+        top_states = (
+            state_volume.groupby("state", dropna=False)["transition_count"]
+            .sum()
+            .sort_values(ascending=False)
+            .head(state_limit)
+            .index.astype(str)
+            .tolist()
+        )
+        if not top_states:
+            return pd.DataFrame()
+        observed_state_count = int(state_volume["state"].nunique(dropna=False))
+        if observed_state_count > state_limit:
+            context.warn(
+                f"Migration heatmap for '{state_column}' was limited to the top "
+                f"{state_limit} states out of {observed_state_count:,} observed states."
+            )
+
+        heatmap_table = pd.DataFrame(0, index=top_states, columns=top_states, dtype=int)
+        top_state_set = set(top_states)
+        observed_pairs = (
+            grouped.groupby(["current_state", "next_state"], dropna=False)["transition_count"]
+            .sum()
+            .reset_index()
+        )
+        for row in observed_pairs.itertuples(index=False):
+            current_state = str(row.current_state)
+            next_state = str(row.next_state)
+            if current_state in top_state_set and next_state in top_state_set:
+                heatmap_table.at[current_state, next_state] += int(row.transition_count)
+        return heatmap_table
 
     def _add_lgd_segment_outputs(
         self,
@@ -4166,7 +4356,12 @@ class DiagnosticsStep(BasePipelineStep):
             return
 
         lgd_summary = (
-            predictions.assign(_segment=predictions[segment_column].fillna("Missing").astype(str))
+            predictions.assign(
+                _segment=predictions[segment_column]
+                .astype("object")
+                .fillna("Missing")
+                .astype(str)
+            )
             .groupby(["split", "_segment"], dropna=False)
             .agg(
                 observation_count=(score_column, "size"),
@@ -4217,7 +4412,10 @@ class DiagnosticsStep(BasePipelineStep):
             return
 
         recovery_frame = predictions.assign(
-            _segment=predictions[segment_column].fillna("Missing").astype(str),
+            _segment=predictions[segment_column]
+            .astype("object")
+            .fillna("Missing")
+            .astype(str),
             predicted_recovery=1.0 - pd.to_numeric(predictions[score_column], errors="coerce"),
         )
         aggregations: dict[str, tuple[str, str]] = {
@@ -4291,7 +4489,11 @@ class DiagnosticsStep(BasePipelineStep):
         if not macro_features:
             return
 
-        x_frame = evaluation_split[context.feature_columns].copy(deep=True)
+        x_frame = sample_rows_for_diagnostics(
+            evaluation_split[context.feature_columns].copy(deep=False),
+            context.config.explainability.sample_size,
+            context,
+        )
         base_scores = pd.Series(context.model.predict_score(x_frame))
         base_average = float(base_scores.mean()) if not base_scores.empty else float("nan")
         rows: list[dict[str, Any]] = []
@@ -4346,32 +4548,44 @@ class DiagnosticsStep(BasePipelineStep):
         predictions: pd.DataFrame,
         context: PipelineContext,
     ) -> str | None:
-        excluded = {
-            "split",
-            context.target_column,
-            "predicted_probability",
-            "predicted_value",
-            context.config.split.date_column,
-            context.config.split.entity_column,
-        }
-        candidates = [
-            column
-            for column in predictions.columns
-            if column not in excluded
-            and any(
-                keyword in str(column).lower()
-                for keyword in (
-                    "stage",
-                    "delinq",
-                    "delinquency",
-                    "dpd",
-                    "bucket",
-                    "rating",
-                    "grade",
-                )
+        configured_column = context.config.credit_risk.migration_state_column
+        if not configured_column:
+            return None
+        if configured_column not in predictions.columns:
+            context.warn(
+                "Skipped migration transition diagnostics because the configured "
+                f"migration state column '{configured_column}' is not available in predictions."
             )
-        ]
-        return candidates[0] if candidates else None
+            return None
+
+        state_limit = self._transition_state_limit(context)
+        unique_count = int(predictions[configured_column].nunique(dropna=True))
+        if unique_count > state_limit:
+            context.metadata["skipped_transition_state_candidates"] = [
+                {
+                    "column_name": str(configured_column),
+                    "unique_count": unique_count,
+                    "max_allowed_unique_count": state_limit,
+                }
+            ]
+            context.warn(
+                "Skipped migration transition diagnostics because the configured "
+                f"migration state column '{configured_column}' has {unique_count:,} "
+                "distinct values, which is too high-cardinality for a state matrix. "
+                f"Maximum allowed state count is {state_limit:,}."
+            )
+            return None
+        return configured_column
+
+    def _transition_state_limit(self, context: PipelineContext) -> int:
+        return max(
+            10,
+            min(
+                100,
+                int(context.config.performance.max_categorical_cardinality),
+                int(context.config.credit_risk.top_segments) * 5,
+            ),
+        )
 
     def _build_state_order(self, states: list[str]) -> dict[str, float]:
         parsed: list[tuple[str, float]] = []
@@ -4504,6 +4718,87 @@ class DiagnosticsStep(BasePipelineStep):
             "threshold": threshold,
         }
 
+    def _sample_expensive_diagnostic_frame(
+        self,
+        *,
+        context: PipelineContext,
+        frame: pd.DataFrame,
+        action_name: str,
+        detail: str,
+    ) -> pd.DataFrame:
+        """Applies the governed diagnostics cap before memory-heavy statistical tests."""
+
+        if not context.config.performance.enabled:
+            return frame.reset_index(drop=True)
+        row_cap = int(context.config.performance.diagnostic_sample_rows)
+        if len(frame) <= row_cap:
+            return frame.reset_index(drop=True)
+        sampled = frame.sample(row_cap, random_state=context.config.split.random_state)
+        self._append_performance_action(
+            context=context,
+            action_name=action_name,
+            detail=detail,
+            original_rows=len(frame),
+            effective_rows=len(sampled),
+        )
+        return sampled.reset_index(drop=True)
+
+    def _diagnostic_row_positions(
+        self,
+        *,
+        context: PipelineContext,
+        row_count: int,
+        action_name: str,
+        detail: str,
+    ) -> np.ndarray:
+        """Returns stable row positions for sampled scoring diagnostics."""
+
+        if row_count <= 0:
+            return np.asarray([], dtype=int)
+        if not context.config.performance.enabled:
+            return np.arange(row_count, dtype=int)
+        row_cap = int(context.config.performance.diagnostic_sample_rows)
+        if row_count <= row_cap:
+            return np.arange(row_count, dtype=int)
+        rng = np.random.default_rng(int(context.config.split.random_state))
+        positions = np.sort(rng.choice(row_count, size=row_cap, replace=False))
+        self._append_performance_action(
+            context=context,
+            action_name=action_name,
+            detail=detail,
+            original_rows=row_count,
+            effective_rows=len(positions),
+        )
+        return positions.astype(int)
+
+    def _append_performance_action(
+        self,
+        *,
+        context: PipelineContext,
+        action_name: str,
+        detail: str,
+        original_rows: int,
+        effective_rows: int,
+    ) -> None:
+        row = pd.DataFrame(
+            [
+                {
+                    "action_name": action_name,
+                    "detail": detail,
+                    "original_rows": int(original_rows),
+                    "effective_rows": int(effective_rows),
+                }
+            ]
+        )
+        existing = context.diagnostics_tables.get("performance_hardening_actions")
+        if existing is None or existing.empty:
+            context.diagnostics_tables["performance_hardening_actions"] = row
+        else:
+            context.diagnostics_tables["performance_hardening_actions"] = pd.concat(
+                [existing, row],
+                ignore_index=True,
+            )
+
     def _select_imputation_sensitivity_features(
         self,
         context: PipelineContext,
@@ -4539,15 +4834,30 @@ class DiagnosticsStep(BasePipelineStep):
         feature_name: str,
         policy: MissingValuePolicy,
         evaluation_split: str,
+        evaluation_positions: np.ndarray,
     ) -> tuple[pd.DataFrame | None, dict[str, Any]]:
         base_frames = context.metadata.get("pre_imputation_split_frames", {})
         if not base_frames:
             return None, {}
-        trial_context = deepcopy(context)
+        trial_config = deepcopy(context.config)
+        trial_config.imputation_sensitivity.enabled = False
+        trial_config.advanced_imputation.multiple_imputation_enabled = False
+        trial_context = PipelineContext(
+            config=trial_config,
+            run_id=context.run_id,
+            raw_input=None,
+            model=context.model,
+            target_column=context.target_column,
+            dropped_columns=list(context.dropped_columns),
+        )
+        retained_splits = {"train", evaluation_split}
         trial_context.split_frames = {
             split_name: split_frame.copy(deep=True)
             for split_name, split_frame in base_frames.items()
+            if split_name in retained_splits
         }
+        if "train" not in trial_context.split_frames:
+            return None, {}
         trial_context.working_data = pd.concat(
             trial_context.split_frames.values(),
             ignore_index=True,
@@ -4561,11 +4871,10 @@ class DiagnosticsStep(BasePipelineStep):
         trial_context.categorical_features = list(
             context.metadata.get("pre_imputation_categorical_features", [])
         )
-        trial_context.predictions = {}
-        trial_context.metrics = {}
-        trial_context.diagnostics_tables = {}
-        trial_context.visualizations = {}
-        trial_context.statistical_tests = {}
+        trial_context.metadata = {
+            "labels_available": bool(context.metadata.get("labels_available", False)),
+            "hazard_time_features": list(context.metadata.get("hazard_time_features", [])),
+        }
 
         schema_specs = deepcopy(trial_context.config.schema.column_specs)
         for spec in schema_specs:
@@ -4580,6 +4889,11 @@ class DiagnosticsStep(BasePipelineStep):
         evaluation_frame = trial_context.split_frames.get(evaluation_split)
         if evaluation_frame is None:
             return None, {}
+        evaluation_frame = evaluation_frame.reset_index(drop=True)
+        valid_positions = evaluation_positions[evaluation_positions < len(evaluation_frame)]
+        if valid_positions.size == 0:
+            return None, {}
+        evaluation_frame = evaluation_frame.iloc[valid_positions].reset_index(drop=True)
 
         metrics: dict[str, Any]
         if context.config.target.mode == TargetMode.BINARY:
@@ -4592,6 +4906,7 @@ class DiagnosticsStep(BasePipelineStep):
                 context.config.model.threshold,
                 self._labels_available(context)
                 and context.target_column in evaluation_frame.columns,
+                trial_context,
             )
         else:
             scored_frame, metrics = EvaluationStep()._score_continuous_split(
@@ -4602,20 +4917,54 @@ class DiagnosticsStep(BasePipelineStep):
                 context.model,
                 self._labels_available(context)
                 and context.target_column in evaluation_frame.columns,
+                trial_context,
             )
         return scored_frame, metrics
 
-    def _prediction_score_series(
+    def _prediction_score_array(
         self,
         scored_frame: pd.DataFrame,
         context: PipelineContext,
-    ) -> pd.Series:
+    ) -> np.ndarray:
         score_column = (
             "predicted_probability"
             if context.config.target.mode == TargetMode.BINARY
             else "predicted_value"
         )
-        return pd.to_numeric(scored_frame[score_column], errors="coerce")
+        return pd.to_numeric(scored_frame[score_column], errors="coerce").to_numpy(dtype=float)
+
+    def _score_delta_statistics(
+        self,
+        *,
+        baseline_scores: np.ndarray,
+        alternative_scores: np.ndarray,
+    ) -> dict[str, float]:
+        """Computes row-wise score deltas without pandas index alignment."""
+
+        aligned_rows = min(len(baseline_scores), len(alternative_scores))
+        if aligned_rows == 0:
+            return {
+                "average_score_delta": 0.0,
+                "average_abs_score_delta": 0.0,
+                "max_abs_score_delta": 0.0,
+            }
+        baseline = np.asarray(baseline_scores[:aligned_rows], dtype=float)
+        alternative = np.asarray(alternative_scores[:aligned_rows], dtype=float)
+        finite_mask = np.isfinite(baseline) & np.isfinite(alternative)
+        if not finite_mask.any():
+            return {
+                "average_score_delta": 0.0,
+                "average_abs_score_delta": 0.0,
+                "max_abs_score_delta": 0.0,
+            }
+        baseline = baseline[finite_mask]
+        alternative = alternative[finite_mask]
+        delta = alternative - baseline
+        return {
+            "average_score_delta": float(np.mean(alternative) - np.mean(baseline)),
+            "average_abs_score_delta": float(np.mean(np.abs(delta))),
+            "max_abs_score_delta": float(np.max(np.abs(delta))),
+        }
 
     def _primary_metric_delta(
         self,

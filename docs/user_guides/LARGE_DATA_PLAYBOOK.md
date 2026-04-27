@@ -15,6 +15,13 @@ Enable `Large Data Mode` when:
 
 For small files, normal mode is simpler.
 
+Do not enable `Large Data Mode` when the requirement is to fit coefficients on
+the full train split. Large Data Mode intentionally uses governed sample
+development plus chunked full-file scoring. For full-data fitting, use the
+memory-optimized normal workflow: Parquet input, dtype optimization, compact
+prediction exports, capped diagnostic working snapshots, and Parquet-first
+tabular outputs.
+
 ## Recommended Large-Data Workflow
 
 1. Place the source file in `Data_Load/`.
@@ -72,6 +79,19 @@ Conservative starting points:
 If available RAM is below the practical need, pandas may swap heavily, appear
 frozen, or fail with memory errors. It is safer to reduce the sample, convert to
 Parquet, and use larger compute.
+
+For full-data model fitting, keep these defaults unless there is a specific
+audit need to change them:
+
+- `Optimize dtypes during ingestion`: on
+- `Compact prediction exports`: on
+- `Retain full diagnostic working dataframe`: off
+- individual figure HTML/PNG export: off
+- Excel workbook export: off unless specifically requested
+- `Tabular artifact format`: Parquet or both with sampled CSV
+
+These settings do not sample the model training split. They reduce duplicated
+copies, report/session memory, and artifact size around the full-data fit.
 
 ## Large-Data Outputs
 

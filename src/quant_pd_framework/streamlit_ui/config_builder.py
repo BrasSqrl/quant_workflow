@@ -350,6 +350,10 @@ def build_preview_configuration(
                     preset_inputs.artifacts.include_advanced_visual_analytics,
                 ),
                 export_individual_figure_files=values["export_individual_figure_files"],
+                compact_prediction_exports=values.get(
+                    "compact_prediction_exports",
+                    preset_inputs.artifacts.compact_prediction_exports,
+                ),
                 export_input_snapshot=values["export_input_snapshot"],
                 export_code_snapshot=values["export_code_snapshot"],
                 export_profile=ExportProfile(values["export_profile"]),

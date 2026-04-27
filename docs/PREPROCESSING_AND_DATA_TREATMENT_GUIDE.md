@@ -75,16 +75,31 @@ only a small preview for schema design, then ingestion loads a governed sample
 into pandas for model development. The fitted model later scores the full file
 in chunks and writes full-data predictions to Parquet.
 
-When `PerformanceConfig.optimize_dtypes=True` or `large_data_mode=True`,
-ingestion can downcast numeric columns and convert low-cardinality string
-columns to categorical dtype. The transformation is memory-oriented and is
-recorded in an audit table.
+`PerformanceConfig.optimize_dtypes=True` by default. Ingestion can downcast
+numeric columns and convert low-cardinality string columns to categorical dtype.
+The transformation is memory-oriented and is recorded in an audit table.
+
+After split-time imputation, Quant Studio does not retain a second full copy of
+the modeled dataframe by default. It keeps the full train/validation/test split
+frames for model fitting and scoring, then stores a capped diagnostic working
+snapshot controlled by `PerformanceConfig.diagnostic_sample_rows`. Turn on
+`PerformanceConfig.retain_full_working_data` only when diagnostics must inspect
+every row in the post-imputation working dataframe and the machine has enough
+RAM.
+
+High-cardinality categorical features are profiled before model fitting. By
+default, categorical model features above
+`PerformanceConfig.max_categorical_cardinality` or
+`PerformanceConfig.max_categorical_cardinality_ratio` are blocked unless
+`allow_high_cardinality_categoricals=True`.
 
 ### Audit evidence
 
 - `input_shape`
 - `large_data_memory_estimate`
 - optional `dtype_optimization`
+- `working_data_snapshot`
+- `categorical_cardinality_profile`
 - optional `csv_to_parquet_conversion`
 - optional `data/sample_development/training_sample.parquet`
 - optional `data/full_data_scoring/predictions.parquet`

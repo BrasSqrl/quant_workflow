@@ -47,9 +47,9 @@ class TransformationStep(BasePipelineStep):
             raise ValueError("Governed transformations require split and working dataframes.")
 
         working_splits = {
-            split_name: frame.copy(deep=True) for split_name, frame in context.split_frames.items()
+            split_name: frame.copy(deep=False) for split_name, frame in context.split_frames.items()
         }
-        working_dataframe = context.working_data.copy(deep=True)
+        working_dataframe = context.working_data.copy(deep=False)
         resolved_transformations: list[ResolvedTransformation] = []
         audit_rows: list[dict[str, Any]] = []
 

@@ -177,8 +177,8 @@ class LargeDataFullScoringStep(BasePipelineStep):
             config=context.config,
             run_id=context.run_id,
             raw_input=chunk,
-            raw_data=chunk.copy(deep=True),
-            working_data=chunk.copy(deep=True),
+            raw_data=chunk.copy(deep=False),
+            working_data=chunk.copy(deep=False),
         )
         temp_context.metadata["labels_available"] = context.metadata.get(
             "labels_available",
@@ -230,7 +230,7 @@ class LargeDataFullScoringStep(BasePipelineStep):
             )
 
         feature_frame = temp_context.working_data.loc[:, context.feature_columns]
-        scored = temp_context.working_data.copy(deep=True).reset_index(drop=True)
+        scored = self._build_scored_chunk_frame(context, temp_context.working_data)
         scored["large_data_chunk_id"] = chunk_id
         if context.config.target.mode == TargetMode.BINARY:
             probability = np.asarray(context.model.predict_score(feature_frame))
@@ -244,6 +244,54 @@ class LargeDataFullScoringStep(BasePipelineStep):
         for column_name, values in context.model.get_prediction_outputs(feature_frame).items():
             scored[column_name] = values
         return scored
+
+    def _build_scored_chunk_frame(
+        self,
+        context: PipelineContext,
+        frame: pd.DataFrame,
+    ) -> pd.DataFrame:
+        if not context.config.artifacts.compact_prediction_exports:
+            return frame.copy(deep=False).reset_index(drop=True)
+        columns = self._prediction_base_columns(context, frame)
+        if not columns:
+            return pd.DataFrame(index=range(len(frame)))
+        return frame.loc[:, columns].copy(deep=False).reset_index(drop=True)
+
+    def _prediction_base_columns(
+        self,
+        context: PipelineContext,
+        frame: pd.DataFrame,
+    ) -> list[str]:
+        role_columns = [
+            spec.name
+            for spec in context.config.schema.column_specs
+            if spec.role.value in {"identifier", "date"} and spec.name in frame.columns
+        ]
+        configured_columns = [
+            context.config.split.date_column,
+            context.config.split.entity_column,
+            context.target_column,
+            context.config.diagnostics.default_segment_column,
+            *context.metadata.get("hazard_time_features", []),
+        ]
+        low_cardinality_segments = [
+            feature_name
+            for feature_name in context.categorical_features
+            if feature_name in frame.columns
+            and frame[feature_name].nunique(dropna=True)
+            <= context.config.performance.max_categorical_cardinality
+        ]
+        return list(
+            dict.fromkeys(
+                column_name
+                for column_name in [
+                    *role_columns,
+                    *configured_columns,
+                    *low_cardinality_segments,
+                ]
+                if column_name and column_name in frame.columns
+            )
+        )
 
 
 class _RunningScoreSummary:

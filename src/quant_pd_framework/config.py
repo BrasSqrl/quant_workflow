@@ -361,12 +361,13 @@ class SplitConfig:
                 f"Received {self.train_size} + {self.validation_size} + {self.test_size} = {total}."
             )
         for split_name, split_value in {
-            "train_size": self.train_size,
             "validation_size": self.validation_size,
             "test_size": self.test_size,
         }.items():
-            if split_value <= 0:
-                raise ValueError(f"{split_name} must be greater than 0. Received {split_value}.")
+            if split_value < 0:
+                raise ValueError(f"{split_name} must be non-negative. Received {split_value}.")
+        if self.train_size <= 0:
+            raise ValueError(f"train_size must be greater than 0. Received {self.train_size}.")
 
 
 @dataclass(slots=True)
@@ -1342,9 +1343,7 @@ class PerformanceConfig:
 
     enabled: bool = True
     large_data_mode: bool = False
-    upload_warning_mb: int = 250
-    dataframe_warning_rows: int = 200_000
-    dataframe_warning_columns: int = 150
+    upload_warning_mb: int = 5_120
     ui_preview_rows: int = 50
     html_table_preview_rows: int = 12
     html_max_figures_per_section: int = 6
@@ -1353,11 +1352,17 @@ class PerformanceConfig:
     multiple_imputation_row_cap: int = 25_000
     lazy_html_figures: bool = True
     lazy_streamlit_results: bool = True
-    optimize_dtypes: bool = False
+    optimize_dtypes: bool = True
+    capture_memory_profile: bool = True
+    deep_memory_profile: bool = False
+    retain_full_working_data: bool = False
     downcast_numeric: bool = True
     convert_low_cardinality_strings: bool = True
     category_max_unique_values: int = 500
     category_max_unique_ratio: float = 0.5
+    max_categorical_cardinality: int = 500
+    max_categorical_cardinality_ratio: float = 0.2
+    allow_high_cardinality_categoricals: bool = False
     convert_csv_to_parquet: bool = False
     csv_conversion_chunk_rows: int = 100_000
     large_data_training_sample_rows: int = 250_000
@@ -1371,8 +1376,6 @@ class PerformanceConfig:
     def validate(self) -> None:
         for field_name, value in {
             "upload_warning_mb": self.upload_warning_mb,
-            "dataframe_warning_rows": self.dataframe_warning_rows,
-            "dataframe_warning_columns": self.dataframe_warning_columns,
             "ui_preview_rows": self.ui_preview_rows,
             "html_table_preview_rows": self.html_table_preview_rows,
             "html_max_figures_per_section": self.html_max_figures_per_section,
@@ -1380,6 +1383,7 @@ class PerformanceConfig:
             "diagnostic_sample_rows": self.diagnostic_sample_rows,
             "multiple_imputation_row_cap": self.multiple_imputation_row_cap,
             "category_max_unique_values": self.category_max_unique_values,
+            "max_categorical_cardinality": self.max_categorical_cardinality,
             "csv_conversion_chunk_rows": self.csv_conversion_chunk_rows,
             "large_data_training_sample_rows": self.large_data_training_sample_rows,
             "large_data_score_chunk_rows": self.large_data_score_chunk_rows,
@@ -1388,6 +1392,10 @@ class PerformanceConfig:
                 raise ValueError(f"PerformanceConfig.{field_name} must be greater than 0.")
         if not 0 < self.category_max_unique_ratio <= 1:
             raise ValueError("PerformanceConfig.category_max_unique_ratio must be in (0, 1].")
+        if not 0 < self.max_categorical_cardinality_ratio <= 1:
+            raise ValueError(
+                "PerformanceConfig.max_categorical_cardinality_ratio must be in (0, 1]."
+            )
         if self.memory_limit_gb is not None and self.memory_limit_gb <= 0:
             raise ValueError("PerformanceConfig.memory_limit_gb must be positive when set.")
         if self.memory_estimate_file_multiplier <= 0:
@@ -1568,6 +1576,7 @@ class CreditRiskDiagnosticConfig:
     vintage_analysis: bool = True
     migration_analysis: bool = True
     delinquency_transition_analysis: bool = True
+    migration_state_column: str | None = None
     cohort_pd_analysis: bool = True
     lgd_segment_analysis: bool = True
     recovery_analysis: bool = True
@@ -1586,6 +1595,10 @@ class CreditRiskDiagnosticConfig:
         if self.shock_std_multiplier <= 0:
             raise ValueError(
                 "CreditRiskDiagnosticConfig.shock_std_multiplier must be greater than 0."
+            )
+        if self.migration_state_column is not None and not self.migration_state_column.strip():
+            raise ValueError(
+                "CreditRiskDiagnosticConfig.migration_state_column cannot be blank."
             )
 
 
@@ -1629,10 +1642,11 @@ class ArtifactConfig:
     include_enhanced_report_visuals: bool = True
     include_advanced_visual_analytics: bool = False
     export_individual_figure_files: bool = False
+    compact_prediction_exports: bool = True
     export_input_snapshot: bool = True
     export_code_snapshot: bool = True
     export_profile: ExportProfile = ExportProfile.STANDARD
-    tabular_output_format: TabularOutputFormat = TabularOutputFormat.CSV
+    tabular_output_format: TabularOutputFormat = TabularOutputFormat.PARQUET
     large_data_export_policy: LargeDataExportPolicy = LargeDataExportPolicy.FULL
     large_data_sample_rows: int = 50_000
     parquet_compression: str = "snappy"

@@ -60,6 +60,10 @@ class SplitStep(BasePipelineStep):
         context: PipelineContext,
     ) -> dict[str, pd.DataFrame]:
         split_config = context.config.split
+        holdout_size = split_config.validation_size + split_config.test_size
+        if holdout_size == 0:
+            return {"train": dataframe.reset_index(drop=True)}
+
         stratify = (
             dataframe[target_column]
             if labels_available
@@ -70,10 +74,17 @@ class SplitStep(BasePipelineStep):
 
         train_frame, temp_frame = train_test_split(
             dataframe,
-            test_size=split_config.validation_size + split_config.test_size,
+            test_size=holdout_size,
             random_state=split_config.random_state,
             stratify=stratify,
         )
+        split_frames = {"train": train_frame.reset_index(drop=True)}
+        if split_config.validation_size == 0:
+            split_frames["test"] = temp_frame.reset_index(drop=True)
+            return split_frames
+        if split_config.test_size == 0:
+            split_frames["validation"] = temp_frame.reset_index(drop=True)
+            return split_frames
 
         temp_stratify = (
             temp_frame[target_column]
@@ -82,9 +93,7 @@ class SplitStep(BasePipelineStep):
             and context.config.target.mode == TargetMode.BINARY
             else None
         )
-        validation_share_of_temp = split_config.validation_size / (
-            split_config.validation_size + split_config.test_size
-        )
+        validation_share_of_temp = split_config.validation_size / holdout_size
 
         validation_frame, test_frame = train_test_split(
             temp_frame,
@@ -93,11 +102,9 @@ class SplitStep(BasePipelineStep):
             stratify=temp_stratify,
         )
 
-        return {
-            "train": train_frame.reset_index(drop=True),
-            "validation": validation_frame.reset_index(drop=True),
-            "test": test_frame.reset_index(drop=True),
-        }
+        split_frames["validation"] = validation_frame.reset_index(drop=True)
+        split_frames["test"] = test_frame.reset_index(drop=True)
+        return split_frames
 
     def _split_time_aware(
         self,
@@ -111,7 +118,7 @@ class SplitStep(BasePipelineStep):
         if date_column is None:
             raise ValueError("Time-aware splits require SplitConfig.date_column.")
 
-        working = dataframe.copy(deep=True)
+        working = dataframe.copy(deep=False)
         working[date_column] = pd.to_datetime(working[date_column], errors="coerce")
         if working[date_column].isna().all():
             raise ValueError(
@@ -127,17 +134,22 @@ class SplitStep(BasePipelineStep):
 
         total_rows = len(working)
         train_end = math.floor(total_rows * split_config.train_size)
-        validation_end = train_end + math.floor(total_rows * split_config.validation_size)
 
-        train_frame = working.iloc[:train_end].reset_index(drop=True)
-        validation_frame = working.iloc[train_end:validation_end].reset_index(drop=True)
-        test_frame = working.iloc[validation_end:].reset_index(drop=True)
+        split_frames = {
+            "train": working.iloc[:train_end].reset_index(drop=True),
+        }
+        if split_config.validation_size > 0 and split_config.test_size > 0:
+            validation_end = train_end + math.floor(total_rows * split_config.validation_size)
+            split_frames["validation"] = working.iloc[train_end:validation_end].reset_index(
+                drop=True
+            )
+            split_frames["test"] = working.iloc[validation_end:].reset_index(drop=True)
+        elif split_config.validation_size > 0:
+            split_frames["validation"] = working.iloc[train_end:].reset_index(drop=True)
+        elif split_config.test_size > 0:
+            split_frames["test"] = working.iloc[train_end:].reset_index(drop=True)
 
-        for split_name, split_frame in {
-            "train": train_frame,
-            "validation": validation_frame,
-            "test": test_frame,
-        }.items():
+        for split_name, split_frame in split_frames.items():
             if split_frame.empty:
                 raise ValueError(
                     f"The {split_name} split is empty. Adjust the split "
@@ -153,4 +165,4 @@ class SplitStep(BasePipelineStep):
                     "This can happen with strongly time-ordered defaults."
                 )
 
-        return {"train": train_frame, "validation": validation_frame, "test": test_frame}
+        return split_frames

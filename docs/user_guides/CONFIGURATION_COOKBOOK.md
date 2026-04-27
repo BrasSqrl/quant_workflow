@@ -15,7 +15,7 @@ Recommended setup:
 - Model type: `logistic_regression`
 - Target mode: `binary`
 - Data structure: `cross_sectional`
-- Split: train/validation/test with stratification on
+- Split: train/validation/test with stratification on. Validation and test can be set to `0` when a workflow intentionally omits that holdout split.
 - Feature policy: start with warnings, not hard stops
 - Explainability: coefficient breakdown, permutation importance, PDP/ALE for top features
 - Export profile: `standard`
@@ -99,6 +99,8 @@ Recommended setup:
 - Data structure: `time_series` or `panel`
 - Date column: required
 - Entity column: recommended for panel data
+- Migration state column: leave as `(none)` unless a true low-cardinality state
+  field exists, such as delinquency bucket, rating grade, or stage
 - Backtesting and time diagnostics: on
 
 Key checks:
@@ -173,7 +175,33 @@ Key checks:
 - full-data scoring folder is exported
 - sampled exports are clearly documented
 
-## Recipe 9: Fast Iteration Run
+## Recipe 9: Memory-Optimized Full-Data Fit
+
+Use when the model must be fit on the full train split, but the source file is
+large enough that duplicated pandas dataframes can exhaust RAM.
+
+Recommended setup:
+
+- Prefer Parquet input from `Data_Load/`
+- Keep `Execution mode = fit_new_model`
+- Leave `Optimize dtypes during ingestion` on
+- Leave `Compact prediction exports` on
+- Leave `Retain full diagnostic working dataframe` off
+- Use Parquet tabular outputs, or `both` with sampled CSV review files
+- Keep Excel workbook export off unless specifically needed
+- Keep individual figure files and Advanced Visual Analytics off while tuning
+- Review high-cardinality categorical warnings before fitting
+
+Key checks:
+
+- final model is still fit on the full training split
+- `working_data_snapshot` documents diagnostic snapshot row counts
+- `categorical_cardinality_profile` has no unapproved high-cardinality features
+- `metadata/run_debug_trace.json` shows reasonable split and prediction memory
+- prediction files contain scores and audit identifiers, not a duplicated full
+  feature matrix
+
+## Recipe 10: Fast Iteration Run
 
 Use when testing setup before creating a full evidence package.
 
