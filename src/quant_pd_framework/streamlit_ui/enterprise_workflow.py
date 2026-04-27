@@ -21,6 +21,7 @@ class WorkflowStepId(StrEnum):
     MODEL_CONFIGURATION = "model_configuration"
     READINESS_CHECK = "readiness_check"
     RESULTS_ARTIFACTS = "results_artifacts"
+    DECISION_SUMMARY = "decision_summary"
 
 
 class WorkflowStatus(StrEnum):
@@ -101,7 +102,7 @@ def build_workflow_step_states(
     last_run_snapshot: dict[str, Any] | None,
     current_config: dict[str, Any] | None,
 ) -> list[WorkflowStepState]:
-    """Builds the four-step status model shown above the workflow tabs."""
+    """Builds the five-step status model shown above the workflow tabs."""
 
     has_blocking_findings = any(
         str(getattr(finding, "severity", "")).lower() == "error" for finding in preview_findings
@@ -210,7 +211,32 @@ def build_workflow_step_states(
             "Review diagnostics, model card, and artifacts.",
         )
 
-    return [data_state, model_state, readiness_state, results_state]
+    if not last_run_snapshot:
+        decision_state = WorkflowStepState(
+            WorkflowStepId.DECISION_SUMMARY,
+            "Decision Summary",
+            WorkflowStatus.NOT_STARTED,
+            "No decision summary",
+            "Complete a run before reviewing the decision scorecard.",
+        )
+    elif current_config is not None and last_run_snapshot.get("config") != current_config:
+        decision_state = WorkflowStepState(
+            WorkflowStepId.DECISION_SUMMARY,
+            "Decision Summary",
+            WorkflowStatus.NEEDS_ATTENTION,
+            "Summary may be stale",
+            "Rerun if the current configuration should replace the prior decision.",
+        )
+    else:
+        decision_state = WorkflowStepState(
+            WorkflowStepId.DECISION_SUMMARY,
+            "Decision Summary",
+            WorkflowStatus.COMPLETE,
+            "Decision scorecard available",
+            "Review the recommendation, issues, feature drivers, and evidence index.",
+        )
+
+    return [data_state, model_state, readiness_state, results_state, decision_state]
 
 
 def collect_readiness_issues(
@@ -299,6 +325,10 @@ def build_preflight_summary(
         (
             "Enhanced report visuals",
             preview_config.artifacts.include_enhanced_report_visuals,
+        ),
+        (
+            "Advanced visual analytics",
+            preview_config.artifacts.include_advanced_visual_analytics,
         ),
         ("Individual figure files", preview_config.artifacts.export_individual_figure_files),
         ("Input snapshot", preview_config.artifacts.export_input_snapshot),
@@ -423,7 +453,7 @@ def build_model_card_markdown(
 
 
 def render_workflow_status_strip(states: list[WorkflowStepState]) -> None:
-    """Renders the four-step workflow status strip."""
+    """Renders the workflow status strip."""
 
     cards = [
         {
@@ -598,6 +628,7 @@ def _status_label(status: WorkflowStatus) -> str:
 def _artifact_purpose(key: str) -> str:
     purpose_map = {
         "output_root": "Top-level run folder containing all exported evidence.",
+        "decision_summary": "Decision-ready scorecard with recommendation and evidence links.",
         "interactive_report": "Standalone HTML report for sharing the validation dashboard.",
         "model": "Serialized fitted model object for reruns and scoring.",
         "config": "Resolved run configuration used by the orchestrator.",

@@ -299,16 +299,12 @@ def _build_validation_sections(context: PipelineContext) -> list[ReportSection]:
     guardrails = context.diagnostics_tables.get("workflow_guardrails", pd.DataFrame())
     feature_policy = context.diagnostics_tables.get("feature_policy_checks", pd.DataFrame())
     calibration_summary = context.diagnostics_tables.get("calibration_summary", pd.DataFrame())
-    numerical_warnings = context.diagnostics_tables.get(
-        "numerical_warning_summary", pd.DataFrame()
-    )
+    numerical_warnings = context.diagnostics_tables.get("numerical_warning_summary", pd.DataFrame())
     numerical_diagnostics = context.diagnostics_tables.get(
         "model_numerical_diagnostics", pd.DataFrame()
     )
     backtest_summary = (
-        context.backtest_summary
-        if context.backtest_summary is not None
-        else pd.DataFrame()
+        context.backtest_summary if context.backtest_summary is not None else pd.DataFrame()
     )
     backtest_columns = [
         column
@@ -464,9 +460,7 @@ def _build_validation_sections(context: PipelineContext) -> list[ReportSection]:
 
 def _build_appendix_sections(context: PipelineContext) -> list[ReportSection]:
     feature_importance = (
-        context.feature_importance
-        if context.feature_importance is not None
-        else pd.DataFrame()
+        context.feature_importance if context.feature_importance is not None else pd.DataFrame()
     )
     variable_selection = context.diagnostics_tables.get("variable_selection", pd.DataFrame())
     reproducibility = context.diagnostics_tables.get("reproducibility_manifest", pd.DataFrame())
@@ -544,6 +538,7 @@ def _build_artifact_index_lines(context: PipelineContext) -> list[str]:
     return [
         f"Run report: {artifacts.report_file_name}",
         f"Interactive HTML report: {artifacts.interactive_report_file_name}",
+        f"Decision summary: {artifacts.decision_summary_file_name}",
         f"Development documentation pack: {artifacts.documentation_pack_file_name}",
         f"Validation pack: {artifacts.validation_pack_file_name}",
         (
@@ -681,7 +676,7 @@ def _build_docx_bytes(
     document_xml = f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
   <w:body>
-    {''.join(body_parts)}
+    {"".join(body_parts)}
     <w:sectPr>
       <w:pgSz w:w="12240" w:h="15840"/>
       <w:pgMar w:top="1440" w:right="1080" w:bottom="1440" w:left="1080"/>

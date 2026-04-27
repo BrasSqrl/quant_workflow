@@ -96,6 +96,16 @@ SECTION_SPECS: OrderedDict[str, dict[str, str]] = OrderedDict(
             },
         ),
         (
+            "advanced_visual_analytics",
+            {
+                "title": "Advanced Visual Analytics",
+                "description": (
+                    "Optional exploratory visuals for deeper pattern discovery, executive "
+                    "storytelling, and model-insight review."
+                ),
+            },
+        ),
+        (
             "statistical_tests",
             {
                 "title": "Statistical Tests",
@@ -363,6 +373,18 @@ FIGURE_LABELS = {
     "seasonality_profile": "Seasonality Profile",
     "structural_break_profile": "Structural Break / Regime Profile",
     "feature_effect_stability_small_multiples": "Feature Effect Stability Small Multiples",
+    "advanced_contribution_beeswarm": "Contribution Beeswarm (Coefficient Proxy)",
+    "advanced_interaction_heatmap": "Feature Interaction Heatmap",
+    "advanced_feature_effect_matrix": "PDP / ICE Effect Matrix",
+    "advanced_segment_calibration_small_multiples": "Segment Calibration Small Multiples",
+    "advanced_score_ridgeline": "Score Distribution Ridgeline",
+    "advanced_temporal_score_stream": "Temporal Score Stream",
+    "advanced_correlation_network": "Feature Correlation Network",
+    "advanced_lift_gain_heatmap": "Lift / Gain Decile Heatmap",
+    "advanced_score_decile_treemap": "Score Decile Risk Treemap",
+    "advanced_model_comparison_radar": "Model Comparison Radar",
+    "advanced_scenario_waterfall": "Scenario Sensitivity Waterfall",
+    "advanced_feature_importance_lollipop": "Feature Importance Lollipop",
     "scorecard_feature_iv": "Scorecard Feature Information Value",
     "scorecard_score_distribution": "Scorecard Points Distribution",
     "scorecard_reason_code_frequency_chart": "Reason Code Frequency",
@@ -579,6 +601,44 @@ ASSET_DESCRIPTIONS = {
     ),
     "feature_effect_stability": (
         "Train, validation, and test feature-effect curves compared on a common grid."
+    ),
+    "advanced_contribution_beeswarm": (
+        "Coefficient-based proxy contribution view for top numeric drivers. This is not a "
+        "formal SHAP calculation, but it helps show direction, spread, and outlier influence."
+    ),
+    "advanced_interaction_heatmap": (
+        "Pairwise interaction-strength matrix for the strongest detected feature interactions."
+    ),
+    "advanced_feature_effect_matrix": (
+        "Compact matrix of partial-dependence and ICE-style feature-effect curves."
+    ),
+    "advanced_segment_calibration_small_multiples": (
+        "Segment-level observed-versus-predicted calibration panels for the largest segments."
+    ),
+    "advanced_score_ridgeline": (
+        "Layered score-distribution view across splits or outcomes for separation review."
+    ),
+    "advanced_temporal_score_stream": (
+        "Time-bucketed score stream to show whether average model scores move by split over time."
+    ),
+    "advanced_correlation_network": (
+        "Network view of high-correlation feature relationships and possible redundancy clusters."
+    ),
+    "advanced_lift_gain_heatmap": (
+        "Decile-level lift, capture, and cumulative gain shown as a compact heatmap."
+    ),
+    "advanced_score_decile_treemap": (
+        "Score-decile portfolio map sized by observation count and colored by observed risk."
+    ),
+    "advanced_model_comparison_radar": (
+        "Radar chart comparing available model candidates or splits across common "
+        "performance metrics."
+    ),
+    "advanced_scenario_waterfall": (
+        "Cumulative scenario impact view showing how sensitivity cases move the average score."
+    ),
+    "advanced_feature_importance_lollipop": (
+        "Colorful top-driver lollipop view for coefficient or feature-importance magnitude."
     ),
     "average_marginal_effects": (
         "Finite-difference marginal effects on the model prediction scale."
@@ -886,12 +946,55 @@ CHART_GUIDANCE = {
         "Curves with similar shape across splits are more defensible than effects that reverse "
         "or move sharply."
     ),
+    "advanced_contribution_beeswarm": (
+        "This is a coefficient proxy, not formal SHAP. Wider spread indicates features whose "
+        "observed values create more dispersion in modeled contribution."
+    ),
+    "advanced_interaction_heatmap": (
+        "Darker cells indicate stronger non-additive interaction signal and should be reviewed "
+        "for policy, stability, and business plausibility."
+    ),
+    "advanced_feature_effect_matrix": (
+        "Use the matrix to scan whether top feature responses are monotonic, smooth, and similar "
+        "across PDP/ICE-style views."
+    ),
+    "advanced_segment_calibration_small_multiples": (
+        "Panels far from the diagonal indicate segments where the score may be miscalibrated."
+    ),
+    "advanced_score_ridgeline": (
+        "Better separation appears as visibly different score distributions across outcomes "
+        "or splits."
+    ),
+    "advanced_temporal_score_stream": (
+        "Sudden level shifts can indicate population drift, data changes, or time-varying risk."
+    ),
+    "advanced_correlation_network": (
+        "Dense connected clusters can indicate redundancy and may support feature reduction."
+    ),
+    "advanced_lift_gain_heatmap": (
+        "Strong models usually show higher lift and capture in the highest-risk deciles."
+    ),
+    "advanced_score_decile_treemap": (
+        "Large, high-risk tiles show where portfolio exposure and observed risk concentrate."
+    ),
+    "advanced_model_comparison_radar": (
+        "Balanced shapes are easier to defend than models that win one metric but materially "
+        "lag others."
+    ),
+    "advanced_scenario_waterfall": (
+        "Large cumulative movements need clear narrative support and scenario-design justification."
+    ),
+    "advanced_feature_importance_lollipop": (
+        "Use this as a quick visual ranking of top drivers before reading coefficient tables."
+    ),
 }
 
 
 def report_asset_badge(asset_key: str, *, featured: bool = False) -> tuple[str, str]:
     """Returns the short interpretation badge used in reports and the live UI."""
 
+    if asset_key.startswith("advanced_"):
+        return "Advanced Analytics", "info"
     if asset_key in {"psi_threshold_bars", "vif_threshold_bars", "calibration_residual_bars"}:
         return "Review Bands", "watch"
     if asset_key in {
@@ -1004,6 +1107,8 @@ def prune_subset_search_highlight_assets(
 def infer_asset_section(asset_key: str, *, kind: str) -> str:
     """Maps an asset key to the section where it should be rendered."""
 
+    if asset_key.startswith("advanced_"):
+        return "advanced_visual_analytics"
     if asset_key in {
         "data_quality_summary",
         "imputation_rules",
@@ -1606,6 +1711,798 @@ def enhance_report_visualizations(
         figure_key, figure = result
         enhanced.setdefault(figure_key, figure)
     return enhanced
+
+
+def apply_advanced_visual_analytics(
+    *,
+    metrics: Mapping[str, Mapping[str, float | int | None]],
+    diagnostics_tables: Mapping[str, pd.DataFrame],
+    visualizations: Mapping[str, go.Figure],
+    target_mode: str,
+    labels_available: bool,
+    predictions: Mapping[str, pd.DataFrame] | None = None,
+) -> dict[str, go.Figure]:
+    """Adds optional exploratory visuals for richer model-insight review."""
+
+    advanced = dict(visualizations)
+    builders = [
+        _build_advanced_contribution_beeswarm,
+        _build_advanced_interaction_heatmap,
+        _build_advanced_feature_effect_matrix,
+        _build_advanced_segment_calibration_small_multiples,
+        _build_advanced_score_ridgeline,
+        _build_advanced_temporal_score_stream,
+        _build_advanced_correlation_network,
+        _build_advanced_lift_gain_heatmap,
+        _build_advanced_score_decile_treemap,
+        _build_advanced_model_comparison_radar,
+        _build_advanced_scenario_waterfall,
+        _build_advanced_feature_importance_lollipop,
+    ]
+    for builder in builders:
+        try:
+            result = builder(
+                metrics=metrics,
+                diagnostics_tables=diagnostics_tables,
+                target_mode=target_mode,
+                labels_available=labels_available,
+                predictions=predictions,
+            )
+        except Exception:
+            continue
+        if result is None:
+            continue
+        figure_key, figure = result
+        advanced.setdefault(figure_key, figure)
+    return advanced
+
+
+def _build_advanced_contribution_beeswarm(
+    *,
+    metrics: Mapping[str, Mapping[str, float | int | None]],
+    diagnostics_tables: Mapping[str, pd.DataFrame],
+    target_mode: str,
+    labels_available: bool,
+    predictions: Mapping[str, pd.DataFrame] | None,
+) -> tuple[str, go.Figure] | None:
+    del metrics, target_mode, labels_available
+    if predictions is None:
+        return None
+    importance = diagnostics_tables.get("feature_importance")
+    if importance is None or importance.empty or "feature_name" not in importance.columns:
+        return None
+    value_column = "coefficient" if "coefficient" in importance.columns else "importance_value"
+    if value_column not in importance.columns:
+        return None
+    frame = _combine_prediction_frames(predictions, max_rows=8000)
+    if frame.empty:
+        return None
+    ranked = importance[["feature_name", value_column]].copy(deep=True)
+    ranked[value_column] = pd.to_numeric(ranked[value_column], errors="coerce")
+    ranked = ranked.dropna(subset=[value_column])
+    ranked["abs_value"] = ranked[value_column].abs()
+    features = [
+        str(feature)
+        for feature in ranked.sort_values("abs_value", ascending=False)["feature_name"].head(8)
+        if str(feature) in frame.columns and pd.api.types.is_numeric_dtype(frame[str(feature)])
+    ]
+    if not features:
+        return None
+    coefficient_map = ranked.set_index("feature_name")[value_column].to_dict()
+    figure = go.Figure()
+    rng = np.random.default_rng(42)
+    for index, feature_name in enumerate(features):
+        values = pd.to_numeric(frame[feature_name], errors="coerce").dropna()
+        if values.empty:
+            continue
+        if len(values) > 1500:
+            values = values.sample(1500, random_state=42)
+        std = float(values.std()) or 1.0
+        centered = (values - float(values.mean())) / std
+        contribution = centered * float(coefficient_map.get(feature_name, 0.0))
+        jitter = rng.normal(0, 0.08, len(contribution))
+        marker = {
+            "size": 7,
+            "opacity": 0.42,
+            "color": centered,
+            "colorscale": "Tealrose",
+            "showscale": index == 0,
+        }
+        if index == 0:
+            marker["colorbar"] = {"title": "Std value"}
+        figure.add_trace(
+            go.Scatter(
+                x=contribution,
+                y=np.full(len(contribution), len(features) - index) + jitter,
+                mode="markers",
+                name=feature_name,
+                marker=marker,
+                hovertemplate=(
+                    f"{feature_name}<br>Proxy contribution=%{{x:.4f}}"
+                    "<br>Standardized value=%{marker.color:.3f}<extra></extra>"
+                ),
+            )
+        )
+    if not figure.data:
+        return None
+    figure.add_vline(x=0.0, line_dash="dash", line_color=REPORT_SEVERITY_COLORS["info"])
+    figure.update_layout(
+        title="Contribution Beeswarm (Coefficient Proxy)",
+        xaxis_title="Standardized Value x Coefficient",
+        yaxis={
+            "tickmode": "array",
+            "tickvals": list(range(1, len(features) + 1)),
+            "ticktext": list(reversed(features)),
+            "title": "Feature",
+        },
+        showlegend=False,
+    )
+    return "advanced_contribution_beeswarm", apply_fintech_figure_theme(
+        figure,
+        title="Contribution Beeswarm (Coefficient Proxy)",
+        height=520,
+    )
+
+
+def _build_advanced_interaction_heatmap(
+    *,
+    metrics: Mapping[str, Mapping[str, float | int | None]],
+    diagnostics_tables: Mapping[str, pd.DataFrame],
+    target_mode: str,
+    labels_available: bool,
+    predictions: Mapping[str, pd.DataFrame] | None,
+) -> tuple[str, go.Figure] | None:
+    del metrics, target_mode, labels_available, predictions
+    table = diagnostics_tables.get("interaction_strength")
+    required = {"feature_x", "feature_y", "mean_absolute_interaction"}
+    if table is None or table.empty or not required.issubset(table.columns):
+        return None
+    working = table.copy(deep=True)
+    working["mean_absolute_interaction"] = pd.to_numeric(
+        working["mean_absolute_interaction"], errors="coerce"
+    )
+    working = working.dropna(subset=["mean_absolute_interaction"]).head(30)
+    features = sorted(set(working["feature_x"].astype(str)) | set(working["feature_y"].astype(str)))
+    if len(features) < 2:
+        return None
+    matrix = pd.DataFrame(0.0, index=features, columns=features)
+    for _, row in working.iterrows():
+        left = str(row["feature_x"])
+        right = str(row["feature_y"])
+        value = float(row["mean_absolute_interaction"])
+        matrix.loc[left, right] = value
+        matrix.loc[right, left] = value
+    figure = go.Figure(
+        go.Heatmap(
+            z=matrix.to_numpy(dtype=float),
+            x=matrix.columns,
+            y=matrix.index,
+            colorscale="YlOrRd",
+            colorbar={"title": "Interaction"},
+        )
+    )
+    figure.update_layout(
+        title="Feature Interaction Heatmap",
+        xaxis_title="Feature",
+        yaxis_title="Feature",
+    )
+    return "advanced_interaction_heatmap", apply_fintech_figure_theme(
+        figure,
+        title="Feature Interaction Heatmap",
+        height=520,
+    )
+
+
+def _build_advanced_feature_effect_matrix(
+    *,
+    metrics: Mapping[str, Mapping[str, float | int | None]],
+    diagnostics_tables: Mapping[str, pd.DataFrame],
+    target_mode: str,
+    labels_available: bool,
+    predictions: Mapping[str, pd.DataFrame] | None,
+) -> tuple[str, go.Figure] | None:
+    del metrics, target_mode, labels_available, predictions
+    pdp = diagnostics_tables.get("partial_dependence")
+    if pdp is None or pdp.empty:
+        pdp = diagnostics_tables.get("feature_effect_curves")
+    required = {"feature_name", "feature_value", "average_prediction"}
+    if pdp is None or pdp.empty or not required.issubset(pdp.columns):
+        return None
+    ice = diagnostics_tables.get("ice_curves")
+    features = pdp["feature_name"].dropna().astype(str).drop_duplicates().head(6).tolist()
+    if not features:
+        return None
+    cols = 2 if len(features) > 1 else 1
+    rows = int(np.ceil(len(features) / cols))
+    figure = make_subplots(rows=rows, cols=cols, subplot_titles=features)
+    for index, feature_name in enumerate(features):
+        row_index = index // cols + 1
+        col_index = index % cols + 1
+        feature_frame = (
+            pdp.loc[pdp["feature_name"].astype(str) == feature_name]
+            .copy(deep=True)
+            .sort_values("sort_order" if "sort_order" in pdp.columns else "feature_value")
+        )
+        if (
+            ice is not None
+            and not ice.empty
+            and {"feature_name", "observation_id"}.issubset(ice.columns)
+        ):
+            ice_frame = ice.loc[ice["feature_name"].astype(str) == feature_name].copy(deep=True)
+            for observation_id in ice_frame["observation_id"].drop_duplicates().head(12):
+                obs = ice_frame.loc[ice_frame["observation_id"] == observation_id].sort_values(
+                    "sort_order" if "sort_order" in ice_frame.columns else "feature_value"
+                )
+                figure.add_trace(
+                    go.Scatter(
+                        x=obs["feature_value"].astype(str),
+                        y=obs["prediction"],
+                        mode="lines",
+                        line={"color": "rgba(42,111,151,0.18)", "width": 1},
+                        showlegend=False,
+                        name=f"ICE {observation_id}",
+                    ),
+                    row=row_index,
+                    col=col_index,
+                )
+        figure.add_trace(
+            go.Scatter(
+                x=feature_frame["feature_value"].astype(str),
+                y=feature_frame["average_prediction"],
+                mode="lines+markers",
+                line={"color": REPORT_SEVERITY_COLORS["good"], "width": 3},
+                name="PDP",
+                showlegend=index == 0,
+            ),
+            row=row_index,
+            col=col_index,
+        )
+    figure.update_layout(title="PDP / ICE Effect Matrix", height=max(480, rows * 300))
+    return "advanced_feature_effect_matrix", apply_fintech_figure_theme(
+        figure,
+        title="PDP / ICE Effect Matrix",
+        height=max(480, rows * 300),
+    )
+
+
+def _build_advanced_segment_calibration_small_multiples(
+    *,
+    metrics: Mapping[str, Mapping[str, float | int | None]],
+    diagnostics_tables: Mapping[str, pd.DataFrame],
+    target_mode: str,
+    labels_available: bool,
+    predictions: Mapping[str, pd.DataFrame] | None,
+) -> tuple[str, go.Figure] | None:
+    del metrics, diagnostics_tables
+    if target_mode != "binary" or not labels_available or predictions is None:
+        return None
+    frame = _select_prediction_frame(predictions)
+    score_column = _resolve_prediction_score_column(frame)
+    target_column = _resolve_prediction_target_column(frame)
+    if score_column is None or target_column is None:
+        return None
+    segment_column = _select_segment_column(frame, exclude={score_column, target_column})
+    if segment_column is None:
+        return None
+    working = frame[[score_column, target_column, segment_column]].dropna().copy(deep=True)
+    if working.empty or working[target_column].nunique(dropna=True) < 2:
+        return None
+    top_segments = working[segment_column].astype(str).value_counts().head(6).index.tolist()
+    cols = 2 if len(top_segments) > 1 else 1
+    rows = int(np.ceil(len(top_segments) / cols))
+    figure = make_subplots(rows=rows, cols=cols, subplot_titles=top_segments)
+    for index, segment in enumerate(top_segments):
+        row_index = index // cols + 1
+        col_index = index % cols + 1
+        segment_frame = working.loc[working[segment_column].astype(str) == segment].copy(deep=True)
+        if len(segment_frame) < 20:
+            continue
+        segment_frame["bucket"] = _safe_quantile_bucket(segment_frame[score_column], bins=6)
+        grouped = (
+            segment_frame.dropna(subset=["bucket"])
+            .groupby("bucket", observed=False)
+            .agg(
+                mean_score=(score_column, "mean"),
+                observed_rate=(target_column, "mean"),
+            )
+            .reset_index()
+        )
+        if grouped.empty:
+            continue
+        figure.add_trace(
+            go.Scatter(
+                x=grouped["mean_score"],
+                y=grouped["observed_rate"],
+                mode="lines+markers",
+                name=str(segment),
+                line={"color": FINTECH_COLORWAY[index % len(FINTECH_COLORWAY)]},
+                showlegend=False,
+            ),
+            row=row_index,
+            col=col_index,
+        )
+        figure.add_trace(
+            go.Scatter(
+                x=[0, 1],
+                y=[0, 1],
+                mode="lines",
+                line={"color": "rgba(96,112,137,0.35)", "dash": "dash"},
+                showlegend=False,
+            ),
+            row=row_index,
+            col=col_index,
+        )
+    if not figure.data:
+        return None
+    figure.update_layout(
+        title=f"Segment Calibration Small Multiples by {segment_column}",
+        height=max(500, rows * 290),
+    )
+    return "advanced_segment_calibration_small_multiples", apply_fintech_figure_theme(
+        figure,
+        title=f"Segment Calibration Small Multiples by {segment_column}",
+        height=max(500, rows * 290),
+    )
+
+
+def _build_advanced_score_ridgeline(
+    *,
+    metrics: Mapping[str, Mapping[str, float | int | None]],
+    diagnostics_tables: Mapping[str, pd.DataFrame],
+    target_mode: str,
+    labels_available: bool,
+    predictions: Mapping[str, pd.DataFrame] | None,
+) -> tuple[str, go.Figure] | None:
+    del metrics, diagnostics_tables, target_mode
+    if predictions is None:
+        return None
+    frame = _combine_prediction_frames(predictions, max_rows=30000)
+    score_column = _resolve_prediction_score_column(frame)
+    if frame.empty or score_column is None:
+        return None
+    group_column = None
+    if labels_available:
+        target_column = _resolve_prediction_target_column(frame)
+        if target_column is not None:
+            frame = frame.assign(
+                _outcome_group=frame[target_column].map({0: "Non-Event", 1: "Event"})
+            )
+            group_column = "_outcome_group"
+    if group_column is None and "split" in frame.columns:
+        group_column = "split"
+    if group_column is None:
+        return None
+    figure = go.Figure()
+    for index, group_name in enumerate(_ordered_unique(frame[group_column])):
+        values = pd.to_numeric(
+            frame.loc[frame[group_column].astype(str) == str(group_name), score_column],
+            errors="coerce",
+        ).dropna()
+        if values.empty:
+            continue
+        figure.add_trace(
+            go.Violin(
+                x=values,
+                y=[str(group_name).title()] * len(values),
+                orientation="h",
+                name=str(group_name).title(),
+                side="positive",
+                width=1.6,
+                points=False,
+                meanline_visible=True,
+                line_color=FINTECH_COLORWAY[index % len(FINTECH_COLORWAY)],
+            )
+        )
+    if not figure.data:
+        return None
+    figure.update_layout(
+        title="Score Distribution Ridgeline",
+        xaxis_title="Predicted Score",
+        yaxis_title="Group",
+        violinmode="overlay",
+    )
+    return "advanced_score_ridgeline", apply_fintech_figure_theme(
+        figure,
+        title="Score Distribution Ridgeline",
+    )
+
+
+def _build_advanced_temporal_score_stream(
+    *,
+    metrics: Mapping[str, Mapping[str, float | int | None]],
+    diagnostics_tables: Mapping[str, pd.DataFrame],
+    target_mode: str,
+    labels_available: bool,
+    predictions: Mapping[str, pd.DataFrame] | None,
+) -> tuple[str, go.Figure] | None:
+    del metrics, diagnostics_tables, target_mode, labels_available
+    if predictions is None:
+        return None
+    frame = _combine_prediction_frames(predictions, max_rows=50000)
+    score_column = _resolve_prediction_score_column(frame)
+    date_column = _select_date_column(frame)
+    if frame.empty or score_column is None or date_column is None:
+        return None
+    working = frame[[date_column, score_column, "split"]].copy(deep=True)
+    working[date_column] = pd.to_datetime(working[date_column], errors="coerce")
+    working[score_column] = pd.to_numeric(working[score_column], errors="coerce")
+    working = working.dropna(subset=[date_column, score_column])
+    if working.empty:
+        return None
+    working["period"] = working[date_column].dt.to_period("M").dt.to_timestamp()
+    grouped = (
+        working.groupby(["period", "split"], dropna=False)[score_column]
+        .mean()
+        .reset_index()
+        .sort_values("period")
+    )
+    if grouped["period"].nunique() < 2:
+        return None
+    figure = go.Figure()
+    for index, split_name in enumerate(_ordered_unique(grouped["split"])):
+        split_frame = grouped.loc[grouped["split"].astype(str) == str(split_name)]
+        figure.add_trace(
+            go.Scatter(
+                x=split_frame["period"],
+                y=split_frame[score_column],
+                mode="lines",
+                stackgroup="one",
+                name=str(split_name).title(),
+                line={"color": FINTECH_COLORWAY[index % len(FINTECH_COLORWAY)]},
+            )
+        )
+    figure.update_layout(
+        title="Temporal Score Stream",
+        xaxis_title="Period",
+        yaxis_title="Average Predicted Score",
+    )
+    return "advanced_temporal_score_stream", apply_fintech_figure_theme(
+        figure,
+        title="Temporal Score Stream",
+    )
+
+
+def _build_advanced_correlation_network(
+    *,
+    metrics: Mapping[str, Mapping[str, float | int | None]],
+    diagnostics_tables: Mapping[str, pd.DataFrame],
+    target_mode: str,
+    labels_available: bool,
+    predictions: Mapping[str, pd.DataFrame] | None,
+) -> tuple[str, go.Figure] | None:
+    del metrics, target_mode, labels_available, predictions
+    table = diagnostics_tables.get("correlation_matrix")
+    if table is None or table.empty or "feature_name" not in table.columns:
+        return None
+    matrix = table.set_index("feature_name")
+    numeric_matrix = matrix.apply(pd.to_numeric, errors="coerce")
+    features = [
+        str(feature) for feature in numeric_matrix.index if feature in numeric_matrix.columns
+    ]
+    if len(features) < 2:
+        return None
+    edges: list[tuple[str, str, float]] = []
+    for left_index, left in enumerate(features):
+        for right in features[left_index + 1 :]:
+            value = numeric_matrix.loc[left, right]
+            if pd.notna(value) and abs(float(value)) >= 0.35:
+                edges.append((left, right, float(value)))
+    edges = sorted(edges, key=lambda item: abs(item[2]), reverse=True)[:30]
+    if not edges:
+        return None
+    nodes = sorted(set([left for left, _, _ in edges] + [right for _, right, _ in edges]))
+    angles = np.linspace(0, 2 * np.pi, len(nodes), endpoint=False)
+    positions = {
+        node: (float(np.cos(angle)), float(np.sin(angle)))
+        for node, angle in zip(nodes, angles, strict=True)
+    }
+    figure = go.Figure()
+    for left, right, value in edges:
+        figure.add_trace(
+            go.Scatter(
+                x=[positions[left][0], positions[right][0]],
+                y=[positions[left][1], positions[right][1]],
+                mode="lines",
+                line={
+                    "width": max(1.0, min(6.0, abs(value) * 6.0)),
+                    "color": REPORT_SEVERITY_COLORS["bad"]
+                    if value < 0
+                    else REPORT_SEVERITY_COLORS["good"],
+                },
+                hoverinfo="text",
+                text=f"{left} - {right}: {value:.3f}",
+                showlegend=False,
+            )
+        )
+    figure.add_trace(
+        go.Scatter(
+            x=[positions[node][0] for node in nodes],
+            y=[positions[node][1] for node in nodes],
+            mode="markers+text",
+            text=nodes,
+            textposition="top center",
+            marker={"size": 18, "color": REPORT_SEVERITY_COLORS["good"]},
+            showlegend=False,
+        )
+    )
+    figure.update_layout(
+        title="Feature Correlation Network",
+        xaxis={"visible": False},
+        yaxis={"visible": False},
+    )
+    return "advanced_correlation_network", apply_fintech_figure_theme(
+        figure,
+        title="Feature Correlation Network",
+        height=540,
+    )
+
+
+def _build_advanced_lift_gain_heatmap(
+    *,
+    metrics: Mapping[str, Mapping[str, float | int | None]],
+    diagnostics_tables: Mapping[str, pd.DataFrame],
+    target_mode: str,
+    labels_available: bool,
+    predictions: Mapping[str, pd.DataFrame] | None,
+) -> tuple[str, go.Figure] | None:
+    del metrics, target_mode, labels_available, predictions
+    table = diagnostics_tables.get("lift_gain")
+    required = {"bucket", "lift", "capture_rate", "cumulative_capture_rate"}
+    if table is None or table.empty or not required.issubset(table.columns):
+        return None
+    working = table.copy(deep=True).sort_values("bucket")
+    rows = ["Lift", "Capture Rate", "Cumulative Capture"]
+    values = np.vstack(
+        [
+            pd.to_numeric(working["lift"], errors="coerce").fillna(0.0).to_numpy(),
+            pd.to_numeric(working["capture_rate"], errors="coerce").fillna(0.0).to_numpy(),
+            pd.to_numeric(working["cumulative_capture_rate"], errors="coerce")
+            .fillna(0.0)
+            .to_numpy(),
+        ]
+    )
+    figure = go.Figure(
+        go.Heatmap(
+            z=values,
+            x=working["bucket"].astype(str),
+            y=rows,
+            colorscale="Tealgrn",
+            colorbar={"title": "Value"},
+        )
+    )
+    figure.update_layout(
+        title="Lift / Gain Decile Heatmap",
+        xaxis_title="Risk Bucket",
+        yaxis_title="Metric",
+    )
+    return "advanced_lift_gain_heatmap", apply_fintech_figure_theme(
+        figure,
+        title="Lift / Gain Decile Heatmap",
+    )
+
+
+def _build_advanced_score_decile_treemap(
+    *,
+    metrics: Mapping[str, Mapping[str, float | int | None]],
+    diagnostics_tables: Mapping[str, pd.DataFrame],
+    target_mode: str,
+    labels_available: bool,
+    predictions: Mapping[str, pd.DataFrame] | None,
+) -> tuple[str, go.Figure] | None:
+    del metrics, diagnostics_tables
+    if target_mode != "binary" or not labels_available or predictions is None:
+        return None
+    frame = _select_prediction_frame(predictions)
+    score_column = _resolve_prediction_score_column(frame)
+    target_column = _resolve_prediction_target_column(frame)
+    if frame.empty or score_column is None or target_column is None:
+        return None
+    working = frame[[score_column, target_column]].dropna().copy(deep=True)
+    if working.empty:
+        return None
+    working["score_decile"] = _safe_quantile_bucket(working[score_column], bins=10)
+    grouped = (
+        working.dropna(subset=["score_decile"])
+        .groupby("score_decile", observed=False)
+        .agg(
+            observation_count=(score_column, "size"),
+            observed_rate=(target_column, "mean"),
+            average_score=(score_column, "mean"),
+        )
+        .reset_index()
+    )
+    if grouped.empty:
+        return None
+    labels = grouped["score_decile"].astype(str)
+    figure = go.Figure(
+        go.Treemap(
+            labels=labels,
+            parents=[""] * len(grouped),
+            values=grouped["observation_count"],
+            marker={
+                "colors": grouped["observed_rate"],
+                "colorscale": "YlOrRd",
+                "colorbar": {"title": "Observed Rate"},
+            },
+            customdata=np.stack(
+                [grouped["average_score"], grouped["observed_rate"]],
+                axis=-1,
+            ),
+            hovertemplate=(
+                "Decile=%{label}<br>Rows=%{value:,}<br>Average score=%{customdata[0]:.3f}"
+                "<br>Observed rate=%{customdata[1]:.3f}<extra></extra>"
+            ),
+        )
+    )
+    figure.update_layout(title="Score Decile Risk Treemap")
+    return "advanced_score_decile_treemap", apply_fintech_figure_theme(
+        figure,
+        title="Score Decile Risk Treemap",
+    )
+
+
+def _build_advanced_model_comparison_radar(
+    *,
+    metrics: Mapping[str, Mapping[str, float | int | None]],
+    diagnostics_tables: Mapping[str, pd.DataFrame],
+    target_mode: str,
+    labels_available: bool,
+    predictions: Mapping[str, pd.DataFrame] | None,
+) -> tuple[str, go.Figure] | None:
+    del target_mode, labels_available, predictions
+    table = diagnostics_tables.get("model_comparison")
+    comparison_frame: pd.DataFrame
+    name_column = "model"
+    if table is not None and not table.empty:
+        comparison_frame = table.copy(deep=True)
+        for candidate in ("model", "model_name", "candidate_model", "challenger"):
+            if candidate in comparison_frame.columns:
+                name_column = candidate
+                break
+        if name_column not in comparison_frame.columns:
+            comparison_frame[name_column] = [f"Model {index + 1}" for index in range(len(table))]
+    else:
+        rows = []
+        for split_name, split_metrics in metrics.items():
+            row = {"model": str(split_name).title()}
+            row.update(split_metrics)
+            rows.append(row)
+        comparison_frame = pd.DataFrame(rows)
+    if comparison_frame.empty or name_column not in comparison_frame.columns:
+        return None
+    numeric_columns = [
+        column
+        for column in comparison_frame.columns
+        if column != name_column and pd.api.types.is_numeric_dtype(comparison_frame[column])
+    ][:6]
+    if len(numeric_columns) < 2:
+        return None
+    normalized = comparison_frame[[name_column, *numeric_columns]].copy(deep=True)
+    for column in numeric_columns:
+        normalized[column] = _normalize_metric_series(normalized[column], metric_name=column)
+    theta = [column.replace("_", " ").title() for column in numeric_columns]
+    figure = go.Figure()
+    for index, (_, row) in enumerate(normalized.head(6).iterrows()):
+        values = [float(row[column]) for column in numeric_columns]
+        figure.add_trace(
+            go.Scatterpolar(
+                r=[*values, values[0]],
+                theta=[*theta, theta[0]],
+                fill="toself",
+                name=str(row[name_column]),
+                line={"color": FINTECH_COLORWAY[index % len(FINTECH_COLORWAY)]},
+            )
+        )
+    figure.update_layout(
+        title="Model Comparison Radar",
+        polar={"radialaxis": {"visible": True, "range": [0, 1]}},
+    )
+    return "advanced_model_comparison_radar", apply_fintech_figure_theme(
+        figure,
+        title="Model Comparison Radar",
+    )
+
+
+def _build_advanced_scenario_waterfall(
+    *,
+    metrics: Mapping[str, Mapping[str, float | int | None]],
+    diagnostics_tables: Mapping[str, pd.DataFrame],
+    target_mode: str,
+    labels_available: bool,
+    predictions: Mapping[str, pd.DataFrame] | None,
+) -> tuple[str, go.Figure] | None:
+    del metrics, target_mode, labels_available, predictions
+    table = diagnostics_tables.get("scenario_summary")
+    if table is None or table.empty or not {"scenario_name", "mean_delta"}.issubset(table.columns):
+        return None
+    working = table[["scenario_name", "mean_delta"]].copy(deep=True)
+    working["mean_delta"] = pd.to_numeric(working["mean_delta"], errors="coerce")
+    working = working.dropna(subset=["mean_delta"])
+    if working.empty:
+        return None
+    working["abs_delta"] = working["mean_delta"].abs()
+    working = working.sort_values("abs_delta", ascending=False).head(10)
+    figure = go.Figure(
+        go.Waterfall(
+            x=working["scenario_name"].astype(str),
+            y=working["mean_delta"],
+            measure=["relative"] * len(working),
+            connector={"line": {"color": "#D8D1C4"}},
+            increasing={"marker": {"color": REPORT_SEVERITY_COLORS["bad"]}},
+            decreasing={"marker": {"color": REPORT_SEVERITY_COLORS["great"]}},
+            name="Scenario Delta",
+        )
+    )
+    figure.update_layout(
+        title="Scenario Sensitivity Waterfall",
+        xaxis_title="Scenario",
+        yaxis_title="Average Score Delta",
+    )
+    return "advanced_scenario_waterfall", apply_fintech_figure_theme(
+        figure,
+        title="Scenario Sensitivity Waterfall",
+        height=470,
+    )
+
+
+def _build_advanced_feature_importance_lollipop(
+    *,
+    metrics: Mapping[str, Mapping[str, float | int | None]],
+    diagnostics_tables: Mapping[str, pd.DataFrame],
+    target_mode: str,
+    labels_available: bool,
+    predictions: Mapping[str, pd.DataFrame] | None,
+) -> tuple[str, go.Figure] | None:
+    del metrics, target_mode, labels_available, predictions
+    table = diagnostics_tables.get("feature_importance")
+    if table is None or table.empty or "feature_name" not in table.columns:
+        return None
+    value_column = "coefficient" if "coefficient" in table.columns else "importance_value"
+    if value_column not in table.columns:
+        return None
+    working = table[["feature_name", value_column]].copy(deep=True)
+    working[value_column] = pd.to_numeric(working[value_column], errors="coerce")
+    working = working.dropna(subset=[value_column])
+    if working.empty:
+        return None
+    working["abs_value"] = working[value_column].abs()
+    working = working.sort_values("abs_value", ascending=True).tail(18)
+    figure = go.Figure()
+    for _, row in working.iterrows():
+        color = (
+            REPORT_SEVERITY_COLORS["great"]
+            if float(row[value_column]) >= 0
+            else REPORT_SEVERITY_COLORS["bad"]
+        )
+        figure.add_trace(
+            go.Scatter(
+                x=[0.0, row[value_column]],
+                y=[str(row["feature_name"]), str(row["feature_name"])],
+                mode="lines",
+                line={"color": "rgba(96,112,137,0.35)", "width": 2},
+                showlegend=False,
+            )
+        )
+        figure.add_trace(
+            go.Scatter(
+                x=[row[value_column]],
+                y=[str(row["feature_name"])],
+                mode="markers",
+                marker={"size": 13, "color": color},
+                showlegend=False,
+            )
+        )
+    figure.add_vline(x=0.0, line_dash="dash", line_color=REPORT_SEVERITY_COLORS["info"])
+    figure.update_layout(
+        title="Feature Importance Lollipop",
+        xaxis_title=value_column.replace("_", " ").title(),
+        yaxis_title="Feature",
+    )
+    return "advanced_feature_importance_lollipop", apply_fintech_figure_theme(
+        figure,
+        title="Feature Importance Lollipop",
+        height=520,
+    )
 
 
 def _build_split_metric_slope_chart(
@@ -2367,6 +3264,88 @@ def _resolve_prediction_target_column(frame: pd.DataFrame) -> str | None:
     return binary_candidates[0] if binary_candidates else None
 
 
+def _select_segment_column(frame: pd.DataFrame, *, exclude: set[str]) -> str | None:
+    excluded = {
+        *exclude,
+        "split",
+        "predicted_class",
+        "predicted_probability",
+        "predicted_probability_recommended",
+        "prediction_score",
+        "predicted_score",
+        "predicted_value",
+    }
+    candidates = []
+    for column in frame.columns:
+        if column in excluded:
+            continue
+        series = frame[column].dropna()
+        if series.empty:
+            continue
+        if pd.api.types.is_numeric_dtype(series) and series.nunique(dropna=True) > 12:
+            continue
+        unique_count = int(series.astype(str).nunique(dropna=True))
+        if 2 <= unique_count <= 12:
+            candidates.append((column, unique_count))
+    if not candidates:
+        return None
+    return sorted(candidates, key=lambda item: (item[1], str(item[0])))[0][0]
+
+
+def _select_date_column(frame: pd.DataFrame) -> str | None:
+    preferred = [
+        column
+        for column in frame.columns
+        if "date" in str(column).lower() or "time" in str(column).lower()
+    ]
+    candidates = [*preferred, *[column for column in frame.columns if column not in preferred]]
+    for column in candidates:
+        if column in {
+            "split",
+            "predicted_probability",
+            "predicted_probability_recommended",
+            "prediction_score",
+            "predicted_score",
+            "predicted_value",
+            "predicted_class",
+        }:
+            continue
+        if column not in preferred and not (
+            pd.api.types.is_datetime64_any_dtype(frame[column])
+            or pd.api.types.is_object_dtype(frame[column])
+            or pd.api.types.is_string_dtype(frame[column])
+        ):
+            continue
+        parsed = pd.to_datetime(frame[column], errors="coerce")
+        if parsed.notna().sum() >= max(5, int(len(frame) * 0.20)) and parsed.nunique() >= 2:
+            return str(column)
+    return None
+
+
+def _safe_quantile_bucket(series: pd.Series, *, bins: int) -> pd.Series:
+    numeric = pd.to_numeric(series, errors="coerce")
+    try:
+        return pd.qcut(numeric, q=min(bins, max(1, numeric.nunique())), duplicates="drop")
+    except ValueError:
+        return pd.Series([pd.NA] * len(series), index=series.index, dtype="object")
+
+
+def _normalize_metric_series(series: pd.Series, *, metric_name: str) -> pd.Series:
+    values = pd.to_numeric(series, errors="coerce").fillna(0.0)
+    lower_is_better = any(
+        token in metric_name.lower()
+        for token in ("rmse", "mae", "mse", "brier", "log_loss", "error")
+    )
+    min_value = float(values.min())
+    max_value = float(values.max())
+    if np.isclose(max_value, min_value):
+        return pd.Series([1.0] * len(values), index=values.index)
+    normalized = (values - min_value) / (max_value - min_value)
+    if lower_is_better:
+        normalized = 1.0 - normalized
+    return normalized.clip(0.0, 1.0)
+
+
 def _ordered_unique(series: pd.Series) -> list[Any]:
     preferred = ["train", "validation", "test"]
     values = [value for value in preferred if value in set(series.astype(str))]
@@ -2426,6 +3405,7 @@ def build_interactive_report_html(
     max_figures_per_section: int = 6,
     max_tables_per_section: int = 6,
     include_enhanced_report_visuals: bool = True,
+    include_advanced_visual_analytics: bool = False,
     predictions: Mapping[str, pd.DataFrame] | None = None,
 ) -> str:
     """Builds the polished standalone HTML dashboard report for each run."""
@@ -2442,12 +3422,24 @@ def build_interactive_report_html(
         if include_enhanced_report_visuals
         else dict(visualizations)
     )
-    asset_catalog = build_asset_catalog(diagnostics_tables, enhanced_visualizations)
+    report_visualizations = (
+        apply_advanced_visual_analytics(
+            metrics=metrics,
+            diagnostics_tables=diagnostics_tables,
+            visualizations=enhanced_visualizations,
+            target_mode=target_mode,
+            labels_available=labels_available,
+            predictions=predictions,
+        )
+        if include_advanced_visual_analytics
+        else enhanced_visualizations
+    )
+    asset_catalog = build_asset_catalog(diagnostics_tables, report_visualizations)
     subset_search_highlight_html = ""
     if execution_mode == "search_feature_subsets":
         subset_search_highlight_html = _build_subset_search_highlight_html(
             tables=diagnostics_tables,
-            figures=enhanced_visualizations,
+            figures=report_visualizations,
         )
         asset_catalog = prune_subset_search_highlight_assets(asset_catalog)
     metric_cards = summarize_run_kpis(
@@ -2487,7 +3479,7 @@ def build_interactive_report_html(
             section_description=section_payload["description"],
             figure_descriptors=section_payload["figures"],
             table_descriptors=section_payload["tables"],
-            figures=enhanced_visualizations,
+            figures=report_visualizations,
             tables=diagnostics_tables,
             table_preview_rows=table_preview_rows,
             max_figures_per_section=max_figures_per_section,

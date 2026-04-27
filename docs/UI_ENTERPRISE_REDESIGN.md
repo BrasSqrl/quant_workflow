@@ -8,7 +8,7 @@ artifacts, or available controls.
 ## Objective
 
 Make the Streamlit application feel like a polished enterprise model
-development product by using a four-step workflow that keeps active work in the
+development product by using a five-step workflow that keeps active work in the
 main canvas instead of persistent side panels.
 
 Primary goals:
@@ -31,7 +31,7 @@ Primary goals:
 
 ## Layout Principles
 
-The UI uses four clickable workflow stages:
+The UI uses five clickable workflow stages:
 
 1. **Dataset & Schema**
    Data source selection, dataset preview, column designer, feature dictionary,
@@ -56,6 +56,11 @@ The UI uses four clickable workflow stages:
    stale-result warnings live here. The artifact explorer, reviewer workspace,
    and model-card download also live here. Before a run exists, this stage shows
    an empty state.
+
+5. **Decision Summary**
+   Completed-run synthesis lives here: recommendation, primary metric scorecard,
+   decision issues, top feature drivers, and evidence index. This stage should
+   summarize Step 4 outputs rather than duplicating every chart and table.
 
 ## Visual Language
 
@@ -83,7 +88,7 @@ Avoid:
 - Existing controls remain available.
 - Configuration expanders should look like structured setup groups, not
   unrelated drawers.
-- The four top workflow stages should look like large segmented workflow pills.
+- The five top workflow stages should look like large segmented workflow pills.
 - The workflow status strip should provide a compact management view of
   not-started, needs-attention, ready, and complete states.
 - Readiness issues should appear in one consolidated table with recommended
@@ -137,9 +142,10 @@ The redesign is acceptable when:
 - the app still launches through the existing Streamlit entrypoint
 - current GUI tests pass
 - all existing controls remain reachable
-- the four top workflow stages are clickable and default to `Dataset & Schema`
+- the five top workflow stages are clickable and default to `Dataset & Schema`
 - no persistent left or right control pane is required for normal operation
 - model configuration controls render in the main canvas under Step 2
 - readiness and the run button render in Step 3
 - completed outputs and artifact locations render in Step 4
+- completed-run decision synthesis renders in Step 5
 - no model workflow behavior changes

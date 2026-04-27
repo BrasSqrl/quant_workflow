@@ -44,10 +44,11 @@ fixes.
 
 | Symptom | Likely cause | Fix |
 | --- | --- | --- |
-| Cannot find outputs | Artifact root changed or run did not finish | Check Step 4 output locations and `artifacts/` timestamped folders. |
+| Cannot find outputs | Artifact root changed or run did not finish | Check Step 4 output locations, Step 5 evidence links, and `artifacts/` timestamped folders. |
 | `reports/interactive_report.html` opens blank | Browser security or incomplete downloaded file | Open in Chrome or Edge, confirm file size, and try serving from a local HTTP server if needed. |
 | Charts show loading message | Browser blocks local dynamic chart rendering | Use Chrome or serve the file from a local HTTP server. Static chart fallbacks are no longer embedded because they slow report generation. |
 | Separate figure files are missing | Individual figure export is off by default | Turn on `Export individual figure HTML and PNG files` before running. |
+| Advanced Visual Analytics charts are missing | The optional advanced layer is off by default | Turn on `Advanced Visual Analytics` in Step 2, then rerun the workflow. |
 | Missing `model_bundle_for_monitoring/` | Mode was not `fit_new_model` or export did not complete | This bundle is created for new fitted models only. |
 
 ## SageMaker Problems
@@ -65,7 +66,7 @@ fixes.
 | --- | --- | --- |
 | Machine freezes or swaps heavily | Pandas load exceeds available RAM | Stop run if possible, use Parquet, Large Data Mode, governed sample, and larger compute. |
 | Full CSV export is too large | Export policy writes full tables | Use sampled CSV plus full Parquet or metadata-only policy. |
-| Run takes too long | Expensive diagnostics, figure export, or subset search | Use fast export profile, keep individual figure files off, reduce diagnostic scope, or use governed sample. |
+| Run takes too long | Expensive diagnostics, advanced visuals, figure export, or subset search | Use fast export profile, keep Advanced Visual Analytics and individual figure files off, reduce diagnostic scope, or use governed sample. |
 
 ## What To Capture When Asking For Help
 

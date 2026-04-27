@@ -129,6 +129,9 @@ from quant_pd_framework.streamlit_ui.error_guidance import (
     classify_workflow_exception as ui_classify_workflow_exception,
 )
 from quant_pd_framework.streamlit_ui.results import (
+    render_decision_summary as ui_render_decision_summary,
+)
+from quant_pd_framework.streamlit_ui.results import (
     render_run_results as ui_render_run_results,
 )
 from quant_pd_framework.streamlit_ui.results import (
@@ -773,12 +776,13 @@ def run_app() -> None:
         run_label="",
     )
     workflow_status_container = st.container()
-    data_tab, configuration_tab, readiness_tab, results_tab = st.tabs(
+    data_tab, configuration_tab, readiness_tab, results_tab, decision_tab = st.tabs(
         [
             "1  Dataset & Schema",
             "2  Model Configuration",
             "3  Readiness Check",
             "4  Results & Artifacts",
+            "5  Decision Summary",
         ]
     )
 
@@ -810,6 +814,8 @@ def run_app() -> None:
             st.info("Readiness checks appear after a dataset and schema are available.")
         with results_tab:
             st.info("Run a valid workflow from Step 3 to populate results and artifacts.")
+        with decision_tab:
+            st.info("Complete a run before reviewing the Step 5 decision summary.")
         return
     with data_tab:
         ui_render_input_performance_notice(dataframe)
@@ -1522,6 +1528,18 @@ def run_app() -> None:
                     "annotated ROC/KS, calibration residuals, PSI/VIF bands, and segment "
                     "dumbbells to the live results view and interactive report. Turn this off "
                     "for faster development runs."
+                ),
+            )
+            include_advanced_visual_analytics = st.toggle(
+                "Advanced Visual Analytics",
+                value=preset_inputs.artifacts.include_advanced_visual_analytics,
+                help=(
+                    "When on, Quant Studio adds a separate report section with exploratory "
+                    "visuals such as contribution beeswarms, interaction heatmaps, feature "
+                    "effect matrices, segment calibration panels, score ridgelines, risk "
+                    "treemaps, temporal streams, correlation networks, scenario waterfalls, "
+                    "and model-comparison radar charts. Leave off for faster, cleaner "
+                    "validation-focused runs."
                 ),
             )
             default_diagnostic_labels = (
@@ -3096,6 +3114,19 @@ def run_app() -> None:
             ui_render_run_results(last_run_snapshot)
         else:
             st.info("Run a valid workflow from Step 3 to populate results and artifacts.")
+
+    with decision_tab:
+        last_run_snapshot = ui_get_last_run_snapshot()
+        if last_run_snapshot:
+            current_config = preview_config.to_dict() if preview_config is not None else None
+            if current_config is not None and last_run_snapshot.get("config") != current_config:
+                st.warning(
+                    "Decision summary is from the last completed run and may be stale because "
+                    "the current workflow configuration has changed."
+                )
+            ui_render_decision_summary(last_run_snapshot)
+        else:
+            st.info("Run a valid workflow from Step 3 to populate the decision summary.")
 
 
 if __name__ == "__main__":

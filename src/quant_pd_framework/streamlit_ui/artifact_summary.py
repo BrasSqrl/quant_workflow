@@ -10,6 +10,7 @@ import pandas as pd
 PRIMARY_ARTIFACTS: tuple[tuple[str, str, str], ...] = (
     ("output_root", "Run folder", "Directory"),
     ("start_here", "Start-here guide", "Orientation"),
+    ("decision_summary", "Decision summary", "Report"),
     ("interactive_report", "Interactive HTML report", "Report"),
     ("model", "Model object", "Model"),
     ("config", "Run configuration", "Reproducibility"),

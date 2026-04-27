@@ -345,6 +345,10 @@ def build_preview_configuration(
                     "include_enhanced_report_visuals",
                     preset_inputs.artifacts.include_enhanced_report_visuals,
                 ),
+                include_advanced_visual_analytics=values.get(
+                    "include_advanced_visual_analytics",
+                    preset_inputs.artifacts.include_advanced_visual_analytics,
+                ),
                 export_individual_figure_files=values["export_individual_figure_files"],
                 export_input_snapshot=values["export_input_snapshot"],
                 export_code_snapshot=values["export_code_snapshot"],

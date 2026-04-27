@@ -186,6 +186,15 @@ model object, fitted coefficients, statistical test calculations, or exported
 source tables. They are controlled by `ArtifactConfig.include_enhanced_report_visuals`
 and the GUI toggle `Include enhanced report visuals`.
 
+`Advanced Visual Analytics` is a separate optional presentation layer controlled
+by `ArtifactConfig.include_advanced_visual_analytics`. It adds exploratory chart
+families such as contribution beeswarms, interaction heatmaps, PDP/ICE matrices,
+segment calibration small multiples, score ridgelines, temporal score streams,
+correlation networks, lift/gain heatmaps, risk treemaps, model-comparison radar
+charts, scenario waterfalls, and feature-importance lollipop charts. These
+views reuse existing diagnostics, predictions, and metrics; they do not create
+new fitted models or change statistical test outputs.
+
 ## 7. Explainability Metrics
 
 These live in `DiagnosticsStep._add_explainability_outputs(...)`.

@@ -39,6 +39,8 @@ def test_workflow_step_states_flag_ready_and_stale_results() -> None:
     assert states[0].status == WorkflowStatus.COMPLETE
     assert states[2].status == WorkflowStatus.READY
     assert states[3].status == WorkflowStatus.NEEDS_ATTENTION
+    assert states[4].status == WorkflowStatus.NEEDS_ATTENTION
+    assert states[4].label == "Decision Summary"
 
 
 def test_collect_readiness_issues_maps_errors_and_guardrails() -> None:

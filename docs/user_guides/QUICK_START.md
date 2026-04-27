@@ -10,6 +10,7 @@ A successful first run writes a timestamped folder under `artifacts/` with:
 
 - `START_HERE.md`
 - `reports/interactive_report.html`
+- `reports/decision_summary.md`
 - `model/quant_model.joblib`
 - `config/run_config.json`
 - `metadata/metrics.json`
@@ -35,7 +36,7 @@ If dependencies need to be prepared first, use:
 
 In SageMaker or Linux, follow [SageMaker Setup](../SAGEMAKER_SETUP.md).
 
-## The Four-Step Workflow
+## The Five-Step Workflow
 
 Quant Studio opens to Step 1 by default.
 
@@ -45,6 +46,7 @@ Quant Studio opens to Step 1 by default.
 | `2 Model Configuration` | Choose execution mode, preset, model family, split strategy, diagnostics, export profile, governance options, explainability, scenarios, and documentation settings. |
 | `3 Readiness Check` | Review issues, preflight summary, guardrails, configuration diffs, and run the workflow. |
 | `4 Results & Artifacts` | Review outputs, charts, tables, artifact locations, reviewer notes, and model-card downloads. |
+| `5 Decision Summary` | Review the recommendation, primary metric scorecard, decision issues, top feature drivers, and supporting evidence index. |
 
 ## First Successful Run
 
@@ -62,11 +64,15 @@ Quant Studio opens to Step 1 by default.
 12. Keep the default train, validation, and test split for the first run.
 13. Keep individual figure HTML/PNG export off unless separate chart files are needed.
 14. Keep `Include enhanced report visuals` on for a polished first report, or turn it off for faster iteration runs.
-15. Open Step 3, `Readiness Check`.
-16. Resolve blocking readiness issues if any appear.
-17. Click `Run Quant Model Workflow`.
-18. Open Step 4, `Results & Artifacts`.
-19. Review the overview, model performance, calibration, governance, and artifact explorer sections.
+15. Leave `Advanced Visual Analytics` off for the first run unless you want the
+    extra exploratory chart section.
+16. Open Step 3, `Readiness Check`.
+17. Resolve blocking readiness issues if any appear.
+18. Click `Run Quant Model Workflow`.
+19. Open Step 4, `Results & Artifacts`.
+20. Review the overview, model performance, calibration, governance, and artifact explorer sections.
+21. Open Step 5, `Decision Summary`.
+22. Review the recommendation, decision issues, primary metrics, feature drivers, and evidence index.
 
 ## First Real-Data Run
 

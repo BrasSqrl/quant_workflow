@@ -17,13 +17,15 @@ Each run creates a timestamped folder such as:
 artifacts/run_2026-04-24_15-42-10_UTC/
 ```
 
-The GUI also surfaces key output locations in Step 4, `Results & Artifacts`.
+The GUI also surfaces key output locations in Step 4, `Results & Artifacts`,
+and summarizes the completed run in Step 5, `Decision Summary`.
 
 ## Most Important Files
 
 | File | Meaning | Primary user |
 | --- | --- | --- |
 | `START_HERE.md` | First-read orientation for the run folder and audience-specific next steps. | All users |
+| `reports/decision_summary.md` | Decision-ready scorecard with recommendation, key metrics, issues, feature drivers, and evidence links. | Model developer, validator, business reviewer |
 | `reports/interactive_report.html` | Standalone formal visual report with grouped diagnostics, companion charts, interpretation badges, and reviewer guidance. | Model developer, validator, business reviewer |
 | `model/quant_model.joblib` | Saved fitted model object. | Developer, future scoring workflow, monitoring handoff |
 | `config/run_config.json` | Effective configuration used for the run. | Developer, auditor, reproducibility review |
@@ -91,7 +93,9 @@ separate chart files are needed outside the full report.
 
 The full `reports/interactive_report.html` still includes its grouped charts when
 individual figure export is off. The separate figure files are only duplicate
-distribution assets.
+distribution assets. If `Include enhanced report visuals` or `Advanced Visual
+Analytics` are enabled, the optional separate figure files mirror those same
+report-grade charts.
 
 ## Interactive Report Layout
 
@@ -110,11 +114,19 @@ package:
   PSI/VIF threshold bars, missingness heatmaps, feature-importance waterfalls,
   score-distribution violins, segment dumbbells, scenario tornados, and
   cross-validation violins.
+- The optional `Advanced Visual Analytics` toggle adds a separate exploratory
+  section with contribution beeswarms, interaction heatmaps, PDP/ICE matrices,
+  segment calibration panels, score ridgelines, temporal score streams,
+  correlation networks, lift/gain heatmaps, risk treemaps, model-comparison
+  radar charts, scenario waterfalls, and feature-importance lollipop charts.
 - Chart badges and guidance text provide practical interpretation context
   without changing the underlying statistical calculations.
 - The `Include enhanced report visuals` toggle controls whether companion
   charts are added. Turn it off for faster development runs when the base
   diagnostics and tables are enough.
+- `Advanced Visual Analytics` is off by default because it is exploratory and
+  adds report-rendering work. Turn it on when richer model-insight visuals are
+  worth the additional runtime and report length.
 - Full tables remain available in the exported table files even when the HTML
   report previews only the first rows.
 

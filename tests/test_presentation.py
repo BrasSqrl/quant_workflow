@@ -7,6 +7,7 @@ import plotly.express as px
 import plotly.io as pio
 
 from quant_pd_framework.presentation import (
+    apply_advanced_visual_analytics,
     apply_fintech_figure_theme,
     build_asset_catalog,
     build_interactive_report_html,
@@ -194,6 +195,105 @@ def test_enhance_report_visualizations_adds_companion_charts() -> None:
         "cross_validation_metric_violin",
         "feature_effect_stability_small_multiples",
     }.issubset(enhanced)
+
+
+def test_advanced_visual_analytics_adds_exploratory_charts() -> None:
+    diagnostics_tables = {
+        "feature_importance": pd.DataFrame(
+            {
+                "feature_name": ["balance", "income", "utilization"],
+                "coefficient": [0.7, -0.4, 0.3],
+            }
+        ),
+        "interaction_strength": pd.DataFrame(
+            {
+                "feature_x": ["balance", "balance", "income"],
+                "feature_y": ["income", "utilization", "utilization"],
+                "mean_absolute_interaction": [0.08, 0.05, 0.04],
+            }
+        ),
+        "partial_dependence": pd.DataFrame(
+            {
+                "feature_name": ["balance", "balance", "income", "income"],
+                "feature_value": [1, 2, 1, 2],
+                "average_prediction": [0.2, 0.3, 0.4, 0.35],
+                "sort_order": [1, 2, 1, 2],
+            }
+        ),
+        "ice_curves": pd.DataFrame(
+            {
+                "feature_name": ["balance", "balance", "balance", "balance"],
+                "observation_id": [1, 1, 2, 2],
+                "feature_value": [1, 2, 1, 2],
+                "prediction": [0.21, 0.29, 0.18, 0.31],
+                "sort_order": [1, 2, 1, 2],
+            }
+        ),
+        "correlation_matrix": pd.DataFrame(
+            {
+                "feature_name": ["balance", "income", "utilization"],
+                "balance": [1.0, 0.62, 0.25],
+                "income": [0.62, 1.0, -0.41],
+                "utilization": [0.25, -0.41, 1.0],
+            }
+        ),
+        "lift_gain": pd.DataFrame(
+            {
+                "bucket": [1, 2, 3],
+                "lift": [2.5, 1.2, 0.5],
+                "capture_rate": [0.55, 0.30, 0.15],
+                "cumulative_capture_rate": [0.55, 0.85, 1.0],
+            }
+        ),
+        "model_comparison": pd.DataFrame(
+            {
+                "model": ["Champion", "Challenger"],
+                "roc_auc": [0.82, 0.79],
+                "ks_statistic": [0.41, 0.37],
+                "brier_score": [0.15, 0.17],
+            }
+        ),
+        "scenario_summary": pd.DataFrame(
+            {"scenario_name": ["Downside", "Upside"], "mean_delta": [0.08, -0.04]}
+        ),
+    }
+    predictions = {
+        "test": pd.DataFrame(
+            {
+                "as_of_date": pd.date_range("2024-01-01", periods=80, freq="D"),
+                "predicted_probability": [0.05 + (index % 20) / 25 for index in range(80)],
+                "default_status": [0, 1] * 40,
+                "region": ["north", "south", "east", "west"] * 20,
+                "balance": [100 + index for index in range(80)],
+                "income": [500 - index for index in range(80)],
+                "utilization": [(index % 10) / 10 for index in range(80)],
+            }
+        )
+    }
+
+    advanced = apply_advanced_visual_analytics(
+        metrics={"test": {"roc_auc": 0.82, "ks_statistic": 0.41, "brier_score": 0.15}},
+        diagnostics_tables=diagnostics_tables,
+        visualizations={},
+        target_mode="binary",
+        labels_available=True,
+        predictions=predictions,
+    )
+
+    assert {
+        "advanced_contribution_beeswarm",
+        "advanced_interaction_heatmap",
+        "advanced_feature_effect_matrix",
+        "advanced_segment_calibration_small_multiples",
+        "advanced_score_ridgeline",
+        "advanced_temporal_score_stream",
+        "advanced_correlation_network",
+        "advanced_lift_gain_heatmap",
+        "advanced_score_decile_treemap",
+        "advanced_model_comparison_radar",
+        "advanced_scenario_waterfall",
+        "advanced_feature_importance_lollipop",
+    }.issubset(advanced)
 
 
 def test_interactive_report_html_wraps_plot_and_table_content() -> None:

@@ -356,28 +356,35 @@ def inject_styles() -> None:
           }
           .stTabs [data-baseweb="tab-list"] {
             display: grid;
-            grid-template-columns: repeat(4, minmax(0, 1fr));
-            gap: 0.78rem;
+            grid-template-columns: repeat(5, minmax(0, 1fr));
+            gap: 0.5rem;
             margin: 0.75rem 0 1rem;
+            width: 100%;
           }
           .stTabs [data-baseweb="tab"] {
             background: #ffffff;
             border: 1px solid var(--qs-line);
             border-radius: 999px;
-            padding: 0.76rem 1rem;
-            min-height: 3rem;
+            padding: 0.68rem 0.55rem;
+            min-height: 2.75rem;
+            min-width: 0;
+            width: 100%;
             justify-content: center;
             box-shadow: 0 10px 26px rgba(31, 67, 131, 0.045);
             color: var(--qs-muted);
-            font-size: 1.02rem;
+            font-size: 0.92rem;
             font-weight: 950;
             text-align: center;
+            white-space: nowrap;
           }
           .stTabs [data-baseweb="tab"] p {
             width: 100%;
             text-align: center;
-            font-size: 1.02rem;
+            font-size: 0.92rem;
             font-weight: 950;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
           }
           .stTabs [aria-selected="true"] {
             color: var(--qs-blue);
@@ -429,6 +436,13 @@ def inject_styles() -> None:
             }
             .workflow-stage {
               padding: 1.1rem 1.15rem;
+            }
+            .stTabs [data-baseweb="tab-list"] {
+              gap: 0.38rem;
+            }
+            .stTabs [data-baseweb="tab"],
+            .stTabs [data-baseweb="tab"] p {
+              font-size: 0.82rem;
             }
           }
         </style>

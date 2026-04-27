@@ -4,8 +4,9 @@ This standard defines how the Quant Studio GUI and exported diagnostic reports s
 
 The companion implementation standard for the latest Streamlit enterprise
 redesign is [UI_ENTERPRISE_REDESIGN.md](./UI_ENTERPRISE_REDESIGN.md). That
-document governs the command bar, four-step workflow navigation, main-canvas
-configuration groups, readiness checkpoint, and results/artifact workspace.
+document governs the command bar, five-step workflow navigation, main-canvas
+configuration groups, readiness checkpoint, results/artifact workspace, and
+decision-summary scorecard.
 
 ## 1. Visual Direction
 
@@ -35,7 +36,9 @@ The interface should avoid:
 
 The GUI and exported report should use the same diagnostic taxonomy, with Step
 4 `Results & Artifacts` acting as the live reviewer workspace and
-`reports/interactive_report.html` acting as the distribution-ready companion report.
+Step 5 `Decision Summary` acting as the decision-ready synthesis layer.
+`reports/interactive_report.html` is the distribution-ready companion report,
+and `reports/decision_summary.md` is the portable scorecard version of Step 5.
 The current reporting sections are:
 
 1. Model Performance
@@ -98,6 +101,14 @@ VIF threshold bars, missingness-by-split heatmaps, feature-importance
 waterfalls, score-distribution violins, segment-performance dumbbells,
 scenario tornados, cross-validation metric violins, and feature-effect
 stability small multiples.
+
+The `Advanced Visual Analytics` toggle is off by default and should remain a
+clearly optional exploratory layer. When enabled, it may add richer chart
+families such as contribution beeswarms, interaction heatmaps, PDP/ICE matrices,
+segment calibration small multiples, ridgelines, temporal streams, correlation
+networks, risk treemaps, radar charts, waterfalls, and lollipop charts. These
+views must be visually distinct from core validation evidence and must not imply
+that extra model fitting or extra statistical testing occurred.
 
 Charts that include practical thresholds should use interpretation badges:
 

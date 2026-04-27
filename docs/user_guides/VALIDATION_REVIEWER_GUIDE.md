@@ -8,6 +8,7 @@ run without needing to understand every implementation detail first.
 Start with these files:
 
 - `reports/interactive_report.html`
+- `reports/decision_summary.md`
 - `reports/validation_pack.md`
 - `reports/model_documentation_pack.md`
 - `config/run_config.json`
@@ -16,8 +17,10 @@ Start with these files:
 - `metadata/statistical_tests.json`
 - `metadata/reproducibility_manifest.json`
 
-Use Step 4, `Results & Artifacts`, in the GUI when reviewing immediately after a
-run. Use the exported run folder when reviewing offline.
+Use Step 4, `Results & Artifacts`, for detailed diagnostics in the GUI. Use
+Step 5, `Decision Summary`, for the recommendation, decision issues, key
+metrics, feature drivers, and evidence index. Use the exported run folder when
+reviewing offline.
 
 ## Recommended Review Sequence
 
@@ -31,8 +34,9 @@ run. Use the exported run folder when reviewing offline.
 8. Review calibration and threshold behavior for binary models.
 9. Review stability, drift, and segmentation outputs.
 10. Review explainability, feature effects, and scenario tests.
-11. Review warnings, run debug trace, and diagnostic registry.
-12. Record reviewer notes and exceptions.
+11. Review Step 5 decision summary and supporting evidence links.
+12. Review warnings, run debug trace, and diagnostic registry.
+13. Record reviewer notes and exceptions.
 
 ## Execution Mode Review
 

@@ -1610,6 +1610,7 @@ class ArtifactConfig:
     model_summary_file_name: str = "model_summary.txt"
     manifest_file_name: str = "artifact_manifest.json"
     step_manifest_file_name: str = "step_manifest.json"
+    decision_summary_file_name: str = "decision_summary.md"
     documentation_pack_file_name: str = "model_documentation_pack.md"
     validation_pack_file_name: str = "validation_pack.md"
     committee_report_docx_file_name: str = "committee_report.docx"
@@ -1626,6 +1627,7 @@ class ArtifactConfig:
     png_directory_name: str = "png"
     code_snapshot_directory_name: str = "code_snapshot"
     include_enhanced_report_visuals: bool = True
+    include_advanced_visual_analytics: bool = False
     export_individual_figure_files: bool = False
     export_input_snapshot: bool = True
     export_code_snapshot: bool = True
@@ -1651,6 +1653,7 @@ class ArtifactConfig:
             "report_file_name": self.report_file_name,
             "interactive_report_file_name": self.interactive_report_file_name,
             "config_file_name": self.config_file_name,
+            "decision_summary_file_name": self.decision_summary_file_name,
             "documentation_pack_file_name": self.documentation_pack_file_name,
             "validation_pack_file_name": self.validation_pack_file_name,
             "committee_report_docx_file_name": self.committee_report_docx_file_name,

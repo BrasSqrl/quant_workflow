@@ -843,7 +843,15 @@ def _build_artifact_config(payload: dict[str, Any]) -> ArtifactConfig:
         html_directory_name=payload.get("html_directory_name", "html"),
         png_directory_name=payload.get("png_directory_name", "png"),
         code_snapshot_directory_name=payload.get("code_snapshot_directory_name", "code_snapshot"),
+        decision_summary_file_name=payload.get(
+            "decision_summary_file_name",
+            "decision_summary.md",
+        ),
         include_enhanced_report_visuals=payload.get("include_enhanced_report_visuals", True),
+        include_advanced_visual_analytics=payload.get(
+            "include_advanced_visual_analytics",
+            False,
+        ),
         export_individual_figure_files=payload.get("export_individual_figure_files", False),
         export_input_snapshot=payload.get("export_input_snapshot", True),
         export_code_snapshot=payload.get("export_code_snapshot", True),

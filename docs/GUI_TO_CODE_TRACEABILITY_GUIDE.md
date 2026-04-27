@@ -202,6 +202,8 @@ Notes:
 - These surfaces do not change the model or pipeline.
 - They make the current workflow state, remaining issues, and configuration
   changes more transparent before execution.
+- The workflow status model has five stages: Dataset & Schema, Model
+  Configuration, Readiness Check, Results & Artifacts, and Decision Summary.
 
 ## 7. Step 2 Group: Core Setup
 
@@ -305,8 +307,9 @@ These controls only matter when `ExecutionConfig.mode` is
 | `CSV-to-Parquet chunk rows` | `PerformanceConfig.csv_conversion_chunk_rows` | chunked conversion helper |
 | `Large-data training sample rows` | `PerformanceConfig.large_data_training_sample_rows` | sample-fit row cap for file-backed runs |
 | `Full-data scoring chunk rows` | `PerformanceConfig.large_data_score_chunk_rows` | chunk size for `LargeDataFullScoringStep` |
-| `Export individual figure HTML and PNG files` | `ArtifactConfig.export_individual_figure_files`; default `False` | `ArtifactExportStep._export_visualizations` |
-| `Include enhanced report visuals` | `ArtifactConfig.include_enhanced_report_visuals`; default `True` | `presentation.enhance_report_visualizations`, live Results & Artifacts view, `reports/interactive_report.html` |
+| `Export individual figure HTML and PNG files` | `ArtifactConfig.export_individual_figure_files`; default `False` | `ArtifactExportStep._export_visualizations`; mirrors the report-grade visualization set when enabled |
+| `Include enhanced report visuals` | `ArtifactConfig.include_enhanced_report_visuals`; default `True` | `presentation.enhance_report_visualizations`, live Results & Artifacts view, `reports/interactive_report.html`, optional individual figure exports |
+| `Advanced Visual Analytics` | `ArtifactConfig.include_advanced_visual_analytics`; default `False` | `presentation.apply_advanced_visual_analytics`, live Results & Artifacts view, `reports/interactive_report.html`, optional individual figure exports |
 | `Diagnostic suites` | `DiagnosticConfig.*` booleans | `DiagnosticsStep.run(...)` |
 | `Export surfaces` | `DiagnosticConfig.interactive_visualizations`, `static_image_exports`, `export_excel_workbook` | `ArtifactExportStep` |
 | `Top features for analysis` | `DiagnosticConfig.top_n_features` | diagnostics feature ranking |
@@ -551,7 +554,21 @@ Notes:
   reviewer inputs so it can be attached to model documentation or validation
   review material.
 
-## 21. Authoritative Export Files for Traceability
+## 21. Step 5: Decision Summary
+
+| GUI surface | Config or runtime target | Main implementation | Audit surface |
+| --- | --- | --- | --- |
+| `Decision Summary` | completed run snapshot, metrics, diagnostics, warnings, feature importance, and artifact paths | `decision_summary.build_decision_summary(...)`, `render_decision_summary(...)` | `reports/decision_summary.md` |
+| `Download decision summary` | completed run snapshot | `decision_summary.build_decision_summary_markdown(...)` | downloaded Markdown scorecard |
+
+Notes:
+
+- Step 5 does not run a model, change configuration, or replace validation
+  judgment.
+- It synthesizes completed-run evidence into a recommendation, decision level,
+  primary metrics, issue table, top feature drivers, and evidence index.
+
+## 22. Authoritative Export Files for Traceability
 
 For an audit review, the most important files are:
 
@@ -562,6 +579,7 @@ For an audit review, the most important files are:
   regulator-ready report paths, the artifact index, and the rerun bundle map.
 - `metadata/metrics.json`
 - `reports/run_report.md`
+- `reports/decision_summary.md`
 - `reports/model_documentation_pack.md`
 - `reports/validation_pack.md`
 - `metadata/reproducibility_manifest.json`

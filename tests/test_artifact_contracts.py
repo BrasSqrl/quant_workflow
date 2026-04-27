@@ -5,7 +5,10 @@ from __future__ import annotations
 import json
 import re
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
+
+import pandas as pd
 
 from quant_pd_framework import (
     ArtifactConfig,
@@ -20,6 +23,7 @@ from quant_pd_framework import (
     TargetMode,
 )
 from quant_pd_framework.reference_workflows import get_reference_workflow_definition
+from quant_pd_framework.steps.export import ArtifactExportStep
 from tests.support import build_binary_dataframe, build_common_schema, temporary_artifact_root
 
 
@@ -78,6 +82,9 @@ def test_artifact_manifest_indexes_core_outputs_and_rerun_bundle() -> None:
 
         assert manifest["core_artifacts"]["artifact_manifest"] == str(manifest_path)
         assert manifest["core_artifacts"]["output_root"] == str(context.artifacts["output_root"])
+        assert manifest["core_artifacts"]["decision_summary"] == str(
+            context.artifacts["decision_summary"]
+        )
         assert manifest["rerun_bundle"]["step_manifest"] == str(context.artifacts["step_manifest"])
         assert manifest["rerun_bundle"]["runner_script"] == str(context.artifacts["runner_script"])
         assert manifest["rerun_bundle"]["rerun_readme"] == str(context.artifacts["rerun_readme"])
@@ -101,6 +108,7 @@ def test_artifact_manifest_indexes_core_outputs_and_rerun_bundle() -> None:
         assert any(html_dir.glob("*.html"))
         assert Path(manifest["directories"]["metadata"]).exists()
         assert Path(manifest["directories"]["config"]).exists()
+        assert Path(context.artifacts["decision_summary"]).exists()
         assert (code_snapshot_dir / "src" / "quant_pd_framework" / "run.py").exists()
         assert (code_snapshot_dir / "app" / "streamlit_app.py").exists()
 
@@ -138,6 +146,8 @@ def test_artifact_manifest_can_skip_individual_figure_exports() -> None:
             "enabled": False,
             "html_enabled": False,
             "png_enabled": False,
+            "enhanced_report_visuals_enabled": True,
+            "advanced_visual_analytics_enabled": False,
         }
         assert manifest["figures"] == {}
         assert manifest["directories"]["figures"] is None
@@ -145,9 +155,65 @@ def test_artifact_manifest_can_skip_individual_figure_exports() -> None:
         assert manifest["directories"]["figures_png"] is None
 
 
+def test_advanced_visual_analytics_can_export_individual_figure_file() -> None:
+    with temporary_artifact_root("pytest_advanced_visual_export") as artifact_root:
+        config = SimpleNamespace(
+            artifacts=ArtifactConfig(
+                output_root=artifact_root,
+                export_individual_figure_files=True,
+                include_enhanced_report_visuals=False,
+                include_advanced_visual_analytics=True,
+            ),
+            diagnostics=SimpleNamespace(
+                interactive_visualizations=True,
+                static_image_exports=False,
+            ),
+            target=SimpleNamespace(mode=TargetMode.BINARY),
+        )
+        context = SimpleNamespace(
+            config=config,
+            metadata={"labels_available": True},
+            metrics={"test": {"roc_auc": 0.82}},
+            diagnostics_tables={
+                "feature_importance": pd.DataFrame(
+                    {"feature_name": ["balance"], "coefficient": [0.55]}
+                )
+            },
+            visualizations={},
+            predictions={
+                "test": pd.DataFrame(
+                    {
+                        "predicted_probability": [0.1, 0.2, 0.8, 0.9],
+                        "default_status": [0, 0, 1, 1],
+                        "balance": [100, 200, 300, 400],
+                    }
+                )
+            },
+            warn=lambda message: None,
+        )
+        step = ArtifactExportStep()
+        visualizations = step._build_report_visualizations(context)
+        html_dir = artifact_root / "figures" / "html"
+        png_dir = artifact_root / "figures" / "png"
+        html_dir.mkdir(parents=True)
+
+        manifest = step._export_visualizations(
+            context,
+            html_dir,
+            png_dir,
+            visualizations=visualizations,
+        )
+
+        assert "advanced_contribution_beeswarm" in manifest["figures"]
+        exported_html = Path(manifest["figures"]["advanced_contribution_beeswarm"]["html"])
+        assert exported_html.exists()
+        assert manifest["figure_file_exports"]["advanced_visual_analytics_enabled"] is True
+
+
 def test_individual_figure_exports_default_to_disabled() -> None:
     assert ArtifactConfig().export_individual_figure_files is False
     assert ArtifactConfig().include_enhanced_report_visuals is True
+    assert ArtifactConfig().include_advanced_visual_analytics is False
 
 
 def test_reference_workflow_bundle_contract_contains_expected_sections() -> None:
@@ -172,4 +238,5 @@ def test_reference_workflow_bundle_contract_contains_expected_sections() -> None
             in validation_pack
         )
         assert "## Development Summary" in documentation_pack
+        assert "## Decision Summary" in documentation_pack
         assert "## Calibration Review" in documentation_pack

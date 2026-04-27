@@ -13,7 +13,8 @@ Start with:
 4. [Artifact Map](./ARTIFACT_MAP.md)
 
 That path explains how to launch the app, what data must look like, which
-workflow mode to choose, and where the final outputs are written.
+workflow mode to choose, how to read the Step 5 decision summary, and where the
+final outputs are written.
 
 ## If You Are Building A Model
 
@@ -49,4 +50,3 @@ explain the technical substance behind those steps:
 - [Metric Catalog](../METRIC_CATALOG.md)
 - [Preprocessing and Data Treatment Guide](../PREPROCESSING_AND_DATA_TREATMENT_GUIDE.md)
 - [GUI-to-Code Traceability Guide](../GUI_TO_CODE_TRACEABILITY_GUIDE.md)
-

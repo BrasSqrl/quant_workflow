@@ -26,7 +26,9 @@ For small files, normal mode is simpler.
 7. Export full large tables as Parquet.
 8. Use sampled CSV exports if CSV review files are needed.
 9. Keep individual figure HTML/PNG export off unless required.
-10. Review memory estimate and large-data metadata outputs.
+10. Keep `Advanced Visual Analytics` off unless the added report visuals are
+    specifically needed.
+11. Review memory estimate and large-data metadata outputs.
 
 ## What A Governed Sample Means
 
@@ -96,6 +98,7 @@ For faster large-data runs:
 - tabular output: Parquet or both only when CSV is needed
 - large tabular export policy: sampled CSV plus full Parquet
 - individual figure files: off
+- Advanced Visual Analytics: off
 - optional robustness and cross-validation refits: off unless needed
 
 For final review:

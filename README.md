@@ -557,13 +557,13 @@ The GUI is now organized as a thin entrypoint plus shared UI modules:
 - `streamlit_ui/data.py` handles input loading and caching
 - `streamlit_ui/state.py` owns typed session helpers and run snapshots
 - `streamlit_ui/workspace.py` renders the dataset/schema workspace
-- `streamlit_ui/results.py` renders readiness, results, and governance views
+- `streamlit_ui/results.py` renders readiness, results, decision-summary, and governance views
 - `streamlit_ui/config_builder.py` assembles the preview configuration outside the raw UI flow
 - `streamlit_ui/config_profiles.py` saves and reloads reusable GUI configuration profiles
 - `streamlit_ui/enterprise_workflow.py` owns workflow status, issue-center,
   preflight, diff, artifact-explorer, reviewer, model-card, and guidance helpers
 - `streamlit_ui/theme.py` holds the shared visual system helpers
-- `streamlit_ui/theme.py` also owns the command bar, four-step workflow tabs,
+- `streamlit_ui/theme.py` also owns the command bar, five-step workflow tabs,
   main-canvas cards, and shared visual styling
 
 ### GUI Design System
@@ -700,7 +700,7 @@ visible before execution.
 
 The GUI now includes several development-focused enterprise UX surfaces:
 
-- `Workflow status` shows each of the four steps as not started, needs
+- `Workflow status` shows each of the five steps as not started, needs
   attention, ready, or complete.
 - `Readiness Issue Center` consolidates build errors, guardrail findings, and
   profile/dataset mismatch warnings into one table with recommended actions.
@@ -711,6 +711,8 @@ The GUI now includes several development-focused enterprise UX surfaces:
   profile and last completed run.
 - `Artifact Explorer` groups completed outputs by purpose and provides direct
   downloads for file artifacts.
+- `Decision Summary` synthesizes the completed run into a recommendation,
+  decision issues, key metrics, feature drivers, and evidence links.
 - `Reviewer / Approval Workspace` records reviewer status, notes, and
   exceptions and can save a `review_workspace.json` file into the run folder.
 - `Model Card` download creates a concise Markdown summary of run purpose,
@@ -1666,9 +1668,19 @@ Important behavior:
 - `reports/interactive_report.html` is always exported for completed runs. It uses the
   formal Quant Studio report layout and can include presentation-only companion
   charts generated from existing diagnostics tables, metrics, and predictions.
+- `reports/decision_summary.md` is always exported for completed runs. It
+  summarizes the recommended decision, primary metrics, decision issues, top
+  feature drivers, and evidence links used by Step 5 in the GUI.
 - `include_enhanced_report_visuals` controls whether those companion charts are
   added. Turn it off in the GUI with `Include enhanced report visuals` for
   faster iteration runs.
+- `include_advanced_visual_analytics` controls the optional
+  `Advanced Visual Analytics` layer. It is off by default and adds exploratory
+  charts such as contribution beeswarms, interaction heatmaps, PDP/ICE
+  matrices, segment calibration panels, score ridgelines, temporal score
+  streams, correlation networks, lift/gain heatmaps, risk treemaps,
+  model-comparison radar charts, scenario waterfalls, and feature-importance
+  lollipop charts.
 - `tabular_output_format` controls whether major tabular artifacts are written
   as CSV, Parquet, or both.
 - `large_data_export_policy` can write full tabular outputs, sampled CSV
@@ -1676,7 +1688,9 @@ Important behavior:
   tables.
 - Individual figure `.html` and `.png` files are disabled by default and can be
   enabled through `ArtifactConfig.export_individual_figure_files` or the
-  matching GUI toggle when separate chart files are needed.
+  matching GUI toggle when separate chart files are needed. When enabled, the
+  separate files mirror the report visualization set, including enhanced and
+  advanced charts if those toggles are on.
 - `export_profile` controls how much supporting evidence is packaged:
   `standard` preserves the normal governed bundle, `fast` skips heavier
   distribution assets such as Excel workbooks, regulatory DOCX/PDF reports,
@@ -1934,6 +1948,10 @@ Builds validation tables and interactive Plotly visuals such as:
 - annotated ROC, precision-recall, and KS companion charts
 - calibration residual bar charts
 - score-distribution violin plots
+- optional advanced visual analytics including contribution beeswarms,
+  interaction heatmaps, PDP/ICE matrices, segment calibration panels, score
+  ridgelines, temporal score streams, correlation networks, risk treemaps, and
+  model-comparison radar charts when `Advanced Visual Analytics` is enabled
 - threshold sweeps
 - lift and gain charts
 - missingness charts

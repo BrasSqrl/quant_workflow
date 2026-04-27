@@ -163,6 +163,8 @@ Recommended setup:
 - Use chunked full-data scoring
 - Use Parquet or sampled tabular exports
 - Keep individual figure export off unless required
+- Keep `Advanced Visual Analytics` off unless the added exploratory report
+  visuals are worth the extra rendering time
 
 Key checks:
 
@@ -179,6 +181,7 @@ Recommended setup:
 
 - Export profile: `fast`
 - Individual figure files: off
+- Advanced Visual Analytics: off
 - Large optional diagnostics: off unless needed
 - Use a smaller feature set or governed sample when appropriate
 

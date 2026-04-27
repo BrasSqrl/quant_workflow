@@ -194,6 +194,9 @@ def build_run_snapshot(context, config_dict: dict[str, Any]) -> dict[str, Any]:
         "include_enhanced_report_visuals": bool(
             context.config.artifacts.include_enhanced_report_visuals
         ),
+        "include_advanced_visual_analytics": bool(
+            context.config.artifacts.include_advanced_visual_analytics
+        ),
     }
 
 

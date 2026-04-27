@@ -14,8 +14,13 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from quant_pd_framework import ExecutionMode, TargetMode
+from quant_pd_framework.decision_summary import (
+    build_decision_summary,
+    build_decision_summary_markdown,
+)
 from quant_pd_framework.presentation import (
     SECTION_SPECS,
+    apply_advanced_visual_analytics,
     apply_fintech_figure_theme,
     build_asset_catalog,
     enhance_report_visualizations,
@@ -68,7 +73,7 @@ def render_workflow_readiness(
     st.markdown(
         """
         <div class="workflow-stage">
-          <div class="workflow-stage__index">2</div>
+          <div class="workflow-stage__index">3</div>
           <div class="workflow-stage__body">
             <span class="workflow-stage__kicker">Readiness Check</span>
             <h2>Validate the configured workflow before execution</h2>
@@ -158,20 +163,36 @@ def render_readiness_blocker(message: str) -> None:
 def with_report_enhancement_visualizations(snapshot: dict[str, Any]) -> dict[str, Any]:
     """Returns a view snapshot with report-grade companion charts added."""
 
-    if not snapshot.get("include_enhanced_report_visuals", True):
+    include_enhanced = snapshot.get("include_enhanced_report_visuals", True)
+    include_advanced = snapshot.get("include_advanced_visual_analytics", False)
+    if not include_enhanced and not include_advanced:
         return snapshot
-    if snapshot.get("_report_enhancements_applied"):
+    if snapshot.get("_report_enhancements_applied") and (
+        not include_advanced or snapshot.get("_advanced_visual_analytics_applied")
+    ):
         return snapshot
-    enhanced_visualizations = enhance_report_visualizations(
-        metrics=snapshot["metrics"],
-        diagnostics_tables=snapshot["diagnostics_tables"],
-        visualizations=snapshot["visualizations"],
-        target_mode=snapshot["target_mode"],
-        labels_available=snapshot["labels_available"],
-        predictions=snapshot.get("predictions"),
-    )
-    snapshot["visualizations"] = enhanced_visualizations
-    snapshot["_report_enhancements_applied"] = True
+    visualizations = snapshot["visualizations"]
+    if include_enhanced and not snapshot.get("_report_enhancements_applied"):
+        visualizations = enhance_report_visualizations(
+            metrics=snapshot["metrics"],
+            diagnostics_tables=snapshot["diagnostics_tables"],
+            visualizations=visualizations,
+            target_mode=snapshot["target_mode"],
+            labels_available=snapshot["labels_available"],
+            predictions=snapshot.get("predictions"),
+        )
+        snapshot["_report_enhancements_applied"] = True
+    if include_advanced and not snapshot.get("_advanced_visual_analytics_applied"):
+        visualizations = apply_advanced_visual_analytics(
+            metrics=snapshot["metrics"],
+            diagnostics_tables=snapshot["diagnostics_tables"],
+            visualizations=visualizations,
+            target_mode=snapshot["target_mode"],
+            labels_available=snapshot["labels_available"],
+            predictions=snapshot.get("predictions"),
+        )
+        snapshot["_advanced_visual_analytics_applied"] = True
+    snapshot["visualizations"] = visualizations
     return snapshot
 
 
@@ -184,7 +205,7 @@ def render_run_results(snapshot: dict[str, Any]) -> None:
     st.markdown(
         """
         <div class="workflow-stage">
-          <div class="workflow-stage__index">3</div>
+          <div class="workflow-stage__index">4</div>
           <div class="workflow-stage__body">
             <span class="workflow-stage__kicker">Diagnostic Studio</span>
             <h2>Validation outputs organized by decision workflow</h2>
@@ -240,7 +261,7 @@ def render_subset_search_results(snapshot: dict[str, Any]) -> None:
     st.markdown(
         """
         <div class="workflow-stage">
-          <div class="workflow-stage__index">3</div>
+          <div class="workflow-stage__index">4</div>
           <div class="workflow-stage__body">
             <span class="workflow-stage__kicker">Subset Search Studio</span>
             <h2>Compare candidate feature sets before full model development</h2>
@@ -282,6 +303,92 @@ def render_subset_search_results(snapshot: dict[str, Any]) -> None:
             section_id=selected_id,
             section_payload=asset_catalog[selected_id],
         )
+
+
+def render_decision_summary(snapshot: dict[str, Any]) -> None:
+    """Renders the fifth workflow step: a decision-ready run scorecard."""
+
+    summary = build_decision_summary(snapshot)
+    st.markdown(
+        """
+        <div class="workflow-stage">
+          <div class="workflow-stage__index">5</div>
+          <div class="workflow-stage__body">
+            <span class="workflow-stage__kicker">Decision Summary</span>
+            <h2>Synthesize the completed run into a model decision scorecard</h2>
+            <p>
+              Use this page to review the recommendation, decision issues,
+              primary metrics, top feature drivers, and the evidence files
+              that support the model development decision.
+            </p>
+          </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    _render_decision_level_message(
+        recommendation=summary["recommendation"],
+        level=summary["level"],
+    )
+    render_metric_strip(summary["cards"], compact=True)
+
+    rationale_column, download_column = st.columns([0.7, 0.3], gap="large")
+    with rationale_column:
+        st.markdown("### Decision Rationale")
+        for item in summary["rationale"]:
+            st.markdown(f"- {item}")
+    with download_column:
+        st.markdown("### Export")
+        render_download_button(
+            "Download decision summary",
+            build_decision_summary_markdown(snapshot),
+            file_name=f"{snapshot.get('run_id', 'run')}_decision_summary.md",
+            mime="text/markdown",
+        )
+
+    metric_tab, issue_tab, feature_tab, evidence_tab = st.tabs(
+        ["Metrics", "Issues", "Feature Drivers", "Evidence Index"]
+    )
+    with metric_tab:
+        st.dataframe(
+            prepare_table_for_display(summary["metric_frame"]),
+            width="stretch",
+            hide_index=True,
+        )
+    with issue_tab:
+        st.dataframe(
+            prepare_table_for_display(summary["issue_frame"]),
+            width="stretch",
+            hide_index=True,
+        )
+    with feature_tab:
+        st.dataframe(
+            prepare_table_for_display(summary["feature_frame"]),
+            width="stretch",
+            hide_index=True,
+        )
+    with evidence_tab:
+        st.dataframe(
+            prepare_table_for_display(summary["evidence_frame"]),
+            width="stretch",
+            hide_index=True,
+        )
+
+
+def _render_decision_level_message(*, recommendation: str, level: str) -> None:
+    message = (
+        f"Automated decision summary: **{recommendation}**. "
+        "This is a synthesis aid for model builders and validation teams; it is not "
+        "a substitute for formal approval."
+    )
+    if level == "proceed":
+        st.success(message)
+    elif level == "revise":
+        st.warning(message)
+    elif level == "caution":
+        st.warning(message)
+    else:
+        st.info(message)
 
 
 def render_subset_search_overview(snapshot: dict[str, Any]) -> None:

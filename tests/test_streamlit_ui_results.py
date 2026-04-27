@@ -52,6 +52,33 @@ def test_report_enhancement_visualizations_respect_snapshot_toggle() -> None:
     assert updated_snapshot["visualizations"] == {}
 
 
+def test_advanced_visual_analytics_respects_snapshot_toggle() -> None:
+    snapshot = {
+        "include_enhanced_report_visuals": False,
+        "include_advanced_visual_analytics": True,
+        "metrics": {"test": {"roc_auc": 0.8}},
+        "diagnostics_tables": {
+            "feature_importance": pd.DataFrame({"feature_name": ["balance"], "coefficient": [0.5]})
+        },
+        "visualizations": {},
+        "target_mode": TargetMode.BINARY.value,
+        "labels_available": True,
+        "predictions": {
+            "test": pd.DataFrame(
+                {
+                    "predicted_probability": [0.1, 0.2, 0.8, 0.9],
+                    "default_status": [0, 0, 1, 1],
+                    "balance": [100, 200, 300, 400],
+                }
+            )
+        },
+    }
+
+    updated_snapshot = with_report_enhancement_visualizations(snapshot)
+
+    assert "advanced_contribution_beeswarm" in updated_snapshot["visualizations"]
+
+
 def test_suitability_display_table_puts_failures_first_with_plain_language() -> None:
     table = pd.DataFrame(
         [

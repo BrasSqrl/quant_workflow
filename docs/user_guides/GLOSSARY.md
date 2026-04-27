@@ -12,6 +12,7 @@ This glossary defines common terms used in Quant Studio.
 | Advanced mode | UI mode that exposes deeper configuration, governance, explainability, and documentation controls. |
 | Execution mode | The run type: fit a new model, score an existing model, or search feature subsets. |
 | Readiness Check | Step 3 review surface that consolidates validation issues before execution. |
+| Decision Summary | Step 5 synthesis surface that converts completed-run metrics, issues, feature drivers, and artifacts into a decision-ready scorecard. |
 | Artifact | Any output file or folder written by a run. |
 | Configuration profile | Saved GUI setup that can be loaded in a later session without storing raw source data rows. |
 
@@ -83,6 +84,7 @@ This glossary defines common terms used in Quant Studio.
 | `model/quant_model.joblib` | Saved model object exported by a fitted model run. |
 | `config/run_config.json` | Effective configuration used for a run. |
 | `reports/interactive_report.html` | Standalone formal visual report with grouped charts, companion diagnostics, interpretation badges, and table previews. |
+| `reports/decision_summary.md` | Portable Markdown version of the Step 5 decision scorecard. |
 | `artifact_manifest.json` | Machine-readable index of exported files and folders. |
 | `metadata/run_debug_trace.json` | Step timing, status, shape snapshots, and failure details. |
 | `reports/model_documentation_pack.md` | Model-development documentation summary. |

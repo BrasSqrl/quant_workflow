@@ -14,7 +14,7 @@ users can find the right document without reading everything.
 | Find and understand exported files | [Artifact Map](./user_guides/ARTIFACT_MAP.md) |
 | Pick a model family | [Model Selection Guide](./user_guides/MODEL_SELECTION_GUIDE.md) |
 | Configure a common workflow | [Configuration Cookbook](./user_guides/CONFIGURATION_COOKBOOK.md) |
-| Review a completed model package | [Validation Reviewer Guide](./user_guides/VALIDATION_REVIEWER_GUIDE.md) |
+| Review a completed model package and decision summary | [Validation Reviewer Guide](./user_guides/VALIDATION_REVIEWER_GUIDE.md) |
 | Fix common app or run problems | [Troubleshooting Guide](./user_guides/TROUBLESHOOTING.md) |
 | Work with multi-GB datasets | [Large Data Playbook](./user_guides/LARGE_DATA_PLAYBOOK.md) |
 | Decode terminology | [Glossary](./user_guides/GLOSSARY.md) |
@@ -86,4 +86,3 @@ Use these when you need implementation-level detail or audit traceability:
 - [UI / UX Standard](./UI_UX_STANDARD.md)
 - [Enterprise UI Redesign Standard](./UI_ENTERPRISE_REDESIGN.md)
 - [Implemented Optimization Ledger](./DEVELOPMENT_ROADMAP.md)
-

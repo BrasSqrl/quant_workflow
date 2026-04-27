@@ -41,6 +41,7 @@ class ExportPathLayout:
     model_summary_path: Path
     manifest_path: Path
     step_manifest_path: Path
+    decision_summary_path: Path
     documentation_pack_path: Path
     validation_pack_path: Path
     committee_report_docx_path: Path
@@ -104,6 +105,7 @@ def build_export_path_layout(
         model_summary_path=model_dir / artifacts.model_summary_file_name,
         manifest_path=output_root / artifacts.manifest_file_name,
         step_manifest_path=metadata_dir / artifacts.step_manifest_file_name,
+        decision_summary_path=reports_dir / artifacts.decision_summary_file_name,
         documentation_pack_path=reports_dir / artifacts.documentation_pack_file_name,
         validation_pack_path=reports_dir / artifacts.validation_pack_file_name,
         committee_report_docx_path=reports_dir / artifacts.committee_report_docx_file_name,

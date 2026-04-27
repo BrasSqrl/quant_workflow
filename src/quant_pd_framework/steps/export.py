@@ -9,6 +9,7 @@ import platform
 import shutil
 import subprocess
 import textwrap
+from collections.abc import Mapping
 from copy import deepcopy
 from datetime import UTC, datetime
 from pathlib import Path
@@ -21,6 +22,11 @@ import plotly.io as pio
 from ..base import BasePipelineStep
 from ..config import ExecutionMode, LargeDataExportPolicy, TabularOutputFormat
 from ..context import PipelineContext
+from ..decision_summary import (
+    build_decision_summary,
+    build_decision_summary_markdown,
+    build_decision_summary_snapshot_from_context,
+)
 from ..export_layout import ExportPathLayout, build_export_path_layout
 from ..export_profiles import (
     code_snapshot_enabled,
@@ -37,7 +43,12 @@ from ..gui_support import (
     build_template_workbook_bytes,
     build_transformation_frame_from_config,
 )
-from ..presentation import build_interactive_report_html, infer_asset_section
+from ..presentation import (
+    apply_advanced_visual_analytics,
+    build_interactive_report_html,
+    enhance_report_visualizations,
+    infer_asset_section,
+)
 from ..reporting import build_regulatory_report_bundle
 
 ARTIFACT_LAYOUT_VERSION = "2.0"
@@ -102,6 +113,7 @@ class ArtifactExportStep(BasePipelineStep):
         model_summary_path = paths.model_summary_path
         manifest_path = paths.manifest_path
         step_manifest_path = paths.step_manifest_path
+        decision_summary_path = paths.decision_summary_path
         documentation_pack_path = paths.documentation_pack_path
         validation_pack_path = paths.validation_pack_path
         committee_report_docx_path = paths.committee_report_docx_path
@@ -131,6 +143,7 @@ class ArtifactExportStep(BasePipelineStep):
                 interactive_report_path=interactive_report_path,
                 config_path=config_path,
                 tests_path=tests_path,
+                decision_summary_path=decision_summary_path,
                 manifest_path=manifest_path,
                 step_manifest_path=step_manifest_path,
                 run_debug_trace_path=run_debug_trace_path,
@@ -184,7 +197,13 @@ class ArtifactExportStep(BasePipelineStep):
                 csv_path=self._table_export_path(tables_dir, table_name),
             )
 
-        visualization_manifest = self._export_visualizations(context, html_dir, png_dir)
+        report_visualizations = self._build_report_visualizations(context)
+        visualization_manifest = self._export_visualizations(
+            context,
+            html_dir,
+            png_dir,
+            visualizations=report_visualizations,
+        )
         if self._excel_workbook_enabled(context):
             self._export_excel_workbook(context, workbook_path, predictions)
         if context.model_summary is not None:
@@ -194,6 +213,26 @@ class ArtifactExportStep(BasePipelineStep):
                 model_summary_path.write_text(str(context.model_summary), encoding="utf-8")
 
         report_path.write_text(self._build_report(context), encoding="utf-8")
+        decision_summary_path.write_text(
+            self._build_decision_summary(
+                context,
+                artifacts=self._decision_summary_artifacts(
+                    model_path=model_path,
+                    metrics_path=metrics_path,
+                    predictions_path=self._primary_export_path(prediction_exports),
+                    feature_importance_path=feature_importance_path,
+                    report_path=report_path,
+                    interactive_report_path=interactive_report_path,
+                    decision_summary_path=decision_summary_path,
+                    documentation_pack_path=documentation_pack_path,
+                    validation_pack_path=validation_pack_path,
+                    config_path=config_path,
+                    tests_path=tests_path,
+                    run_debug_trace_path=run_debug_trace_path,
+                ),
+            ),
+            encoding="utf-8",
+        )
         documentation_pack_path.write_text(
             self._build_documentation_pack(context),
             encoding="utf-8",
@@ -224,7 +263,10 @@ class ArtifactExportStep(BasePipelineStep):
             reproducibility_manifest["rows"]
         )
         interactive_report_path.write_text(
-            self._build_interactive_report(context),
+            self._build_interactive_report(
+                context,
+                visualizations=report_visualizations,
+            ),
             encoding="utf-8",
         )
         template_workbook_path.write_bytes(self._build_template_workbook(context))
@@ -254,6 +296,7 @@ class ArtifactExportStep(BasePipelineStep):
                 "feature_importance": str(feature_importance_path),
                 "backtest": str(backtest_path),
                 "report": str(report_path),
+                "decision_summary": str(decision_summary_path),
                 "config": str(config_path),
                 "tests": str(tests_path),
                 "step_manifest": str(step_manifest_path),
@@ -287,6 +330,7 @@ class ArtifactExportStep(BasePipelineStep):
             },
             **visualization_manifest,
             "interactive_report": str(interactive_report_path),
+            "decision_summary": str(decision_summary_path),
             "documentation_pack": str(documentation_pack_path),
             "validation_pack": str(validation_pack_path),
             "regulatory_reports": regulatory_report_manifest,
@@ -371,6 +415,7 @@ class ArtifactExportStep(BasePipelineStep):
             "feature_importance": feature_importance_path,
             "backtest": backtest_path,
             "report": report_path,
+            "decision_summary": decision_summary_path,
             "documentation_pack": documentation_pack_path,
             "validation_pack": validation_pack_path,
             "committee_report_docx": (
@@ -577,6 +622,7 @@ class ArtifactExportStep(BasePipelineStep):
         interactive_report_path: Path,
         config_path: Path,
         tests_path: Path,
+        decision_summary_path: Path,
         manifest_path: Path,
         step_manifest_path: Path,
         run_debug_trace_path: Path,
@@ -605,10 +651,39 @@ class ArtifactExportStep(BasePipelineStep):
                 csv_path=self._table_export_path(tables_dir, table_name),
             )
 
-        visualization_manifest = self._export_visualizations(context, html_dir, png_dir)
+        report_visualizations = self._build_report_visualizations(context)
+        visualization_manifest = self._export_visualizations(
+            context,
+            html_dir,
+            png_dir,
+            visualizations=report_visualizations,
+        )
         report_path.write_text(self._build_subset_search_report(context), encoding="utf-8")
+        decision_summary_path.write_text(
+            self._build_decision_summary(
+                context,
+                artifacts=self._decision_summary_artifacts(
+                    model_path=None,
+                    metrics_path=metrics_path,
+                    predictions_path=None,
+                    feature_importance_path=None,
+                    report_path=report_path,
+                    interactive_report_path=interactive_report_path,
+                    decision_summary_path=decision_summary_path,
+                    documentation_pack_path=None,
+                    validation_pack_path=None,
+                    config_path=config_path,
+                    tests_path=tests_path,
+                    run_debug_trace_path=run_debug_trace_path,
+                ),
+            ),
+            encoding="utf-8",
+        )
         interactive_report_path.write_text(
-            self._build_interactive_report(context),
+            self._build_interactive_report(
+                context,
+                visualizations=report_visualizations,
+            ),
             encoding="utf-8",
         )
         step_manifest = self._build_step_manifest(context)
@@ -629,6 +704,7 @@ class ArtifactExportStep(BasePipelineStep):
                 "metrics": str(metrics_path),
                 "report": str(report_path),
                 "interactive_report": str(interactive_report_path),
+                "decision_summary": str(decision_summary_path),
                 "config": str(config_path),
                 "tests": str(tests_path),
                 "step_manifest": str(step_manifest_path),
@@ -672,6 +748,7 @@ class ArtifactExportStep(BasePipelineStep):
             else None,
             "report": report_path,
             "interactive_report": interactive_report_path,
+            "decision_summary": decision_summary_path,
             "config": config_path,
             "tests": tests_path,
             "tables_dir": tables_dir,
@@ -982,6 +1059,7 @@ class ArtifactExportStep(BasePipelineStep):
             "START_HERE.md": "Plain-English orientation guide for the run folder.",
             "artifact_manifest.json": "Machine-readable index of exported artifacts.",
             "interactive_report.html": "Standalone visual diagnostic report.",
+            "decision_summary.md": "Decision-ready scorecard for model review.",
             "run_report.md": "Markdown summary of run metrics, warnings, and diagnostics.",
             "model_documentation_pack.md": "Development-facing model documentation summary.",
             "validation_pack.md": "Validator-facing evidence index and review summary.",
@@ -1022,6 +1100,50 @@ class ArtifactExportStep(BasePipelineStep):
         if hasattr(value, "item"):
             return value.item()
         raise TypeError(f"Object of type {type(value)!r} is not JSON serializable")
+
+    def _build_decision_summary(
+        self,
+        context: PipelineContext,
+        *,
+        artifacts: Mapping[str, Any],
+    ) -> str:
+        snapshot = build_decision_summary_snapshot_from_context(context, artifacts=artifacts)
+        return build_decision_summary_markdown(snapshot)
+
+    def _decision_summary_artifacts(
+        self,
+        *,
+        model_path: Path | None,
+        metrics_path: Path,
+        predictions_path: Path | None,
+        feature_importance_path: Path | None,
+        report_path: Path,
+        interactive_report_path: Path,
+        decision_summary_path: Path,
+        documentation_pack_path: Path | None,
+        validation_pack_path: Path | None,
+        config_path: Path,
+        tests_path: Path,
+        run_debug_trace_path: Path,
+    ) -> dict[str, Path]:
+        artifacts: dict[str, Path] = {
+            "metrics": metrics_path,
+            "report": report_path,
+            "interactive_report": interactive_report_path,
+            "decision_summary": decision_summary_path,
+            "config": config_path,
+            "tests": tests_path,
+            "run_debug_trace": run_debug_trace_path,
+        }
+        optional_paths = {
+            "model": model_path,
+            "predictions": predictions_path,
+            "feature_importance": feature_importance_path,
+            "documentation_pack": documentation_pack_path,
+            "validation_pack": validation_pack_path,
+        }
+        artifacts.update({key: path for key, path in optional_paths.items() if path is not None})
+        return artifacts
 
     def _build_report(self, context: PipelineContext) -> str:
         feature_summary = context.metadata.get("feature_summary", {})
@@ -1242,6 +1364,9 @@ class ArtifactExportStep(BasePipelineStep):
         calibration_summary = context.diagnostics_tables.get("calibration_summary", pd.DataFrame())
         comparison_table = context.comparison_results
         guardrail_table = context.diagnostics_tables.get("workflow_guardrails", pd.DataFrame())
+        decision_summary = build_decision_summary(
+            build_decision_summary_snapshot_from_context(context)
+        )
         lines = [
             f"# {documentation.model_name}",
             "",
@@ -1272,6 +1397,18 @@ class ArtifactExportStep(BasePipelineStep):
             f"- Selected feature count: `{len(context.feature_columns)}`",
             "",
         ]
+
+        lines.extend(
+            [
+                "## Decision Summary",
+                "",
+                f"- Recommendation: `{decision_summary['recommendation']}`",
+                f"- Decision level: `{decision_summary['level'].replace('_', ' ').title()}`",
+            ]
+        )
+        for rationale in decision_summary["rationale"]:
+            lines.append(f"- {rationale}")
+        lines.append("")
 
         if not feature_dictionary.empty:
             documented_count = int(feature_dictionary["documented"].fillna(False).sum())
@@ -1370,6 +1507,7 @@ class ArtifactExportStep(BasePipelineStep):
             lines.append("")
 
         lines.extend(["## Audit Assets", ""])
+        lines.append("- `reports/decision_summary.md` provides the decision-ready scorecard.")
         lines.append("- `reports/validation_pack.md` provides the validator-facing summary.")
         lines.append(
             "- `reports/committee_report.docx` / `reports/committee_report.pdf` provide "
@@ -1409,6 +1547,9 @@ class ArtifactExportStep(BasePipelineStep):
             "scorecard_bin_overrides",
             pd.DataFrame(),
         )
+        decision_summary = build_decision_summary(
+            build_decision_summary_snapshot_from_context(context)
+        )
         rows = [
             f"# Validation Pack: {documentation.model_name}",
             "",
@@ -1433,6 +1574,18 @@ class ArtifactExportStep(BasePipelineStep):
             f"- Categorical features: `{len(context.categorical_features)}`",
             "",
         ]
+
+        rows.extend(
+            [
+                "## Decision Summary",
+                "",
+                f"- Recommendation: `{decision_summary['recommendation']}`",
+                f"- Decision level: `{decision_summary['level'].replace('_', ' ').title()}`",
+            ]
+        )
+        for rationale in decision_summary["rationale"]:
+            rows.append(f"- {rationale}")
+        rows.append("")
 
         if not feature_dictionary.empty:
             documented_count = int(feature_dictionary["documented"].fillna(False).sum())
@@ -1547,6 +1700,7 @@ class ArtifactExportStep(BasePipelineStep):
                 "## Artifact Index",
                 "",
                 "- `reports/run_report.md` for the narrative run summary.",
+                "- `reports/decision_summary.md` for the decision-ready scorecard.",
                 "- `reports/model_documentation_pack.md` for development-facing documentation.",
                 "- `reports/validation_pack.md` for validator-oriented review packaging.",
                 (
@@ -1685,6 +1839,7 @@ class ArtifactExportStep(BasePipelineStep):
             "",
             "## Open First",
             "",
+            "- `reports/decision_summary.md` for the decision-ready model scorecard.",
             "- `reports/interactive_report.html` for the visual diagnostic report.",
             "- `reports/validation_pack.md` for validator-facing evidence.",
             "- `artifact_manifest.json` for the machine-readable artifact index.",
@@ -1706,6 +1861,7 @@ class ArtifactExportStep(BasePipelineStep):
             "## Common Tasks",
             "",
             "- Review results: open `reports/interactive_report.html`.",
+            "- Review the model decision: open `reports/decision_summary.md`.",
             "- Reuse the model: use `model/quant_model.joblib`.",
             "- Rerun outside the GUI: open `code/HOW_TO_RERUN.md`.",
             "- Audit exact values: inspect `tables/` and `metadata/`.",
@@ -1723,11 +1879,44 @@ class ArtifactExportStep(BasePipelineStep):
         ]
         return "\n".join(lines) + "\n"
 
-    def _build_interactive_report(self, context: PipelineContext) -> str:
+    def _build_report_visualizations(self, context: PipelineContext) -> dict[str, Any]:
+        """Builds the report-grade visualization set used by HTML and optional files."""
+
+        visualizations: Mapping[str, Any] = context.visualizations
+        if context.config.artifacts.include_enhanced_report_visuals:
+            visualizations = enhance_report_visualizations(
+                metrics=context.metrics,
+                diagnostics_tables=context.diagnostics_tables,
+                visualizations=visualizations,
+                target_mode=context.config.target.mode.value,
+                labels_available=bool(context.metadata.get("labels_available", False)),
+                predictions=context.predictions,
+            )
+        else:
+            visualizations = dict(visualizations)
+        if context.config.artifacts.include_advanced_visual_analytics:
+            visualizations = apply_advanced_visual_analytics(
+                metrics=context.metrics,
+                diagnostics_tables=context.diagnostics_tables,
+                visualizations=visualizations,
+                target_mode=context.config.target.mode.value,
+                labels_available=bool(context.metadata.get("labels_available", False)),
+                predictions=context.predictions,
+            )
+        return dict(visualizations)
+
+    def _build_interactive_report(
+        self,
+        context: PipelineContext,
+        *,
+        visualizations: Mapping[str, Any] | None = None,
+    ) -> str:
         input_shape = context.metadata.get("input_shape", {})
         feature_summary = context.metadata.get("feature_summary", {})
         split_summary = context.metadata.get("split_summary", {})
         report_limits = resolve_html_report_limits(context)
+        report_visualizations = context.visualizations if visualizations is None else visualizations
+        should_expand_visuals = visualizations is None
         return build_interactive_report_html(
             run_id=context.run_id,
             model_type=context.config.model.model_type.value,
@@ -1742,12 +1931,15 @@ class ArtifactExportStep(BasePipelineStep):
             warnings=context.warnings,
             events=context.events,
             diagnostics_tables=context.diagnostics_tables,
-            visualizations=context.visualizations,
+            visualizations=report_visualizations,
             table_preview_rows=report_limits["table_preview_rows"],
             max_figures_per_section=report_limits["max_figures_per_section"],
             max_tables_per_section=report_limits["max_tables_per_section"],
             include_enhanced_report_visuals=(
-                context.config.artifacts.include_enhanced_report_visuals
+                should_expand_visuals and context.config.artifacts.include_enhanced_report_visuals
+            ),
+            include_advanced_visual_analytics=(
+                should_expand_visuals and context.config.artifacts.include_advanced_visual_analytics
             ),
             predictions=context.predictions,
         )
@@ -1774,6 +1966,8 @@ class ArtifactExportStep(BasePipelineStep):
         context: PipelineContext,
         html_dir: Path,
         png_dir: Path,
+        *,
+        visualizations: Mapping[str, Any] | None = None,
     ) -> dict[str, Any]:
         html_enabled = self._html_figure_exports_enabled(context)
         png_enabled = self._png_figure_exports_enabled(context)
@@ -1782,12 +1976,19 @@ class ArtifactExportStep(BasePipelineStep):
                 "enabled": context.config.artifacts.export_individual_figure_files,
                 "html_enabled": html_enabled,
                 "png_enabled": png_enabled,
+                "enhanced_report_visuals_enabled": (
+                    context.config.artifacts.include_enhanced_report_visuals
+                ),
+                "advanced_visual_analytics_enabled": (
+                    context.config.artifacts.include_advanced_visual_analytics
+                ),
             },
             "figures": {},
         }
         if not context.config.artifacts.export_individual_figure_files:
             return manifest
-        for figure_name, figure in context.visualizations.items():
+        export_visualizations = context.visualizations if visualizations is None else visualizations
+        for figure_name, figure in export_visualizations.items():
             safe_name = self._sanitize_name(figure_name)
             manifest["figures"][figure_name] = {}
             if html_enabled:
