@@ -80,6 +80,7 @@ from .reference_workflows import (
 )
 from .run import run_saved_config
 from .sample_data import build_sample_pd_dataframe
+from .stage_runner import CheckpointedWorkflowRunner
 
 __all__ = [
     "ArtifactConfig",
@@ -87,6 +88,7 @@ __all__ = [
     "CalibrationConfig",
     "CalibrationRankingMetric",
     "CalibrationStrategy",
+    "CheckpointedWorkflowRunner",
     "CleaningConfig",
     "ColumnRole",
     "ColumnSpec",

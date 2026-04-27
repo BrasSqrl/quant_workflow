@@ -272,6 +272,7 @@ class LargeDataFullScoringStep(BasePipelineStep):
             context.config.split.entity_column,
             context.target_column,
             context.config.diagnostics.default_segment_column,
+            context.config.credit_risk.migration_state_column,
             *context.metadata.get("hazard_time_features", []),
         ]
         low_cardinality_segments = [

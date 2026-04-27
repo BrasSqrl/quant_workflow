@@ -51,6 +51,13 @@ The default workflow then moves through the main stages of a quantitative modeli
 15. Diagnostics and visualization generation
 16. Artifact export
 
+The GUI run button uses a checkpointed execution engine by default. A full run
+still looks like one workflow to the user, but the application saves stage
+checkpoints under `checkpoints/`, runs major stages in fresh Python processes,
+and records `checkpoints/checkpoint_manifest.json` for audit and debugging.
+Step 3 also offers a step-by-step mode that advances one checkpoint stage per
+click when a user wants to isolate model fitting, diagnostics, or export.
+
 When `score_existing_model` is used, the training stage becomes a
 model-loading stage and the remaining steps run on newly scored data so the
 existing model can still be documented, validated, stress tested, and exported
@@ -198,6 +205,7 @@ The repository now includes dedicated audit-oriented reference guides:
 - [docs/MODEL_CATALOG.md](./docs/MODEL_CATALOG.md)
 - [docs/METRIC_CATALOG.md](./docs/METRIC_CATALOG.md)
 - [docs/PREPROCESSING_AND_DATA_TREATMENT_GUIDE.md](./docs/PREPROCESSING_AND_DATA_TREATMENT_GUIDE.md)
+- [docs/CHECKPOINT_STAGE_GUIDE.md](./docs/CHECKPOINT_STAGE_GUIDE.md)
 - [docs/GUI_TO_CODE_TRACEABILITY_GUIDE.md](./docs/GUI_TO_CODE_TRACEABILITY_GUIDE.md)
 - [docs/LOGISTIC_REGRESSION_WALKTHROUGH.html](./docs/LOGISTIC_REGRESSION_WALKTHROUGH.html)
 - [docs/SAGEMAKER_SETUP.md](./docs/SAGEMAKER_SETUP.md)
@@ -262,10 +270,11 @@ quant/
     ENGINEERING_RUBRIC.md
     GUI_TO_CODE_TRACEABILITY_GUIDE.md
     LOGISTIC_REGRESSION_WALKTHROUGH.html
-    METRIC_CATALOG.md
-    MODEL_CATALOG.md
-    PREPROCESSING_AND_DATA_TREATMENT_GUIDE.md
-    RUBRIC_ALIGNMENT.md
+  METRIC_CATALOG.md
+  MODEL_CATALOG.md
+  PREPROCESSING_AND_DATA_TREATMENT_GUIDE.md
+  CHECKPOINT_STAGE_GUIDE.md
+  RUBRIC_ALIGNMENT.md
     SAGEMAKER_SETUP.md
     STATISTICAL_TEST_CATALOG.md
     UI_ENTERPRISE_REDESIGN.md
@@ -306,10 +315,12 @@ quant/
     quant_pd_framework/
       __init__.py
       base.py
+      checkpointing.py
       config.py
       config_io.py
       config_serialization.py
       context.py
+      decision_summary.py
       diagnostic_frameworks.py
       export_layout.py
       export_profiles.py
@@ -323,7 +334,9 @@ quant/
       reporting.py
       reference_workflows.py
       run.py
+      run_stage.py
       sample_data.py
+      stage_runner.py
       diagnostics/
         assets.py
         registry.py
@@ -536,7 +549,7 @@ plain-text copy is kept at [SAGEMAKER_SETUP.txt](./SAGEMAKER_SETUP.txt).
 If you already have an exported run folder, you can rerun it without the GUI:
 
 ```powershell
-python -m quant_pd_framework.run --config artifacts\20260418T000000Z\config\run_config.json
+python -m quant_pd_framework.run --config artifacts\run_2026-04-24_15-42-10_UTC\config\run_config.json
 ```
 
 If the run folder includes `data/input/input_snapshot.csv` or
@@ -571,7 +584,8 @@ The GUI is a thin front end over the Python framework. It does not implement mod
 - provides a workbook download/upload loop for offline governance review
 - collects target, split, cleaning, feature-engineering, diagnostics, and model settings
 - builds a `FrameworkConfig`
-- calls the `QuantModelOrchestrator`
+- starts the checkpointed workflow runner, which delegates each stage to the
+  Python orchestrator
 - displays metrics, validation charts, feature drilldowns, diagnostic tables, predictions, and artifact paths
 
 The GUI is now organized as a thin entrypoint plus shared UI modules:
@@ -602,7 +616,7 @@ The governing visual and interaction standards are documented in:
 That standard drives both the live GUI and the exported standalone HTML report. The design system emphasizes:
 
 - a light enterprise-fintech palette with stronger visual hierarchy
-- a command-bar header and four large clickable workflow steps
+- a command-bar header and five large clickable workflow steps
 - a workflow status strip with step-level readiness and next-action guidance
 - a two-column Step 2 model-configuration workspace for faster scanning
 - grouped diagnostics instead of one long undifferentiated result page
@@ -791,7 +805,9 @@ The GUI is not the authoritative implementation of the workflow. It is a configu
 That means:
 
 - GUI selections are converted into a `FrameworkConfig`
-- the same `QuantModelOrchestrator` runs whether the pipeline starts from the GUI or from code
+- the GUI uses `CheckpointedWorkflowRunner` for restartable stage execution,
+  while the same `QuantModelOrchestrator` step logic remains available to
+  code-only users
 - exported run folders now include a Python rerun bundle so a user can leave the GUI entirely after setup
 - the Streamlit script itself stays small while the UI behavior is split into
   reusable modules for state, rendering, caching, and config assembly
@@ -1006,8 +1022,8 @@ If you want to replay a previously exported run, you can load the saved config a
 from quant_pd_framework import run_saved_config
 
 context = run_saved_config(
-    config_path="artifacts/20260418T000000Z/config/run_config.json",
-    input_path="artifacts/20260418T000000Z/data/input/input_snapshot.parquet",
+    config_path="artifacts/run_2026-04-24_15-42-10_UTC/config/run_config.json",
+    input_path="artifacts/run_2026-04-24_15-42-10_UTC/data/input/input_snapshot.parquet",
     output_root="artifacts/reruns",
 )
 
@@ -1029,14 +1045,37 @@ print(context.artifacts["output_root"])
 - `execution`
 - `model`
 - `comparison`
+- `subset_search`
 - `feature_policy`
+- `feature_dictionary`
+- `advanced_imputation`
+- `transformations`
+- `manual_review`
+- `suitability_checks`
+- `workflow_guardrails`
 - `explainability`
 - `calibration`
 - `scorecard`
+- `scorecard_workbench`
+- `imputation_sensitivity`
 - `variable_selection`
 - `documentation`
+- `regulatory_reporting`
 - `scenario_testing`
 - `diagnostics`
+- `distribution_diagnostics`
+- `residual_diagnostics`
+- `outlier_diagnostics`
+- `dependency_diagnostics`
+- `time_series_diagnostics`
+- `structural_breaks`
+- `feature_workbench`
+- `preset_recommendations`
+- `credit_risk`
+- `robustness`
+- `cross_validation`
+- `reproducibility`
+- `performance`
 - `artifacts`
 
 `FrameworkConfig.validate()` now performs fail-fast validation of the configuration contract before execution starts. The orchestrator, GUI config builder, and config loader all call that validation path.
@@ -2406,9 +2445,11 @@ The current implementation includes:
 - explicit configuration validation and engineering-rubric documentation
 - user-facing failure guidance with expandable technical tracebacks
 - readable run-output location panels and artifact summary tables in the GUI
+- checkpointed subprocess stage execution with `checkpoints/checkpoint_manifest.json`
+  and a live `Checkpoint Flow` status chart
 - diagnostic registry output that records enabled, emitted, disabled, and
   skipped diagnostic surfaces
 - profiling and synthetic Large Data Mode benchmark scripts for performance
   regression review
 - Streamlit GUI
-- automated tests for pipeline flow, GUI config translation, GUI launching, model variants, existing-model scoring, and saved-bundle reruns
+- automated tests for pipeline flow, checkpointed execution, GUI config translation, GUI launching, model variants, existing-model scoring, and saved-bundle reruns

@@ -38,6 +38,7 @@ and summarizes the completed run in Step 5, `Decision Summary`.
 | `artifact_manifest.json` | Index of exported files and directories. | Auditor, technical reviewer |
 | `metadata/step_manifest.json` | Ordered pipeline step record. | Technical reviewer |
 | `metadata/run_debug_trace.json` | Run start/completion time, total elapsed runtime, per-step timing, shape snapshots, memory estimates, and failure details. | Developer, support, performance reviewer |
+| `checkpoints/checkpoint_manifest.json` | Restartable stage manifest for checkpointed execution, including stage status, elapsed time, latest context checkpoint, and optional-stage failures. | Developer, support, auditor |
 | `metadata/reproducibility_manifest.json` | Hashes, package versions, environment, and input metadata. | Auditor, reproducibility reviewer |
 | `code/generated_run.py` | Python rerun script for running without the GUI. | Developer |
 | `code/HOW_TO_RERUN.md` | Plain-English rerun instructions. | Developer, reviewer |
@@ -53,6 +54,7 @@ and summarizes the completed run in Step 5, `Decision Summary`.
 | `tables/` | Diagnostic tables grouped into topical subfolders. |
 | `config/` | Resolved run configuration and offline configuration workbook. |
 | `metadata/` | Metrics, statistical-test payloads, manifests, reproducibility data, and debug traces. |
+| `checkpoints/` | Disk-backed stage checkpoints used by full and step-by-step workflow execution. |
 | `workbooks/` | Optional Excel analysis workbook. |
 | `code/code_snapshot/` | Copy of relevant source, examples, tests, and project metadata when code snapshot export is enabled. |
 | `figures/` or equivalent figure folders | Separate chart HTML/PNG files when individual figure export is enabled. |
@@ -64,6 +66,27 @@ and summarizes the completed run in Step 5, `Decision Summary`.
 There is intentionally no separate `json/` folder. Configuration JSON lives in
 `config/`, while metrics, manifests, statistical-test payloads, and debug JSON
 live in `metadata/`.
+
+## Checkpointed Execution Artifacts
+
+Quant Studio runs through checkpointed stages by default. The normal `Run full
+workflow` button still performs the whole workflow, but each major stage runs
+from a saved context so Python can release memory between stages. The
+step-by-step mode uses the same files and runs one stage per click.
+
+The `checkpoints/` folder contains:
+
+- `00_initial_context.joblib`, the starting context
+- `NN_stage_name.joblib`, the context after each completed stage
+- `checkpoint_manifest.json`, the stage status and latest checkpoint pointer
+
+Use these files for debugging failed runs, proving which stages completed, or
+rerunning a later stage without rebuilding earlier work. They are execution
+evidence, not the primary business-facing report.
+
+For the full list of checkpoint stages, their purpose, required versus optional
+status, and the controls that influence each one, see
+[Checkpoint Stage Guide](../CHECKPOINT_STAGE_GUIDE.md).
 
 ## Table Subfolders
 

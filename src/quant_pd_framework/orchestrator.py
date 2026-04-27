@@ -154,30 +154,29 @@ class QuantModelOrchestrator:
             for index, step in enumerate(self.steps, start=1)
         ]
 
-    def run(self, data: pd.DataFrame | str | Path) -> PipelineContext:
-        """Executes each step in sequence and returns the populated context."""
+    def run_context(
+        self,
+        context: PipelineContext,
+        *,
+        steps: list[BasePipelineStep] | None = None,
+        run_started: float | None = None,
+        step_offset: int = 0,
+        total_steps: int | None = None,
+    ) -> PipelineContext:
+        """Executes a set of steps against an existing context.
 
-        context = PipelineContext(
-            config=self.config,
-            run_id=self._build_run_id(),
-            raw_input=data,
-        )
-        run_started_at = datetime.now(UTC)
-        run_started = perf_counter()
-        context.metadata["execution_mode"] = self.config.execution.mode.value
-        context.metadata["step_manifest"] = self.describe_steps()
-        context.metadata["run_started_at_utc"] = run_started_at.isoformat()
-        self._notify_progress(
-            {
-                "event_type": "run_started",
-                "run_id": context.run_id,
-                "started_at_utc": run_started_at.isoformat(),
-                "elapsed_seconds": 0.0,
-                "total_steps": len(self.steps),
-            }
-        )
+        This is used by checkpointed execution, where a stage reloads the
+        context from disk, runs only its assigned steps, then saves the result
+        before the next stage starts in a fresh process.
+        """
 
-        for step_index, step in enumerate(self.steps, start=1):
+        active_steps = steps or self.steps
+        total_step_count = total_steps or len(active_steps)
+        run_started_at = context.metadata.get("run_started_at_utc", "")
+        run_started = perf_counter() if run_started is None else run_started
+
+        for local_step_index, step in enumerate(active_steps, start=1):
+            step_index = step_offset + local_step_index
             before = self._debug_snapshot(context)
             started_at = datetime.now(UTC)
             started = perf_counter()
@@ -188,11 +187,13 @@ class QuantModelOrchestrator:
                 {
                     "event_type": "step_started",
                     "run_id": context.run_id,
+                    "started_at_utc": started_at.isoformat(),
+                    "run_started_at_utc": run_started_at,
                     "step_order": step_index,
-                    "total_steps": len(self.steps),
+                    "total_steps": total_step_count,
                     "step_name": step.name,
                     "class_name": step.__class__.__name__,
-                    "started_at_utc": started_at.isoformat(),
+                    "step_started_at_utc": started_at.isoformat(),
                     "elapsed_seconds": round(perf_counter() - run_started, 6),
                 }
             )
@@ -225,8 +226,10 @@ class QuantModelOrchestrator:
                     {
                         "event_type": "step_completed" if status == "completed" else "step_failed",
                         "run_id": context.run_id,
+                        "started_at_utc": started_at.isoformat(),
+                        "run_started_at_utc": run_started_at,
                         "step_order": step_index,
-                        "total_steps": len(self.steps),
+                        "total_steps": total_step_count,
                         "step_name": step.name,
                         "class_name": step.__class__.__name__,
                         "status": status,
@@ -237,6 +240,37 @@ class QuantModelOrchestrator:
                 )
                 if step.name == "artifact_export":
                     self._refresh_exported_debug_trace(context)
+
+        return context
+
+    def run(self, data: pd.DataFrame | str | Path) -> PipelineContext:
+        """Executes each step in sequence and returns the populated context."""
+
+        context = PipelineContext(
+            config=self.config,
+            run_id=self._build_run_id(),
+            raw_input=data,
+        )
+        run_started_at = datetime.now(UTC)
+        run_started = perf_counter()
+        context.metadata["execution_mode"] = self.config.execution.mode.value
+        context.metadata["step_manifest"] = self.describe_steps()
+        context.metadata["run_started_at_utc"] = run_started_at.isoformat()
+        self._notify_progress(
+            {
+                "event_type": "run_started",
+                "run_id": context.run_id,
+                "started_at_utc": run_started_at.isoformat(),
+                "elapsed_seconds": 0.0,
+                "total_steps": len(self.steps),
+            }
+        )
+
+        context = self.run_context(
+            context,
+            run_started=run_started,
+            total_steps=len(self.steps),
+        )
 
         run_completed_at = datetime.now(UTC)
         run_elapsed_seconds = round(perf_counter() - run_started, 6)

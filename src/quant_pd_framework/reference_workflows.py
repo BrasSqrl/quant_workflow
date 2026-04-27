@@ -19,6 +19,7 @@ from .config import (
     ColumnRole,
     ColumnSpec,
     ComparisonConfig,
+    CreditRiskDiagnosticConfig,
     DataStructure,
     DocumentationConfig,
     FrameworkConfig,
@@ -228,6 +229,7 @@ def build_reference_lifetime_pd_dataframe(
                     "unemployment_rate": unemployment_rate,
                     "macro_stress": macro_stress,
                     "delinquency_count": delinquency_count,
+                    "delinquency_state": _delinquency_count_state(delinquency_count),
                     "default_status": default_flag,
                 }
             )
@@ -276,6 +278,7 @@ def build_reference_ccar_dataframe(
                     "unemployment_rate": unemployment_rate,
                     "gdp_gap": gdp_gap,
                     "delinquency_rate": delinquency_rate,
+                    "delinquency_state": _delinquency_rate_state(delinquency_rate),
                     "forecast_value": forecast_value,
                 }
             )
@@ -289,6 +292,30 @@ def _build_common_schema(identifier_name: str) -> SchemaConfig:
             ColumnSpec(name=identifier_name, dtype="string", role=ColumnRole.IDENTIFIER),
         ]
     )
+
+
+def _build_panel_schema_with_migration_state(identifier_name: str) -> SchemaConfig:
+    schema = _build_common_schema(identifier_name)
+    schema.column_specs.append(
+        ColumnSpec(name="delinquency_state", dtype="string", role=ColumnRole.IGNORE)
+    )
+    return schema
+
+
+def _delinquency_count_state(delinquency_count: int) -> str:
+    if delinquency_count <= 0:
+        return "current"
+    if delinquency_count == 1:
+        return "early_delinquency"
+    return "late_delinquency"
+
+
+def _delinquency_rate_state(delinquency_rate: float) -> str:
+    if delinquency_rate < 0.025:
+        return "low"
+    if delinquency_rate < 0.06:
+        return "moderate"
+    return "elevated"
 
 
 def build_reference_pd_config(output_root: Path) -> FrameworkConfig:
@@ -447,7 +474,7 @@ def build_reference_cecl_config(output_root: Path) -> FrameworkConfig:
     preset = get_preset_definition(PresetName.LIFETIME_PD_CECL)
     return FrameworkConfig(
         preset_name=preset.name,
-        schema=_build_common_schema("account_id"),
+        schema=_build_panel_schema_with_migration_state("account_id"),
         cleaning=CleaningConfig(),
         feature_engineering=preset.feature_engineering,
         target=TargetConfig(
@@ -514,6 +541,7 @@ def build_reference_cecl_config(output_root: Path) -> FrameworkConfig:
             ],
         ),
         diagnostics=preset.diagnostics,
+        credit_risk=CreditRiskDiagnosticConfig(migration_state_column="delinquency_state"),
         artifacts=ArtifactConfig(output_root=output_root),
     )
 
@@ -524,7 +552,7 @@ def build_reference_ccar_config(output_root: Path) -> FrameworkConfig:
     preset = get_preset_definition(PresetName.CCAR_FORECASTING)
     return FrameworkConfig(
         preset_name=preset.name,
-        schema=_build_common_schema("segment_id"),
+        schema=_build_panel_schema_with_migration_state("segment_id"),
         cleaning=CleaningConfig(),
         feature_engineering=preset.feature_engineering,
         target=TargetConfig(
@@ -590,6 +618,7 @@ def build_reference_ccar_config(output_root: Path) -> FrameworkConfig:
             ],
         ),
         diagnostics=preset.diagnostics,
+        credit_risk=CreditRiskDiagnosticConfig(migration_state_column="delinquency_state"),
         artifacts=ArtifactConfig(output_root=output_root),
     )
 

@@ -240,6 +240,7 @@ class EvaluationStep(BasePipelineStep):
             context.config.split.entity_column,
             target_column,
             context.config.diagnostics.default_segment_column,
+            context.config.credit_risk.migration_state_column,
             *context.metadata.get("hazard_time_features", []),
             *self._transition_state_columns(frame, context),
         ]

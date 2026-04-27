@@ -6,7 +6,10 @@ This note records how the current codebase aligns with the engineering rubric in
 
 Aligned:
 
-- the GUI remains a thin configuration layer over `QuantModelOrchestrator`
+- the GUI remains a thin configuration layer over the Python framework
+- GUI execution now runs through `CheckpointedWorkflowRunner`, which keeps the
+  orchestration logic explicit while adding restartable subprocess stage
+  boundaries for memory isolation and auditability
 - pipeline logic is still expressed as explicit steps under `src/quant_pd_framework/steps/`
 - fresh model development, existing-model scoring, and feature-subset search
   are represented as explicit execution modes instead of hidden special cases
@@ -31,6 +34,8 @@ Aligned:
 - artifact manifests, debug traces, diagnostic registries, model cards, reviewer
   records, and profile metadata make completed runs easier to inspect without
   reading raw JSON first
+- checkpoint manifests and stage context files document which restartable
+  execution stages completed, failed, or were skipped
 
 ## Quant Workflow Fidelity
 

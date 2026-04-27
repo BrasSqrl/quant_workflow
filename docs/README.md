@@ -17,6 +17,7 @@ users can find the right document without reading everything.
 | Review a completed model package and decision summary | [Validation Reviewer Guide](./user_guides/VALIDATION_REVIEWER_GUIDE.md) |
 | Fix common app or run problems | [Troubleshooting Guide](./user_guides/TROUBLESHOOTING.md) |
 | Work with multi-GB datasets | [Large Data Playbook](./user_guides/LARGE_DATA_PLAYBOOK.md) |
+| Understand checkpoint execution stages | [Checkpoint Stage Guide](./CHECKPOINT_STAGE_GUIDE.md) |
 | Run locally on macOS | [macOS Setup](./MACOS_SETUP.md) |
 | Decode terminology | [Glossary](./user_guides/GLOSSARY.md) |
 
@@ -43,8 +44,9 @@ For a technical owner:
 1. [Engineering Rubric](./ENGINEERING_RUBRIC.md)
 2. [Rubric Alignment](./RUBRIC_ALIGNMENT.md)
 3. [GUI-to-Code Traceability Guide](./GUI_TO_CODE_TRACEABILITY_GUIDE.md)
-4. [Preprocessing and Data Treatment Guide](./PREPROCESSING_AND_DATA_TREATMENT_GUIDE.md)
-5. [Implemented Optimization Ledger](./DEVELOPMENT_ROADMAP.md)
+4. [Checkpoint Stage Guide](./CHECKPOINT_STAGE_GUIDE.md)
+5. [Preprocessing and Data Treatment Guide](./PREPROCESSING_AND_DATA_TREATMENT_GUIDE.md)
+6. [Implemented Optimization Ledger](./DEVELOPMENT_ROADMAP.md)
 
 For SageMaker use:
 
@@ -82,6 +84,7 @@ Use these when you need implementation-level detail or audit traceability:
 - [Model Catalog](./MODEL_CATALOG.md)
 - [Metric Catalog](./METRIC_CATALOG.md)
 - [Preprocessing and Data Treatment Guide](./PREPROCESSING_AND_DATA_TREATMENT_GUIDE.md)
+- [Checkpoint Stage Guide](./CHECKPOINT_STAGE_GUIDE.md)
 - [GUI-to-Code Traceability Guide](./GUI_TO_CODE_TRACEABILITY_GUIDE.md)
 - [Logistic Regression Walkthrough](./LOGISTIC_REGRESSION_WALKTHROUGH.html)
 - [macOS Setup](./MACOS_SETUP.md)

@@ -147,6 +147,12 @@ from quant_pd_framework.streamlit_ui.run_execution import (
     render_runtime_status as ui_render_runtime_status,
 )
 from quant_pd_framework.streamlit_ui.run_execution import (
+    run_next_checkpoint_stage as ui_run_next_checkpoint_stage,
+)
+from quant_pd_framework.streamlit_ui.run_execution import (
+    start_checkpointed_workflow as ui_start_checkpointed_workflow,
+)
+from quant_pd_framework.streamlit_ui.run_execution import (
     workflow_spinner_message as ui_workflow_spinner_message,
 )
 from quant_pd_framework.streamlit_ui.state import (
@@ -227,6 +233,7 @@ LARGE_DATA_DIAGNOSTIC_DEFAULTS = {
     "Segment analysis",
     "Quantile analysis",
 }
+CHECKPOINTED_WORKFLOW_STATE_KEY = "checkpointed_workflow_state"
 
 SCENARIO_EDITOR_COLUMNS = [
     "enabled",
@@ -3181,8 +3188,42 @@ def run_app() -> None:
             ),
             large_data_mode=large_data_mode,
         )
+        workflow_run_style = st.radio(
+            "Workflow run style",
+            options=["full", "step_by_step"],
+            index=0,
+            horizontal=True,
+            format_func={
+                "full": "Run full workflow",
+                "step_by_step": "Run checkpointed step-by-step",
+            }.get,
+            help=(
+                "Full workflow uses the same checkpoint engine automatically. "
+                "Step-by-step mode runs one checkpoint stage per click so a failed "
+                "diagnostic group can be reviewed without refitting the model."
+            ),
+        )
+        checkpoint_state = st.session_state.get(CHECKPOINTED_WORKFLOW_STATE_KEY)
+        if workflow_run_style == "step_by_step" and checkpoint_state:
+            st.caption(
+                "Active checkpointed run: "
+                f"`{checkpoint_state.get('run_id', 'initialized')}` | "
+                f"{checkpoint_state.get('manifest_status', 'initialized')}"
+            )
+            reset_checkpoint_run = st.button(
+                "Reset checkpointed run",
+                width="stretch",
+                key="readiness_reset_checkpointed_run_button",
+            )
+            if reset_checkpoint_run:
+                st.session_state.pop(CHECKPOINTED_WORKFLOW_STATE_KEY, None)
+                checkpoint_state = None
         run_clicked = st.button(
-            run_button_label,
+            "Run Next Checkpoint Stage"
+            if workflow_run_style == "step_by_step" and checkpoint_state
+            else "Start Checkpointed Run"
+            if workflow_run_style == "step_by_step"
+            else run_button_label,
             type="primary",
             width="stretch",
             key="readiness_run_workflow_button",
@@ -3207,20 +3248,51 @@ def run_app() -> None:
                             progress_placeholder=progress_placeholder,
                         )
 
-                    with st.spinner(ui_workflow_spinner_message(execution_mode)):
-                        context = ui_execute_workflow(
-                            preview_config=preview_config,
-                            dataframe=dataframe,
-                            selected_input=selected_input,
-                            large_data_mode=large_data_mode,
-                            progress_callback=render_progress,
+                    if workflow_run_style == "step_by_step":
+                        checkpoint_state = st.session_state.get(CHECKPOINTED_WORKFLOW_STATE_KEY)
+                        if checkpoint_state is None:
+                            checkpoint_state = ui_start_checkpointed_workflow(
+                                preview_config=preview_config,
+                                dataframe=dataframe,
+                                selected_input=selected_input,
+                                large_data_mode=large_data_mode,
+                            )
+                            st.session_state[CHECKPOINTED_WORKFLOW_STATE_KEY] = checkpoint_state
+                        with st.spinner("Running the next checkpoint stage..."):
+                            context, checkpoint_state = ui_run_next_checkpoint_stage(
+                                preview_config=preview_config,
+                                checkpoint_state=checkpoint_state,
+                                progress_callback=render_progress,
+                            )
+                        st.session_state[CHECKPOINTED_WORKFLOW_STATE_KEY] = checkpoint_state
+                        if context is None:
+                            st.info(
+                                "Checkpoint stage completed. Continue running stages until "
+                                "the export package is complete."
+                            )
+                            ui_set_last_run_snapshot(None)
+                        else:
+                            snapshot = ui_build_run_snapshot(
+                                context,
+                                preview_config.to_dict(),
+                            )
+                            ui_set_last_run_snapshot(snapshot)
+                            ui_render_run_success(snapshot)
+                    else:
+                        with st.spinner(ui_workflow_spinner_message(execution_mode)):
+                            context = ui_execute_workflow(
+                                preview_config=preview_config,
+                                dataframe=dataframe,
+                                selected_input=selected_input,
+                                large_data_mode=large_data_mode,
+                                progress_callback=render_progress,
+                            )
+                        snapshot = ui_build_run_snapshot(
+                            context,
+                            preview_config.to_dict(),
                         )
-                    snapshot = ui_build_run_snapshot(
-                        context,
-                        preview_config.to_dict(),
-                    )
-                    ui_set_last_run_snapshot(snapshot)
-                    ui_render_run_success(snapshot)
+                        ui_set_last_run_snapshot(snapshot)
+                        ui_render_run_success(snapshot)
                 except Exception as exc:
                     ui_render_run_failure(
                         ui_classify_workflow_exception(

@@ -138,7 +138,7 @@ Status: implemented
 
 Delivered:
 
-- Add a `Large data mode` GUI toggle.
+- Add a `Large Data Mode` GUI toggle.
 - Default optional robustness and cross-validation refits off in large-data mode.
 - Default per-figure HTML/PNG exports off in large-data mode.
 - Reduce default diagnostic and export surfaces when large-data mode is enabled.
@@ -433,3 +433,27 @@ Primary code:
 - `src/quant_pd_framework/config_serialization.py`
 - `src/quant_pd_framework/config.py`
 - `tests/test_large_data_controls.py`
+
+## 27. Checkpointed Stage Execution
+
+Status: implemented
+
+Delivered:
+
+- Add disk-backed context checkpoints for major workflow stages.
+- Run full GUI workflows through subprocess-backed stages so memory can be
+  released between preparation, fitting, diagnostics, scoring, and export.
+- Add a step-by-step run style that advances one checkpoint stage per click for
+  debugging and auditable recovery.
+- Export `checkpoints/checkpoint_manifest.json` and copy the manifest into
+  `metadata/` after export.
+- Render a live `Checkpoint Flow` chart in the Run Status panel so users can
+  see which stage is pending, running, complete, optional-failed, or failed.
+
+Primary code:
+
+- `src/quant_pd_framework/checkpointing.py`
+- `src/quant_pd_framework/stage_runner.py`
+- `src/quant_pd_framework/run_stage.py`
+- `src/quant_pd_framework/streamlit_ui/run_execution.py`
+- `tests/test_checkpointed_workflow.py`

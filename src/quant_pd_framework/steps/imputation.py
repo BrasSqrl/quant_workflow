@@ -236,7 +236,7 @@ class ImputationStep(BasePipelineStep):
             remaining_rows = sample_cap
             remaining_total = total_rows
             ordered_splits = list(split_frames.items())
-            for index, (split_name, frame) in enumerate(ordered_splits):
+            for index, (_split_name, frame) in enumerate(ordered_splits):
                 if frame.empty:
                     continue
                 if index == len(ordered_splits) - 1:
@@ -255,7 +255,11 @@ class ImputationStep(BasePipelineStep):
                 sampled_frames.append(sampled_frame)
                 remaining_rows = max(0, remaining_rows - len(sampled_frame))
                 remaining_total = max(0, remaining_total - len(frame))
-            snapshot = pd.concat(sampled_frames, ignore_index=True) if sampled_frames else pd.DataFrame()
+            snapshot = (
+                pd.concat(sampled_frames, ignore_index=True)
+                if sampled_frames
+                else pd.DataFrame()
+            )
             sample_strategy = "stratified_split_sample"
 
         context.metadata["working_data_snapshot"] = {

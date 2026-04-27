@@ -89,9 +89,32 @@ audit need to change them:
 - individual figure HTML/PNG export: off
 - Excel workbook export: off unless specifically requested
 - `Tabular artifact format`: Parquet or both with sampled CSV
+- `Workflow run style`: full workflow is acceptable because it uses the
+  checkpointed stage engine; use step-by-step when debugging a specific stage
 
 These settings do not sample the model training split. They reduce duplicated
 copies, report/session memory, and artifact size around the full-data fit.
+
+## Checkpointed Runtime Behavior
+
+The default run button now uses checkpointed subprocess stages. This means the
+app saves a stage context to disk, launches the next stage in a fresh Python
+process, and avoids keeping every prior intermediate object alive in the same
+process. It does not make pandas model fitting fully streaming, but it reduces
+memory pressure from long end-to-end runs and makes failed diagnostics easier to
+isolate.
+
+During execution, the Run Status panel shows a `Checkpoint Flow` chart. Use it
+to see the active stage, confirm which stages have already completed, and
+identify whether a large run failed during fitting, diagnostics, scoring, or
+export.
+
+Step-by-step mode is useful when:
+
+- the model fit succeeds but diagnostics fail
+- optional visual analytics need to be retried separately
+- support needs to inspect exactly which stage failed
+- a large run should be advanced one auditable stage at a time
 
 ## Large-Data Outputs
 

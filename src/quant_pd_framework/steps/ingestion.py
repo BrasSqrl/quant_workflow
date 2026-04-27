@@ -59,6 +59,7 @@ class IngestionStep(BasePipelineStep):
         dataframe = self._apply_large_data_controls(context, dataframe)
         context.raw_data = dataframe
         context.working_data = dataframe
+        context.raw_input = None
         context.metadata["input_shape"] = {
             "rows": int(dataframe.shape[0]),
             "columns": int(dataframe.shape[1]),

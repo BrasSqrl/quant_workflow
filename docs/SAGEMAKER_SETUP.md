@@ -97,7 +97,7 @@ size, suffix, and modified time in `reproducibility_manifest.json`.
 or large modeling datasets are not committed to GitHub.
 
 For multi-GB files, prefer Parquet over CSV or Excel. If you start with CSV,
-use the Data_Load conversion button or enable `Large data mode` plus
+use the Data_Load conversion button or enable `Large Data Mode` plus
 `Convert CSV file-path inputs to Parquet before ingestion` so file-path runs
 can write a chunked Parquet copy before loading the workflow dataframe.
 
@@ -111,7 +111,7 @@ additional copies.
 Use these conservative starting points:
 
 - For files under 1 GB, start with at least 16 GB RAM.
-- For 1-5 GB CSV files, start with 32-64 GB RAM and use Large data mode.
+- For 1-5 GB CSV files, start with 32-64 GB RAM and use Large Data Mode.
 - For 5-10 GB CSV files, start with 96-128 GB RAM, prefer Data_Load instead
   of browser upload, convert to Parquet first, and use sampled exports.
 - For Parquet files, the same row count usually needs less disk and parse time,

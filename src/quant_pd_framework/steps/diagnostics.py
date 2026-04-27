@@ -77,129 +77,179 @@ class DiagnosticsStep(BasePipelineStep):
         diagnostic_config = context.config.diagnostics
         labels_available = self._labels_available(context)
         has_target_variation = int(context.metadata.get("target_unique_values", 0)) >= 2
+        active_groups = self._active_diagnostic_groups(context)
         preserved_tables = {
-            table_name: table.copy(deep=True)
+            table_name: table.copy(deep=False)
             for table_name, table in context.diagnostics_tables.items()
         }
-        context.diagnostics_tables = {
+        base_tables = {
             **preserved_tables,
             "split_metrics": pd.DataFrame(context.metrics).T.rename_axis("split").reset_index(),
-            "feature_importance": context.feature_importance.copy(deep=True),
-            "backtest_summary": context.backtest_summary.copy(deep=True),
+            "feature_importance": context.feature_importance.copy(deep=False),
+            "backtest_summary": context.backtest_summary.copy(deep=False),
         }
-        context.visualizations = {}
-        context.statistical_tests = {}
+        if self._replace_diagnostic_outputs(context):
+            context.diagnostics_tables = base_tables
+            context.visualizations = {}
+            context.statistical_tests = {}
+        else:
+            context.diagnostics_tables.update(base_tables)
 
         top_features = self._select_top_features(context)
         target_mode = context.config.target.mode
-        self._add_metric_overview_outputs(context)
-        self._add_feature_importance_overview(context)
-        self._add_model_artifact_outputs(context)
-        if context.config.documentation.enabled:
-            self._add_documentation_metadata(context)
-        if context.config.workflow_guardrails.enabled:
-            self._add_workflow_guardrail_outputs(context)
-        self._add_feature_dictionary_outputs(context)
-        self._add_manual_review_outputs(context)
+        if self._diagnostic_group_enabled(active_groups, "overview"):
+            self._add_metric_overview_outputs(context)
+            self._add_feature_importance_overview(context)
+            self._add_model_artifact_outputs(context)
 
-        if diagnostic_config.data_quality:
-            self._build_data_quality_outputs(context)
-        if diagnostic_config.descriptive_statistics:
-            self._add_descriptive_statistics(context)
-        if diagnostic_config.missingness_analysis:
-            self._add_missingness_outputs(context)
-        if context.config.imputation_sensitivity.enabled:
-            self._add_imputation_sensitivity_outputs(context)
-        if diagnostic_config.correlation_analysis:
-            self._add_correlation_outputs(context, top_features)
-        if diagnostic_config.vif_analysis:
-            self._add_vif_outputs(context, top_features)
+        if self._diagnostic_group_enabled(active_groups, "governance"):
+            if context.config.documentation.enabled:
+                self._add_documentation_metadata(context)
+            if context.config.workflow_guardrails.enabled:
+                self._add_workflow_guardrail_outputs(context)
+            self._add_feature_dictionary_outputs(context)
+            self._add_manual_review_outputs(context)
 
-        if target_mode == TargetMode.BINARY:
-            if diagnostic_config.quantile_analysis:
-                self._add_quantile_outputs(context, labels_available)
-            if diagnostic_config.threshold_analysis and labels_available and has_target_variation:
-                self._add_threshold_outputs(context)
-            elif diagnostic_config.threshold_analysis and not labels_available:
-                context.warn(
-                    "Skipped threshold analysis because labels are unavailable "
-                    "for this scored dataset."
-                )
-            if diagnostic_config.calibration_analysis and labels_available and has_target_variation:
-                self._add_calibration_outputs(context)
-            elif diagnostic_config.calibration_analysis and not labels_available:
-                context.warn(
-                    "Skipped calibration analysis because labels are "
-                    "unavailable for this scored dataset."
-                )
-            if diagnostic_config.lift_gain_analysis and labels_available and has_target_variation:
-                self._add_lift_gain_outputs(context)
-            elif diagnostic_config.lift_gain_analysis and not labels_available:
-                context.warn(
-                    "Skipped lift and gain analysis because labels are "
-                    "unavailable for this scored dataset."
-                )
-            if diagnostic_config.woe_iv_analysis and labels_available and has_target_variation:
-                self._add_woe_iv_outputs(context, top_features)
-            elif diagnostic_config.woe_iv_analysis and not labels_available:
-                context.warn(
-                    "Skipped WoE/IV analysis because labels are unavailable "
-                    "for this scored dataset."
-                )
-            if context.config.model.model_type == ModelType.DISCRETE_TIME_HAZARD_MODEL:
-                self._add_lifetime_pd_outputs(context, labels_available)
-        else:
-            if diagnostic_config.quantile_analysis:
-                self._add_regression_quantile_outputs(context, labels_available)
-            if diagnostic_config.residual_analysis and labels_available:
-                self._add_residual_outputs(context)
-            elif diagnostic_config.residual_analysis and not labels_available:
-                context.warn(
-                    "Skipped residual analysis because labels are unavailable "
-                    "for this scored dataset."
-                )
-            if diagnostic_config.qq_analysis and labels_available:
-                self._add_qq_outputs(context)
-            elif diagnostic_config.qq_analysis and not labels_available:
-                context.warn(
-                    "Skipped QQ analysis because labels are unavailable for this scored dataset."
-                )
+        if self._diagnostic_group_enabled(active_groups, "data_quality"):
+            if diagnostic_config.data_quality:
+                self._build_data_quality_outputs(context)
+            if diagnostic_config.descriptive_statistics:
+                self._add_descriptive_statistics(context)
+            if diagnostic_config.missingness_analysis:
+                self._add_missingness_outputs(context)
+            if context.config.imputation_sensitivity.enabled:
+                self._add_imputation_sensitivity_outputs(context)
+            if diagnostic_config.correlation_analysis:
+                self._add_correlation_outputs(context, top_features)
+            if diagnostic_config.vif_analysis:
+                self._add_vif_outputs(context, top_features)
 
-        if diagnostic_config.psi_analysis:
-            self._add_psi_outputs(context, top_features)
-        if diagnostic_config.segment_analysis:
-            self._add_segment_outputs(context, labels_available)
-        if diagnostic_config.adf_analysis:
-            self._add_adf_outputs(context, top_features, labels_available)
-        if diagnostic_config.model_specification_tests and labels_available:
-            self._add_model_specification_outputs(context, top_features)
-        if diagnostic_config.forecasting_statistical_tests:
-            self._add_forecasting_test_outputs(context, top_features, labels_available)
-        if context.comparison_results is not None:
-            self._add_model_comparison_outputs(context)
-        if context.config.robustness.enabled:
-            self._add_robustness_outputs(context)
-        if context.config.explainability.enabled:
-            self._add_explainability_outputs(context, top_features, labels_available)
-        if context.config.scorecard_workbench.enabled:
-            self._add_scorecard_workbench_outputs(context)
-        if context.config.scenario_testing.enabled:
-            self._add_scenario_outputs(context)
-        if context.config.feature_policy.enabled:
-            self._add_feature_policy_outputs(context)
-        if context.config.credit_risk.enabled:
-            self._add_credit_risk_outputs(context, labels_available)
-        add_expanded_framework_outputs(
-            context=context,
-            top_features=top_features,
-            labels_available=labels_available,
-        )
+        if self._diagnostic_group_enabled(active_groups, "performance"):
+            if target_mode == TargetMode.BINARY:
+                if diagnostic_config.quantile_analysis:
+                    self._add_quantile_outputs(context, labels_available)
+                if (
+                    diagnostic_config.threshold_analysis
+                    and labels_available
+                    and has_target_variation
+                ):
+                    self._add_threshold_outputs(context)
+                elif diagnostic_config.threshold_analysis and not labels_available:
+                    context.warn(
+                        "Skipped threshold analysis because labels are unavailable "
+                        "for this scored dataset."
+                    )
+                if (
+                    diagnostic_config.calibration_analysis
+                    and labels_available
+                    and has_target_variation
+                ):
+                    self._add_calibration_outputs(context)
+                elif diagnostic_config.calibration_analysis and not labels_available:
+                    context.warn(
+                        "Skipped calibration analysis because labels are "
+                        "unavailable for this scored dataset."
+                    )
+                if (
+                    diagnostic_config.lift_gain_analysis
+                    and labels_available
+                    and has_target_variation
+                ):
+                    self._add_lift_gain_outputs(context)
+                elif diagnostic_config.lift_gain_analysis and not labels_available:
+                    context.warn(
+                        "Skipped lift and gain analysis because labels are "
+                        "unavailable for this scored dataset."
+                    )
+                if diagnostic_config.woe_iv_analysis and labels_available and has_target_variation:
+                    self._add_woe_iv_outputs(context, top_features)
+                elif diagnostic_config.woe_iv_analysis and not labels_available:
+                    context.warn(
+                        "Skipped WoE/IV analysis because labels are unavailable "
+                        "for this scored dataset."
+                    )
+                if context.config.model.model_type == ModelType.DISCRETE_TIME_HAZARD_MODEL:
+                    self._add_lifetime_pd_outputs(context, labels_available)
+            else:
+                if diagnostic_config.quantile_analysis:
+                    self._add_regression_quantile_outputs(context, labels_available)
+                if diagnostic_config.residual_analysis and labels_available:
+                    self._add_residual_outputs(context)
+                elif diagnostic_config.residual_analysis and not labels_available:
+                    context.warn(
+                        "Skipped residual analysis because labels are unavailable "
+                        "for this scored dataset."
+                    )
+                if diagnostic_config.qq_analysis and labels_available:
+                    self._add_qq_outputs(context)
+                elif diagnostic_config.qq_analysis and not labels_available:
+                    context.warn(
+                        "Skipped QQ analysis because labels are unavailable "
+                        "for this scored dataset."
+                    )
+
+        if self._diagnostic_group_enabled(active_groups, "stability_tests"):
+            if diagnostic_config.psi_analysis:
+                self._add_psi_outputs(context, top_features)
+            if diagnostic_config.segment_analysis:
+                self._add_segment_outputs(context, labels_available)
+            if diagnostic_config.adf_analysis:
+                self._add_adf_outputs(context, top_features, labels_available)
+            if diagnostic_config.model_specification_tests and labels_available:
+                self._add_model_specification_outputs(context, top_features)
+            if diagnostic_config.forecasting_statistical_tests:
+                self._add_forecasting_test_outputs(context, top_features, labels_available)
+            if context.config.robustness.enabled:
+                self._add_robustness_outputs(context)
+
+        if self._diagnostic_group_enabled(active_groups, "comparison_explainability"):
+            if context.comparison_results is not None:
+                self._add_model_comparison_outputs(context)
+            if context.config.explainability.enabled:
+                self._add_explainability_outputs(context, top_features, labels_available)
+            if context.config.scorecard_workbench.enabled:
+                self._add_scorecard_workbench_outputs(context)
+            if context.config.scenario_testing.enabled:
+                self._add_scenario_outputs(context)
+            if context.config.feature_policy.enabled:
+                self._add_feature_policy_outputs(context)
+
+        if self._diagnostic_group_enabled(active_groups, "credit_risk"):
+            if context.config.credit_risk.enabled:
+                self._add_credit_risk_outputs(context, labels_available)
+
+        if self._diagnostic_group_enabled(active_groups, "expanded_framework"):
+            add_expanded_framework_outputs(
+                context=context,
+                top_features=top_features,
+                labels_available=labels_available,
+            )
 
         context.diagnostics_tables["diagnostic_registry"] = build_diagnostic_registry_table(
             context
         )
         apply_visual_theme_to_context(context)
         return context
+
+    def _active_diagnostic_groups(self, context: PipelineContext) -> set[str] | None:
+        configured = context.metadata.get("active_diagnostic_groups")
+        if configured is None:
+            return None
+        if isinstance(configured, str):
+            configured = [configured]
+        if not isinstance(configured, list | tuple | set):
+            return None
+        return {str(group_name) for group_name in configured if str(group_name).strip()}
+
+    def _replace_diagnostic_outputs(self, context: PipelineContext) -> bool:
+        return bool(context.metadata.get("diagnostics_replace_outputs", True))
+
+    def _diagnostic_group_enabled(
+        self,
+        active_groups: set[str] | None,
+        group_name: str,
+    ) -> bool:
+        return active_groups is None or group_name in active_groups
 
     def _preferred_prediction_frame(
         self,

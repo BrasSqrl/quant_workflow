@@ -309,6 +309,9 @@ class ArtifactExportStep(BasePipelineStep):
                 "figures_png": str(png_dir) if png_dir.exists() else None,
                 "config": str(paths.config_dir),
                 "metadata": str(metadata_dir),
+                "checkpoints": str(output_root / "checkpoints")
+                if (output_root / "checkpoints").exists()
+                else None,
                 "workbooks": str(paths.workbooks_dir),
                 "code": str(paths.code_dir),
                 "sample_development": self._path_string(
@@ -328,6 +331,9 @@ class ArtifactExportStep(BasePipelineStep):
             "validation_pack": str(validation_pack_path),
             "regulatory_reports": regulatory_report_manifest,
             "reproducibility_manifest": str(reproducibility_manifest_path),
+            "checkpoint_manifest": context.metadata.get("checkpointed_execution", {}).get(
+                "checkpoint_manifest"
+            ),
             "configuration_template": str(template_workbook_path),
             "rerun_bundle": {
                 "step_manifest": str(step_manifest_path),
@@ -433,6 +439,7 @@ class ArtifactExportStep(BasePipelineStep):
             "workbook": workbook_path if self._excel_workbook_enabled(context) else None,
             "run_debug_trace": run_debug_trace_path,
             "manifest": manifest_path,
+            "artifact_manifest": manifest_path,
             "step_manifest": step_manifest_path,
             "sample_development_dir": context.artifacts.get("sample_development_dir"),
             "large_data_training_sample": context.artifacts.get("large_data_training_sample"),
@@ -537,7 +544,9 @@ class ArtifactExportStep(BasePipelineStep):
         metadata: dict[str, Any] = {
             "dataset_name": "predictions",
             "row_count": int(row_count),
-            "column_count": int(max((frame.shape[1] for frame in compact_frames.values()), default=0)),
+            "column_count": int(
+                max((frame.shape[1] for frame in compact_frames.values()), default=0)
+            ),
             "output_format": output_format.value,
             "export_policy": export_policy.value,
             "sample_rows": int(sample_rows),
@@ -934,6 +943,9 @@ class ArtifactExportStep(BasePipelineStep):
                 "figures_png": str(png_dir) if png_dir.exists() else None,
                 "config": str(paths.config_dir),
                 "metadata": str(metadata_dir),
+                "checkpoints": str(output_root / "checkpoints")
+                if (output_root / "checkpoints").exists()
+                else None,
             },
             **visualization_manifest,
         }
@@ -966,6 +978,7 @@ class ArtifactExportStep(BasePipelineStep):
             "tables_dir": tables_dir,
             "figures_dir": figures_dir if figures_dir.exists() else None,
             "manifest": manifest_path,
+            "artifact_manifest": manifest_path,
             "step_manifest": step_manifest_path,
             "run_debug_trace": run_debug_trace_path,
         }
@@ -2088,6 +2101,7 @@ class ArtifactExportStep(BasePipelineStep):
             "- `tables/` contains diagnostic CSV/Parquet tables grouped by review topic.",
             "- `config/` contains the resolved run configuration and offline template workbook.",
             "- `metadata/` contains metrics, test payloads, manifests, and debug traces.",
+            "- `checkpoints/` contains restartable stage checkpoints for memory-isolated runs.",
             "- `workbooks/` contains the optional analysis workbook.",
             "- `code/` contains rerun instructions, generated Python launcher, and code snapshot.",
             "- `figures/` contains optional individual chart HTML/PNG exports.",
@@ -2100,6 +2114,7 @@ class ArtifactExportStep(BasePipelineStep):
             "- Reuse the model: use `model/quant_model.joblib`.",
             "- Rerun outside the GUI: open `code/HOW_TO_RERUN.md`.",
             "- Audit exact values: inspect `tables/` and `metadata/`.",
+            "- Resume or debug staged execution: inspect `checkpoints/checkpoint_manifest.json`.",
             "- Send to monitoring: use `model_bundle_for_monitoring/`.",
             "",
             "## Key Paths",

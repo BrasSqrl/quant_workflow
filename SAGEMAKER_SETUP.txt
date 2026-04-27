@@ -92,7 +92,7 @@ Data_Load/ is ignored by git except for .gitkeep, so large or private datasets
 are not pushed to GitHub.
 
 For multi-GB files, prefer Parquet over CSV or Excel. If you start with CSV,
-use the Data_Load conversion button or enable Large data mode plus Convert CSV
+use the Data_Load conversion button or enable Large Data Mode plus Convert CSV
 file-path inputs to Parquet before ingestion.
 
 Large dataset sizing guidance
@@ -105,7 +105,7 @@ and diagnostics can create additional copies.
 Conservative starting points:
 
 - Under 1 GB: use at least 16 GB RAM.
-- 1-5 GB CSV: use 32-64 GB RAM and Large data mode.
+- 1-5 GB CSV: use 32-64 GB RAM and Large Data Mode.
 - 5-10 GB CSV: use 96-128 GB RAM, prefer Data_Load over browser upload,
   convert to Parquet first, and use sampled exports.
 - Parquet usually reduces disk and parse cost, but the decompressed dataframe

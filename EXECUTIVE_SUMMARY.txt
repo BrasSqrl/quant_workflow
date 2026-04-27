@@ -131,6 +131,10 @@ Each run can produce a structured output package that includes:
   controls are enabled
 - separate sample-development, full-data-scoring, and large-data-metadata
   folders for large file runs
+- checkpoint manifests and restartable stage context files that make full and
+  step-by-step workflow execution easier to audit and debug
+- a live checkpoint-flow display that shows which major execution stage is
+  pending, running, complete, optional-failed, or failed
 - run debug traces showing per-step timing, status, and shape changes
 - readable artifact-location tables and key output summaries in the GUI
 - grouped artifact explorer views with direct file downloads for completed run

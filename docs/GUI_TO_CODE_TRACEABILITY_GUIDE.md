@@ -28,9 +28,13 @@ Primary implementation files:
 - `src/quant_pd_framework/gui_support.py`
 - `src/quant_pd_framework/config.py`
 - `src/quant_pd_framework/config_serialization.py`
+- `src/quant_pd_framework/checkpointing.py`
+- `src/quant_pd_framework/stage_runner.py`
+- `src/quant_pd_framework/run_stage.py`
 - `src/quant_pd_framework/export_layout.py`
 - `src/quant_pd_framework/diagnostics/assets.py`
 - `src/quant_pd_framework/diagnostics/registry.py`
+- `src/quant_pd_framework/decision_summary.py`
 - `src/quant_pd_framework/orchestrator.py`
 - `src/quant_pd_framework/steps/assumption_checks.py`
 - `src/quant_pd_framework/steps/cross_validation.py`
@@ -39,8 +43,10 @@ Primary implementation files:
 ## Core Principle
 
 The GUI collects user choices. `build_framework_config_from_editor(...)` turns
-those choices into a `FrameworkConfig`. The orchestrator then runs the same
-Python pipeline that a code-only user would run.
+those choices into a `FrameworkConfig`. The GUI then uses
+`CheckpointedWorkflowRunner` to run restartable stages; each stage delegates to
+the same `QuantModelOrchestrator` step logic that a code-only user can run
+directly.
 
 Traceability chain:
 
@@ -48,7 +54,7 @@ Traceability chain:
 
 Execution and recovery chain:
 
-`Run button -> run_execution.py -> QuantModelOrchestrator -> build_run_snapshot -> workflow_feedback.py`
+`Run button -> run_execution.py -> CheckpointedWorkflowRunner -> run_stage.py -> QuantModelOrchestrator.run_context(...) -> build_run_snapshot -> workflow_feedback.py`
 
 If execution fails, `error_guidance.py` classifies the exception into a likely
 cause, recommended recovery action, and expandable technical traceback.
@@ -66,7 +72,8 @@ Enterprise UX chain:
 Notes:
 
 - The data-source controls do not modify model config directly.
-- They determine the dataframe consumed by the orchestrator.
+- They determine the dataframe, file path, or `DatasetHandle` consumed by the
+  checkpointed runner and downstream orchestrator stages.
 - `Data_Load/` is a git-ignored landing-zone directory for CSV, Excel, and
   Parquet files.
   The app scans it on demand and exposes supported files in a dropdown.
@@ -299,7 +306,7 @@ These controls only matter when `ExecutionConfig.mode` is
 | GUI control | Config field(s) | Main implementation |
 | --- | --- | --- |
 | `Default segment column` | `DiagnosticConfig.default_segment_column` | `DiagnosticsStep._add_segment_outputs` |
-| `Large data mode` | `PerformanceConfig.large_data_mode` | Data Source file-backed intake, safer GUI defaults, sampled diagnostics, and chunked full-data scoring |
+| `Large Data Mode` | `PerformanceConfig.large_data_mode` | Data Source file-backed intake, safer GUI defaults, sampled diagnostics, and chunked full-data scoring |
 | `Large-data diagnostic sample rows` | `PerformanceConfig.diagnostic_sample_rows` | diagnostics sampling helpers |
 | `Memory warning threshold` | `PerformanceConfig.memory_limit_gb` | `IngestionStep._record_memory_estimate` |
 | `Optimize dtypes during ingestion` | `PerformanceConfig.optimize_dtypes` | `IngestionStep._apply_large_data_controls` |
@@ -516,10 +523,12 @@ The `Run Quant Model Workflow` button performs this chain:
 3. renders the pre-run readiness summary from that same resolved config
 4. renders the execution-plan summary from `streamlit_ui/run_execution.py`
 5. chooses the correct dataframe or file-backed `DatasetHandle`
-6. instantiates `QuantModelOrchestrator`
-7. runs the full pipeline
-8. records per-step debug timing and shape snapshots
-9. stores a bounded snapshot for the result viewer
+6. creates a checkpointed run through `CheckpointedWorkflowRunner`
+7. runs each major stage in a subprocess-backed checkpoint sequence
+8. publishes live stage-flow events to `render_runtime_status(...)`
+9. records per-stage and per-step debug timing, shape snapshots, and memory estimates
+10. copies the checkpoint manifest into the final metadata folder
+11. stores a bounded snapshot for the result viewer
 
 If a run fails, `streamlit_ui/error_guidance.py` maps the exception to a
 user-facing recovery message while preserving the original traceback in the GUI.
@@ -528,8 +537,23 @@ Relevant code path:
 
 - `build_framework_config_from_editor(...)`
 - `execute_workflow(...)`
-- `QuantModelOrchestrator(config=config).run(run_input)`
+- `CheckpointedWorkflowRunner(config=config).run_all(run_input)`
+- `python -m quant_pd_framework.run_stage --manifest ... --stage-id ...`
+- `QuantModelOrchestrator.run_context(...)`
 - `build_run_snapshot(...)`
+
+The `Run checkpointed step-by-step` option uses the same stage runner, but it
+calls `run_next_checkpoint_stage(...)` once per button click instead of running
+all pending stages. The checkpoint manifest lives at
+`checkpoints/checkpoint_manifest.json` and is copied to `metadata/` after export.
+
+The Run Status panel renders a `Checkpoint Flow` chart from each progress
+event's `stages` payload. That payload is built from the same checkpoint
+manifest that is exported with the run, so the UI stage colors and the
+auditable manifest status are aligned.
+
+For the stage-by-stage user-facing definition, see
+[Checkpoint Stage Guide](./CHECKPOINT_STAGE_GUIDE.md).
 
 ## 19. Result-Viewer Filters
 

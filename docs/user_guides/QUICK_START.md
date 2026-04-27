@@ -16,6 +16,7 @@ A successful first run writes a timestamped folder under `artifacts/` with:
 - `metadata/metrics.json`
 - `data/predictions/predictions.csv` or `data/predictions/predictions.parquet`
 - `metadata/run_debug_trace.json` with timing and memory estimates
+- `checkpoints/checkpoint_manifest.json` with restartable stage status
 - `reports/model_documentation_pack.md`
 - `reports/validation_pack.md`
 - `artifact_manifest.json`
@@ -78,12 +79,19 @@ Quant Studio opens to Step 1 by default.
 17. Leave `Retain full diagnostic working dataframe` off unless the machine has enough RAM and full-row diagnostic tables are required.
 18. Open Step 3, `Readiness Check`.
 19. Resolve blocking readiness issues if any appear.
-20. Click `Run Quant Model Workflow`.
-21. Watch the `Run Status` panel for elapsed time, current stage, and step progress.
-22. Open Step 4, `Results & Artifacts`.
-23. Review the overview, model performance, calibration, governance, and artifact explorer sections.
-24. Open Step 5, `Decision Summary`.
-25. Review the recommendation, decision issues, primary metrics, feature drivers, and evidence index.
+20. Leave `Workflow run style = Run full workflow` for the first run.
+21. Click `Run Quant Model Workflow`.
+22. Watch the `Run Status` panel for elapsed time, current stage, step
+    progress, and the `Checkpoint Flow` chart. The flow chart highlights
+    the active major stage and keeps completed, optional-failed, and failed
+    stages visually distinct.
+23. Use `Run checkpointed step-by-step` only when you want to run one saved
+    stage per click, inspect failures between stages, or retry optional
+    diagnostic groups without refitting the model.
+24. Open Step 4, `Results & Artifacts`.
+25. Review the overview, model performance, calibration, governance, and artifact explorer sections.
+26. Open Step 5, `Decision Summary`.
+27. Review the recommendation, decision issues, primary metrics, feature drivers, and evidence index.
 
 ## First Real-Data Run
 

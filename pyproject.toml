@@ -25,6 +25,7 @@ dependencies = [
 [project.scripts]
 quant-pd-gui = "quant_pd_framework.gui_launcher:main"
 quant-pd-run = "quant_pd_framework.run:main"
+quant-pd-run-stage = "quant_pd_framework.run_stage:main"
 
 [project.optional-dependencies]
 dev = [
