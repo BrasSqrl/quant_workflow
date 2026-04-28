@@ -458,3 +458,32 @@ Primary code:
 - `src/quant_pd_framework/run_stage.py`
 - `src/quant_pd_framework/streamlit_ui/run_execution.py`
 - `tests/test_checkpointed_workflow.py`
+
+## 28. Enterprise Evidence Hardening
+
+Status: implemented
+
+Delivered:
+
+- Add interactive-report chart payload limits for points, per-chart serialized
+  size, and total embedded chart payload size.
+- Export `report_payload_audit` so reviewers can see which charts were kept,
+  downsampled, or skipped in the standalone HTML report.
+- Export `validation_checklist` to summarize complete, attention-needed, and
+  not-applicable validation evidence areas.
+- Export `evidence_traceability_map` to map common review questions to the
+  artifact or table that answers them.
+- Extend Step 5 with Validation Checklist and Traceability Map tabs.
+- Add regression tests for report payload optimization, validation evidence
+  generation, and artifact contract exports.
+
+Primary code:
+
+- `src/quant_pd_framework/report_payload.py`
+- `src/quant_pd_framework/validation_evidence.py`
+- `src/quant_pd_framework/steps/export.py`
+- `src/quant_pd_framework/decision_summary.py`
+- `src/quant_pd_framework/streamlit_ui/results.py`
+- `tests/test_report_payload.py`
+- `tests/test_validation_evidence.py`
+- `tests/test_artifact_contracts.py`

@@ -13,6 +13,8 @@ This glossary defines common terms used in Quant Studio.
 | Execution mode | The run type: fit a new model, score an existing model, or search feature subsets. |
 | Readiness Check | Step 3 review surface that consolidates validation issues before execution. |
 | Decision Summary | Step 5 synthesis surface that converts completed-run metrics, issues, feature drivers, and artifacts into a decision-ready scorecard. |
+| Validation checklist | Step 5 and exported table that summarizes whether major review evidence areas are complete, attention-needed, or not applicable. |
+| Evidence traceability map | Exported question-to-artifact map that tells reviewers which file or table answers each common review question. |
 | Artifact | Any output file or folder written by a run. |
 | Configuration profile | Saved GUI setup that can be loaded in a later session without storing raw source data rows. |
 
@@ -89,4 +91,7 @@ This glossary defines common terms used in Quant Studio.
 | `metadata/run_debug_trace.json` | Step timing, status, shape snapshots, and failure details. |
 | `reports/model_documentation_pack.md` | Model-development documentation summary. |
 | `reports/validation_pack.md` | Validator-facing review summary and evidence index. |
+| `tables/governance/validation_checklist.*` | Exported validation-review checklist in the input-driven tabular format. |
+| `tables/governance/evidence_traceability_map.*` | Exported map from review questions to artifacts and diagnostic tables in the input-driven tabular format. |
+| `tables/governance/report_payload_audit.*` | Exported record of report charts kept, downsampled, or skipped by HTML payload limits in the input-driven tabular format. |
 | `model_bundle_for_monitoring/` | Handoff bundle for the separate ongoing-monitoring application. |

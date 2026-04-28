@@ -205,6 +205,9 @@ def build_run_snapshot(context, config_dict: dict[str, Any]) -> dict[str, Any]:
             context.config.artifacts.include_advanced_visual_analytics
         ),
         "keep_all_checkpoints": bool(context.config.artifacts.keep_all_checkpoints),
+        "interactive_report_payload": dict(
+            context.metadata.get("interactive_report_payload", {})
+        ),
     }
 
 

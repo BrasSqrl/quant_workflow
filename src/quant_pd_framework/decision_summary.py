@@ -75,6 +75,44 @@ def build_decision_summary(snapshot: Mapping[str, Any]) -> dict[str, Any]:
         "issue_frame": issue_frame,
         "feature_frame": _build_feature_frame(snapshot, diagnostics_tables),
         "evidence_frame": _build_evidence_frame(_mapping(snapshot.get("artifacts"))),
+        "validation_checklist_frame": _build_named_table_frame(
+            diagnostics_tables,
+            "validation_checklist",
+            fallback_columns=[
+                "review_area",
+                "status",
+                "interpretation",
+                "evidence",
+                "recommended_action",
+            ],
+            fallback_row={
+                "review_area": "Validation checklist",
+                "status": "Not available",
+                "interpretation": "Info",
+                "evidence": "Run artifacts were created before checklist export existed.",
+                "recommended_action": "Rerun the workflow to create validation_checklist.",
+            },
+        ),
+        "traceability_frame": _build_named_table_frame(
+            diagnostics_tables,
+            "evidence_traceability_map",
+            fallback_columns=[
+                "evidence_area",
+                "question_answered",
+                "artifact_key",
+                "artifact_location",
+                "table_name",
+                "reviewer_use",
+            ],
+            fallback_row={
+                "evidence_area": "Traceability",
+                "question_answered": "Where is each review artifact?",
+                "artifact_key": "artifact_manifest",
+                "artifact_location": "artifact_manifest.json",
+                "table_name": "",
+                "reviewer_use": "Use the manifest for older runs without a traceability map.",
+            },
+        ),
     }
 
 
@@ -106,8 +144,12 @@ def build_decision_summary_markdown(snapshot: Mapping[str, Any]) -> str:
     lines.extend(_frame_to_markdown(summary["issue_frame"]))
     lines.extend(["", "## Top Feature Drivers", ""])
     lines.extend(_frame_to_markdown(summary["feature_frame"]))
+    lines.extend(["", "## Validation Checklist", ""])
+    lines.extend(_frame_to_markdown(summary["validation_checklist_frame"]))
     lines.extend(["", "## Evidence Index", ""])
     lines.extend(_frame_to_markdown(summary["evidence_frame"]))
+    lines.extend(["", "## Evidence Traceability Map", ""])
+    lines.extend(_frame_to_markdown(summary["traceability_frame"]))
     return "\n".join(lines).strip() + "\n"
 
 
@@ -399,6 +441,19 @@ def _build_evidence_frame(artifacts: Mapping[str, Any]) -> pd.DataFrame:
             }
         )
     return pd.DataFrame(rows)
+
+
+def _build_named_table_frame(
+    diagnostics_tables: Mapping[str, Any],
+    table_name: str,
+    *,
+    fallback_columns: list[str],
+    fallback_row: Mapping[str, Any],
+) -> pd.DataFrame:
+    table = diagnostics_tables.get(table_name)
+    if isinstance(table, pd.DataFrame) and not table.empty:
+        return table.copy(deep=True)
+    return pd.DataFrame([dict(fallback_row)], columns=fallback_columns)
 
 
 def _recommendation(

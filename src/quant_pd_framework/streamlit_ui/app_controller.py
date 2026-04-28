@@ -1629,6 +1629,72 @@ def run_app() -> None:
                     "validation-focused runs."
                 ),
             )
+            st.caption("Interactive report size controls")
+            (
+                report_points_column,
+                report_figure_column,
+                report_total_column,
+            ) = st.columns(3)
+            with report_points_column:
+                html_max_points_per_figure = int(
+                    st.number_input(
+                        "Max points per report chart",
+                        min_value=500,
+                        max_value=100000,
+                        value=int(
+                            min(
+                                max(
+                                    preset_inputs.performance.html_max_points_per_figure,
+                                    500,
+                                ),
+                                100000,
+                            )
+                        ),
+                        step=500,
+                        help=(
+                            "Caps embedded Plotly points per chart in the standalone HTML "
+                            "report. Full diagnostic tables are still exported separately."
+                        ),
+                    )
+                )
+            with report_figure_column:
+                html_max_figure_payload_mb = float(
+                    st.number_input(
+                        "Max MB per report chart",
+                        min_value=0.5,
+                        max_value=50.0,
+                        value=float(
+                            min(
+                                max(
+                                    preset_inputs.performance.html_max_figure_payload_mb,
+                                    0.5,
+                                ),
+                                50.0,
+                            )
+                        ),
+                        step=0.5,
+                        format="%.1f",
+                    )
+                )
+            with report_total_column:
+                html_max_total_figure_payload_mb = float(
+                    st.number_input(
+                        "Max total report chart MB",
+                        min_value=5.0,
+                        max_value=500.0,
+                        value=float(
+                            min(
+                                max(
+                                    preset_inputs.performance.html_max_total_figure_payload_mb,
+                                    5.0,
+                                ),
+                                500.0,
+                            )
+                        ),
+                        step=5.0,
+                        format="%.1f",
+                    )
+                )
             default_diagnostic_labels = (
                 [
                     label
@@ -2088,6 +2154,9 @@ def run_app() -> None:
                 csv_conversion_chunk_rows=csv_conversion_chunk_rows,
                 large_data_training_sample_rows=large_data_training_sample_rows,
                 large_data_score_chunk_rows=large_data_score_chunk_rows,
+                html_max_points_per_figure=html_max_points_per_figure,
+                html_max_figure_payload_mb=html_max_figure_payload_mb,
+                html_max_total_figure_payload_mb=html_max_total_figure_payload_mb,
                 memory_limit_gb=memory_limit_gb,
                 max_categorical_cardinality=max_categorical_cardinality,
                 allow_high_cardinality_categoricals=allow_high_cardinality_categoricals,

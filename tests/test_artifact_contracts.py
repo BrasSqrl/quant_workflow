@@ -107,6 +107,9 @@ def test_artifact_manifest_indexes_core_outputs_and_rerun_bundle() -> None:
         html_dir = Path(manifest["directories"]["figures_html"])
         code_snapshot_dir = Path(manifest["rerun_bundle"]["code_snapshot"])
         assert any(tables_dir.rglob("*.csv"))
+        assert (tables_dir / "governance" / "validation_checklist.csv").exists()
+        assert (tables_dir / "governance" / "evidence_traceability_map.csv").exists()
+        assert (tables_dir / "governance" / "report_payload_audit.csv").exists()
         assert any(html_dir.glob("*.html"))
         assert Path(manifest["directories"]["metadata"]).exists()
         assert Path(manifest["directories"]["config"]).exists()
@@ -209,6 +212,10 @@ def test_parquet_source_exports_tabular_artifacts_as_parquet() -> None:
         assert (run_root / "data" / "input" / "input_snapshot.parquet").exists()
         assert not (run_root / "data" / "predictions" / "predictions.csv").exists()
         assert (run_root / "data" / "predictions" / "predictions.parquet").exists()
+        assert not (run_root / "tables" / "governance" / "validation_checklist.csv").exists()
+        assert (run_root / "tables" / "governance" / "validation_checklist.parquet").exists()
+        assert (run_root / "tables" / "governance" / "evidence_traceability_map.parquet").exists()
+        assert (run_root / "tables" / "governance" / "report_payload_audit.parquet").exists()
         assert manifest["rerun_bundle"]["input_snapshot_csv"] is None
         assert manifest["rerun_bundle"]["input_snapshot_parquet"]
 

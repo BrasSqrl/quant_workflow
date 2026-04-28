@@ -75,24 +75,25 @@ Quant Studio opens to Step 1 by default.
 14. Keep `Include enhanced report visuals` on for a polished first report, or turn it off for faster iteration runs.
 15. Leave `Advanced Visual Analytics` off for the first run unless you want the
     extra exploratory chart section.
-16. Leave `Compact prediction exports` on unless you need every modeled feature repeated in the scored output.
-17. Leave `Retain full diagnostic working dataframe` off unless the machine has enough RAM and full-row diagnostic tables are required.
-18. Leave `Keep all checkpoints` off unless support needs every saved context retained after the run.
-19. Open Step 3, `Readiness Check`.
-20. Resolve blocking readiness issues if any appear.
-21. Leave `Workflow run style = Run full workflow` for the first run.
-22. Click `Run Quant Model Workflow`.
-23. Watch the `Run Status` panel for elapsed time, current stage, step
+16. Leave the report-size controls at their defaults unless the HTML report must embed denser charts.
+17. Leave `Compact prediction exports` on unless you need every modeled feature repeated in the scored output.
+18. Leave `Retain full diagnostic working dataframe` off unless the machine has enough RAM and full-row diagnostic tables are required.
+19. Leave `Keep all checkpoints` off unless support needs every saved context retained after the run.
+20. Open Step 3, `Readiness Check`.
+21. Resolve blocking readiness issues if any appear.
+22. Leave `Workflow run style = Run full workflow` for the first run.
+23. Click `Run Quant Model Workflow`.
+24. Watch the `Run Status` panel for elapsed time, current stage, step
     progress, and the `Checkpoint Flow` chart. The flow chart highlights
     the active major stage and keeps completed, optional-failed, and failed
     stages visually distinct.
-24. Use `Run checkpointed step-by-step` only when you want to run one saved
+25. Use `Run checkpointed step-by-step` only when you want to run one saved
     stage per click, inspect failures between stages, or retry optional
     diagnostic groups without refitting the model.
-25. Open Step 4, `Results & Artifacts`.
-26. Review the overview, model performance, calibration, governance, and artifact explorer sections.
-27. Open Step 5, `Decision Summary`.
-28. Review the recommendation, decision issues, primary metrics, feature drivers, and evidence index.
+26. Open Step 4, `Results & Artifacts`.
+27. Review the overview, model performance, calibration, governance, and artifact explorer sections.
+28. Open Step 5, `Decision Summary`.
+29. Review the recommendation, decision issues, primary metrics, feature drivers, validation checklist, evidence index, and traceability map.
 
 ## First Real-Data Run
 

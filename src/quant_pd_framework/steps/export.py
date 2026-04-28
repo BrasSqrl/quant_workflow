@@ -49,8 +49,10 @@ from ..presentation import (
     enhance_report_visualizations,
     infer_asset_section,
 )
+from ..report_payload import optimize_report_visualizations
 from ..reporting import build_regulatory_report_bundle
 from ..tabular_policy import resolve_tabular_output_format
+from ..validation_evidence import publish_validation_evidence_tables
 
 ARTIFACT_LAYOUT_VERSION = "2.0"
 TABLE_SECTION_DIRECTORIES = {
@@ -183,6 +185,8 @@ class ArtifactExportStep(BasePipelineStep):
         self._publish_tabular_export_policy_table(context)
         context.feature_importance.to_csv(feature_importance_path, index=False)
         context.backtest_summary.to_csv(backtest_path, index=False)
+        report_visualizations = self._build_report_visualizations(context)
+        publish_validation_evidence_tables(context)
         for table_name, table in context.diagnostics_tables.items():
             self._export_table(
                 context=context,
@@ -190,7 +194,6 @@ class ArtifactExportStep(BasePipelineStep):
                 csv_path=self._table_export_path(tables_dir, table_name),
             )
 
-        report_visualizations = self._build_report_visualizations(context)
         visualization_manifest = self._export_visualizations(
             context,
             html_dir,
@@ -869,6 +872,8 @@ class ArtifactExportStep(BasePipelineStep):
                 parquet_path=input_snapshot_parquet_path,
             )
         self._publish_tabular_export_policy_table(context)
+        report_visualizations = self._build_report_visualizations(context)
+        publish_validation_evidence_tables(context)
 
         for table_name, table in context.diagnostics_tables.items():
             self._export_table(
@@ -877,7 +882,6 @@ class ArtifactExportStep(BasePipelineStep):
                 csv_path=self._table_export_path(tables_dir, table_name),
             )
 
-        report_visualizations = self._build_report_visualizations(context)
         visualization_manifest = self._export_visualizations(
             context,
             html_dir,
@@ -2158,7 +2162,36 @@ class ArtifactExportStep(BasePipelineStep):
                 labels_available=bool(context.metadata.get("labels_available", False)),
                 predictions=context.predictions,
             )
-        return dict(visualizations)
+        report_limits = resolve_html_report_limits(context)
+        optimized_visualizations, payload_audit = optimize_report_visualizations(
+            dict(visualizations),
+            max_points_per_figure=report_limits["max_points_per_figure"],
+            max_figure_payload_mb=report_limits["max_figure_payload_mb"],
+            max_total_figure_payload_mb=report_limits["max_total_figure_payload_mb"],
+        )
+        if not payload_audit.empty:
+            context.diagnostics_tables["report_payload_audit"] = payload_audit
+            summary_row = payload_audit[payload_audit["figure_name"] == "__total__"]
+            if not summary_row.empty:
+                context.metadata["interactive_report_payload"] = {
+                    "figure_count": int(len(optimized_visualizations)),
+                    "original_payload_mb": float(summary_row.iloc[0]["original_payload_mb"]),
+                    "report_payload_mb": float(summary_row.iloc[0]["report_payload_mb"]),
+                    "max_points_per_figure": report_limits["max_points_per_figure"],
+                    "max_figure_payload_mb": report_limits["max_figure_payload_mb"],
+                    "max_total_figure_payload_mb": report_limits[
+                        "max_total_figure_payload_mb"
+                    ],
+                }
+            skipped_count = int((payload_audit["action"] == "skipped").sum())
+            downsampled_count = int((payload_audit["action"] == "downsampled").sum())
+            if skipped_count or downsampled_count:
+                context.warn(
+                    "Interactive report size controls "
+                    f"downsampled {downsampled_count:,} chart(s) and skipped "
+                    f"{skipped_count:,} chart(s). Review report_payload_audit."
+                )
+        return optimized_visualizations
 
     def _build_interactive_report(
         self,
@@ -2170,8 +2203,12 @@ class ArtifactExportStep(BasePipelineStep):
         feature_summary = context.metadata.get("feature_summary", {})
         split_summary = context.metadata.get("split_summary", {})
         report_limits = resolve_html_report_limits(context)
-        report_visualizations = context.visualizations if visualizations is None else visualizations
-        should_expand_visuals = visualizations is None
+        report_visualizations = (
+            self._build_report_visualizations(context)
+            if visualizations is None
+            else visualizations
+        )
+        should_expand_visuals = False
         return build_interactive_report_html(
             run_id=context.run_id,
             model_type=context.config.model.model_type.value,

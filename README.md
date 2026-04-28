@@ -158,6 +158,11 @@ The framework also includes development-focused workflow features:
   file-backed previews, dtype optimization, memory guardrails, sampled
   development, chunked full-data scoring, sampled exports, and input-aware CSV
   or Parquet output bundles
+- interactive-report payload controls that cap embedded chart points and size,
+  record downsampled or skipped charts in `report_payload_audit`, and keep full
+  diagnostic tables available as separate exports
+- validation checklist and evidence traceability exports that make Step 5 and
+  offline review easier to audit
 
 ## Design Goals
 
@@ -200,8 +205,11 @@ The repository now includes an explicit engineering rubric and alignment note:
 - [docs/UI_ENTERPRISE_REDESIGN.md](./docs/UI_ENTERPRISE_REDESIGN.md)
 - [docs/DEVELOPMENT_ROADMAP.md](./docs/DEVELOPMENT_ROADMAP.md) records the
   completed optimization and maintainability ledger
+- [docs/ENTERPRISE_HARDENING_ROADMAP.md](./docs/ENTERPRISE_HARDENING_ROADMAP.md)
+  records the implemented report-size, validation-checklist, traceability, and
+  regression-coverage hardening work
 - [docs/DEFERRED_REPORT_SIZE_ROADMAP.md](./docs/DEFERRED_REPORT_SIZE_ROADMAP.md)
-  records deferred planning for future interactive-report size controls
+  records deferred planning for future optional report distribution features
 
 ## Transparency and Auditability Guides
 
@@ -1644,6 +1652,9 @@ Important fields include:
 - `large_data_score_chunk_rows`
 - `large_data_project_columns`
 - `large_data_auto_stage_parquet`
+- `html_max_points_per_figure`
+- `html_max_figure_payload_mb`
+- `html_max_total_figure_payload_mb`
 - `memory_limit_gb`
 - `memory_estimate_file_multiplier`
 - `memory_estimate_dataframe_multiplier`
@@ -1662,6 +1673,11 @@ defaults: Data_Load intake, sampled diagnostics, disabled robustness and
 cross-validation refits, disabled per-figure file exports, reusable
 CSV-to-Parquet staging for file-path inputs, configurable training sample size,
 chunked full-data scoring, and input-aware CSV or Parquet tabular outputs.
+
+The HTML report controls cap embedded Plotly chart payloads in the standalone
+interactive report. If a chart is downsampled or skipped to keep the report
+portable, the decision is written to `tables/governance/report_payload_audit.*`.
+Full diagnostic tables remain exported separately.
 
 For file-backed runs, the large-data workflow is intentionally split:
 
@@ -1754,7 +1770,8 @@ Important behavior:
   charts generated from existing diagnostics tables, metrics, and predictions.
 - `reports/decision_summary.md` is always exported for completed runs. It
   summarizes the recommended decision, primary metrics, decision issues, top
-  feature drivers, and evidence links used by Step 5 in the GUI.
+  feature drivers, validation checklist, traceability map, and evidence links
+  used by Step 5 in the GUI.
 - `include_enhanced_report_visuals` controls whether those companion charts are
   added. Turn it off in the GUI with `Include enhanced report visuals` for
   faster iteration runs.
@@ -1780,6 +1797,9 @@ Important behavior:
   matching GUI toggle when separate chart files are needed. When enabled, the
   separate files mirror the report visualization set, including enhanced and
   advanced charts if those toggles are on.
+- `validation_checklist`, `evidence_traceability_map`, and
+  `report_payload_audit` are exported under `tables/governance/` to support
+  validation review, artifact routing, and report-size auditability.
 - `export_profile` controls how much supporting evidence is packaged:
   `standard` preserves the normal governed bundle, `fast` skips heavier
   distribution assets such as Excel workbooks, regulatory DOCX/PDF reports,
@@ -2428,6 +2448,15 @@ Usually this means one of the following:
 Generated artifacts, pytest temp folders, `__pycache__`, editable-install metadata, and Ruff cache files are excluded through `.gitignore` so the working directory stays cleaner after future runs.
 
 The automated tests were also refactored to use isolated temporary workspaces instead of writing durable output under the repository's `artifacts/` directory.
+
+## License
+
+This project is licensed for noncommercial use only.
+
+Commercial use requires explicit written permission.
+See the LICENSE file for details.
+
+
 
 ## Current Status
 

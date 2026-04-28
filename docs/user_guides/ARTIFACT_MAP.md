@@ -36,6 +36,9 @@ and summarizes the completed run in Step 5, `Decision Summary`.
 | `reports/model_documentation_pack.md` | Development-facing written summary. | Developer, documentation owner |
 | `reports/validation_pack.md` | Validator-facing summary and evidence index. | Validation and risk teams |
 | `artifact_manifest.json` | Index of exported files and directories. | Auditor, technical reviewer |
+| `tables/governance/validation_checklist.*` | Checklist of completed, attention-needed, and not-applicable validation evidence areas. | Validator, model developer |
+| `tables/governance/evidence_traceability_map.*` | Maps common review questions to the artifact or table that answers them. | Validator, auditor, technical reviewer |
+| `tables/governance/report_payload_audit.*` | Records embedded report charts kept, downsampled, or skipped by report-size controls. | Developer, validator, support |
 | `metadata/step_manifest.json` | Ordered pipeline step record. | Technical reviewer |
 | `metadata/run_debug_trace.json` | Run start/completion time, total elapsed runtime, per-step timing, shape snapshots, memory estimates, and failure details. | Developer, support, performance reviewer |
 | `checkpoints/checkpoint_manifest.json` | Stage manifest for checkpointed execution, including stage status, elapsed time, checkpoint-retention policy, pruned context evidence, and optional-stage failures. | Developer, support, auditor |
@@ -127,6 +130,18 @@ distribution assets. If `Include enhanced report visuals` or `Advanced Visual
 Analytics` are enabled, the optional separate figure files mirror those same
 report-grade charts.
 
+The Step 2 `Diagnostics & Exports` report-size controls protect the embedded
+chart payload in `reports/interactive_report.html`:
+
+- `Max points per report chart`
+- `Max MB per report chart`
+- `Max total report chart MB`
+
+When a chart exceeds those limits, Quant Studio downsamples or skips that chart
+inside the standalone HTML report and writes the decision to
+`tables/governance/report_payload_audit.*`. Full diagnostic tables remain in
+`tables/` even when the HTML preview is capped.
+
 Prediction exports are compact by default. They preserve audit identifiers,
 date/entity fields, target/split fields, low-cardinality segment fields, and
 model score outputs. Turn off `Compact prediction exports` only when downstream
@@ -168,6 +183,8 @@ package:
   worth the additional runtime and report length.
 - Full tables remain available in the exported table files even when the HTML
   report previews only the first rows.
+- Report-size controls may downsample or omit embedded charts from the HTML
+  file to keep it shareable; review `report_payload_audit` for exact details.
 
 ## Feature-Subset Search Outputs
 

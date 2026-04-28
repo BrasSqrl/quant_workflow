@@ -16,11 +16,13 @@ Start with these files:
 - `metadata/metrics.json`
 - `metadata/statistical_tests.json`
 - `metadata/reproducibility_manifest.json`
+- `tables/governance/validation_checklist.csv` or `.parquet`
+- `tables/governance/evidence_traceability_map.csv` or `.parquet`
 
 Use Step 4, `Results & Artifacts`, for detailed diagnostics in the GUI. Use
 Step 5, `Decision Summary`, for the recommendation, decision issues, key
-metrics, feature drivers, and evidence index. Use the exported run folder when
-reviewing offline.
+metrics, feature drivers, validation checklist, evidence index, and
+traceability map. Use the exported run folder when reviewing offline.
 
 ## Recommended Review Sequence
 
@@ -35,8 +37,10 @@ reviewing offline.
 9. Review stability, drift, and segmentation outputs.
 10. Review explainability, feature effects, and scenario tests.
 11. Review Step 5 decision summary and supporting evidence links.
-12. Review warnings, run debug trace, and diagnostic registry.
-13. Record reviewer notes and exceptions.
+12. Review `validation_checklist` for complete versus attention-needed evidence areas.
+13. Review `evidence_traceability_map` when distributing artifacts to other reviewers.
+14. Review warnings, run debug trace, and diagnostic registry.
+15. Record reviewer notes and exceptions.
 
 ## Execution Mode Review
 
@@ -87,6 +91,25 @@ Important evidence:
 - `tables/diagnostics/categorical_cardinality_profile.*`
 - `tables/diagnostics/working_data_snapshot.*`
 - `tabular_export_policy` table
+- `tables/governance/report_payload_audit.*` when the standalone HTML report
+  downsampled or skipped embedded charts to control file size
+
+## Validation Checklist And Traceability
+
+Step 5 includes two validator-oriented tabs:
+
+- `Validation Checklist` summarizes whether core evidence areas are complete,
+  attention-needed, or not applicable.
+- `Traceability Map` maps common review questions to the exported artifact,
+  table, or report that answers the question.
+
+Offline, use:
+
+- `tables/governance/validation_checklist.csv` or `.parquet`
+- `tables/governance/evidence_traceability_map.csv` or `.parquet`
+
+These files are review aids. They do not approve the model automatically; they
+make it easier to see whether supporting evidence exists and where it lives.
 
 ## Model Performance Review
 

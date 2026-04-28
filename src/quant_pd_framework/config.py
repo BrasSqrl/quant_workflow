@@ -1348,6 +1348,9 @@ class PerformanceConfig:
     html_table_preview_rows: int = 12
     html_max_figures_per_section: int = 6
     html_max_tables_per_section: int = 6
+    html_max_points_per_figure: int = 7_500
+    html_max_figure_payload_mb: float = 3.0
+    html_max_total_figure_payload_mb: float = 60.0
     diagnostic_sample_rows: int = 20_000
     multiple_imputation_row_cap: int = 25_000
     lazy_html_figures: bool = True
@@ -1380,6 +1383,7 @@ class PerformanceConfig:
             "html_table_preview_rows": self.html_table_preview_rows,
             "html_max_figures_per_section": self.html_max_figures_per_section,
             "html_max_tables_per_section": self.html_max_tables_per_section,
+            "html_max_points_per_figure": self.html_max_points_per_figure,
             "diagnostic_sample_rows": self.diagnostic_sample_rows,
             "multiple_imputation_row_cap": self.multiple_imputation_row_cap,
             "category_max_unique_values": self.category_max_unique_values,
@@ -1403,6 +1407,12 @@ class PerformanceConfig:
         if self.memory_estimate_dataframe_multiplier <= 0:
             raise ValueError(
                 "PerformanceConfig.memory_estimate_dataframe_multiplier must be positive."
+            )
+        if self.html_max_figure_payload_mb <= 0:
+            raise ValueError("PerformanceConfig.html_max_figure_payload_mb must be positive.")
+        if self.html_max_total_figure_payload_mb <= 0:
+            raise ValueError(
+                "PerformanceConfig.html_max_total_figure_payload_mb must be positive."
             )
 
 

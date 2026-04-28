@@ -1,11 +1,16 @@
 # Deferred Roadmap: Interactive Report Size Optimization
 
-Status: deferred for future implementation
+Status: partially implemented; retained for future optional distribution work
 
 This roadmap captures planned work to keep `interactive_report.html` useful for
-large Quant Studio runs without creating oversized standalone HTML files. It is
-not implemented yet and should be treated as a parking lot for future report
-optimization work.
+large Quant Studio runs without creating oversized standalone HTML files. The
+core payload controls are now implemented through
+`PerformanceConfig.html_max_points_per_figure`,
+`PerformanceConfig.html_max_figure_payload_mb`,
+`PerformanceConfig.html_max_total_figure_payload_mb`, and the exported
+`report_payload_audit` table. This file remains as a parking lot for future
+optional ideas such as externalized chart assets, downloadable report profiles,
+or GUI report-size dashboards.
 
 ## Problem Statement
 
@@ -39,9 +44,10 @@ multiple traces, and repeated diagnostic or prediction-derived data.
 
 ## Phase 1: Measure Report Payloads
 
-Add report payload instrumentation before changing behavior.
+Implemented. Quant Studio now measures report figure payloads and exports
+`tables/governance/report_payload_audit.*`.
 
-Planned work:
+Implemented work:
 
 - Measure serialized byte size for every Plotly figure before embedding.
 - Export a `report_payload_audit` table with section, figure name, trace count,
@@ -60,9 +66,10 @@ Acceptance criteria:
 
 ## Phase 2: Add Hard Figure Size Guardrails
 
-Introduce global report limits that apply to every chart before HTML embedding.
+Implemented. Quant Studio now applies global report point, per-chart payload,
+and total chart payload limits before HTML embedding.
 
-Planned work:
+Implemented work:
 
 - Add configuration fields such as:
   - `html_max_points_per_figure`

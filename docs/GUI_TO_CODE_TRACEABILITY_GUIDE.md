@@ -321,6 +321,9 @@ These controls only matter when `ExecutionConfig.mode` is
 | `Export individual figure HTML and PNG files` | `ArtifactConfig.export_individual_figure_files`; default `False` | `ArtifactExportStep._export_visualizations`; mirrors the report-grade visualization set when enabled |
 | `Include enhanced report visuals` | `ArtifactConfig.include_enhanced_report_visuals`; default `True` | `presentation.enhance_report_visualizations`, live Results & Artifacts view, `reports/interactive_report.html`, optional individual figure exports |
 | `Advanced Visual Analytics` | `ArtifactConfig.include_advanced_visual_analytics`; default `False` | `presentation.apply_advanced_visual_analytics`, live Results & Artifacts view, `reports/interactive_report.html`, optional individual figure exports |
+| `Max points per report chart` | `PerformanceConfig.html_max_points_per_figure` | `report_payload.optimize_report_visualizations`, `ArtifactExportStep._build_report_visualizations`, `tables/governance/report_payload_audit.*` |
+| `Max MB per report chart` | `PerformanceConfig.html_max_figure_payload_mb` | `report_payload.optimize_report_visualizations`, `ArtifactExportStep._build_report_visualizations`, `tables/governance/report_payload_audit.*` |
+| `Max total report chart MB` | `PerformanceConfig.html_max_total_figure_payload_mb` | `report_payload.optimize_report_visualizations`, `ArtifactExportStep._build_report_visualizations`, `tables/governance/report_payload_audit.*` |
 | `Diagnostic suites` | `DiagnosticConfig.*` booleans | `DiagnosticsStep.run(...)` |
 | `Export surfaces` | `DiagnosticConfig.interactive_visualizations`, `static_image_exports`, `export_excel_workbook` | `ArtifactExportStep` |
 | `Top features for analysis` | `DiagnosticConfig.top_n_features` | diagnostics feature ranking |
@@ -601,13 +604,16 @@ Notes:
 | --- | --- | --- | --- |
 | `Decision Summary` | completed run snapshot, metrics, diagnostics, warnings, feature importance, and artifact paths | `decision_summary.build_decision_summary(...)`, `render_decision_summary(...)` | `reports/decision_summary.md` |
 | `Download decision summary` | completed run snapshot | `decision_summary.build_decision_summary_markdown(...)` | downloaded Markdown scorecard |
+| `Validation Checklist` tab | `diagnostics_tables["validation_checklist"]` | `validation_evidence.build_validation_checklist(...)`, `render_decision_summary(...)` | `tables/governance/validation_checklist.*` |
+| `Traceability Map` tab | `diagnostics_tables["evidence_traceability_map"]` | `validation_evidence.build_evidence_traceability_map(...)`, `render_decision_summary(...)` | `tables/governance/evidence_traceability_map.*` |
 
 Notes:
 
 - Step 5 does not run a model, change configuration, or replace validation
   judgment.
 - It synthesizes completed-run evidence into a recommendation, decision level,
-  primary metrics, issue table, top feature drivers, and evidence index.
+  primary metrics, issue table, top feature drivers, validation checklist,
+  evidence index, and traceability map.
 
 ## 22. Authoritative Export Files for Traceability
 
@@ -624,6 +630,9 @@ For an audit review, the most important files are:
 - `reports/model_documentation_pack.md`
 - `reports/validation_pack.md`
 - `metadata/reproducibility_manifest.json`
+- `tables/governance/validation_checklist.*`
+- `tables/governance/evidence_traceability_map.*`
+- `tables/governance/report_payload_audit.*`
 - `config/configuration_template.xlsx`
 - `reports/interactive_report.html`
 - `tables/feature_subset_search/subset_search_candidates.csv`,

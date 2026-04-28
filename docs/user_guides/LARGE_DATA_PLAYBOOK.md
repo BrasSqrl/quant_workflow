@@ -37,7 +37,10 @@ and input-driven tabular outputs.
 9. Keep individual figure HTML/PNG export off unless required.
 10. Keep `Advanced Visual Analytics` off unless the added report visuals are
     specifically needed.
-11. Review memory estimate and large-data metadata outputs.
+11. Keep report-size controls at conservative defaults unless a reviewer needs
+    more points embedded directly in the standalone HTML report.
+12. Review memory estimate, large-data metadata, and `report_payload_audit`
+    outputs.
 
 ## What A Governed Sample Means
 
@@ -91,6 +94,8 @@ audit need to change them:
 - `Keep all checkpoints`: off
 - individual figure HTML/PNG export: off
 - Excel workbook export: off unless specifically requested
+- report-size controls: leave defaults on unless the HTML report must embed
+  denser charts
 - `Tabular artifact format`: input-driven; Parquet only for original Parquet inputs
 - `Workflow run style`: full workflow is acceptable because it uses the
   checkpointed stage engine; use step-by-step when debugging a specific stage
@@ -150,6 +155,8 @@ For faster large-data runs:
 - large tabular export policy: full, sampled, or metadata-only
 - individual figure files: off
 - Advanced Visual Analytics: off
+- lower `Max points per report chart` or `Max total report chart MB` if the
+  standalone HTML report is too large
 - optional robustness and cross-validation refits: off unless needed
 
 For final review:

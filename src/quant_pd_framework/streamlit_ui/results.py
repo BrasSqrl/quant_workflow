@@ -407,8 +407,22 @@ def render_decision_summary(snapshot: dict[str, Any]) -> None:
             mime="text/markdown",
         )
 
-    metric_tab, issue_tab, feature_tab, evidence_tab = st.tabs(
-        ["Metrics", "Issues", "Feature Drivers", "Evidence Index"]
+    (
+        metric_tab,
+        issue_tab,
+        feature_tab,
+        validation_tab,
+        evidence_tab,
+        traceability_tab,
+    ) = st.tabs(
+        [
+            "Metrics",
+            "Issues",
+            "Feature Drivers",
+            "Validation Checklist",
+            "Evidence Index",
+            "Traceability Map",
+        ]
     )
     with metric_tab:
         st.dataframe(
@@ -428,9 +442,21 @@ def render_decision_summary(snapshot: dict[str, Any]) -> None:
             width="stretch",
             hide_index=True,
         )
+    with validation_tab:
+        st.dataframe(
+            prepare_table_for_display(summary["validation_checklist_frame"]),
+            width="stretch",
+            hide_index=True,
+        )
     with evidence_tab:
         st.dataframe(
             prepare_table_for_display(summary["evidence_frame"]),
+            width="stretch",
+            hide_index=True,
+        )
+    with traceability_tab:
+        st.dataframe(
+            prepare_table_for_display(summary["traceability_frame"]),
             width="stretch",
             hide_index=True,
         )

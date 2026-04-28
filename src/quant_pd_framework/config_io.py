@@ -755,6 +755,12 @@ def _build_performance_config(payload: dict[str, Any]) -> PerformanceConfig:
         html_table_preview_rows=payload.get("html_table_preview_rows", 12),
         html_max_figures_per_section=payload.get("html_max_figures_per_section", 6),
         html_max_tables_per_section=payload.get("html_max_tables_per_section", 6),
+        html_max_points_per_figure=payload.get("html_max_points_per_figure", 7500),
+        html_max_figure_payload_mb=payload.get("html_max_figure_payload_mb", 3.0),
+        html_max_total_figure_payload_mb=payload.get(
+            "html_max_total_figure_payload_mb",
+            60.0,
+        ),
         diagnostic_sample_rows=payload.get("diagnostic_sample_rows", 20000),
         multiple_imputation_row_cap=payload.get("multiple_imputation_row_cap", 25000),
         lazy_html_figures=payload.get("lazy_html_figures", True),

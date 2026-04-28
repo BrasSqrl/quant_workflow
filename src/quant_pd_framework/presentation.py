@@ -205,6 +205,9 @@ TABLE_LABELS = {
     "scorecard_bin_overrides": "Scorecard Bin Overrides",
     "documentation_metadata": "Documentation Metadata",
     "reproducibility_manifest": "Reproducibility Manifest",
+    "validation_checklist": "Validation Checklist",
+    "evidence_traceability_map": "Evidence Traceability Map",
+    "report_payload_audit": "Report Payload Audit",
     "performance_hardening_actions": "Performance Hardening Actions",
     "model_numerical_diagnostics": "Model Numerical Diagnostics",
     "numerical_warning_summary": "Numerical Warning Summary",
@@ -454,6 +457,18 @@ ASSET_DESCRIPTIONS = {
     "documentation_metadata": "Captured model-purpose and governance metadata.",
     "reproducibility_manifest": (
         "Run fingerprint metadata for reruns, audits, and package-version traceability."
+    ),
+    "validation_checklist": (
+        "Reviewer checklist showing complete, attention-needed, and not-applicable "
+        "evidence areas for the completed run."
+    ),
+    "evidence_traceability_map": (
+        "Question-to-artifact map that tells reviewers which exported file answers "
+        "each common model-development review question."
+    ),
+    "report_payload_audit": (
+        "Interactive-report chart size decisions, including figures kept, downsampled, "
+        "or skipped under the configured payload caps."
     ),
     "performance_hardening_actions": (
         "Large-run safeguards applied automatically to keep diagnostics and exports usable."
@@ -1330,6 +1345,9 @@ def infer_asset_section(asset_key: str, *, kind: str) -> str:
         "workflow_guardrails",
         "manual_review_feature_decisions",
         "reproducibility_manifest",
+        "validation_checklist",
+        "evidence_traceability_map",
+        "report_payload_audit",
         "performance_hardening_actions",
         "model_numerical_diagnostics",
         "numerical_warning_summary",
