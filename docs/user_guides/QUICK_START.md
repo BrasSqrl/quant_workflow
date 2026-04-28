@@ -110,6 +110,26 @@ After a good setup in Step 2, save a configuration profile. Profiles preserve
 the setup choices without storing raw data rows. They are useful when a user
 wants the same modeling setup after closing and reopening the app.
 
+## Offline Review Workbook
+
+Step 1 includes a `Template Workbook` section. Download this workbook when
+schema, feature dictionary, transformation, manual-review, or scorecard-bin
+edits need to happen outside the GUI.
+
+The workbook includes:
+
+- editable sheets for `schema`, `feature_dictionary`, `transformations`,
+  `feature_review`, and `scorecard_overrides`
+- an `instructions` sheet that explains how each sheet should be used
+- an `allowed_values` sheet for roles, dtypes, missing policies,
+  transformation types, manual-review decisions, and boolean fields
+- an `examples` sheet with realistic row patterns
+- a `required_columns` sheet that shows which headers must remain compatible
+  for upload parsing
+
+Do not rename the editable sheet headers. The workbook can be uploaded back
+through the same Step 1 section after offline review is complete.
+
 ## Where To Go Next
 
 - Use [Execution Mode Decision Guide](./EXECUTION_MODE_DECISION_GUIDE.md) if you are not sure whether to fit, score, or search feature subsets.

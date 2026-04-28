@@ -124,7 +124,7 @@ The main workspace now includes dedicated sections beyond the column designer.
 | --- | --- | --- | --- |
 | `Feature Dictionary` | `FeatureDictionaryConfig.entries` | `parse_feature_dictionary_frame(...)`, diagnostics feature-dictionary output | `feature_dictionary`, `reports/validation_pack.md` |
 | `Transformations` | `TransformationConfig.transformations` | `parse_transformation_frame(...)`, `TransformationStep` | `governed_transformations`, `interaction_candidates` |
-| `Template Workbook` | none directly; imports/exports editor tables | `build_template_workbook_bytes(...)`, `load_template_workbook(...)`, `streamlit_ui/workspace.py` | `config/configuration_template.xlsx` |
+| `Template Workbook` | none directly; imports/exports editor tables | `build_template_workbook_bytes(...)`, `load_template_workbook(...)`, `streamlit_ui/workspace.py` | `config/configuration_template.xlsx` with instructions, allowed values, examples, required-column notes, comments, and dropdown validation |
 
 Implementation note:
 

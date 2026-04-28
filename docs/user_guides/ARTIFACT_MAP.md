@@ -70,6 +70,12 @@ There is intentionally no separate `json/` folder. Configuration JSON lives in
 `config/`, while metrics, manifests, statistical-test payloads, and debug JSON
 live in `metadata/`.
 
+`config/configuration_template.xlsx` is the offline review workbook. It includes
+editable sheets for schema, feature dictionary, transformations, manual feature
+review, and scorecard bin overrides. It also includes instruction,
+allowed-value, example, and required-column sheets plus header comments and
+dropdown validation so offline edits are easier to upload safely.
+
 ## Checkpointed Execution Artifacts
 
 Quant Studio runs through checkpointed stages by default. The normal `Run full

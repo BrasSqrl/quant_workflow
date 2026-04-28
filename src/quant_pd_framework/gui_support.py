@@ -1071,6 +1071,276 @@ def build_scorecard_override_frame_from_config(
     return pd.DataFrame(rows, columns=SCORECARD_OVERRIDE_COLUMNS)
 
 
+def build_workbook_instructions_frame() -> pd.DataFrame:
+    """Returns detailed user guidance for the offline review workbook."""
+
+    rows = [
+        {
+            "sheet_name": "schema",
+            "editable": "yes",
+            "purpose": "Define which input columns are used and how they are interpreted.",
+            "what_to_change": (
+                "Update enabled, output name, role, dtype, missing-value policy, "
+                "imputation fields, create-if-missing, default value, and keep-source."
+            ),
+            "do_not_change": "Do not rename or delete the header row.",
+            "upload_notes": (
+                "Exactly one enabled row should be target_source unless scoring with a "
+                "prior run configuration. Panel and time-series workflows need a date role; "
+                "panel workflows also need an identifier role."
+            ),
+        },
+        {
+            "sheet_name": "feature_dictionary",
+            "editable": "yes",
+            "purpose": "Document business meaning, lineage, expected signs, and rationale.",
+            "what_to_change": (
+                "Complete definitions, source systems, units, allowed ranges, missingness "
+                "meaning, expected signs, and inclusion rationale for material features."
+            ),
+            "do_not_change": "Keep feature_name aligned to the modeled feature or source column.",
+            "upload_notes": (
+                "Blank fields are allowed, but completed definitions improve the model "
+                "documentation pack and validation review."
+            ),
+        },
+        {
+            "sheet_name": "transformations",
+            "editable": "yes",
+            "purpose": "Stage governed feature transformations that are fit on train only.",
+            "what_to_change": (
+                "Add one row per transformation with transform_type, source_feature, "
+                "optional secondary feature, output_feature, and required parameters."
+            ),
+            "do_not_change": "Do not use transformations only because a metric improved once.",
+            "upload_notes": (
+                "Transformations are replayed on validation, test, and scored data. "
+                "Rows with enabled = false are ignored."
+            ),
+        },
+        {
+            "sheet_name": "feature_review",
+            "editable": "yes",
+            "purpose": "Record manual approve/reject/force decisions for modeled features.",
+            "what_to_change": (
+                "Add feature_name, decision, and a review rationale when manual review is "
+                "enabled or when a feature needs explicit documentation."
+            ),
+            "do_not_change": "Use only supported decision values from allowed_values.",
+            "upload_notes": (
+                "Rejected features are removed before training; forced-include and "
+                "forced-exclude decisions override normal screening where supported."
+            ),
+        },
+        {
+            "sheet_name": "scorecard_overrides",
+            "editable": "yes",
+            "purpose": "Provide manual bin-edge overrides for scorecard logistic regression.",
+            "what_to_change": (
+                "Add feature_name, comma-separated internal bin_edges, and rationale."
+            ),
+            "do_not_change": "Do not include -inf or inf; provide only internal numeric edges.",
+            "upload_notes": (
+                "Use for policy breakpoints, sparse-bin fixes, or monotonicity review. "
+                "Override rows only matter for scorecard runs."
+            ),
+        },
+        {
+            "sheet_name": "allowed_values",
+            "editable": "reference",
+            "purpose": "Lists accepted dropdown values and their meanings.",
+            "what_to_change": "Do not edit unless using it as an offline note sheet.",
+            "do_not_change": "Workbook upload ignores this sheet.",
+            "upload_notes": "Use these values in editable sheets to avoid upload parsing errors.",
+        },
+        {
+            "sheet_name": "examples",
+            "editable": "reference",
+            "purpose": "Shows realistic example rows for common workflow edits.",
+            "what_to_change": "Copy patterns into editable sheets as needed.",
+            "do_not_change": "Workbook upload ignores this sheet.",
+            "upload_notes": "Examples are illustrative and should be adapted to the dataset.",
+        },
+        {
+            "sheet_name": "required_columns",
+            "editable": "reference",
+            "purpose": "Documents the columns expected by each editable sheet.",
+            "what_to_change": "Do not edit unless using it as an offline note sheet.",
+            "do_not_change": "Editable sheet headers must remain compatible with this list.",
+            "upload_notes": (
+                "Missing headers are recreated where possible, but renamed headers lose data."
+            ),
+        },
+    ]
+    return pd.DataFrame(rows)
+
+
+def build_workbook_allowed_values_frame() -> pd.DataFrame:
+    """Returns allowed workbook values and concise interpretations."""
+
+    rows: list[dict[str, str]] = []
+    rows.extend(
+        {
+            "field": "schema.role",
+            "allowed_value": role.value,
+            "meaning": _schema_role_meaning(role),
+            "example": "target_source",
+        }
+        for role in ColumnRole
+    )
+    rows.extend(
+        {
+            "field": "schema.dtype",
+            "allowed_value": dtype,
+            "meaning": _dtype_meaning(dtype),
+            "example": "float",
+        }
+        for dtype in SUPPORTED_DTYPES
+    )
+    rows.extend(
+        {
+            "field": "schema.missing_value_policy",
+            "allowed_value": policy.value,
+            "meaning": _missing_policy_meaning(policy),
+            "example": MissingValuePolicy.INHERIT_DEFAULT.value,
+        }
+        for policy in MissingValuePolicy
+    )
+    rows.extend(
+        {
+            "field": "transformations.transform_type",
+            "allowed_value": transform_type.value,
+            "meaning": _transformation_meaning(transform_type),
+            "example": TransformationType.WINSORIZE.value,
+        }
+        for transform_type in TransformationType
+    )
+    rows.extend(
+        {
+            "field": "feature_review.decision",
+            "allowed_value": decision.value,
+            "meaning": _feature_review_decision_meaning(decision),
+            "example": FeatureReviewDecisionType.APPROVE.value,
+        }
+        for decision in FeatureReviewDecisionType
+    )
+    rows.extend(
+        {
+            "field": "boolean fields",
+            "allowed_value": value,
+            "meaning": "Accepted true/false value for enabled and flag columns.",
+            "example": "TRUE",
+        }
+        for value in ["TRUE", "FALSE", "true", "false", "1", "0"]
+    )
+    return pd.DataFrame(rows, columns=["field", "allowed_value", "meaning", "example"])
+
+
+def build_workbook_examples_frame() -> pd.DataFrame:
+    """Returns example workbook rows for common offline edits."""
+
+    rows = [
+        {
+            "sheet_name": "schema",
+            "scenario": "Binary target source",
+            "example": (
+                "enabled=TRUE, source_name=default_status, name=default_status, "
+                "role=target_source, dtype=int, missing_value_policy=inherit_default"
+            ),
+            "notes": "Use exactly one target_source row for normal fit_new_model runs.",
+        },
+        {
+            "sheet_name": "schema",
+            "scenario": "Panel date and identifier",
+            "example": (
+                "as_of_date -> role=date, dtype=datetime; loan_id -> role=identifier, "
+                "dtype=string"
+            ),
+            "notes": "Required for panel splits and time-aware diagnostics.",
+        },
+        {
+            "sheet_name": "schema",
+            "scenario": "Constant imputation",
+            "example": (
+                "missing_value_policy=constant, missing_value_fill_value=0, "
+                "create_missing_indicator=TRUE"
+            ),
+            "notes": "Use when missingness has business meaning and a fixed fill is defensible.",
+        },
+        {
+            "sheet_name": "feature_dictionary",
+            "scenario": "Strong feature definition",
+            "example": (
+                "feature_name=utilization, business_name=Credit Utilization, "
+                "definition=Current balance divided by credit limit, "
+                "expected_sign=positive, inclusion_rationale=Known PD risk driver"
+            ),
+            "notes": "Definitions should explain meaning, not just restate the column name.",
+        },
+        {
+            "sheet_name": "transformations",
+            "scenario": "Winsorize outliers",
+            "example": (
+                "enabled=TRUE, transform_type=winsorize, source_feature=income, "
+                "output_feature=income_w, lower_quantile=0.01, upper_quantile=0.99"
+            ),
+            "notes": "Use train-fit quantiles to limit outlier influence.",
+        },
+        {
+            "sheet_name": "transformations",
+            "scenario": "Interaction term",
+            "example": (
+                "enabled=TRUE, transform_type=interaction, source_feature=utilization, "
+                "secondary_feature=delinquency_count, output_feature=util_x_dq"
+            ),
+            "notes": "Only create interactions with a clear business or statistical rationale.",
+        },
+        {
+            "sheet_name": "feature_review",
+            "scenario": "Reject leakage",
+            "example": (
+                "feature_name=post_default_fee, decision=reject, "
+                "rationale=Observed after default and would leak outcome information"
+            ),
+            "notes": "Manual review decisions should be specific and audit-readable.",
+        },
+        {
+            "sheet_name": "scorecard_overrides",
+            "scenario": "Manual bin edges",
+            "example": (
+                "feature_name=utilization, bin_edges=0.20, 0.50, 0.80, "
+                "rationale=Policy utilization bands reviewed by credit risk"
+            ),
+            "notes": "Provide internal numeric edges only; omit -inf and inf.",
+        },
+    ]
+    return pd.DataFrame(rows)
+
+
+def build_workbook_required_columns_frame() -> pd.DataFrame:
+    """Returns required columns for each editable workbook sheet."""
+
+    sheet_columns = {
+        "schema": EDITOR_COLUMNS,
+        "feature_dictionary": FEATURE_DICTIONARY_COLUMNS,
+        "transformations": TRANSFORMATION_EDITOR_COLUMNS,
+        "feature_review": FEATURE_REVIEW_COLUMNS,
+        "scorecard_overrides": SCORECARD_OVERRIDE_COLUMNS,
+    }
+    rows: list[dict[str, str]] = []
+    for sheet_name, columns in sheet_columns.items():
+        for column in columns:
+            rows.append(
+                {
+                    "sheet_name": sheet_name,
+                    "required_column": column,
+                    "can_be_blank": _required_column_can_be_blank(sheet_name, column),
+                    "why_it_matters": _required_column_meaning(sheet_name, column),
+                }
+            )
+    return pd.DataFrame(rows)
+
+
 def build_template_workbook_bytes(
     *,
     schema_frame: pd.DataFrame,
@@ -1082,41 +1352,18 @@ def build_template_workbook_bytes(
     """Serializes the editable governance surfaces into an Excel workbook."""
 
     buffer = BytesIO()
-    instructions = pd.DataFrame(
-        [
-            {
-                "sheet_name": "schema",
-                "purpose": (
-                    "Column toggles, roles, dtypes, missing-value policy, "
-                    "and create-if-missing rules."
-                ),
-            },
-            {
-                "sheet_name": "feature_dictionary",
-                "purpose": (
-                    "Business definitions, source lineage, expected sign, and inclusion rationale."
-                ),
-            },
-            {
-                "sheet_name": "transformations",
-                "purpose": (
-                    "Governed feature transformations such as winsorization, "
-                    "log1p, ratio, interaction, and manual bins."
-                ),
-            },
-            {
-                "sheet_name": "feature_review",
-                "purpose": "Manual approve/reject/force decisions for modeled features.",
-            },
-            {
-                "sheet_name": "scorecard_overrides",
-                "purpose": "Optional manual scorecard bin-edge overrides for numeric features.",
-            },
-        ]
-    )
 
     with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
-        instructions.to_excel(writer, sheet_name="instructions", index=False)
+        build_workbook_instructions_frame().to_excel(
+            writer, sheet_name="instructions", index=False
+        )
+        build_workbook_allowed_values_frame().to_excel(
+            writer, sheet_name="allowed_values", index=False
+        )
+        build_workbook_examples_frame().to_excel(writer, sheet_name="examples", index=False)
+        build_workbook_required_columns_frame().to_excel(
+            writer, sheet_name="required_columns", index=False
+        )
         normalize_editor_frame(schema_frame).to_excel(writer, sheet_name="schema", index=False)
         normalize_feature_dictionary_frame(feature_dictionary_frame).to_excel(
             writer, sheet_name="feature_dictionary", index=False
@@ -1130,6 +1377,7 @@ def build_template_workbook_bytes(
         normalize_scorecard_override_frame(scorecard_override_frame).to_excel(
             writer, sheet_name="scorecard_overrides", index=False
         )
+        _format_template_workbook(writer.book)
 
     return buffer.getvalue()
 
@@ -1153,6 +1401,384 @@ def load_template_workbook(source: str | Path | BytesIO | Any) -> dict[str, pd.D
             workbook.get("scorecard_overrides", pd.DataFrame())
         ),
     }
+
+
+def _schema_role_meaning(role: ColumnRole) -> str:
+    meanings = {
+        ColumnRole.FEATURE: "Predictor candidate available to the model.",
+        ColumnRole.TARGET_SOURCE: "Raw outcome column used to build the modeled target.",
+        ColumnRole.DATE: "Date/time field used for splits and time-aware diagnostics.",
+        ColumnRole.IDENTIFIER: "Record/entity ID used for panel structure and traceability.",
+        ColumnRole.IGNORE: "Column excluded from modeling and downstream feature treatment.",
+    }
+    return meanings[role]
+
+
+def _dtype_meaning(dtype: str) -> str:
+    meanings = {
+        "auto": "Infer the dtype from the source dataframe.",
+        "string": "Treat values as text.",
+        "category": "Treat values as categorical levels.",
+        "float": "Treat values as decimal numeric values.",
+        "int": "Treat values as integer numeric values.",
+        "bool": "Treat values as true/false flags.",
+        "datetime": "Parse values as dates or timestamps.",
+    }
+    return meanings.get(dtype, "Supported Quant Studio dtype.")
+
+
+def _missing_policy_meaning(policy: MissingValuePolicy) -> str:
+    meanings = {
+        MissingValuePolicy.INHERIT_DEFAULT: (
+            "Use the framework default: numeric median and categorical mode."
+        ),
+        MissingValuePolicy.NONE: "Do not impute this column.",
+        MissingValuePolicy.MEAN: "Fill numeric missing values with the train-split mean.",
+        MissingValuePolicy.MEDIAN: "Fill numeric missing values with the train-split median.",
+        MissingValuePolicy.MODE: "Fill missing values with the train-split most frequent value.",
+        MissingValuePolicy.CONSTANT: "Fill missing values with missing_value_fill_value.",
+        MissingValuePolicy.FORWARD_FILL: "Carry prior value forward in time-aware data.",
+        MissingValuePolicy.BACKWARD_FILL: "Carry next value backward in time-aware data.",
+        MissingValuePolicy.KNN: (
+            "Use KNN model-based imputation when advanced imputation is enabled."
+        ),
+        MissingValuePolicy.ITERATIVE: (
+            "Use iterative model-based imputation when advanced imputation is enabled."
+        ),
+    }
+    return meanings[policy]
+
+
+def _transformation_meaning(transform_type: TransformationType) -> str:
+    meanings = {
+        TransformationType.WINSORIZE: "Clip numeric tails using train-fit quantiles.",
+        TransformationType.LOG1P: "Apply log(1 + x) for skewed numeric values above -1.",
+        TransformationType.BOX_COX: "Apply a train-fit Box-Cox power transform.",
+        TransformationType.NATURAL_SPLINE: "Create natural cubic spline basis features.",
+        TransformationType.YEO_JOHNSON: (
+            "Apply a power transform that supports non-positive values."
+        ),
+        TransformationType.CAPPED_ZSCORE: "Standardize then cap extreme z-scores.",
+        TransformationType.PIECEWISE_LINEAR: "Create a hinge term above a configured cut point.",
+        TransformationType.RATIO: "Create source_feature divided by secondary_feature.",
+        TransformationType.INTERACTION: "Create source_feature multiplied by secondary_feature.",
+        TransformationType.LAG: "Create a lagged version of a time-aware feature.",
+        TransformationType.DIFFERENCE: "Create current minus lagged value.",
+        TransformationType.EWMA: "Create an exponentially weighted moving average.",
+        TransformationType.ROLLING_MEAN: "Create a rolling mean over the configured window.",
+        TransformationType.ROLLING_MEDIAN: "Create a rolling median over the configured window.",
+        TransformationType.ROLLING_MIN: "Create a rolling minimum over the configured window.",
+        TransformationType.ROLLING_MAX: "Create a rolling maximum over the configured window.",
+        TransformationType.ROLLING_STD: "Create a rolling standard deviation.",
+        TransformationType.PCT_CHANGE: "Create percent change over the lag period.",
+        TransformationType.MANUAL_BINS: "Create ordered categorical bins from numeric edges.",
+    }
+    return meanings[transform_type]
+
+
+def _feature_review_decision_meaning(decision: FeatureReviewDecisionType) -> str:
+    meanings = {
+        FeatureReviewDecisionType.APPROVE: "Explicitly approve a feature for consideration.",
+        FeatureReviewDecisionType.REJECT: "Reject a feature before model training.",
+        FeatureReviewDecisionType.FORCE_INCLUDE: (
+            "Force a feature to survive selection where allowed."
+        ),
+        FeatureReviewDecisionType.FORCE_EXCLUDE: (
+            "Force a feature out even if screening ranks it well."
+        ),
+    }
+    return meanings[decision]
+
+
+def _required_column_can_be_blank(sheet_name: str, column: str) -> str:
+    required = {
+        "schema": {"enabled", "source_name", "name", "role"},
+        "feature_dictionary": {"feature_name"},
+        "transformations": {"enabled", "transform_type", "source_feature", "output_feature"},
+        "feature_review": {"feature_name", "decision"},
+        "scorecard_overrides": {"feature_name", "bin_edges"},
+    }
+    return "no" if column in required.get(sheet_name, set()) else "yes"
+
+
+def _required_column_meaning(sheet_name: str, column: str) -> str:
+    common = {
+        "enabled": "Controls whether the row is active.",
+        "source_name": "Input column name from the source dataset.",
+        "name": "Output column name used by the framework.",
+        "role": "How the column is treated by the pipeline.",
+        "dtype": "How the column should be parsed.",
+        "feature_name": "Feature name the row documents or controls.",
+        "rationale": "Audit-readable explanation for the decision.",
+        "notes": "Optional reviewer notes.",
+    }
+    sheet_specific = {
+        ("schema", "missing_value_policy"): "Train-fit imputation policy for this column.",
+        ("schema", "missing_value_fill_value"): "Constant fill value when policy is constant.",
+        ("schema", "missing_value_group_columns"): (
+            "Comma-separated segment columns for grouped imputation."
+        ),
+        ("schema", "create_missing_indicator"): "Creates a model feature flag for missingness.",
+        ("schema", "create_if_missing"): "Creates a synthetic column when the source is absent.",
+        ("schema", "default_value"): "Default value for create-if-missing columns.",
+        ("schema", "keep_source"): "Keeps source column when output name differs.",
+        ("feature_dictionary", "business_name"): "Human-readable feature name.",
+        ("feature_dictionary", "definition"): "Plain-English definition of the feature.",
+        ("feature_dictionary", "source_system"): "System or process that produced the feature.",
+        ("feature_dictionary", "unit"): "Measurement unit or scale.",
+        ("feature_dictionary", "allowed_range"): "Expected valid range or categories.",
+        ("feature_dictionary", "missingness_meaning"): "Business meaning of missing values.",
+        ("feature_dictionary", "expected_sign"): "Expected relationship to the target.",
+        ("feature_dictionary", "inclusion_rationale"): "Why the feature belongs in development.",
+        ("transformations", "transform_type"): "Governed transformation operation.",
+        ("transformations", "source_feature"): "Primary input feature for the transformation.",
+        ("transformations", "secondary_feature"): "Second input for ratio/interaction transforms.",
+        ("transformations", "categorical_value"): (
+            "Category value for category-specific transforms."
+        ),
+        ("transformations", "output_feature"): "Generated feature name.",
+        ("transformations", "lower_quantile"): "Lower quantile for winsorization.",
+        ("transformations", "upper_quantile"): "Upper quantile for winsorization.",
+        ("transformations", "parameter_value"): "Numeric cut point, cap, or transform parameter.",
+        ("transformations", "window_size"): "Rolling or EWMA window.",
+        ("transformations", "lag_periods"): "Lag length for time-aware transforms.",
+        ("transformations", "bin_edges"): "Comma-separated internal bin edges.",
+        ("transformations", "generated_automatically"): "Flags system-suggested rows.",
+        ("feature_review", "decision"): "Manual review decision.",
+        ("scorecard_overrides", "bin_edges"): "Comma-separated scorecard internal bin edges.",
+    }
+    return sheet_specific.get((sheet_name, column), common.get(column, "Workbook field."))
+
+
+def _format_template_workbook(workbook: Any) -> None:
+    """Applies formatting, comments, and dropdown validation to the workbook."""
+
+    from openpyxl.comments import Comment
+    from openpyxl.styles import Alignment, Font, PatternFill
+    from openpyxl.utils import get_column_letter
+    from openpyxl.worksheet.datavalidation import DataValidation
+
+    header_fill = PatternFill("solid", fgColor="EAF2FF")
+    reference_fill = PatternFill("solid", fgColor="F6F8FB")
+    header_font = Font(bold=True, color="10213F")
+    guidance_font = Font(color="52657F")
+
+    for sheet_name in workbook.sheetnames:
+        worksheet = workbook[sheet_name]
+        worksheet.freeze_panes = "A2"
+        worksheet.sheet_view.showGridLines = False
+        if worksheet.max_row and worksheet.max_column:
+            worksheet.auto_filter.ref = worksheet.dimensions
+        for cell in worksheet[1]:
+            cell.fill = reference_fill if sheet_name in _REFERENCE_SHEETS else header_fill
+            cell.font = header_font
+            cell.alignment = Alignment(wrap_text=True, vertical="top")
+        for row in worksheet.iter_rows(min_row=2):
+            for cell in row:
+                cell.alignment = Alignment(wrap_text=True, vertical="top")
+                if sheet_name in _REFERENCE_SHEETS:
+                    cell.font = guidance_font
+        for column_index in range(1, worksheet.max_column + 1):
+            letter = get_column_letter(column_index)
+            values = [
+                str(worksheet.cell(row=row_index, column=column_index).value or "")
+                for row_index in range(1, min(worksheet.max_row, 80) + 1)
+            ]
+            worksheet.column_dimensions[letter].width = min(max(map(len, values)) + 2, 58)
+
+    _apply_header_comments(workbook, Comment)
+    _apply_workbook_validations(workbook, DataValidation)
+    _apply_tab_colors(workbook)
+
+
+_REFERENCE_SHEETS = {"instructions", "allowed_values", "examples", "required_columns"}
+
+
+_HEADER_COMMENTS: dict[str, dict[str, str]] = {
+    "schema": {
+        "enabled": "TRUE keeps this row active; FALSE ignores it.",
+        "source_name": "Must match the input data column unless create_if_missing is TRUE.",
+        "name": "Framework output name. Keep stable for model reproducibility.",
+        "role": "Use feature, target_source, date, identifier, or ignore.",
+        "dtype": "Use auto unless the source needs explicit parsing.",
+        "missing_value_policy": "Policy is fit on train and replayed downstream.",
+        "missing_value_fill_value": "Only used when missing_value_policy is constant.",
+        "missing_value_group_columns": "Optional comma-separated columns for grouped imputation.",
+        "create_missing_indicator": "TRUE creates a separate missingness flag feature.",
+        "create_if_missing": "TRUE creates this column if the input data does not contain it.",
+        "default_value": "Value used for create_if_missing rows.",
+        "keep_source": "TRUE keeps the raw source when name differs from source_name.",
+    },
+    "feature_dictionary": {
+        "enabled": "TRUE includes this row in documentation outputs.",
+        "feature_name": "Feature or source column being documented.",
+        "business_name": "Plain-English name used in documentation.",
+        "definition": "Describe how the feature is calculated and what it means.",
+        "source_system": "System, feed, or process that produced the feature.",
+        "unit": "Currency, percentage, count, date, flag, bucket, etc.",
+        "allowed_range": "Expected valid values or range.",
+        "missingness_meaning": "Explain whether missing values have business meaning.",
+        "expected_sign": (
+            "Expected direction, such as positive, negative, increasing, or decreasing."
+        ),
+        "inclusion_rationale": "Why this feature should be considered for development.",
+        "notes": "Additional reviewer or business notes.",
+    },
+    "transformations": {
+        "enabled": "TRUE applies the transformation; FALSE keeps it as a draft.",
+        "transform_type": "Choose a supported transform from allowed_values.",
+        "source_feature": "Primary input feature.",
+        "secondary_feature": "Required for ratio and interaction transforms.",
+        "categorical_value": "Optional category value for category-specific transforms.",
+        "output_feature": "Generated output feature name.",
+        "lower_quantile": "Winsorization lower quantile, e.g. 0.01.",
+        "upper_quantile": "Winsorization upper quantile, e.g. 0.99.",
+        "parameter_value": "Cut point, cap, spline df, or other numeric parameter.",
+        "window_size": "Window length for rolling or EWMA transforms.",
+        "lag_periods": "Lag length for lag, difference, and pct_change.",
+        "bin_edges": "Internal numeric bin edges such as 0.2, 0.5, 0.8.",
+        "generated_automatically": "TRUE means the row was suggested by the system.",
+        "notes": "Governance rationale for the transformation.",
+    },
+    "feature_review": {
+        "feature_name": "Feature controlled by the manual decision.",
+        "decision": "Use approve, reject, force_include, or force_exclude.",
+        "rationale": "Explain the review decision in audit-readable language.",
+    },
+    "scorecard_overrides": {
+        "feature_name": "Numeric feature receiving manual scorecard bins.",
+        "bin_edges": "Comma-separated internal bin edges. Do not include -inf or inf.",
+        "rationale": "Explain policy, monotonicity, sparse-bin, or business breakpoint logic.",
+    },
+}
+
+
+def _apply_header_comments(workbook: Any, comment_class: Any) -> None:
+    for sheet_name, comments in _HEADER_COMMENTS.items():
+        if sheet_name not in workbook.sheetnames:
+            continue
+        worksheet = workbook[sheet_name]
+        headers = {
+            str(cell.value): column_index
+            for column_index, cell in enumerate(worksheet[1], start=1)
+            if cell.value is not None
+        }
+        for column_name, comment_text in comments.items():
+            column_index = headers.get(column_name)
+            if column_index is None:
+                continue
+            worksheet.cell(row=1, column=column_index).comment = comment_class(
+                comment_text,
+                "Quant Studio",
+            )
+
+
+def _apply_workbook_validations(workbook: Any, validation_class: Any) -> None:
+    _add_dropdown_validation(
+        workbook,
+        validation_class,
+        sheet_name="schema",
+        column_name="role",
+        values=[role.value for role in ColumnRole],
+    )
+    _add_dropdown_validation(
+        workbook,
+        validation_class,
+        sheet_name="schema",
+        column_name="dtype",
+        values=SUPPORTED_DTYPES,
+    )
+    _add_dropdown_validation(
+        workbook,
+        validation_class,
+        sheet_name="schema",
+        column_name="missing_value_policy",
+        values=SUPPORTED_MISSING_VALUE_POLICIES,
+    )
+    _add_dropdown_validation(
+        workbook,
+        validation_class,
+        sheet_name="transformations",
+        column_name="transform_type",
+        values=SUPPORTED_TRANSFORMATION_TYPES,
+    )
+    _add_dropdown_validation(
+        workbook,
+        validation_class,
+        sheet_name="feature_review",
+        column_name="decision",
+        values=SUPPORTED_FEATURE_REVIEW_DECISIONS,
+    )
+    for sheet_name, column_name in [
+        ("schema", "enabled"),
+        ("schema", "create_missing_indicator"),
+        ("schema", "create_if_missing"),
+        ("schema", "keep_source"),
+        ("feature_dictionary", "enabled"),
+        ("transformations", "enabled"),
+        ("transformations", "generated_automatically"),
+    ]:
+        _add_dropdown_validation(
+            workbook,
+            validation_class,
+            sheet_name=sheet_name,
+            column_name=column_name,
+            values=["TRUE", "FALSE"],
+        )
+
+
+def _add_dropdown_validation(
+    workbook: Any,
+    validation_class: Any,
+    *,
+    sheet_name: str,
+    column_name: str,
+    values: list[str],
+    max_rows: int = 1000,
+) -> None:
+    if sheet_name not in workbook.sheetnames:
+        return
+    worksheet = workbook[sheet_name]
+    headers = [str(cell.value) for cell in worksheet[1]]
+    if column_name not in headers:
+        return
+    column_index = headers.index(column_name) + 1
+    column_letter = get_column_letter_for_index(column_index)
+    formula = '"' + ",".join(values) + '"'
+    if len(formula) > 255:
+        return
+    validation = validation_class(type="list", formula1=formula, allow_blank=True)
+    validation.error = "Choose a supported Quant Studio value."
+    validation.errorTitle = "Unsupported value"
+    validation.prompt = "Use the dropdown or allowed_values sheet."
+    validation.promptTitle = "Allowed values"
+    worksheet.add_data_validation(validation)
+    validation.add(f"{column_letter}2:{column_letter}{max_rows}")
+
+
+def get_column_letter_for_index(column_index: int) -> str:
+    """Thin wrapper to avoid importing openpyxl at module import time."""
+
+    from openpyxl.utils import get_column_letter
+
+    return get_column_letter(column_index)
+
+
+def _apply_tab_colors(workbook: Any) -> None:
+    tab_colors = {
+        "instructions": "1F6EF5",
+        "allowed_values": "607089",
+        "examples": "607089",
+        "required_columns": "607089",
+        "schema": "0F8B5F",
+        "feature_dictionary": "0F8B5F",
+        "transformations": "D99A2B",
+        "feature_review": "2A6F97",
+        "scorecard_overrides": "C44536",
+    }
+    for sheet_name, color in tab_colors.items():
+        if sheet_name in workbook.sheetnames:
+            workbook[sheet_name].sheet_properties.tabColor = color
 
 
 def default_challengers_for_target_mode(target_mode: TargetMode) -> list[ModelType]:

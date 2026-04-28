@@ -6,6 +6,7 @@ import json
 from io import BytesIO
 
 import pandas as pd
+from openpyxl import load_workbook
 
 from quant_pd_framework import (
     ArtifactConfig,
@@ -184,6 +185,9 @@ def test_governance_extensions_export_validation_pack_manifest_and_template() ->
         assert "transformations" in workbook_sheets
         assert "feature_review" in workbook_sheets
         assert "scorecard_overrides" in workbook_sheets
+        assert "allowed_values" in workbook_sheets
+        assert "examples" in workbook_sheets
+        assert "required_columns" in workbook_sheets
 
 
 def test_template_workbook_round_trips_governance_editors() -> None:
@@ -263,6 +267,31 @@ def test_template_workbook_round_trips_governance_editors() -> None:
         feature_review_frame=feature_review_frame,
         scorecard_override_frame=scorecard_override_frame,
     )
+    workbook_sheets = pd.read_excel(BytesIO(workbook_bytes), sheet_name=None)
+    assert set(
+        [
+            "instructions",
+            "allowed_values",
+            "examples",
+            "required_columns",
+            "schema",
+            "feature_dictionary",
+            "transformations",
+            "feature_review",
+            "scorecard_overrides",
+        ]
+    ).issubset(workbook_sheets)
+    assert "do_not_change" in workbook_sheets["instructions"].columns
+    assert "transformations.transform_type" in set(workbook_sheets["allowed_values"]["field"])
+
+    formatted_workbook = load_workbook(BytesIO(workbook_bytes))
+    assert formatted_workbook["schema"]["D1"].comment is not None
+    assert formatted_workbook["schema"].freeze_panes == "A2"
+    assert any(
+        validation.type == "list"
+        for validation in formatted_workbook["schema"].data_validations.dataValidation
+    )
+
     loaded = load_template_workbook(BytesIO(workbook_bytes))
 
     feature_dictionary_config = parse_feature_dictionary_frame(loaded["feature_dictionary"])
