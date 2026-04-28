@@ -189,6 +189,7 @@ The most practical user guides are:
 - [Execution Mode Decision Guide](./docs/user_guides/EXECUTION_MODE_DECISION_GUIDE.md)
 - [Artifact Map](./docs/user_guides/ARTIFACT_MAP.md)
 - [Model Selection Guide](./docs/user_guides/MODEL_SELECTION_GUIDE.md)
+- [Model Type Reference Guide](./docs/user_guides/MODEL_TYPE_REFERENCE_GUIDE.md)
 - [Configuration Cookbook](./docs/user_guides/CONFIGURATION_COOKBOOK.md)
 - [Validation Reviewer Guide](./docs/user_guides/VALIDATION_REVIEWER_GUIDE.md)
 - [Troubleshooting Guide](./docs/user_guides/TROUBLESHOOTING.md)

@@ -22,6 +22,7 @@ Use these guides:
 
 - [Configuration Cookbook](./CONFIGURATION_COOKBOOK.md)
 - [Model Selection Guide](./MODEL_SELECTION_GUIDE.md)
+- [Model Type Reference Guide](./MODEL_TYPE_REFERENCE_GUIDE.md)
 - [Large Data Playbook](./LARGE_DATA_PLAYBOOK.md)
 - [Glossary](./GLOSSARY.md)
 

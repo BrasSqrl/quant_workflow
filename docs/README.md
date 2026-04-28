@@ -13,6 +13,7 @@ users can find the right document without reading everything.
 | Choose the right execution mode | [Execution Mode Decision Guide](./user_guides/EXECUTION_MODE_DECISION_GUIDE.md) |
 | Find and understand exported files | [Artifact Map](./user_guides/ARTIFACT_MAP.md) |
 | Pick a model family | [Model Selection Guide](./user_guides/MODEL_SELECTION_GUIDE.md) |
+| Walk through each selectable model type | [Model Type Reference Guide](./user_guides/MODEL_TYPE_REFERENCE_GUIDE.md) |
 | Configure a common workflow | [Configuration Cookbook](./user_guides/CONFIGURATION_COOKBOOK.md) |
 | Review a completed model package and decision summary | [Validation Reviewer Guide](./user_guides/VALIDATION_REVIEWER_GUIDE.md) |
 | Fix common app or run problems | [Troubleshooting Guide](./user_guides/TROUBLESHOOTING.md) |
@@ -29,8 +30,10 @@ For a model builder:
 1. [User Quick Start Guide](./user_guides/QUICK_START.md)
 2. [Data Requirements Guide](./user_guides/DATA_REQUIREMENTS.md)
 3. [Execution Mode Decision Guide](./user_guides/EXECUTION_MODE_DECISION_GUIDE.md)
-4. [Configuration Cookbook](./user_guides/CONFIGURATION_COOKBOOK.md)
-5. [Artifact Map](./user_guides/ARTIFACT_MAP.md)
+4. [Model Selection Guide](./user_guides/MODEL_SELECTION_GUIDE.md)
+5. [Model Type Reference Guide](./user_guides/MODEL_TYPE_REFERENCE_GUIDE.md)
+6. [Configuration Cookbook](./user_guides/CONFIGURATION_COOKBOOK.md)
+7. [Artifact Map](./user_guides/ARTIFACT_MAP.md)
 
 For a validator or risk reviewer:
 
@@ -73,6 +76,7 @@ The user guides are designed to answer practical questions quickly:
 - [Execution Mode Decision Guide](./user_guides/EXECUTION_MODE_DECISION_GUIDE.md)
 - [Artifact Map](./user_guides/ARTIFACT_MAP.md)
 - [Model Selection Guide](./user_guides/MODEL_SELECTION_GUIDE.md)
+- [Model Type Reference Guide](./user_guides/MODEL_TYPE_REFERENCE_GUIDE.md)
 - [Configuration Cookbook](./user_guides/CONFIGURATION_COOKBOOK.md)
 - [Validation Reviewer Guide](./user_guides/VALIDATION_REVIEWER_GUIDE.md)
 - [Troubleshooting Guide](./user_guides/TROUBLESHOOTING.md)
