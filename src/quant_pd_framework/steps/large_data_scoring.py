@@ -10,10 +10,11 @@ import numpy as np
 import pandas as pd
 
 from ..base import BasePipelineStep
-from ..config import ExecutionMode, TargetMode
+from ..config import ExecutionMode, TabularOutputFormat, TargetMode
 from ..context import PipelineContext
 from ..export_layout import build_export_path_layout
 from ..large_data import iter_dataset_batches
+from ..tabular_policy import resolve_tabular_output_format
 from .cleaning import CleaningStep
 from .feature_engineering import FeatureEngineeringStep
 from .imputation import ImputationRule, ImputationStep
@@ -49,16 +50,18 @@ class LargeDataFullScoringStep(BasePipelineStep):
         scoring_dir.mkdir(parents=True, exist_ok=True)
         metadata_dir.mkdir(parents=True, exist_ok=True)
 
-        predictions_path = scoring_dir / "predictions.parquet"
+        output_format = resolve_tabular_output_format(context.metadata)
+        predictions_path = scoring_dir / (
+            "predictions.parquet"
+            if output_format == TabularOutputFormat.PARQUET
+            else "predictions.csv"
+        )
         progress_path = metadata_dir / "large_data_full_scoring_progress.json"
         projected_columns = context.metadata.get("large_data_sample", {}).get("projected_columns")
         if not isinstance(projected_columns, list):
             projected_columns = None
 
-        writer = _ChunkedParquetWriter(
-            predictions_path,
-            compression=context.config.artifacts.parquet_compression,
-        )
+        writer = _build_chunked_prediction_writer(context, predictions_path, output_format)
         summary = _RunningScoreSummary(target_mode=context.config.target.mode)
         row_count = 0
         chunk_count = 0
@@ -124,6 +127,9 @@ class LargeDataFullScoringStep(BasePipelineStep):
             "source_path": str(context.large_data_handle.path),
             "active_path": str(context.large_data_handle.active_path),
             "predictions_path": str(predictions_path),
+            "configured_output_format": context.config.artifacts.tabular_output_format.value,
+            "output_format": output_format.value,
+            "output_format_basis": "original_input_suffix",
             "progress_path": str(progress_path),
             "scoring_directory": str(scoring_dir),
             "metadata_directory": str(metadata_dir),
@@ -363,6 +369,50 @@ class _RunningScoreSummary:
                 for index, count in enumerate(self.score_bins)
             ]
         )
+
+
+def _build_chunked_prediction_writer(
+    context: PipelineContext,
+    predictions_path: Path,
+    output_format: TabularOutputFormat,
+) -> _ChunkedParquetWriter | _ChunkedCsvWriter:
+    if output_format == TabularOutputFormat.PARQUET:
+        return _ChunkedParquetWriter(
+            predictions_path,
+            compression=context.config.artifacts.parquet_compression,
+        )
+    return _ChunkedCsvWriter(predictions_path)
+
+
+class _ChunkedCsvWriter:
+    def __init__(self, path: Path) -> None:
+        self.path = path
+        self._wrote_header = False
+        self._columns: list[str] | None = None
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+
+    def write(self, dataframe: pd.DataFrame) -> None:
+        aligned_frame = self._align_columns(dataframe)
+        aligned_frame.to_csv(
+            self.path,
+            index=False,
+            mode="w" if not self._wrote_header else "a",
+            header=not self._wrote_header,
+        )
+        self._wrote_header = True
+
+    def close(self) -> None:
+        return None
+
+    def _align_columns(self, dataframe: pd.DataFrame) -> pd.DataFrame:
+        if self._columns is None:
+            self._columns = list(dataframe.columns)
+            return dataframe
+        aligned = dataframe.copy(deep=False)
+        for column_name in self._columns:
+            if column_name not in aligned.columns:
+                aligned[column_name] = None
+        return aligned.loc[:, self._columns]
 
 
 class _ChunkedParquetWriter:

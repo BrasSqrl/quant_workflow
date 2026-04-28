@@ -122,12 +122,16 @@ def run_next_checkpoint_stage(
         "manifest_status": manifest.get("status", ""),
     }
     if completed and context is None:
-        context = load_context_checkpoint(Path(manifest["latest_context_path"]))
+        latest_context_path_text = str(manifest.get("latest_context_path") or "")
+        latest_context_path = Path(latest_context_path_text) if latest_context_path_text else None
+        if latest_context_path is not None and latest_context_path.exists():
+            context = load_context_checkpoint(latest_context_path)
     if completed and context is not None:
         runner._finalize_run_metadata(context, manifest_path)
-        runner._copy_checkpoint_manifest_to_metadata(context, manifest_path)
         latest_context_path = Path(read_checkpoint_manifest(manifest_path)["latest_context_path"])
         save_context_checkpoint(context, latest_context_path)
+        runner._apply_checkpoint_retention(manifest_path, keep_latest=False)
+        runner._copy_checkpoint_manifest_to_metadata(context, manifest_path)
     return context if completed else None, updated_state
 
 

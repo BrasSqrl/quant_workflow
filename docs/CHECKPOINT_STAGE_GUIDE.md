@@ -41,7 +41,7 @@ These stages are used for `fit_new_model` and `score_existing_model`.
 | `diagnostics_expanded_framework` | Diagnostics: expanded framework tests | Optional | Builds deeper framework diagnostics such as advanced imputation, imputation sensitivity, multiple-imputation pooling, feature-construction workbench, and preset recommendation surfaces. | Step 2 `Data Preparation`; Step 2 `Selection & Documentation`; Step 2 `Diagnostics & Exports`; `Advanced` workspace mode for deeper controls. |
 | `cross_validation` | Cross-validation | Optional | Runs optional k-fold or time-aware fold diagnostics. This does not replace the final saved model. | Step 2 `Diagnostics & Exports` -> `Enable cross-validation diagnostics`. Disabled by default in Large Data Mode. |
 | `large_data_full_scoring` | Large-data full scoring | Optional | Scores file-backed Large Data Mode inputs in chunks after the development model is fit on the governed sample. | Step 1 `Data Source` -> `Large Data Mode`; Step 2 `Diagnostics & Exports`; Step 2 `Output Options`. |
-| `export_package` | Export package | Required | Writes the model object, reports, tables, manifests, rerun code, checkpoints, predictions, regulatory outputs, and monitoring handoff bundle when applicable. | Step 2 `Output Options`; export profile; tabular output format; individual figure export; enhanced report visuals; Advanced Visual Analytics. |
+| `export_package` | Export package | Required | Writes the model object, reports, tables, manifests, rerun code, checkpoints, predictions, regulatory outputs, and monitoring handoff bundle when applicable. | Step 2 `Output Options`; export profile; input-driven tabular output format; individual figure export; enhanced report visuals; Advanced Visual Analytics. |
 
 ## Feature-Subset-Search Stages
 
@@ -62,11 +62,23 @@ Each run writes checkpoint evidence under the run folder:
 artifacts/run_YYYY-MM-DD_HH-MM-SS_UTC/
   checkpoints/
     checkpoint_manifest.json
-    00_initial_context.joblib
-    NN_stage_name.joblib
+    00_initial_context.joblib      # retained only when Keep all checkpoints is on
+    NN_stage_name.joblib           # retained only when still needed or configured
   metadata/
     checkpoint_manifest.json
 ```
+
+`Keep all checkpoints` is off by default in Step 2 `Diagnostics & Exports`.
+When it is off, Quant Studio keeps only the latest context checkpoint while a
+run is active, deletes older context checkpoints after a newer safe checkpoint
+exists, and deletes the final context checkpoint after a successful run. The
+small `checkpoint_manifest.json` remains in `checkpoints/` and is copied to
+`metadata/` so stage status, timing, optional failures, and pruning evidence
+remain auditable.
+
+Turn `Keep all checkpoints` on when support needs to inspect or reload every
+saved context after the run. This increases artifact-folder storage because
+each `.joblib` context can contain modeled data, predictions, and diagnostics.
 
 The checkpoint manifest records:
 
@@ -77,6 +89,7 @@ The checkpoint manifest records:
 - start and completion timestamps
 - elapsed seconds
 - latest context checkpoint path
+- whether checkpoint context files were pruned
 - error message when a stage fails
 
 The Step 3 `Checkpoint Flow` chart is rendered from the same stage-status
@@ -92,8 +105,8 @@ Use the checkpoint stages to answer practical execution questions:
   blocking export?
 - Was full-file Large Data Mode scoring attempted?
 - Which stage produced the error shown in the UI?
-- Can support inspect the last successful context checkpoint without rerunning
-  earlier stages?
+- If `Keep all checkpoints` was on, can support inspect the last successful
+  context checkpoint without rerunning earlier stages?
 
 Use the five GUI workflow steps for setup and review navigation. Use checkpoint
 stages for execution audit and debugging.

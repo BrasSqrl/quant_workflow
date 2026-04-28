@@ -18,9 +18,9 @@ For small files, normal mode is simpler.
 Do not enable `Large Data Mode` when the requirement is to fit coefficients on
 the full train split. Large Data Mode intentionally uses governed sample
 development plus chunked full-file scoring. For full-data fitting, use the
-memory-optimized normal workflow: Parquet input, dtype optimization, compact
-prediction exports, capped diagnostic working snapshots, and Parquet-first
-tabular outputs.
+memory-optimized normal workflow: Parquet input when available, dtype
+optimization, compact prediction exports, capped diagnostic working snapshots,
+and input-driven tabular outputs.
 
 ## Recommended Large-Data Workflow
 
@@ -30,8 +30,10 @@ tabular outputs.
 4. Enable `Large Data Mode` before running.
 5. Use a governed sample for development fitting.
 6. Score the full file in chunks.
-7. Export full large tables as Parquet.
-8. Use sampled CSV exports if CSV review files are needed.
+7. Let tabular exports follow the Step 1 file type: Parquet inputs export
+   Parquet artifacts; CSV, Excel, bundled-sample, and unknown inputs export CSV
+   artifacts.
+8. Use sampled export policy if full CSV artifacts would be too large.
 9. Keep individual figure HTML/PNG export off unless required.
 10. Keep `Advanced Visual Analytics` off unless the added report visuals are
     specifically needed.
@@ -86,9 +88,10 @@ audit need to change them:
 - `Optimize dtypes during ingestion`: on
 - `Compact prediction exports`: on
 - `Retain full diagnostic working dataframe`: off
+- `Keep all checkpoints`: off
 - individual figure HTML/PNG export: off
 - Excel workbook export: off unless specifically requested
-- `Tabular artifact format`: Parquet or both with sampled CSV
+- `Tabular artifact format`: input-driven; Parquet only for original Parquet inputs
 - `Workflow run style`: full workflow is acceptable because it uses the
   checkpointed stage engine; use step-by-step when debugging a specific stage
 
@@ -103,6 +106,12 @@ process, and avoids keeping every prior intermediate object alive in the same
 process. It does not make pandas model fitting fully streaming, but it reduces
 memory pressure from long end-to-end runs and makes failed diagnostics easier to
 isolate.
+
+To control disk usage, `Keep all checkpoints` is off by default. With the toggle
+off, Quant Studio keeps the latest context checkpoint only while it is needed,
+prunes older context files during the run, and removes the final context file
+after successful completion. The checkpoint manifest stays in the run folder and
+metadata folder for stage-status audit evidence.
 
 During execution, the Run Status panel shows a `Checkpoint Flow` chart. Use it
 to see the active stage, confirm which stages have already completed, and
@@ -126,8 +135,7 @@ Large Data Mode can export:
 - `data/sample_development/`
 - `data/full_data_scoring/`
 - `metadata/large_data/`
-- full Parquet predictions
-- sampled CSV review files
+- full or sampled predictions in the input-driven tabular format
 - metadata-only entries for very large tables when configured
 
 These outputs are intended to make sampling, conversion, memory decisions, and
@@ -138,8 +146,8 @@ chunked scoring auditable.
 For faster large-data runs:
 
 - export profile: `fast` while iterating
-- tabular output: Parquet or both only when CSV is needed
-- large tabular export policy: sampled CSV plus full Parquet
+- tabular output: input-driven from the Step 1 file type
+- large tabular export policy: full, sampled, or metadata-only
 - individual figure files: off
 - Advanced Visual Analytics: off
 - optional robustness and cross-validation refits: off unless needed

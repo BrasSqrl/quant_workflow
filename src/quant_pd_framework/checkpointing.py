@@ -45,6 +45,7 @@ def initialize_checkpoint_manifest(
     stages: list[dict[str, Any]],
     initial_context_path: Path,
     execution_strategy: str,
+    keep_all_checkpoints: bool = True,
 ) -> dict[str, Any]:
     """Creates the initial checkpoint manifest."""
 
@@ -59,7 +60,15 @@ def initialize_checkpoint_manifest(
         "run_root": str(paths.run_root),
         "checkpoints_dir": str(paths.checkpoints_dir),
         "initial_context_path": str(initial_context_path),
+        "initial_context_pruned_at_utc": "",
         "latest_context_path": str(initial_context_path),
+        "checkpoint_retention": {
+            "keep_all_checkpoints": bool(keep_all_checkpoints),
+            "policy": "keep_all" if keep_all_checkpoints else "prune_stale_contexts",
+            "last_pruned_at_utc": "",
+            "pruned_context_count": 0,
+            "latest_context_retained": str(initial_context_path),
+        },
         "status": "initialized",
         "stages": [
             {
@@ -69,6 +78,7 @@ def initialize_checkpoint_manifest(
                 "completed_at_utc": "",
                 "elapsed_seconds": None,
                 "context_path": "",
+                "context_pruned_at_utc": "",
                 "error_message": "",
             }
             for stage in stages
@@ -124,6 +134,57 @@ def checkpoint_file_name(stage_order: int, stage_id: str) -> str:
         for character in stage_id
     )
     return f"{stage_order:02d}_{safe_stage}{CHECKPOINT_CONTEXT_SUFFIX}"
+
+
+def prune_context_checkpoints(
+    manifest_path: Path,
+    manifest: dict[str, Any],
+    *,
+    keep_latest: bool,
+) -> list[Path]:
+    """
+    Deletes stale checkpoint context files while preserving the manifest.
+
+    The latest context is kept during an active run because the next stage needs
+    it as input. After a completed run, callers may pass `keep_latest=False` to
+    remove the final context file as well.
+    """
+
+    checkpoints_dir = _safe_checkpoint_dir(manifest_path, manifest)
+    latest_context_path = _safe_context_path(
+        manifest.get("latest_context_path"),
+        checkpoints_dir,
+    )
+    retained_path = latest_context_path if keep_latest else None
+    candidates = _context_checkpoint_candidates(checkpoints_dir, manifest)
+    pruned_at = _utc_now()
+    deleted_paths: list[Path] = []
+
+    for candidate in sorted(candidates):
+        if retained_path is not None and candidate == retained_path:
+            continue
+        if not candidate.exists() or not candidate.is_file():
+            continue
+        candidate.unlink()
+        deleted_paths.append(candidate)
+
+    if not deleted_paths:
+        _update_retention_manifest(
+            manifest,
+            retained_path=retained_path,
+            pruned_at="",
+            deleted_paths=[],
+        )
+        return []
+
+    _mark_pruned_context_references(manifest, deleted_paths, pruned_at, checkpoints_dir)
+    _update_retention_manifest(
+        manifest,
+        retained_path=retained_path,
+        pruned_at=pruned_at,
+        deleted_paths=deleted_paths,
+    )
+    return deleted_paths
 
 
 def find_next_pending_stage(manifest: dict[str, Any]) -> dict[str, Any] | None:
@@ -197,6 +258,81 @@ def copy_manifest_to_metadata(manifest_path: Path, metadata_dir: Path) -> Path:
     destination = metadata_dir / CHECKPOINT_MANIFEST_FILE_NAME
     shutil.copy2(manifest_path, destination)
     return destination
+
+
+def _safe_checkpoint_dir(manifest_path: Path, manifest: dict[str, Any]) -> Path:
+    raw_dir = manifest.get("checkpoints_dir") or manifest_path.parent
+    checkpoints_dir = Path(str(raw_dir)).resolve()
+    if checkpoints_dir != manifest_path.parent.resolve():
+        raise ValueError(
+            "Checkpoint manifest directory does not match the requested manifest path."
+        )
+    return checkpoints_dir
+
+
+def _safe_context_path(value: Any, checkpoints_dir: Path) -> Path | None:
+    if not value:
+        return None
+    candidate = Path(str(value)).resolve()
+    if candidate.parent != checkpoints_dir:
+        raise ValueError(f"Refusing to prune checkpoint outside {checkpoints_dir}: {candidate}")
+    if candidate.suffix != CHECKPOINT_CONTEXT_SUFFIX:
+        raise ValueError(f"Refusing to prune non-context checkpoint file: {candidate}")
+    return candidate
+
+
+def _context_checkpoint_candidates(
+    checkpoints_dir: Path,
+    manifest: dict[str, Any],
+) -> set[Path]:
+    candidates = {
+        path.resolve()
+        for path in checkpoints_dir.glob(f"*{CHECKPOINT_CONTEXT_SUFFIX}")
+        if path.is_file()
+    }
+    initial_context_path = _safe_context_path(manifest.get("initial_context_path"), checkpoints_dir)
+    if initial_context_path is not None:
+        candidates.add(initial_context_path)
+    for stage in manifest.get("stages", []):
+        if not isinstance(stage, dict):
+            continue
+        context_path = _safe_context_path(stage.get("context_path"), checkpoints_dir)
+        if context_path is not None:
+            candidates.add(context_path)
+    return candidates
+
+
+def _mark_pruned_context_references(
+    manifest: dict[str, Any],
+    deleted_paths: list[Path],
+    pruned_at: str,
+    checkpoints_dir: Path,
+) -> None:
+    deleted_paths_resolved = {path.resolve() for path in deleted_paths}
+    initial_context_path = _safe_context_path(manifest.get("initial_context_path"), checkpoints_dir)
+    if initial_context_path in deleted_paths_resolved:
+        manifest["initial_context_pruned_at_utc"] = pruned_at
+    for stage in manifest.get("stages", []):
+        if not isinstance(stage, dict):
+            continue
+        context_path = _safe_context_path(stage.get("context_path"), checkpoints_dir)
+        if context_path in deleted_paths_resolved:
+            stage["context_pruned_at_utc"] = pruned_at
+
+
+def _update_retention_manifest(
+    manifest: dict[str, Any],
+    *,
+    retained_path: Path | None,
+    pruned_at: str,
+    deleted_paths: list[Path],
+) -> None:
+    retention = manifest.setdefault("checkpoint_retention", {})
+    prior_count = int(retention.get("pruned_context_count") or 0)
+    retention["latest_context_retained"] = str(retained_path) if retained_path else ""
+    if pruned_at:
+        retention["last_pruned_at_utc"] = pruned_at
+        retention["pruned_context_count"] = prior_count + len(deleted_paths)
 
 
 def _stage_by_id(manifest: dict[str, Any], stage_id: str) -> dict[str, Any]:

@@ -331,6 +331,7 @@ def build_preflight_summary(
             preview_config.artifacts.include_advanced_visual_analytics,
         ),
         ("Individual figure files", preview_config.artifacts.export_individual_figure_files),
+        ("Keep all checkpoints", preview_config.artifacts.keep_all_checkpoints),
         ("Input snapshot", preview_config.artifacts.export_input_snapshot),
         ("Code snapshot", preview_config.artifacts.export_code_snapshot),
     ]

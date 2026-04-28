@@ -28,7 +28,11 @@ from tests.support import temporary_artifact_root
 from tests.test_pipeline_smoke import build_synthetic_dataframe
 
 
-def build_checkpoint_test_config(output_root) -> FrameworkConfig:
+def build_checkpoint_test_config(
+    output_root,
+    *,
+    keep_all_checkpoints: bool = False,
+) -> FrameworkConfig:
     return FrameworkConfig(
         schema=SchemaConfig(
             column_specs=[
@@ -69,7 +73,10 @@ def build_checkpoint_test_config(output_root) -> FrameworkConfig:
         explainability=ExplainabilityConfig(enabled=False),
         scorecard_workbench=ScorecardWorkbenchConfig(enabled=False),
         credit_risk=CreditRiskDiagnosticConfig(enabled=False),
-        artifacts=ArtifactConfig(output_root=output_root),
+        artifacts=ArtifactConfig(
+            output_root=output_root,
+            keep_all_checkpoints=keep_all_checkpoints,
+        ),
     )
 
 
@@ -102,6 +109,9 @@ def test_checkpointed_runner_writes_restartable_manifest_and_exports() -> None:
         assert context.metadata["checkpointed_execution"]["checkpoint_manifest"] == str(
             checkpoint_manifest
         )
+        assert not list((output_root / context.run_id / "checkpoints").glob("*.joblib"))
+        assert manifest_payload["checkpoint_retention"]["keep_all_checkpoints"] is False
+        assert manifest_payload["checkpoint_retention"]["latest_context_retained"] == ""
 
 
 def test_checkpointed_runner_can_execute_single_stage_in_subprocess() -> None:
@@ -137,3 +147,24 @@ def test_checkpointed_runner_can_execute_single_stage_in_subprocess() -> None:
         assert stage_started_event["stages"][0]["status"] == "running"
         assert stage_completed_event["stages"][0]["status"] == "completed"
         assert context.split_frames
+        assert len(list(manifest_path.parent.glob("*.joblib"))) == 1
+
+
+def test_checkpointed_runner_can_keep_all_checkpoint_contexts() -> None:
+    dataframe = build_synthetic_dataframe(row_count=120)
+    with temporary_artifact_root("pytest_checkpointed_keep_all") as output_root:
+        config = build_checkpoint_test_config(output_root, keep_all_checkpoints=True)
+
+        context = CheckpointedWorkflowRunner(
+            config=config,
+            use_subprocess=False,
+        ).run_all(dataframe)
+
+        checkpoints_dir = output_root / context.run_id / "checkpoints"
+        manifest_payload = json.loads(
+            (checkpoints_dir / CHECKPOINT_MANIFEST_FILE_NAME).read_text(encoding="utf-8")
+        )
+
+        assert manifest_payload["checkpoint_retention"]["keep_all_checkpoints"] is True
+        assert manifest_payload["checkpoint_retention"]["policy"] == "keep_all"
+        assert len(list(checkpoints_dir.glob("*.joblib"))) > 1

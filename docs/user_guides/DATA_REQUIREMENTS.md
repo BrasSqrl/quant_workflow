@@ -122,7 +122,7 @@ For files above roughly 1 GB:
 - prefer Parquet
 - enable `Large Data Mode`
 - consider converting CSV to Parquet before ingestion
-- use sampled CSV exports or Parquet outputs
+- use sampled exports when full tabular outputs would be too large
 - review [Large Data Playbook](./LARGE_DATA_PLAYBOOK.md)
 
 ## Common Data Problems
@@ -134,4 +134,3 @@ For files above roughly 1 GB:
 | Existing model scoring fails | New data does not have the saved model's expected raw features | Provide matching run config or add missing source features. |
 | Model performance is suspiciously high | Leakage, identifiers, or post-event fields are enabled | Review features and disable invalid fields. |
 | Memory pressure | File is too large for eager pandas loading | Use `Data_Load/`, Parquet, Large Data Mode, and sampled exports. |
-

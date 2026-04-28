@@ -36,7 +36,8 @@ def classify_workflow_exception(
             ),
             recommended_action=(
                 "Use Large Data Mode with a smaller governed sample, reduce diagnostic "
-                "sample rows, choose Parquet outputs, or move to a larger SageMaker instance."
+                "sample rows, use a Parquet Step 1 input when Parquet artifacts are needed, "
+                "or move to a larger SageMaker instance."
             ),
             technical_summary=summary,
             technical_details=technical_details,

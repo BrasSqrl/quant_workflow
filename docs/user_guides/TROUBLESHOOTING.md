@@ -77,7 +77,7 @@ fixes.
 | Symptom | Likely cause | Fix |
 | --- | --- | --- |
 | Machine freezes or swaps heavily | Pandas load exceeds available RAM | Stop run if possible, use Parquet, Large Data Mode, governed sample, and larger compute. |
-| Full CSV export is too large | Export policy writes full tables | Use sampled CSV plus full Parquet or metadata-only policy. |
+| Full CSV export is too large | Export policy writes full tables for a non-Parquet input | Use sampled or metadata-only policy, or use a Parquet Step 1 input when Parquet artifacts are required. |
 | Run takes too long | Expensive diagnostics, advanced visuals, figure export, or subset search | Use fast export profile, keep Advanced Visual Analytics and individual figure files off, reduce diagnostic scope, or use governed sample. |
 
 ## What To Capture When Asking For Help

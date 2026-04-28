@@ -1642,6 +1642,7 @@ class ArtifactConfig:
     include_enhanced_report_visuals: bool = True
     include_advanced_visual_analytics: bool = False
     export_individual_figure_files: bool = False
+    keep_all_checkpoints: bool = False
     compact_prediction_exports: bool = True
     export_input_snapshot: bool = True
     export_code_snapshot: bool = True

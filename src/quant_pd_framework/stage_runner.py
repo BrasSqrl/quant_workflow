@@ -27,6 +27,7 @@ from .checkpointing import (
     mark_stage_completed,
     mark_stage_failed,
     mark_stage_started,
+    prune_context_checkpoints,
     read_checkpoint_manifest,
     save_context_checkpoint,
     write_checkpoint_manifest,
@@ -122,9 +123,10 @@ class CheckpointedWorkflowRunner:
         latest_context_path = Path(read_checkpoint_manifest(manifest_path)["latest_context_path"])
         context = load_context_checkpoint(latest_context_path)
         self._finalize_run_metadata(context, manifest_path)
-        self._copy_checkpoint_manifest_to_metadata(context, manifest_path)
         latest_context_path = Path(read_checkpoint_manifest(manifest_path)["latest_context_path"])
         save_context_checkpoint(context, latest_context_path)
+        self._apply_checkpoint_retention(manifest_path, keep_latest=False)
+        self._copy_checkpoint_manifest_to_metadata(context, manifest_path)
         completed_manifest = read_checkpoint_manifest(manifest_path)
         stages = self._stage_definitions()
         self._notify(
@@ -156,6 +158,7 @@ class CheckpointedWorkflowRunner:
         context.metadata["checkpointed_execution"] = {
             "enabled": True,
             "use_subprocess": bool(self.use_subprocess),
+            "keep_all_checkpoints": bool(self.config.artifacts.keep_all_checkpoints),
         }
         checkpoint_paths = build_checkpoint_paths(self.config.artifacts.output_root, context.run_id)
         initial_context_path = checkpoint_paths.checkpoints_dir / "00_initial_context.joblib"
@@ -172,6 +175,7 @@ class CheckpointedWorkflowRunner:
             execution_strategy=(
                 "checkpointed_subprocess" if self.use_subprocess else "checkpointed_in_process"
             ),
+            keep_all_checkpoints=self.config.artifacts.keep_all_checkpoints,
         )
         self._notify(
             {
@@ -194,7 +198,13 @@ class CheckpointedWorkflowRunner:
         manifest = read_checkpoint_manifest(manifest_path)
         next_stage = find_next_pending_stage(manifest)
         if next_stage is None:
-            return load_context_checkpoint(Path(manifest["latest_context_path"]))
+            latest_context_path_text = str(manifest.get("latest_context_path") or "")
+            latest_context_path = (
+                Path(latest_context_path_text) if latest_context_path_text else None
+            )
+            if latest_context_path is not None and latest_context_path.exists():
+                return load_context_checkpoint(latest_context_path)
+            return None
         stage_id = str(next_stage["stage_id"])
         stage = self._stage_by_id(stage_id)
         if self.use_subprocess:
@@ -252,7 +262,11 @@ class CheckpointedWorkflowRunner:
             )
             save_context_checkpoint(context, failure_context_path)
             manifest["latest_context_path"] = str(failure_context_path)
-            write_checkpoint_manifest(manifest_path, manifest)
+            self._apply_checkpoint_retention(
+                manifest_path,
+                keep_latest=True,
+                manifest=manifest,
+            )
             return context
 
         elapsed = perf_counter() - started
@@ -271,7 +285,11 @@ class CheckpointedWorkflowRunner:
             context_path=output_context_path,
             elapsed_seconds=elapsed,
         )
-        write_checkpoint_manifest(manifest_path, manifest)
+        self._apply_checkpoint_retention(
+            manifest_path,
+            keep_latest=True,
+            manifest=manifest,
+        )
         self._notify_stage_manifest_event(manifest, stage, "stage_completed")
         del context
         gc.collect()
@@ -530,6 +548,38 @@ class CheckpointedWorkflowRunner:
                 )
             except Exception:
                 return
+
+    def _apply_checkpoint_retention(
+        self,
+        manifest_path: Path,
+        *,
+        keep_latest: bool,
+        manifest: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Prunes checkpoint context files when full retention is disabled."""
+
+        active_manifest = (
+            manifest if manifest is not None else read_checkpoint_manifest(manifest_path)
+        )
+        if self.config.artifacts.keep_all_checkpoints:
+            retention = active_manifest.setdefault("checkpoint_retention", {})
+            retention["keep_all_checkpoints"] = True
+            retention["policy"] = "keep_all"
+            retention["latest_context_retained"] = str(
+                active_manifest.get("latest_context_path") or ""
+            )
+            write_checkpoint_manifest(manifest_path, active_manifest)
+            return active_manifest
+        retention = active_manifest.setdefault("checkpoint_retention", {})
+        retention["keep_all_checkpoints"] = False
+        retention["policy"] = "prune_stale_contexts"
+        prune_context_checkpoints(
+            manifest_path,
+            active_manifest,
+            keep_latest=keep_latest,
+        )
+        write_checkpoint_manifest(manifest_path, active_manifest)
+        return active_manifest
 
     def _notify_stage_event(
         self,

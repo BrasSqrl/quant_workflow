@@ -50,6 +50,7 @@ from ..presentation import (
     infer_asset_section,
 )
 from ..reporting import build_regulatory_report_bundle
+from ..tabular_policy import resolve_tabular_output_format
 
 ARTIFACT_LAYOUT_VERSION = "2.0"
 TABLE_SECTION_DIRECTORIES = {
@@ -476,14 +477,16 @@ class ArtifactExportStep(BasePipelineStep):
         parquet_path: Path,
     ) -> dict[str, Any]:
         artifacts = context.config.artifacts
-        output_format = artifacts.tabular_output_format
+        output_format = resolve_tabular_output_format(context.metadata)
         export_policy = artifacts.large_data_export_policy
         sample_rows = min(len(dataframe), artifacts.large_data_sample_rows)
         metadata: dict[str, Any] = {
             "dataset_name": dataset_name,
             "row_count": int(len(dataframe)),
             "column_count": int(dataframe.shape[1]),
+            "configured_output_format": artifacts.tabular_output_format.value,
             "output_format": output_format.value,
+            "output_format_basis": "original_input_suffix",
             "export_policy": export_policy.value,
             "sample_rows": int(sample_rows),
             "csv_path": None,
@@ -533,7 +536,7 @@ class ArtifactExportStep(BasePipelineStep):
         split_output_dir: Path,
     ) -> dict[str, Any]:
         artifacts = context.config.artifacts
-        output_format = artifacts.tabular_output_format
+        output_format = resolve_tabular_output_format(context.metadata)
         export_policy = artifacts.large_data_export_policy
         compact_frames = {
             split_name: self._compact_prediction_frame(context, split_frame)
@@ -547,7 +550,9 @@ class ArtifactExportStep(BasePipelineStep):
             "column_count": int(
                 max((frame.shape[1] for frame in compact_frames.values()), default=0)
             ),
+            "configured_output_format": artifacts.tabular_output_format.value,
             "output_format": output_format.value,
+            "output_format_basis": "original_input_suffix",
             "export_policy": export_policy.value,
             "sample_rows": int(sample_rows),
             "compact_prediction_exports": artifacts.compact_prediction_exports,
@@ -747,7 +752,7 @@ class ArtifactExportStep(BasePipelineStep):
         table: pd.DataFrame,
         csv_path: Path,
     ) -> None:
-        output_format = context.config.artifacts.tabular_output_format
+        output_format = resolve_tabular_output_format(context.metadata)
         if output_format in {TabularOutputFormat.CSV, TabularOutputFormat.BOTH}:
             csv_path.parent.mkdir(parents=True, exist_ok=True)
             table.to_csv(csv_path, index=False)
@@ -2101,7 +2106,7 @@ class ArtifactExportStep(BasePipelineStep):
             "- `tables/` contains diagnostic CSV/Parquet tables grouped by review topic.",
             "- `config/` contains the resolved run configuration and offline template workbook.",
             "- `metadata/` contains metrics, test payloads, manifests, and debug traces.",
-            "- `checkpoints/` contains restartable stage checkpoints for memory-isolated runs.",
+            "- `checkpoints/` contains the stage manifest and retained checkpoint contexts.",
             "- `workbooks/` contains the optional analysis workbook.",
             "- `code/` contains rerun instructions, generated Python launcher, and code snapshot.",
             "- `figures/` contains optional individual chart HTML/PNG exports.",
@@ -2114,7 +2119,7 @@ class ArtifactExportStep(BasePipelineStep):
             "- Reuse the model: use `model/quant_model.joblib`.",
             "- Rerun outside the GUI: open `code/HOW_TO_RERUN.md`.",
             "- Audit exact values: inspect `tables/` and `metadata/`.",
-            "- Resume or debug staged execution: inspect `checkpoints/checkpoint_manifest.json`.",
+            "- Review staged execution: inspect `checkpoints/checkpoint_manifest.json`.",
             "- Send to monitoring: use `model_bundle_for_monitoring/`.",
             "",
             "## Key Paths",

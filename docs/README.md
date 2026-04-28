@@ -47,6 +47,7 @@ For a technical owner:
 4. [Checkpoint Stage Guide](./CHECKPOINT_STAGE_GUIDE.md)
 5. [Preprocessing and Data Treatment Guide](./PREPROCESSING_AND_DATA_TREATMENT_GUIDE.md)
 6. [Implemented Optimization Ledger](./DEVELOPMENT_ROADMAP.md)
+7. [Deferred Report Size Roadmap](./DEFERRED_REPORT_SIZE_ROADMAP.md)
 
 For SageMaker use:
 
@@ -97,3 +98,4 @@ Use these when you need implementation-level detail or audit traceability:
 - [UI / UX Standard](./UI_UX_STANDARD.md)
 - [Enterprise UI Redesign Standard](./UI_ENTERPRISE_REDESIGN.md)
 - [Implemented Optimization Ledger](./DEVELOPMENT_ROADMAP.md)
+- [Deferred Report Size Roadmap](./DEFERRED_REPORT_SIZE_ROADMAP.md)

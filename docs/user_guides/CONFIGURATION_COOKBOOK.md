@@ -165,6 +165,7 @@ Recommended setup:
 - Use chunked full-data scoring
 - Use Parquet or sampled tabular exports
 - Keep individual figure export off unless required
+- Leave `Keep all checkpoints` off unless support needs post-run context files
 - Keep `Advanced Visual Analytics` off unless the added exploratory report
   visuals are worth the extra rendering time
 
@@ -187,9 +188,11 @@ Recommended setup:
 - Leave `Optimize dtypes during ingestion` on
 - Leave `Compact prediction exports` on
 - Leave `Retain full diagnostic working dataframe` off
-- Use Parquet tabular outputs, or `both` with sampled CSV review files
+- Let tabular outputs follow the Step 1 file type; use Parquet input when
+  Parquet artifact outputs are required
 - Keep Excel workbook export off unless specifically needed
 - Keep individual figure files and Advanced Visual Analytics off while tuning
+- Leave `Keep all checkpoints` off to prune large context files during the run
 - Review high-cardinality categorical warnings before fitting
 
 Key checks:

@@ -38,7 +38,7 @@ and summarizes the completed run in Step 5, `Decision Summary`.
 | `artifact_manifest.json` | Index of exported files and directories. | Auditor, technical reviewer |
 | `metadata/step_manifest.json` | Ordered pipeline step record. | Technical reviewer |
 | `metadata/run_debug_trace.json` | Run start/completion time, total elapsed runtime, per-step timing, shape snapshots, memory estimates, and failure details. | Developer, support, performance reviewer |
-| `checkpoints/checkpoint_manifest.json` | Restartable stage manifest for checkpointed execution, including stage status, elapsed time, latest context checkpoint, and optional-stage failures. | Developer, support, auditor |
+| `checkpoints/checkpoint_manifest.json` | Stage manifest for checkpointed execution, including stage status, elapsed time, checkpoint-retention policy, pruned context evidence, and optional-stage failures. | Developer, support, auditor |
 | `metadata/reproducibility_manifest.json` | Hashes, package versions, environment, and input metadata. | Auditor, reproducibility reviewer |
 | `code/generated_run.py` | Python rerun script for running without the GUI. | Developer |
 | `code/HOW_TO_RERUN.md` | Plain-English rerun instructions. | Developer, reviewer |
@@ -54,7 +54,7 @@ and summarizes the completed run in Step 5, `Decision Summary`.
 | `tables/` | Diagnostic tables grouped into topical subfolders. |
 | `config/` | Resolved run configuration and offline configuration workbook. |
 | `metadata/` | Metrics, statistical-test payloads, manifests, reproducibility data, and debug traces. |
-| `checkpoints/` | Disk-backed stage checkpoints used by full and step-by-step workflow execution. |
+| `checkpoints/` | Disk-backed stage manifest and, when retained, context checkpoints used by full and step-by-step workflow execution. |
 | `workbooks/` | Optional Excel analysis workbook. |
 | `code/code_snapshot/` | Copy of relevant source, examples, tests, and project metadata when code snapshot export is enabled. |
 | `figures/` or equivalent figure folders | Separate chart HTML/PNG files when individual figure export is enabled. |
@@ -76,13 +76,20 @@ step-by-step mode uses the same files and runs one stage per click.
 
 The `checkpoints/` folder contains:
 
-- `00_initial_context.joblib`, the starting context
-- `NN_stage_name.joblib`, the context after each completed stage
+- `00_initial_context.joblib`, the starting context when checkpoint retention is enabled
+- `NN_stage_name.joblib`, the context after each completed stage when retained
 - `checkpoint_manifest.json`, the stage status and latest checkpoint pointer
 
-Use these files for debugging failed runs, proving which stages completed, or
-rerunning a later stage without rebuilding earlier work. They are execution
-evidence, not the primary business-facing report.
+`Keep all checkpoints` is off by default to control storage. When it is off,
+Quant Studio deletes stale `.joblib` context files after a newer safe checkpoint
+exists and removes the final context checkpoint after successful completion. The
+manifest remains available for proving which stages completed, which optional
+stages failed, and which checkpoint contexts were pruned.
+
+Turn `Keep all checkpoints` on before the run when a developer or support user
+needs to inspect context checkpoints after execution or rerun a later stage
+without rebuilding earlier work. Checkpoint contexts are execution evidence, not
+the primary business-facing report.
 
 For the full list of checkpoint stages, their purpose, required versus optional
 status, and the controls that influence each one, see

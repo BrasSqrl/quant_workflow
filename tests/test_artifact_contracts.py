@@ -19,11 +19,13 @@ from quant_pd_framework import (
     FrameworkConfig,
     QuantModelOrchestrator,
     SplitConfig,
+    TabularOutputFormat,
     TargetConfig,
     TargetMode,
 )
 from quant_pd_framework.reference_workflows import get_reference_workflow_definition
 from quant_pd_framework.steps.export import ArtifactExportStep
+from quant_pd_framework.steps.ingestion import INPUT_SOURCE_METADATA_ATTR
 from tests.support import build_binary_dataframe, build_common_schema, temporary_artifact_root
 
 
@@ -155,6 +157,62 @@ def test_artifact_manifest_can_skip_individual_figure_exports() -> None:
         assert manifest["directories"]["figures_png"] is None
 
 
+def test_csv_source_exports_tabular_artifacts_as_csv_even_when_configured_for_parquet() -> None:
+    dataframe = build_binary_dataframe(row_count=180)
+    dataframe.attrs[INPUT_SOURCE_METADATA_ATTR] = {
+        "source_kind": "upload",
+        "file_name": "loans.csv",
+        "suffix": ".csv",
+    }
+
+    with temporary_artifact_root("pytest_csv_source_tabular_exports") as artifact_root:
+        config = _build_artifact_contract_config(artifact_root)
+        config.artifacts = ArtifactConfig(
+            output_root=artifact_root,
+            tabular_output_format=TabularOutputFormat.PARQUET,
+            export_individual_figure_files=False,
+        )
+
+        context = QuantModelOrchestrator(config=config).run(dataframe)
+        run_root = artifact_root / context.run_id
+        manifest = json.loads(Path(context.artifacts["manifest"]).read_text(encoding="utf-8"))
+
+        assert (run_root / "data" / "input" / "input_snapshot.csv").exists()
+        assert not (run_root / "data" / "input" / "input_snapshot.parquet").exists()
+        assert (run_root / "data" / "predictions" / "predictions.csv").exists()
+        assert not (run_root / "data" / "predictions" / "predictions.parquet").exists()
+        assert manifest["rerun_bundle"]["input_snapshot_csv"]
+        assert manifest["rerun_bundle"]["input_snapshot_parquet"] is None
+
+
+def test_parquet_source_exports_tabular_artifacts_as_parquet() -> None:
+    dataframe = build_binary_dataframe(row_count=180)
+    dataframe.attrs[INPUT_SOURCE_METADATA_ATTR] = {
+        "source_kind": "upload",
+        "file_name": "loans.parquet",
+        "suffix": ".parquet",
+    }
+
+    with temporary_artifact_root("pytest_parquet_source_tabular_exports") as artifact_root:
+        config = _build_artifact_contract_config(artifact_root)
+        config.artifacts = ArtifactConfig(
+            output_root=artifact_root,
+            tabular_output_format=TabularOutputFormat.CSV,
+            export_individual_figure_files=False,
+        )
+
+        context = QuantModelOrchestrator(config=config).run(dataframe)
+        run_root = artifact_root / context.run_id
+        manifest = json.loads(Path(context.artifacts["manifest"]).read_text(encoding="utf-8"))
+
+        assert not (run_root / "data" / "input" / "input_snapshot.csv").exists()
+        assert (run_root / "data" / "input" / "input_snapshot.parquet").exists()
+        assert not (run_root / "data" / "predictions" / "predictions.csv").exists()
+        assert (run_root / "data" / "predictions" / "predictions.parquet").exists()
+        assert manifest["rerun_bundle"]["input_snapshot_csv"] is None
+        assert manifest["rerun_bundle"]["input_snapshot_parquet"]
+
+
 def test_advanced_visual_analytics_can_export_individual_figure_file() -> None:
     with temporary_artifact_root("pytest_advanced_visual_export") as artifact_root:
         config = SimpleNamespace(
@@ -212,6 +270,7 @@ def test_advanced_visual_analytics_can_export_individual_figure_file() -> None:
 
 def test_individual_figure_exports_default_to_disabled() -> None:
     assert ArtifactConfig().export_individual_figure_files is False
+    assert ArtifactConfig().keep_all_checkpoints is False
     assert ArtifactConfig().include_enhanced_report_visuals is True
     assert ArtifactConfig().include_advanced_visual_analytics is False
 

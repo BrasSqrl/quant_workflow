@@ -865,6 +865,7 @@ def _build_artifact_config(payload: dict[str, Any]) -> ArtifactConfig:
             False,
         ),
         export_individual_figure_files=payload.get("export_individual_figure_files", False),
+        keep_all_checkpoints=payload.get("keep_all_checkpoints", False),
         compact_prediction_exports=payload.get("compact_prediction_exports", True),
         export_input_snapshot=payload.get("export_input_snapshot", True),
         export_code_snapshot=payload.get("export_code_snapshot", True),

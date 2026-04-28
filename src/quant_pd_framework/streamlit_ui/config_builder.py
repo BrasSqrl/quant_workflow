@@ -350,6 +350,10 @@ def build_preview_configuration(
                     preset_inputs.artifacts.include_advanced_visual_analytics,
                 ),
                 export_individual_figure_files=values["export_individual_figure_files"],
+                keep_all_checkpoints=values.get(
+                    "keep_all_checkpoints",
+                    preset_inputs.artifacts.keep_all_checkpoints,
+                ),
                 compact_prediction_exports=values.get(
                     "compact_prediction_exports",
                     preset_inputs.artifacts.compact_prediction_exports,

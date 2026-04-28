@@ -108,7 +108,7 @@ def test_parquet_input_records_dtype_and_memory_audits() -> None:
     assert context.metadata["large_data_memory_estimate"]["status"] == "pass"
 
 
-def test_sampled_csv_and_full_parquet_exports_are_indexed() -> None:
+def test_non_parquet_source_sampled_exports_are_csv_only() -> None:
     dataframe = build_binary_dataframe(row_count=180)
 
     with temporary_artifact_root("pytest_large_data_exports") as artifact_root:
@@ -124,18 +124,13 @@ def test_sampled_csv_and_full_parquet_exports_are_indexed() -> None:
         context = QuantModelOrchestrator(config=config).run(dataframe)
 
         predictions_csv = Path(context.artifacts["predictions_csv"])
-        predictions_parquet = Path(context.artifacts["predictions_parquet"])
         manifest = json.loads(Path(context.artifacts["manifest"]).read_text(encoding="utf-8"))
-        exported_predictions = pd.read_parquet(predictions_parquet)
         exported_sample = pd.read_csv(predictions_csv)
 
         assert len(exported_sample) == 25
-        assert len(exported_predictions) == sum(
-            len(split) for split in context.predictions.values()
-        )
-        assert context.artifacts["predictions"] == predictions_parquet
+        assert context.artifacts["predictions"] == predictions_csv
         assert manifest["core_artifacts"]["predictions_csv"] == str(predictions_csv)
-        assert manifest["core_artifacts"]["predictions_parquet"] == str(predictions_parquet)
+        assert manifest["core_artifacts"]["predictions_parquet"] is None
         assert "tabular_export_policy" in context.diagnostics_tables
 
 

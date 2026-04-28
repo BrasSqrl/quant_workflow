@@ -469,9 +469,9 @@ These controls only matter when `ExecutionConfig.mode` is
 | `Export input snapshot` | `ArtifactConfig.export_input_snapshot` | `ArtifactExportStep._export_tabular_dataframe` |
 | `Export code snapshot` | `ArtifactConfig.export_code_snapshot` | `ArtifactExportStep._export_code_snapshot` |
 | `Compact prediction exports` | `ArtifactConfig.compact_prediction_exports` | `EvaluationStep._build_scored_frame`, `ArtifactExportStep._compact_prediction_frame` |
-| `Tabular artifact format` | `ArtifactConfig.tabular_output_format` | CSV/Parquet output branching in `ArtifactExportStep` |
+| `Tabular artifact format` | `ArtifactConfig.tabular_output_format`; effective format resolved by original Step 1 input suffix | CSV for non-Parquet inputs; Parquet for `.parquet` / `.pq` inputs in `ArtifactExportStep` |
 | `Large tabular export policy` | `ArtifactConfig.large_data_export_policy` | full, sampled, or metadata-only tabular export policy |
-| `Rows in sampled CSV exports` | `ArtifactConfig.large_data_sample_rows` | sampled CSV output size |
+| `Rows in sampled tabular exports` | `ArtifactConfig.large_data_sample_rows` | sampled CSV or Parquet output size, depending on the Step 1 input suffix |
 | `Parquet compression` | `ArtifactConfig.parquet_compression` | Parquet writer compression |
 | `Keep unconfigured columns` | `SchemaConfig.pass_through_unconfigured_columns` | `SchemaManagementStep` |
 | `Export reproducibility manifest` | `ReproducibilityConfig.enabled` | `ArtifactExportStep` |
@@ -527,8 +527,9 @@ The `Run Quant Model Workflow` button performs this chain:
 7. runs each major stage in a subprocess-backed checkpoint sequence
 8. publishes live stage-flow events to `render_runtime_status(...)`
 9. records per-stage and per-step debug timing, shape snapshots, and memory estimates
-10. copies the checkpoint manifest into the final metadata folder
-11. stores a bounded snapshot for the result viewer
+10. prunes checkpoint context files when `Keep all checkpoints` is off
+11. copies the checkpoint manifest into the final metadata folder
+12. stores a bounded snapshot for the result viewer
 
 If a run fails, `streamlit_ui/error_guidance.py` maps the exception to a
 user-facing recovery message while preserving the original traceback in the GUI.
@@ -546,6 +547,10 @@ The `Run checkpointed step-by-step` option uses the same stage runner, but it
 calls `run_next_checkpoint_stage(...)` once per button click instead of running
 all pending stages. The checkpoint manifest lives at
 `checkpoints/checkpoint_manifest.json` and is copied to `metadata/` after export.
+The Step 2 `Diagnostics & Exports` toggle `Keep all checkpoints` maps to
+`ArtifactConfig.keep_all_checkpoints`. It defaults to off; when off, stale
+`.joblib` context checkpoints are deleted after newer safe checkpoints are
+written, while the manifest is retained for audit status.
 
 The Run Status panel renders a `Checkpoint Flow` chart from each progress
 event's `stages` payload. That payload is built from the same checkpoint

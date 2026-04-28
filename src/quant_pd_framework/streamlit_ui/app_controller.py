@@ -198,6 +198,12 @@ from quant_pd_framework.streamlit_ui.workflow_feedback import (
 from quant_pd_framework.streamlit_ui.workspace import (
     render_builder_workspace as ui_render_builder_workspace,
 )
+from quant_pd_framework.tabular_policy import (
+    original_input_is_parquet as ui_original_input_is_parquet,
+)
+from quant_pd_framework.tabular_policy import (
+    resolve_tabular_output_format as ui_resolve_tabular_output_format,
+)
 
 DIAGNOSTIC_SUITE_OPTIONS: list[tuple[str, str]] = [
     ("Data quality", "data_quality"),
@@ -1590,6 +1596,15 @@ def run_app() -> None:
                 help=(
                     "When off, Quant Studio still exports the full interactive report but skips "
                     "the per-figure HTML and PNG files to reduce runtime and artifact volume."
+                ),
+            )
+            keep_all_checkpoints = st.toggle(
+                "Keep all checkpoints",
+                value=preset_inputs.artifacts.keep_all_checkpoints,
+                help=(
+                    "Leave off to prune old checkpoint context files as soon as a newer safe "
+                    "checkpoint exists. The small checkpoint manifest is still kept for audit "
+                    "and run-status traceability."
                 ),
             )
             include_enhanced_report_visuals = st.toggle(
@@ -2995,23 +3010,35 @@ def run_app() -> None:
                     "for lower RAM usage and smaller artifacts."
                 ),
             )
-            default_tabular_output_format = (
-                TabularOutputFormat.PARQUET.value
-                if large_data_mode
-                else (
-                    preset_inputs.artifacts.tabular_output_format.value
-                    if preset_inputs.artifacts.tabular_output_format
-                    else TabularOutputFormat.PARQUET.value
-                )
+            input_driven_tabular_output_format = ui_resolve_tabular_output_format(
+                selected_input.metadata
             )
             tabular_output_format = st.selectbox(
                 "Tabular artifact format",
-                options=[format_name.value for format_name in TabularOutputFormat],
-                index=[format_name.value for format_name in TabularOutputFormat].index(
-                    default_tabular_output_format
+                options=[
+                    TabularOutputFormat.CSV.value,
+                    TabularOutputFormat.PARQUET.value,
+                ],
+                index=[
+                    TabularOutputFormat.CSV.value,
+                    TabularOutputFormat.PARQUET.value,
+                ].index(
+                    input_driven_tabular_output_format.value
                 ),
                 format_func=lambda value: value.replace("_", " ").title(),
+                disabled=True,
+                help=(
+                    "Automatically follows the Step 1 input source. Parquet inputs export "
+                    "tabular artifacts as Parquet; CSV, Excel, bundled sample, and uploaded "
+                    "dataframe-style inputs export tabular artifacts as CSV."
+                ),
             )
+            if ui_original_input_is_parquet(selected_input.metadata):
+                st.caption("Parquet artifacts are selected because the Step 1 input is Parquet.")
+            else:
+                st.caption(
+                    "CSV artifacts are selected because the Step 1 input is not Parquet."
+                )
             default_large_data_export_policy = (
                 LargeDataExportPolicy.SAMPLED.value
                 if large_data_mode
@@ -3025,14 +3052,14 @@ def run_app() -> None:
                 ),
                 format_func=lambda value: value.replace("_", " ").title(),
                 help=(
-                    "`Full` writes complete tabular outputs. `Sampled` writes sampled CSV "
-                    "outputs while Parquet stays full. `Metadata only` records row/column "
-                    "counts without writing large tables."
+                    "`Full` writes complete tabular outputs. `Sampled` writes sampled "
+                    "tabular outputs in the input-driven file format. `Metadata only` "
+                    "records row/column counts without writing large tables."
                 ),
             )
             large_data_sample_rows = int(
                 st.number_input(
-                    "Rows in sampled CSV exports",
+                    "Rows in sampled tabular exports",
                     min_value=1000,
                     max_value=1000000,
                     value=int(

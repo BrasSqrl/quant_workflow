@@ -55,8 +55,12 @@ The GUI run button uses a checkpointed execution engine by default. A full run
 still looks like one workflow to the user, but the application saves stage
 checkpoints under `checkpoints/`, runs major stages in fresh Python processes,
 and records `checkpoints/checkpoint_manifest.json` for audit and debugging.
-Step 3 also offers a step-by-step mode that advances one checkpoint stage per
-click when a user wants to isolate model fitting, diagnostics, or export.
+By default, older checkpoint context files are pruned as soon as a newer safe
+checkpoint exists, and the final context checkpoint is removed after a
+successful run. Users can turn on `Keep all checkpoints` when they need the
+full restart/debug context retained on disk. Step 3 also offers a step-by-step
+mode that advances one checkpoint stage per click when a user wants to isolate
+model fitting, diagnostics, or export.
 
 When `score_existing_model` is used, the training stage becomes a
 model-loading stage and the remaining steps run on newly scored data so the
@@ -152,8 +156,8 @@ The framework also includes development-focused workflow features:
 - scenario testing for feature-level shocks on held-out data
 - large-data controls for Parquet intake, CSV-to-Parquet staging, DuckDB/PyArrow
   file-backed previews, dtype optimization, memory guardrails, sampled
-  development, chunked full-data scoring, sampled exports, and Parquet output
-  bundles
+  development, chunked full-data scoring, sampled exports, and input-aware CSV
+  or Parquet output bundles
 
 ## Design Goals
 
@@ -196,6 +200,8 @@ The repository now includes an explicit engineering rubric and alignment note:
 - [docs/UI_ENTERPRISE_REDESIGN.md](./docs/UI_ENTERPRISE_REDESIGN.md)
 - [docs/DEVELOPMENT_ROADMAP.md](./docs/DEVELOPMENT_ROADMAP.md) records the
   completed optimization and maintainability ledger
+- [docs/DEFERRED_REPORT_SIZE_ROADMAP.md](./docs/DEFERRED_REPORT_SIZE_ROADMAP.md)
+  records deferred planning for future interactive-report size controls
 
 ## Transparency and Auditability Guides
 
@@ -267,6 +273,7 @@ quant/
   docs/
     README.md
     DEVELOPMENT_ROADMAP.md
+    DEFERRED_REPORT_SIZE_ROADMAP.md
     ENGINEERING_RUBRIC.md
     GUI_TO_CODE_TRACEABILITY_GUIDE.md
     LOGISTIC_REGRESSION_WALKTHROUGH.html
@@ -1654,14 +1661,15 @@ When large-data mode is enabled in the GUI, Quant Studio adds safer file-backed
 defaults: Data_Load intake, sampled diagnostics, disabled robustness and
 cross-validation refits, disabled per-figure file exports, reusable
 CSV-to-Parquet staging for file-path inputs, configurable training sample size,
-chunked full-data scoring, and sampled CSV or Parquet-first tabular outputs.
+chunked full-data scoring, and input-aware CSV or Parquet tabular outputs.
 
 For file-backed runs, the large-data workflow is intentionally split:
 
 - `data/sample_development/` contains the governed sample loaded into pandas for
   model fitting, diagnostics, and documentation.
 - `data/full_data_scoring/` contains chunked full-file scoring outputs, including
-  full-data predictions written directly to Parquet.
+  full-data predictions written in the same input-aware tabular format used by
+  the rest of the run.
 - `metadata/large_data/` contains metadata describing the source path, staged
   Parquet path, projected columns, sample size, chunk size, row counts, and
   chunk-progress status.
@@ -1757,11 +1765,12 @@ Important behavior:
   streams, correlation networks, lift/gain heatmaps, risk treemaps,
   model-comparison radar charts, scenario waterfalls, and feature-importance
   lollipop charts.
-- `tabular_output_format` controls whether major tabular artifacts are written
-  as CSV, Parquet, or both.
-- `large_data_export_policy` can write full tabular outputs, sampled CSV
-  outputs with full Parquet outputs, or metadata-only entries for very large
-  tables.
+- `tabular_output_format` is resolved from the original Step 1 input source:
+  Parquet inputs write major tabular artifacts as Parquet, while CSV, Excel,
+  bundled-sample, dataframe, and unknown inputs write major tabular artifacts as
+  CSV.
+- `large_data_export_policy` can write full tabular outputs, sampled tabular
+  outputs, or metadata-only entries for very large tables.
 - `compact_prediction_exports` is on by default. It prevents the scored
   prediction outputs from duplicating every modeled feature column and keeps
   prediction artifacts focused on audit IDs, target/split fields, low-cardinality
@@ -1798,9 +1807,10 @@ Default artifact layout:
   Contains `input_snapshot.csv` and/or `input_snapshot.parquet` when input
   snapshot export is enabled.
 - `data/predictions/`
-  Contains `predictions.csv`, `predictions.parquet`, and split-level prediction
-  files based on the selected tabular format. Prediction exports are compact by
-  default to avoid duplicating the full modeling matrix.
+  Contains `predictions.csv` for non-Parquet inputs or `predictions.parquet`
+  for Parquet inputs, plus split-level prediction files in the same
+  input-driven format. Prediction exports are compact by default to avoid
+  duplicating the full modeling matrix.
 - `tables/`
   Contains diagnostic tables grouped by review topic, such as `diagnostics/`,
   `calibration/`, `stability/`, `statistical_tests/`, `explainability/`, and
@@ -2111,8 +2121,8 @@ Typical outputs include:
 - challenger comparison results and recommended model metadata
 - lifetime PD curve outputs for discrete-time hazard runs
 - backtest summary by risk band
-- diagnostic tables as CSV
-- diagnostic tables as Parquet when Parquet or dual tabular output is selected
+- diagnostic tables as CSV for non-Parquet inputs
+- diagnostic tables as Parquet for Parquet inputs
 - feature policy check tables
 - model numerical diagnostics and normalized numerical warning tables
 - scenario summary tables and scenario definition tables
@@ -2145,9 +2155,11 @@ process outside Streamlit.
 - `config/run_config.json`
   The fully resolved configuration used for the run.
 - `data/input/input_snapshot.csv`
-  A CSV snapshot of the ingested dataframe, so the run can be reproduced without pointing back to the original upload.
+  A CSV snapshot of the ingested dataframe when the Step 1 input was not
+  Parquet.
 - `data/input/input_snapshot.parquet`
-  A full Parquet snapshot when Parquet or dual tabular output is selected.
+  A Parquet snapshot of the ingested dataframe when the Step 1 input was
+  Parquet.
 - `metadata/step_manifest.json`
   The exact ordered list of pipeline steps used, including module and class names.
 - `code/generated_run.py`
@@ -2345,8 +2357,8 @@ performance safeguards through `PerformanceConfig`, including:
 - truncated HTML report table and figure previews so standalone reports remain usable
 - lazy Streamlit result snapshots for large runs so the GUI does not keep every
   exported row in memory
-- sampled CSV exports with full Parquet exports for predictions and input
-  snapshots
+- input-aware tabular exports, where Parquet inputs produce Parquet tables and
+  CSV, Excel, bundled-sample, dataframe, and unknown inputs produce CSV tables
 - separate `data/sample_development/`, `data/full_data_scoring/`, and
   `metadata/large_data/` output folders for audit clarity
 - export profiles that let users choose between faster development exports and
@@ -2445,8 +2457,9 @@ The current implementation includes:
 - explicit configuration validation and engineering-rubric documentation
 - user-facing failure guidance with expandable technical tracebacks
 - readable run-output location panels and artifact summary tables in the GUI
-- checkpointed subprocess stage execution with `checkpoints/checkpoint_manifest.json`
-  and a live `Checkpoint Flow` status chart
+- checkpointed subprocess stage execution with `checkpoints/checkpoint_manifest.json`,
+  pruned checkpoint contexts by default, optional full checkpoint retention, and a
+  live `Checkpoint Flow` status chart
 - diagnostic registry output that records enabled, emitted, disabled, and
   skipped diagnostic surfaces
 - profiling and synthetic Large Data Mode benchmark scripts for performance

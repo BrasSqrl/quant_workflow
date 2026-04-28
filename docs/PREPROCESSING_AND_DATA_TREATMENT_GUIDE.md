@@ -102,7 +102,9 @@ default, categorical model features above
 - `categorical_cardinality_profile`
 - optional `csv_to_parquet_conversion`
 - optional `data/sample_development/training_sample.parquet`
-- optional `data/full_data_scoring/predictions.parquet`
+- optional `data/full_data_scoring/predictions.csv` or
+  `data/full_data_scoring/predictions.parquet`, based on the original Step 1
+  input format
 - optional `metadata/large_data/large_data_full_scoring.json`
 - optional `metadata/large_data/large_data_full_scoring_progress.json`
 - optional exported `data/input/input_snapshot.csv`

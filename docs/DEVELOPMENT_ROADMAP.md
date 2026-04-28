@@ -215,8 +215,9 @@ Status: implemented
 Delivered:
 
 - Add Parquet output for input snapshots, predictions, and diagnostic tables.
-- Let users choose CSV, Parquet, or both.
-- Keep full Parquet as the primary path when sampled CSV outputs are requested.
+- Later behavior now resolves the effective table format from the original Step
+  1 input source: Parquet inputs write Parquet artifacts, while non-Parquet
+  inputs write CSV artifacts.
 
 Primary code:
 
