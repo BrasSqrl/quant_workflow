@@ -68,6 +68,19 @@ The live GUI should also support two operator modes:
 
 Summary views should prioritize featured charts and compact tables. Technical views should expose the full diagnostic inventory.
 
+Guidance should be available at the point of use without taking over the
+screen:
+
+- Model Type Story Cards should sit near the Step 2 model selector and remain
+  compact until expanded.
+- Glossary badges should define technical terms through concise hover text.
+- `Explain this output` panels should be collapsed by default and limited to
+  high-value charts/tables.
+- Scorecard Binning Theater should be review-only and should not silently
+  change bins or refit a model.
+- Step 5 should open on the Decision Room view before exposing detailed
+  evidence tabs.
+
 ## 3. Chart Standard
 
 All charts should:

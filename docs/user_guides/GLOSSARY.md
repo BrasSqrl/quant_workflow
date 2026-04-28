@@ -12,6 +12,11 @@ This glossary defines common terms used in Quant Studio.
 | Advanced mode | UI mode that exposes deeper configuration, governance, explainability, and documentation controls. |
 | Execution mode | The run type: fit a new model, score an existing model, or search feature subsets. |
 | Readiness Check | Step 3 review surface that consolidates validation issues before execution. |
+| Model Type Story Card | Step 2 guidance card that explains the selected model type, best-use cases, avoid conditions, key settings, outputs, and validation questions. |
+| Explain this output | Collapsed explanation panel on selected high-value charts and tables that explains what an output shows, how to read it, good/bad signals, and recommended action. |
+| Binning Theater | Step 4 scorecard review surface for WoE buckets, IV, points, bin quality, and manual-bin override candidates. |
+| Decision Room | Default Step 5 landing view that summarizes recommendation, attention items, top drivers, key artifacts, and next actions for a review meeting. |
+| Glossary hover badge | Small in-app term badge with a hover definition for common modeling and validation terms. |
 | Decision Summary | Step 5 synthesis surface that converts completed-run metrics, issues, feature drivers, and artifacts into a decision-ready scorecard. |
 | Validation checklist | Step 5 and exported table that summarizes whether major review evidence areas are complete, attention-needed, or not applicable. |
 | Evidence traceability map | Exported question-to-artifact map that tells reviewers which file or table answers each common review question. |

@@ -49,10 +49,15 @@ class FeatureEngineeringStep(BasePipelineStep):
         if split_config.date_column and split_config.date_column in working.columns:
             date_columns.add(split_config.date_column)
 
+        created_date_part_features: list[str] = []
+        removed_raw_date_columns: list[str] = []
+        retained_raw_date_columns: list[str] = []
         for column in sorted(date_columns):
             working[column] = pd.to_datetime(working[column], errors="coerce")
             if config.derive_date_parts:
-                self._add_date_parts(working, column, config.date_parts)
+                created_date_part_features.extend(
+                    self._add_date_parts(working, column, config.date_parts)
+                )
             if (
                 config.drop_raw_date_columns
                 and column in working.columns
@@ -60,6 +65,9 @@ class FeatureEngineeringStep(BasePipelineStep):
             ):
                 working = working.drop(columns=column)
                 context.dropped_columns.append(column)
+                removed_raw_date_columns.append(column)
+            elif column in working.columns:
+                retained_raw_date_columns.append(column)
 
         if context.config.model.model_type == ModelType.DISCRETE_TIME_HAZARD_MODEL:
             self._add_hazard_time_features(working, split_config, context)
@@ -90,6 +98,17 @@ class FeatureEngineeringStep(BasePipelineStep):
             "feature_count": len(feature_columns),
             "numeric_feature_count": len(numeric_features),
             "categorical_feature_count": len(categorical_features),
+        }
+        context.metadata["date_feature_engineering"] = {
+            "derive_date_parts": bool(config.derive_date_parts),
+            "date_parts": list(config.date_parts),
+            "created_date_part_features": created_date_part_features,
+            "drop_raw_date_columns": bool(config.drop_raw_date_columns),
+            "removed_raw_date_columns": removed_raw_date_columns,
+            "retained_raw_date_columns": retained_raw_date_columns,
+            "raw_date_columns_excluded_from_model_features": sorted(
+                column for column in date_columns if column not in feature_columns
+            ),
         }
         return context
 
@@ -190,8 +209,9 @@ class FeatureEngineeringStep(BasePipelineStep):
         dataframe: pd.DataFrame,
         column: str,
         date_parts: list[str],
-    ) -> None:
+    ) -> list[str]:
         accessor = dataframe[column].dt
+        created_features: list[str] = []
         for part in date_parts:
             feature_name = f"{column}_{part}"
             if part == "year":
@@ -208,3 +228,5 @@ class FeatureEngineeringStep(BasePipelineStep):
                 raise ValueError(
                     f"Unsupported date part '{part}'. Add a handler in FeatureEngineeringStep."
                 )
+            created_features.append(feature_name)
+        return created_features

@@ -436,6 +436,116 @@ def inject_styles() -> None:
             background: rgba(227, 59, 75, 0.12);
             color: var(--qs-red);
           }
+          .glossary-strip {
+            display: flex;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 0.38rem;
+            margin: 0.45rem 0 0.65rem;
+            color: var(--qs-muted);
+            font-size: 0.78rem;
+          }
+          .glossary-strip strong {
+            color: var(--qs-ink);
+            margin-right: 0.15rem;
+          }
+          .glossary-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.25rem;
+            padding: 0.18rem 0.52rem;
+            border-radius: 999px;
+            background: rgba(31, 110, 245, 0.08);
+            border: 1px solid rgba(31, 110, 245, 0.16);
+            color: var(--qs-blue);
+            font-size: 0.72rem;
+            font-weight: 800;
+            cursor: help;
+          }
+          .glossary-badge span {
+            display: inline-flex;
+            width: 1rem;
+            height: 1rem;
+            align-items: center;
+            justify-content: center;
+            border-radius: 999px;
+            background: rgba(31, 110, 245, 0.16);
+            color: var(--qs-blue);
+            font-size: 0.64rem;
+          }
+          .model-story-card,
+          .decision-room-card {
+            margin: 0.55rem 0 0.75rem;
+            padding: 0.9rem 1rem;
+            border: 1px solid var(--qs-line);
+            border-radius: 20px;
+            background:
+              linear-gradient(180deg, rgba(255,255,255,0.98), rgba(248,251,255,0.92));
+            box-shadow: 0 12px 30px rgba(31, 67, 131, 0.06);
+          }
+          .model-story-card__eyebrow,
+          .decision-room-card__eyebrow {
+            display: block;
+            color: var(--qs-blue);
+            font-size: 0.66rem;
+            font-weight: 900;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            margin-bottom: 0.24rem;
+          }
+          .model-story-card h3,
+          .decision-room-card h3 {
+            margin: 0;
+            color: var(--qs-ink);
+            font-size: 1.02rem;
+            font-weight: 900;
+          }
+          .model-story-card p,
+          .decision-room-card p {
+            margin: 0.4rem 0 0;
+            color: var(--qs-muted);
+            font-size: 0.82rem;
+            line-height: 1.45;
+          }
+          .model-story-card__chips {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.35rem;
+            margin-top: 0.65rem;
+          }
+          .model-story-card__chips span {
+            padding: 0.24rem 0.55rem;
+            border-radius: 999px;
+            background: #eef5ff;
+            color: var(--qs-ink);
+            font-size: 0.72rem;
+            font-weight: 800;
+          }
+          .decision-room-grid {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 0.65rem;
+            margin: 0.7rem 0;
+          }
+          .decision-room-list-card {
+            padding: 0.75rem 0.85rem;
+            border: 1px solid var(--qs-line);
+            border-radius: 18px;
+            background: rgba(255,255,255,0.86);
+          }
+          .decision-room-list-card h4 {
+            margin: 0 0 0.45rem;
+            color: var(--qs-ink);
+            font-size: 0.9rem;
+            font-weight: 900;
+          }
+          .decision-room-list-card ul {
+            margin: 0;
+            padding-left: 1.05rem;
+            color: var(--qs-muted);
+            font-size: 0.78rem;
+            line-height: 1.45;
+          }
           .filter-note {
             margin-top: 1.5rem;
             padding: 0.78rem 0.9rem;

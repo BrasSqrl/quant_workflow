@@ -285,7 +285,7 @@ PRESET_DEFINITIONS: dict[PresetName, PresetDefinition] = {
         data_structure=DataStructure.PANEL,
         model=ModelConfig(model_type=ModelType.PANEL_REGRESSION),
         feature_engineering=FeatureEngineeringConfig(
-            derive_date_parts=True,
+            derive_date_parts=False,
             drop_raw_date_columns=False,
         ),
         diagnostics=DiagnosticConfig(quantile_bucket_count=12),

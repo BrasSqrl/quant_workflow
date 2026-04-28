@@ -32,12 +32,16 @@ from quant_pd_framework.presentation import (
     summarize_run_kpis,
 )
 from quant_pd_framework.streamlit_ui.data import sample_frame
+from quant_pd_framework.streamlit_ui.decision_room import build_decision_room_payload
 from quant_pd_framework.streamlit_ui.enterprise_workflow import (
     ReviewerRecord,
     build_artifact_explorer_frame,
     build_model_card_markdown,
 )
+from quant_pd_framework.streamlit_ui.glossary import render_glossary_badges
+from quant_pd_framework.streamlit_ui.output_explainers import render_output_explainer
 from quant_pd_framework.streamlit_ui.run_execution import format_elapsed_seconds
+from quant_pd_framework.streamlit_ui.scorecard_workbench import render_binning_theater
 from quant_pd_framework.streamlit_ui.state import (
     build_plotly_key,
     prepare_table_for_display,
@@ -408,6 +412,7 @@ def render_decision_summary(snapshot: dict[str, Any]) -> None:
         )
 
     (
+        decision_room_tab,
         metric_tab,
         issue_tab,
         feature_tab,
@@ -416,6 +421,7 @@ def render_decision_summary(snapshot: dict[str, Any]) -> None:
         traceability_tab,
     ) = st.tabs(
         [
+            "Decision Room",
             "Metrics",
             "Issues",
             "Feature Drivers",
@@ -424,7 +430,10 @@ def render_decision_summary(snapshot: dict[str, Any]) -> None:
             "Traceability Map",
         ]
     )
+    with decision_room_tab:
+        _render_decision_room(snapshot, summary)
     with metric_tab:
+        render_output_explainer("split_metrics")
         st.dataframe(
             prepare_table_for_display(summary["metric_frame"]),
             width="stretch",
@@ -437,12 +446,14 @@ def render_decision_summary(snapshot: dict[str, Any]) -> None:
             hide_index=True,
         )
     with feature_tab:
+        render_output_explainer("feature_importance")
         st.dataframe(
             prepare_table_for_display(summary["feature_frame"]),
             width="stretch",
             hide_index=True,
         )
     with validation_tab:
+        render_output_explainer("validation_checklist")
         st.dataframe(
             prepare_table_for_display(summary["validation_checklist_frame"]),
             width="stretch",
@@ -455,11 +466,88 @@ def render_decision_summary(snapshot: dict[str, Any]) -> None:
             hide_index=True,
         )
     with traceability_tab:
+        render_output_explainer("evidence_traceability_map")
         st.dataframe(
             prepare_table_for_display(summary["traceability_frame"]),
             width="stretch",
             hide_index=True,
         )
+
+
+def _render_decision_room(snapshot: dict[str, Any], summary: dict[str, Any]) -> None:
+    payload = build_decision_room_payload(snapshot, summary)
+    st.markdown(
+        f"""
+        <div class="decision-room-card">
+          <span class="decision-room-card__eyebrow">Decision Room</span>
+          <h3>{escape(payload["readiness"])}</h3>
+          <p>
+            Meeting-ready view of the model recommendation, open items, top
+            drivers, key artifacts, and next actions. Detailed evidence remains
+            available in the tabs beside this view.
+          </p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    render_glossary_badges(
+        ["AUC", "KS", "Calibration", "PSI", "WoE", "Challenger"],
+        caption="Review terms",
+    )
+    render_metric_strip(payload["headline_cards"], compact=True)
+
+    st.markdown("#### Decision Rationale")
+    for item in payload["rationale"]:
+        st.markdown(f"- {item}")
+
+    columns = st.columns(3, gap="medium")
+    with columns[0]:
+        _render_decision_room_list(
+            "Attention Items",
+            [
+                f"{item['source']}: {item['message']}"
+                for item in payload["attention_items"]
+            ]
+            or ["No open attention items surfaced in the decision summary."],
+        )
+    with columns[1]:
+        _render_decision_room_list(
+            "Top Drivers",
+            [
+                f"{item['feature']} ({item['value']})"
+                for item in payload["top_features"]
+                if item["feature"]
+            ]
+            or ["No feature-driver table was available."],
+        )
+    with columns[2]:
+        _render_decision_room_list(
+            "Next Actions",
+            payload["next_actions"],
+        )
+
+    if payload["key_artifacts"]:
+        st.markdown("#### Key Artifacts")
+        st.dataframe(
+            prepare_table_for_display(pd.DataFrame(payload["key_artifacts"])),
+            width="stretch",
+            hide_index=True,
+        )
+    else:
+        st.caption("No primary artifact links were available in the decision summary.")
+
+
+def _render_decision_room_list(title: str, items: list[str]) -> None:
+    list_items = "".join(f"<li>{escape(item)}</li>" for item in items)
+    st.markdown(
+        f"""
+        <div class="decision-room-list-card">
+          <h4>{escape(title)}</h4>
+          <ul>{list_items}</ul>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
 
 def _render_decision_level_message(*, recommendation: str, level: str) -> None:
@@ -618,6 +706,7 @@ def render_subset_search_section(
                 render_chart_review_context(descriptor)
                 if descriptor.description:
                     st.caption(descriptor.description)
+                render_output_explainer(descriptor.key)
                 render_plotly_figure(
                     figure,
                     key=build_plotly_key(
@@ -1318,6 +1407,7 @@ def render_section_panel(
                 render_chart_review_context(descriptor)
                 if descriptor.description:
                     st.caption(descriptor.description)
+                render_output_explainer(descriptor.key)
                 render_plotly_figure(
                     figure,
                     key=build_plotly_key(
@@ -1340,6 +1430,7 @@ def render_section_panel(
             with st.expander(descriptor.title, expanded=view_mode == "Summary"):
                 if descriptor.description:
                     st.caption(descriptor.description)
+                render_output_explainer(descriptor.key)
                 preview = table if view_mode == "Technical" else table.head(25)
                 st.dataframe(
                     prepare_table_for_display(preview),
@@ -1451,6 +1542,14 @@ def render_scorecard_workbench_section(
             },
         ]
         render_metric_strip(feature_cards, compact=True)
+    render_glossary_badges(["WoE", "IV", "Scorecard", "Reason Code"], caption="Scorecard terms")
+    render_output_explainer("scorecard_woe_table")
+    render_binning_theater(
+        selected_feature=selected_feature,
+        feature_summary=feature_summary,
+        woe_table=woe_table,
+        points_table=points_table,
+    )
 
     display_surfaces = set(filter_state["display_surfaces"])
     if "Charts" in display_surfaces:
@@ -1534,11 +1633,17 @@ def render_scorecard_workbench_section(
         ]
         if not reason_code_table.empty:
             table_payloads.append(("Reason Code Frequency", reason_code_table.head(25)))
+        explainer_keys = {
+            "Selected Feature Summary": "scorecard_feature_summary",
+            "WoE Detail": "scorecard_woe_table",
+            "Points Detail": "scorecard_points_table",
+        }
 
         for title, table in table_payloads:
             if table.empty:
                 continue
             with st.expander(title, expanded=title == "Selected Feature Summary"):
+                render_output_explainer(explainer_keys.get(title, ""))
                 st.dataframe(
                     prepare_table_for_display(table),
                     width="stretch",

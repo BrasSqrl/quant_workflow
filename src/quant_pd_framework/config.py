@@ -308,7 +308,7 @@ class CleaningConfig:
 class FeatureEngineeringConfig:
     """Feature creation rules that remain simple and extensible in v1."""
 
-    derive_date_parts: bool = True
+    derive_date_parts: bool = False
     drop_raw_date_columns: bool = True
     date_parts: list[str] = field(default_factory=lambda: ["year", "month", "quarter", "dayofweek"])
 

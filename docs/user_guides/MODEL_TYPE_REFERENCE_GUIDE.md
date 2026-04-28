@@ -21,12 +21,15 @@ Every model run starts the same way:
 5. Choose `fit_new_model` unless you are scoring a saved model or running
    feature-subset search.
 6. Choose the model type.
-7. Choose the correct target mode: `binary` or `continuous`.
-8. Configure split strategy, model settings, diagnostics, exports, and optional
+7. Read the Model Type Story Card that appears beside the selector. It explains
+   best-use cases, avoid conditions, key settings, outputs to review, and
+   validation questions for the selected model.
+8. Choose the correct target mode: `binary` or `continuous`.
+9. Configure split strategy, model settings, diagnostics, exports, and optional
    challenger or policy settings.
-9. Open Step 3, `Readiness Check`, resolve blocking issues, and run the
+10. Open Step 3, `Readiness Check`, resolve blocking issues, and run the
    workflow.
-10. Review Step 4 outputs and Step 5 decision summary.
+11. Review Step 4 outputs and the Step 5 Decision Room / decision summary.
 
 The most important setup decision is target mode:
 
@@ -261,6 +264,14 @@ Use `scorecard_logistic_regression` when:
    scorecard bin overrides such as `0.20, 0.35, 0.50, 0.75`.
 9. Run Step 3.
 10. Review the Scorecard / Binning Workbench in Step 4.
+11. Open `Binning Theater` for the selected feature when you want a focused
+    review of bucket quality, IV, largest-bin share, WoE span, selected WoE
+    rows, selected point rows, and a copyable manual-bin override candidate.
+
+The Binning Theater is review-only. It does not change bins or refit the model
+inside the completed run. If you copy override edges from it, paste them back
+into Step 2 and rerun the workflow so the exported model, tests, and artifacts
+all reflect the selected bin policy.
 
 ### Outputs To Review
 

@@ -163,6 +163,9 @@ The framework also includes development-focused workflow features:
   diagnostic tables available as separate exports
 - validation checklist and evidence traceability exports that make Step 5 and
   offline review easier to audit
+- in-app guidance surfaces including model type story cards, glossary hover
+  badges, high-value output explainers, a scorecard Binning Theater, and a
+  Step 5 Decision Room landing view
 
 ## Design Goals
 
@@ -204,13 +207,8 @@ The repository now includes an explicit engineering rubric and alignment note:
 - [docs/RUBRIC_ALIGNMENT.md](./docs/RUBRIC_ALIGNMENT.md)
 - [docs/UI_UX_STANDARD.md](./docs/UI_UX_STANDARD.md)
 - [docs/UI_ENTERPRISE_REDESIGN.md](./docs/UI_ENTERPRISE_REDESIGN.md)
-- [docs/DEVELOPMENT_ROADMAP.md](./docs/DEVELOPMENT_ROADMAP.md) records the
-  completed optimization and maintainability ledger
-- [docs/ENTERPRISE_HARDENING_ROADMAP.md](./docs/ENTERPRISE_HARDENING_ROADMAP.md)
-  records the implemented report-size, validation-checklist, traceability, and
-  regression-coverage hardening work
-- [docs/DEFERRED_REPORT_SIZE_ROADMAP.md](./docs/DEFERRED_REPORT_SIZE_ROADMAP.md)
-  records deferred planning for future optional report distribution features
+- [docs/UI_USABILITY_ROADMAP.md](./docs/UI_USABILITY_ROADMAP.md) records the
+  implemented roadmap for the current in-app guidance and usability surfaces
 
 ## Transparency and Auditability Guides
 
@@ -222,7 +220,6 @@ The repository now includes dedicated audit-oriented reference guides:
 - [docs/PREPROCESSING_AND_DATA_TREATMENT_GUIDE.md](./docs/PREPROCESSING_AND_DATA_TREATMENT_GUIDE.md)
 - [docs/CHECKPOINT_STAGE_GUIDE.md](./docs/CHECKPOINT_STAGE_GUIDE.md)
 - [docs/GUI_TO_CODE_TRACEABILITY_GUIDE.md](./docs/GUI_TO_CODE_TRACEABILITY_GUIDE.md)
-- [docs/LOGISTIC_REGRESSION_WALKTHROUGH.html](./docs/LOGISTIC_REGRESSION_WALKTHROUGH.html)
 - [docs/SAGEMAKER_SETUP.md](./docs/SAGEMAKER_SETUP.md)
 
 There is also an executive-level non-technical summary at:
@@ -281,11 +278,9 @@ quant/
       .gitkeep
   docs/
     README.md
-    DEVELOPMENT_ROADMAP.md
-    DEFERRED_REPORT_SIZE_ROADMAP.md
     ENGINEERING_RUBRIC.md
     GUI_TO_CODE_TRACEABILITY_GUIDE.md
-    LOGISTIC_REGRESSION_WALKTHROUGH.html
+    UI_USABILITY_ROADMAP.md
   METRIC_CATALOG.md
   MODEL_CATALOG.md
   PREPROCESSING_AND_DATA_TREATMENT_GUIDE.md
@@ -773,6 +768,18 @@ The GUI now includes several development-focused enterprise UX surfaces:
   target, model family, metrics, feature set, warnings, and reviewer decision.
 - `Guidance Library` provides compact in-app explanations for major workflow
   choices without requiring users to leave the GUI.
+- `Model Type Story Cards` appear beside the Step 2 model selector and explain
+  each model's best use, avoid conditions, key settings, outputs, and review
+  questions.
+- `Explain this output` expanders appear on high-value Step 4 and Step 5
+  charts/tables so reviewers can quickly understand what the output shows, how
+  to read it, and what action to take.
+- `Decision Room` is the default Step 5 landing tab for a meeting-ready view of
+  recommendation, attention items, top drivers, key artifacts, and next
+  actions.
+- `Binning Theater` appears for scorecard runs in the Scorecard / Binning
+  Workbench and helps users review WoE buckets, IV, points, and manual-bin
+  override candidates without refitting the model live.
 
 ### Diagnostic Studio Layout
 
@@ -1184,8 +1191,11 @@ The default feature engineering logic is intentionally simple and transparent.
 Current behavior:
 
 - parse configured date columns
-- optionally derive date parts such as year, month, quarter, day, and day-of-week
-- optionally exclude raw date columns from model features
+- optionally derive date parts such as year, month, quarter, day, and
+  day-of-week as model features; this is off by default
+- exclude raw datetime columns from model features
+- optionally drop non-split raw date columns from the working dataframe when
+  they are no longer needed
 
 ### `TargetConfig`
 

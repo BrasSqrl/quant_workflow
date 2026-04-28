@@ -200,6 +200,9 @@ Loading behavior:
 | --- | --- | --- | --- |
 | `Workflow status` | current dataset availability, config preview, guardrail findings, and last-run snapshot | `build_workflow_step_states(...)`, `render_workflow_status_strip(...)` | runtime-only status table |
 | `Guidance Library` | runtime-only help topics | `GUIDANCE_TOPICS`, `render_guidance_center(...)` | none |
+| `Glossary hover badges` | runtime-only definitions | `streamlit_ui.glossary` | none |
+| `Explain this output` | runtime-only interpretation guidance | `streamlit_ui.output_explainers` | none |
+| `Decision Room` | Step 5 decision synthesis | `streamlit_ui.decision_room`, `render_decision_summary(...)` | `reports/decision_summary.md` |
 | `Readiness Issue Center` | config build errors, guardrail findings, and profile mismatch warnings | `collect_readiness_issues(...)`, `render_issue_center(...)` | visible pre-run issue table |
 | `Run Preflight Summary` | resolved `FrameworkConfig`, editor tables, and dataset shape | `build_preflight_summary(...)`, `render_preflight_summary(...)` | visible pre-run summary |
 | `Configuration Diff Viewer` | current config vs active profile and last completed run | `build_config_diff_frame(...)` | visible diff table |
@@ -219,7 +222,7 @@ Notes:
 | `Execution mode` | `ExecutionConfig.mode` | `orchestrator._resolve_execution_config`, `ModelTrainingStep` |
 | `Existing model artifact path` | `ExecutionConfig.existing_model_path` | `ModelTrainingStep` |
 | `Existing run config path` | `ExecutionConfig.existing_config_path` | `orchestrator._resolve_execution_config` |
-| `Model type` | `ModelConfig.model_type` | `build_model_adapter(...)` |
+| `Model type` | `ModelConfig.model_type` | `build_model_adapter(...)`; `streamlit_ui.model_story_cards` renders guidance only |
 | `Target mode` | `TargetConfig.mode` | `TargetConstructionStep`, `ModelConfig.validate(...)` |
 | `Data structure` | `SplitConfig.data_structure` | `SplitStep` |
 | `Output target name` | `TargetConfig.output_column` | `TargetConstructionStep` |
@@ -297,8 +300,8 @@ These controls only matter when `ExecutionConfig.mode` is
 | `Drop duplicate rows` | `CleaningConfig.drop_duplicate_rows` | `CleaningStep` |
 | `Drop rows with missing target` | `CleaningConfig.drop_rows_with_missing_target` | `CleaningStep` |
 | `Drop fully null feature columns` | `CleaningConfig.drop_all_null_feature_columns` | `CleaningStep` |
-| `Create date-part features` | `FeatureEngineeringConfig.derive_date_parts` | `FeatureEngineeringStep` |
-| `Drop raw date columns ...` | `FeatureEngineeringConfig.drop_raw_date_columns` | `FeatureEngineeringStep` |
+| `Use date-part features in model` | `FeatureEngineeringConfig.derive_date_parts`, `FeatureEngineeringConfig.date_parts`; default `False` | `FeatureEngineeringStep` creates generated date-part model features only when enabled |
+| `Drop raw date columns from working data when safe` | `FeatureEngineeringConfig.drop_raw_date_columns` | `FeatureEngineeringStep`; raw datetime columns remain excluded from model features |
 | `Date parts` | `FeatureEngineeringConfig.date_parts` | `FeatureEngineeringStep` |
 
 ## 12. Step 2 Group: Diagnostics & Exports
@@ -579,6 +582,8 @@ Examples:
 - segment filter
 - view depth
 - chart/table display selection
+- high-value `Explain this output` expanders
+- scorecard `Binning Theater` review panel when scorecard workbench outputs exist
 
 These are presentation controls, not modeling controls.
 
@@ -602,6 +607,7 @@ Notes:
 
 | GUI surface | Config or runtime target | Main implementation | Audit surface |
 | --- | --- | --- | --- |
+| `Decision Room` tab | completed run decision summary payload | `streamlit_ui.decision_room.build_decision_room_payload(...)`, `render_decision_summary(...)` | `reports/decision_summary.md` |
 | `Decision Summary` | completed run snapshot, metrics, diagnostics, warnings, feature importance, and artifact paths | `decision_summary.build_decision_summary(...)`, `render_decision_summary(...)` | `reports/decision_summary.md` |
 | `Download decision summary` | completed run snapshot | `decision_summary.build_decision_summary_markdown(...)` | downloaded Markdown scorecard |
 | `Validation Checklist` tab | `diagnostics_tables["validation_checklist"]` | `validation_evidence.build_validation_checklist(...)`, `render_decision_summary(...)` | `tables/governance/validation_checklist.*` |

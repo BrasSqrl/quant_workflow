@@ -128,6 +128,12 @@ from quant_pd_framework.streamlit_ui.enterprise_workflow import (
 from quant_pd_framework.streamlit_ui.error_guidance import (
     classify_workflow_exception as ui_classify_workflow_exception,
 )
+from quant_pd_framework.streamlit_ui.glossary import (
+    glossary_help_text as ui_glossary_help_text,
+)
+from quant_pd_framework.streamlit_ui.model_story_cards import (
+    render_model_story_card as ui_render_model_story_card,
+)
 from quant_pd_framework.streamlit_ui.results import (
     render_decision_summary as ui_render_decision_summary,
 )
@@ -1001,7 +1007,16 @@ def run_app() -> None:
                 index=[model_type.value for model_type in ModelType].index(
                     preset_inputs.model.model_type.value
                 ),
+                help=ui_glossary_help_text(
+                    "PD",
+                    "LGD",
+                    "Scorecard",
+                    "Tobit",
+                    "Quantile Regression",
+                    "Challenger",
+                ),
             )
+            ui_render_model_story_card(model_type, advanced=advanced_workspace)
             target_mode = st.selectbox(
                 "Target mode",
                 options=[target_mode.value for target_mode in TargetMode],
@@ -1424,18 +1439,36 @@ def run_app() -> None:
                 value=True,
             )
             derive_date_parts = st.checkbox(
-                "Create date-part features",
+                "Use date-part features in model",
                 value=preset_inputs.feature_engineering.derive_date_parts,
+                help=(
+                    "When on, Quant Studio creates selected year/month/quarter/day "
+                    "features from configured date columns and includes those generated "
+                    "features in the model. Turn this off if date-derived fields should "
+                    "not influence the fitted model."
+                ),
             )
             drop_raw_date_columns = st.checkbox(
-                "Drop raw date columns from model features",
+                "Drop raw date columns from working data when safe",
                 value=preset_inputs.feature_engineering.drop_raw_date_columns,
+                help=(
+                    "Raw datetime columns are not modeled directly. They are retained when "
+                    "needed for panel/time splits or diagnostics, and otherwise dropped from "
+                    "the working dataframe when this is on. This does not control generated "
+                    "date-part features."
+                ),
             )
             date_parts = st.multiselect(
                 "Date parts",
                 options=["year", "month", "quarter", "day", "dayofweek"],
                 default=preset_inputs.feature_engineering.date_parts,
+                disabled=not derive_date_parts,
             )
+            if derive_date_parts and date_parts:
+                st.caption(
+                    "Selected date parts will appear as final model features. To exclude all "
+                    "date-derived fields, turn off `Use date-part features in model`."
+                )
 
         with right_config_column.expander("Diagnostics & Exports", expanded=False):
             large_data_mode = bool(

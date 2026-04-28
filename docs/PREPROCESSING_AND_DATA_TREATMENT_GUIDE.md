@@ -247,7 +247,9 @@ When dropping all-null columns, the step protects:
 Current supported behavior:
 
 - derive date parts from configured date columns
-- optionally drop raw date columns from model features
+- exclude raw datetime columns from model features
+- optionally drop non-split raw date columns from the working dataframe when
+  they are no longer needed
 - create hazard-time features for discrete-time hazard models
 
 Supported date parts:
@@ -267,6 +269,23 @@ The feature-engineering step excludes:
 - identifier columns
 - ignored columns
 - retained date columns
+
+### Date-part feature behavior
+
+`Use date-part features in model` controls whether generated fields such as
+`as_of_date_year`, `as_of_date_month`, `as_of_date_quarter`, and
+`as_of_date_dayofweek` become model features.
+
+This setting defaults to off so date-derived fields do not enter the model
+unless the user explicitly enables them.
+
+`Drop raw date columns from working data when safe` does not control those
+generated fields. Raw datetime columns are not modeled directly. They are kept
+when needed for panel/time splits or diagnostics and otherwise removed from the
+working dataframe when the drop setting is enabled.
+
+To prevent all date-derived fields from entering the final model, turn off
+`Use date-part features in model` or clear the selected date parts.
 
 ### Hazard-model additions
 

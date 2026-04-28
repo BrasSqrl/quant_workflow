@@ -20,9 +20,14 @@ Start with these files:
 - `tables/governance/evidence_traceability_map.csv` or `.parquet`
 
 Use Step 4, `Results & Artifacts`, for detailed diagnostics in the GUI. Use
-Step 5, `Decision Summary`, for the recommendation, decision issues, key
-metrics, feature drivers, validation checklist, evidence index, and
+Step 5, `Decision Summary`, for the Decision Room, recommendation, decision
+issues, key metrics, feature drivers, validation checklist, evidence index, and
 traceability map. Use the exported run folder when reviewing offline.
+
+The Decision Room is the default Step 5 landing tab. It is intended for a live
+review meeting: start there for the recommendation, attention items, top
+drivers, key artifacts, and next actions, then move into the technical tabs
+when a reviewer needs supporting evidence.
 
 ## Recommended Review Sequence
 
@@ -110,6 +115,22 @@ Offline, use:
 
 These files are review aids. They do not approve the model automatically; they
 make it easier to see whether supporting evidence exists and where it lives.
+
+## In-App Interpretation Aids
+
+Quant Studio includes several UI aids that help reviewers interpret evidence
+without changing the model or calculations:
+
+- `Explain this output` appears on selected high-value charts and tables and
+  summarizes what the output shows, how to read it, good/bad signals, and the
+  expected reviewer action.
+- Glossary badges appear near selected technical terms and provide short hover
+  definitions for common metrics and modeling concepts.
+- Model Type Story Cards in Step 2 document why the selected model family fits
+  the use case and which outputs should receive extra review.
+- Binning Theater appears for scorecard runs and helps reviewers inspect WoE
+  buckets, IV, point values, sparse-bin warnings, and manual-bin override
+  candidates.
 
 ## Model Performance Review
 
