@@ -246,12 +246,18 @@ Use `scorecard_logistic_regression` when:
 
 ### GUI Walkthrough
 
-1. In Step 1, mark your default/event column as the target.
-2. Mark continuous and categorical predictors as features.
-3. In Step 2, choose `fit_new_model`.
-4. Set `Target mode` to `Binary`.
-5. Set `Model type` to `Scorecard Logistic Regression`.
-6. In `Model Settings`, configure:
+1. In Step 1, use the bundled sample for a complete demo, or load your own
+   binary default/event dataset.
+2. Mark your default/event column as the target.
+3. For panel data, mark the observation date as `date` and the loan/account ID
+   as `identifier`.
+4. Mark continuous financial ratios, loan behavior fields, and categorical
+   borrower descriptors as features.
+5. In Step 2, choose `fit_new_model`.
+6. Set `Target mode` to `Binary`.
+7. Set `Data structure` to `Panel` when using the bundled sample.
+8. Set `Model type` to `Scorecard Logistic Regression`.
+9. In `Model Settings`, configure:
    - `Scorecard bins`
    - `Scorecard monotonicity`
    - `Scorecard min bin share`
@@ -259,12 +265,12 @@ Use `scorecard_logistic_regression` when:
    - `Scorecard PDO`
    - `Scorecard odds reference`
    - `Reason code count`
-7. In `Diagnostics & Exports`, keep `Enable scorecard workbench` on.
-8. If you want manual bin control, enable `Manual Review Workflow` and enter
+10. In `Diagnostics & Exports`, keep `Enable scorecard workbench` on.
+11. If you want manual bin control, enable `Manual Review Workflow` and enter
    scorecard bin overrides such as `0.20, 0.35, 0.50, 0.75`.
-9. Run Step 3.
-10. Review the Scorecard / Binning Workbench in Step 4.
-11. Open `Binning Theater` for the selected feature when you want a focused
+12. Run Step 3.
+13. Review the Scorecard / Binning Workbench in Step 4.
+14. Open `Binning Theater` for the selected feature when you want a focused
     review of bucket quality, IV, largest-bin share, WoE span, selected WoE
     rows, selected point rows, and a copyable manual-bin override candidate.
 

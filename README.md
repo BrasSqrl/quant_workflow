@@ -32,6 +32,14 @@ The framework assumes you begin with one of the following inputs:
 - an Excel file
 - a Parquet file
 
+The GUI also includes a bundled quick-start dataset: a 1,000-row synthetic
+commercial-loan panel with 100 loans across 10 quarter-end observations,
+financial statement items, loan behavior fields, categorical borrower
+attributes, and a binary `default_status` target. Its default GUI setup is
+tuned for a scorecard logistic regression run so users can review WoE binning,
+scorecard points, reason codes, and financial-ratio feature behavior before
+moving to real data.
+
 The default workflow then moves through the main stages of a quantitative modeling process:
 
 1. Ingestion
@@ -944,7 +952,10 @@ from quant_pd_framework import (
     CleaningConfig,
     ColumnRole,
     ColumnSpec,
+    DataStructure,
     FrameworkConfig,
+    ModelConfig,
+    ModelType,
     PresetName,
     QuantModelOrchestrator,
     ScenarioConfig,
@@ -979,16 +990,23 @@ config = FrameworkConfig(
         positive_values=[1],
     ),
     split=SplitConfig(
-        data_structure=preset.data_structure,
+        data_structure=DataStructure.PANEL,
         date_column="as_of_date",
+        entity_column="loan_id",
         train_size=0.6,
         validation_size=0.2,
         test_size=0.2,
     ),
-    model=preset.model,
+    model=ModelConfig(
+        model_type=ModelType.SCORECARD_LOGISTIC_REGRESSION,
+        class_weight="balanced",
+        scorecard_bins=5,
+    ),
     comparison=preset.comparison,
     feature_policy=preset.feature_policy,
     explainability=preset.explainability,
+    scorecard=preset.scorecard,
+    scorecard_workbench=preset.scorecard_workbench,
     scenario_testing=ScenarioTestConfig(
         enabled=True,
         evaluation_split="test",

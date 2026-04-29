@@ -210,7 +210,10 @@ def select_input_dataframe() -> SelectedInputDataset:
                 )
                 return SelectedInputDataset(None, "", {}, large_data_mode=True)
             if source_mode == "sample":
-                st.caption("Uses the bundled synthetic PD dataset for a quick start.")
+                st.caption(
+                    "Uses the bundled 1,000-row synthetic commercial-loan panel "
+                    "dataset for a scorecard quick start."
+                )
             elif source_mode == "data_load":
                 DATA_LOAD_DIR.mkdir(exist_ok=True)
                 st.caption(

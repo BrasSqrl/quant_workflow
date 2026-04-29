@@ -175,17 +175,32 @@ class GUIBuildInputs:
     artifacts: ArtifactConfig = field(default_factory=ArtifactConfig)
 
 
-def build_column_editor_frame(dataframe: pd.DataFrame) -> pd.DataFrame:
+def build_column_editor_frame(
+    dataframe: pd.DataFrame,
+    *,
+    use_column_name_hints: bool = False,
+) -> pd.DataFrame:
     """Creates the editable schema table shown in the GUI."""
 
     rows: list[dict[str, Any]] = []
+    identifier_assigned = False
     for column in dataframe.columns:
+        role = ColumnRole.FEATURE
+        enabled = True
+        if use_column_name_hints:
+            role, enabled = infer_column_role_from_name(column)
+            if role == ColumnRole.IDENTIFIER:
+                if identifier_assigned:
+                    role = ColumnRole.IGNORE
+                    enabled = False
+                else:
+                    identifier_assigned = True
         rows.append(
             {
-                "enabled": True,
+                "enabled": enabled,
                 "source_name": column,
                 "name": column,
-                "role": ColumnRole.FEATURE.value,
+                "role": role.value,
                 "dtype": infer_dtype_label(dataframe[column]),
                 "missing_value_policy": MissingValuePolicy.INHERIT_DEFAULT.value,
                 "missing_value_fill_value": "",
@@ -198,6 +213,21 @@ def build_column_editor_frame(dataframe: pd.DataFrame) -> pd.DataFrame:
         )
 
     return pd.DataFrame(rows, columns=EDITOR_COLUMNS)
+
+
+def infer_column_role_from_name(column_name: str) -> tuple[ColumnRole, bool]:
+    """Infers common demo-data column roles from conservative naming hints."""
+
+    normalized = column_name.strip().lower()
+    if normalized in {"default_status", "default_flag", "target", "event_flag"}:
+        return ColumnRole.TARGET_SOURCE, True
+    if normalized in {"as_of_date", "observation_date", "reporting_date", "period_end_date"}:
+        return ColumnRole.DATE, True
+    if normalized in {"loan_id", "account_id", "facility_id", "entity_id"}:
+        return ColumnRole.IDENTIFIER, True
+    if normalized in {"legacy_text_field", "drop_me", "placeholder_text"}:
+        return ColumnRole.IGNORE, False
+    return ColumnRole.FEATURE, True
 
 
 def build_column_editor_frame_from_schema(schema: SchemaConfig) -> pd.DataFrame:

@@ -2,7 +2,10 @@
 
 This guide gets a user from launch to a completed first model run. It uses the
 bundled sample data so the workflow can be learned before moving to a real
-dataset.
+dataset. The bundled sample is a 1,000-row synthetic commercial-loan panel:
+100 loans observed across 10 quarter-end reporting periods with borrower
+attributes, loan behavior fields, financial statement items, ratios, and a
+binary `default_status` target.
 
 ## What You Will Produce
 
@@ -64,36 +67,40 @@ Quant Studio opens to Step 1 by default.
 3. Open `Column Designer`.
 4. Confirm `default_status` is the target source.
 5. Confirm `as_of_date` is the date column.
-6. Disable obvious non-modeling fields such as identifiers or placeholder text.
-7. Open Step 2, `Model Configuration`.
-8. Use `Execution mode = fit_new_model`.
-9. Use `Model type = logistic_regression`.
-10. Use `Target mode = binary`.
-11. Use `Data structure = cross_sectional`.
-12. Keep the default train, validation, and test split for the first run.
-13. Keep individual figure HTML/PNG export off unless separate chart files are needed.
-14. Keep `Include enhanced report visuals` on for a polished first report, or turn it off for faster iteration runs.
-15. Leave `Advanced Visual Analytics` off for the first run unless you want the
+6. Confirm `loan_id` is the identifier for the panel.
+7. Confirm `legacy_text_field` is disabled or ignored.
+8. Open Step 2, `Model Configuration`.
+9. Use `Execution mode = fit_new_model`.
+10. Use `Model type = scorecard_logistic_regression`.
+11. Use `Target mode = binary`.
+12. Use `Data structure = panel`.
+13. Keep the default train, validation, and test split for the first run.
+14. Keep `Enable scorecard workbench` on so WoE bins, scorecard points, and
+    reason-code outputs are produced.
+15. Keep individual figure HTML/PNG export off unless separate chart files are needed.
+16. Keep `Include enhanced report visuals` on for a polished first report, or turn it off for faster iteration runs.
+17. Leave `Advanced Visual Analytics` off for the first run unless you want the
     extra exploratory chart section.
-16. Leave the report-size controls at their defaults unless the HTML report must embed denser charts.
-17. Leave `Compact prediction exports` on unless you need every modeled feature repeated in the scored output.
-18. Leave `Retain full diagnostic working dataframe` off unless the machine has enough RAM and full-row diagnostic tables are required.
-19. Leave `Keep all checkpoints` off unless support needs every saved context retained after the run.
-20. Open Step 3, `Readiness Check`.
-21. Resolve blocking readiness issues if any appear.
-22. Leave `Workflow run style = Run full workflow` for the first run.
-23. Click `Run Quant Model Workflow`.
-24. Watch the `Run Status` panel for elapsed time, current stage, step
+18. Leave the report-size controls at their defaults unless the HTML report must embed denser charts.
+19. Leave `Compact prediction exports` on unless you need every modeled feature repeated in the scored output.
+20. Leave `Retain full diagnostic working dataframe` off unless the machine has enough RAM and full-row diagnostic tables are required.
+21. Leave `Keep all checkpoints` off unless support needs every saved context retained after the run.
+22. Open Step 3, `Readiness Check`.
+23. Resolve blocking readiness issues if any appear.
+24. Leave `Workflow run style = Run full workflow` for the first run.
+25. Click `Run Quant Model Workflow`.
+26. Watch the `Run Status` panel for elapsed time, current stage, step
     progress, and the `Checkpoint Flow` chart. The flow chart highlights
     the active major stage and keeps completed, optional-failed, and failed
     stages visually distinct.
-25. Use `Run checkpointed step-by-step` only when you want to run one saved
+27. Use `Run checkpointed step-by-step` only when you want to run one saved
     stage per click, inspect failures between stages, or retry optional
     diagnostic groups without refitting the model.
-26. Open Step 4, `Results & Artifacts`.
-27. Review the overview, model performance, calibration, governance, and artifact explorer sections.
-28. Open Step 5, `Decision Summary`.
-29. Review the recommendation, decision issues, primary metrics, feature drivers, validation checklist, evidence index, and traceability map.
+28. Open Step 4, `Results & Artifacts`.
+29. Review the overview, model performance, calibration, scorecard / binning,
+    governance, and artifact explorer sections.
+30. Open Step 5, `Decision Summary`.
+31. Review the recommendation, decision issues, primary metrics, feature drivers, validation checklist, evidence index, and traceability map.
 
 ## First Real-Data Run
 

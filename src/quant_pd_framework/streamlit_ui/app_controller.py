@@ -364,6 +364,37 @@ def default_scenario_editor_frame() -> pd.DataFrame:
     return pd.DataFrame(columns=SCENARIO_EDITOR_COLUMNS)
 
 
+def build_bundled_sample_gui_inputs() -> GUIBuildInputs:
+    """Returns first-run defaults tuned for the bundled scorecard panel demo."""
+
+    inputs = build_gui_inputs_from_preset(PresetName.PD_DEVELOPMENT)
+    inputs.preset_name = None
+    inputs.model = replace(
+        inputs.model,
+        model_type=ModelType.SCORECARD_LOGISTIC_REGRESSION,
+        scorecard_bins=5,
+    )
+    inputs.data_structure = DataStructure.PANEL
+    inputs.target_mode = TargetMode.BINARY
+    inputs.target_output_column = "default_flag"
+    inputs.positive_values_text = "1"
+    inputs.documentation = replace(
+        inputs.documentation,
+        model_name="Bundled Commercial Loan Scorecard",
+        business_purpose=(
+            "Demonstrate scorecard logistic regression using synthetic panel loan "
+            "data with financial statement drivers."
+        ),
+        portfolio_name="Synthetic Commercial Loan Portfolio",
+        horizon_definition="Quarterly panel observations with a binary default indicator.",
+        target_definition=(
+            "Synthetic default flag generated from financial ratios, credit behavior, "
+            "and macro stress."
+        ),
+    )
+    return inputs
+
+
 def format_mapping_text(mapping: dict[str, str]) -> str:
     """Renders mapping dictionaries into a compact text input format."""
 
@@ -861,7 +892,10 @@ def run_app() -> None:
     workspace_keys = WorkspaceStateKeys.from_editor_key(editor_key)
     workspace_schema_frame = ui_get_or_initialize_frame(
         workspace_keys.schema_frame,
-        lambda: build_column_editor_frame(dataframe),
+        lambda: build_column_editor_frame(
+            dataframe,
+            use_column_name_hints=data_source_label == "bundled_sample",
+        ),
     )
     workspace_feature_dictionary_frame = ui_get_or_initialize_frame(
         workspace_keys.feature_dictionary_frame,
@@ -959,6 +993,12 @@ def run_app() -> None:
             except Exception as exc:
                 st.warning(f"Could not apply the active configuration profile: {exc}")
                 st.session_state.pop(CONFIGURATION_PROFILE_STATE_KEY, None)
+        elif data_source_label == "bundled_sample" and selected_preset_name_value == "custom":
+            preset_inputs = build_bundled_sample_gui_inputs()
+            st.caption(
+                "Bundled sample defaults are tuned for a panel scorecard logistic "
+                "regression demo with financial statement drivers."
+            )
         left_config_column, right_config_column = st.columns(2, gap="large")
 
         with left_config_column.expander("Core Setup", expanded=True):
