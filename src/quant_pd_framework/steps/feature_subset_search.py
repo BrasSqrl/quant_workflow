@@ -9,10 +9,21 @@ import numpy as np
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
-from sklearn.metrics import brier_score_loss, log_loss, roc_auc_score, roc_curve
+from sklearn.metrics import (
+    accuracy_score,
+    brier_score_loss,
+    explained_variance_score,
+    f1_score,
+    log_loss,
+    mean_absolute_error,
+    mean_squared_error,
+    r2_score,
+    roc_auc_score,
+    roc_curve,
+)
 
 from ..base import BasePipelineStep
-from ..config import ExecutionMode
+from ..config import ExecutionMode, ModelType, TargetMode, feature_subset_search_lower_is_better
 from ..context import PipelineContext
 from ..diagnostic_frameworks import _run_delong_test, _run_mcnemar_test
 from ..models import build_model_adapter
@@ -72,22 +83,33 @@ class FeatureSubsetSearchStep(BasePipelineStep):
                         for override in context.config.manual_review.scorecard_bin_overrides
                     },
                 )
+                model_feature_columns = self._model_input_columns(
+                    list(subset),
+                    train_frame,
+                    context,
+                )
                 adapter.fit(
-                    train_frame[list(subset)],
+                    train_frame[model_feature_columns],
                     train_frame[context.target_column],
-                    [feature for feature in context.numeric_features if feature in subset],
-                    [feature for feature in context.categorical_features if feature in subset],
+                    [
+                        feature
+                        for feature in context.numeric_features
+                        if feature in model_feature_columns
+                    ],
+                    [
+                        feature
+                        for feature in context.categorical_features
+                        if feature in model_feature_columns
+                    ],
                 )
 
-                ranking_scored, ranking_metrics = evaluator._score_binary_split(
-                    ranking_frame,
-                    context.config.subset_search.ranking_split,
-                    context.target_column,
-                    list(subset),
-                    adapter,
-                    context.config.model.threshold,
-                    True,
-                    context,
+                ranking_scored, ranking_metrics = self._score_candidate_split(
+                    evaluator=evaluator,
+                    frame=ranking_frame,
+                    split_name=context.config.subset_search.ranking_split,
+                    feature_columns=model_feature_columns,
+                    adapter=adapter,
+                    context=context,
                 )
                 ranking_calibration_error = self._calibration_error(
                     ranking_scored,
@@ -97,15 +119,13 @@ class FeatureSubsetSearchStep(BasePipelineStep):
                 test_metrics: dict[str, float | int | None] = {}
                 test_calibration_error: float | None = None
                 if test_frame is not None:
-                    test_scored, test_metrics = evaluator._score_binary_split(
-                        test_frame,
-                        "test",
-                        context.target_column,
-                        list(subset),
-                        adapter,
-                        context.config.model.threshold,
-                        True,
-                        context,
+                    test_scored, test_metrics = self._score_candidate_split(
+                        evaluator=evaluator,
+                        frame=test_frame,
+                        split_name="test",
+                        feature_columns=model_feature_columns,
+                        adapter=adapter,
+                        context=context,
                     )
                     test_calibration_error = self._calibration_error(
                         test_scored,
@@ -147,13 +167,16 @@ class FeatureSubsetSearchStep(BasePipelineStep):
 
         candidate_table = pd.DataFrame(candidate_rows)
         successful = candidate_table.loc[candidate_table["status"] == "success"].copy(deep=True)
+        successful = successful.loc[
+            pd.to_numeric(successful["ranking_value"], errors="coerce").notna()
+        ]
         if successful.empty:
             raise ValueError(
                 "Feature subset search did not produce any successful candidate evaluations."
             )
 
         ranking_metric = context.config.subset_search.ranking_metric
-        lower_is_better = ranking_metric in {"brier_score", "log_loss"}
+        lower_is_better = feature_subset_search_lower_is_better(ranking_metric)
         successful = successful.sort_values(
             ["ranking_value", "feature_count"],
             ascending=[lower_is_better, True],
@@ -164,17 +187,20 @@ class FeatureSubsetSearchStep(BasePipelineStep):
             successful,
             ranking_metric=ranking_metric,
         )
+        selection_score_columns = [
+            column_name
+            for column_name in [
+                "candidate_id",
+                "rank",
+                "overall_selection_score",
+                "ranking_metric_score",
+                "simplicity_score",
+                "calibration_score",
+            ]
+            if column_name in successful.columns
+        ]
         candidate_table = candidate_table.merge(
-            successful[
-                [
-                    "candidate_id",
-                    "rank",
-                    "overall_selection_score",
-                    "ranking_metric_score",
-                    "simplicity_score",
-                    "calibration_score",
-                ]
-            ],
+            successful[selection_score_columns],
             on="candidate_id",
             how="left",
         )
@@ -308,11 +334,11 @@ class FeatureSubsetSearchStep(BasePipelineStep):
             "failed_subsets": int((candidate_table["status"] == "failed").sum()),
             "best_candidate_id": str(best_candidate["candidate_id"]),
             "best_feature_count": int(best_candidate["feature_count"]),
-            "best_validation_roc_auc": float(best_candidate["ranking_roc_auc"]),
-            "best_validation_ks_statistic": float(best_candidate["ranking_ks_statistic"]),
-            "best_test_roc_auc": self._optional_float(best_candidate.get("test_roc_auc")),
-            "best_test_ks_statistic": self._optional_float(
-                best_candidate.get("test_ks_statistic")
+            f"best_{context.config.subset_search.ranking_split}_{ranking_metric}": (
+                self._optional_float(best_candidate.get("ranking_value"))
+            ),
+            f"best_test_{ranking_metric}": self._optional_float(
+                best_candidate.get(f"test_{ranking_metric}")
             ),
             "best_overall_selection_score": self._optional_float(
                 best_candidate.get("overall_selection_score")
@@ -438,6 +464,69 @@ class FeatureSubsetSearchStep(BasePipelineStep):
             raise ValueError("Feature subset search could not build any candidate subsets.")
         return feature_sets
 
+    def _model_input_columns(
+        self,
+        feature_set: list[str],
+        frame: pd.DataFrame,
+        context: PipelineContext,
+    ) -> list[str]:
+        """Adds required grouping columns without counting them as candidate features."""
+
+        columns = list(feature_set)
+        model_type = context.config.model.model_type
+        group_column = None
+        if model_type == ModelType.GEE_LOGISTIC_REGRESSION:
+            group_column = context.config.model.gee_group_column
+        elif model_type == ModelType.MIXED_EFFECTS_REGRESSION:
+            group_column = context.config.model.mixed_effects_group_column
+        if group_column and group_column in frame.columns and group_column not in columns:
+            columns.append(group_column)
+        return columns
+
+    def _score_candidate_split(
+        self,
+        *,
+        evaluator: EvaluationStep,
+        frame: pd.DataFrame,
+        split_name: str,
+        feature_columns: list[str],
+        adapter,
+        context: PipelineContext,
+    ) -> tuple[pd.DataFrame, dict[str, float | int | None]]:
+        if context.target_column is None:
+            raise ValueError("Feature subset search requires a resolved target column.")
+        labels_available = context.target_column in frame.columns
+        if context.config.target.mode == TargetMode.BINARY:
+            return evaluator._score_binary_split(
+                frame,
+                split_name,
+                context.target_column,
+                feature_columns,
+                adapter,
+                context.config.model.threshold,
+                labels_available,
+                context,
+            )
+        if context.config.target.mode == TargetMode.MULTICLASS:
+            return evaluator._score_multiclass_split(
+                frame,
+                split_name,
+                context.target_column,
+                feature_columns,
+                adapter,
+                labels_available,
+                context,
+            )
+        return evaluator._score_continuous_split(
+            frame,
+            split_name,
+            context.target_column,
+            feature_columns,
+            adapter,
+            labels_available,
+            context,
+        )
+
     def _build_candidate_row(
         self,
         *,
@@ -451,7 +540,7 @@ class FeatureSubsetSearchStep(BasePipelineStep):
         test_calibration_error: float | None,
     ) -> dict[str, Any]:
         ranking_value = ranking_metrics.get(ranking_metric)
-        return {
+        row: dict[str, Any] = {
             "candidate_id": candidate_id,
             "status": "success",
             "failure_reason": "",
@@ -460,23 +549,22 @@ class FeatureSubsetSearchStep(BasePipelineStep):
             "ranking_split": ranking_split,
             "ranking_metric": ranking_metric,
             "ranking_value": self._optional_float(ranking_value),
-            "ranking_roc_auc": self._optional_float(ranking_metrics.get("roc_auc")),
-            "ranking_ks_statistic": self._optional_float(ranking_metrics.get("ks_statistic")),
-            "ranking_average_precision": self._optional_float(
-                ranking_metrics.get("average_precision")
-            ),
-            "ranking_brier_score": self._optional_float(ranking_metrics.get("brier_score")),
-            "ranking_log_loss": self._optional_float(ranking_metrics.get("log_loss")),
-            "ranking_calibration_error": self._optional_float(ranking_calibration_error),
-            "test_roc_auc": self._optional_float(test_metrics.get("roc_auc")),
-            "test_ks_statistic": self._optional_float(test_metrics.get("ks_statistic")),
-            "test_average_precision": self._optional_float(
-                test_metrics.get("average_precision")
-            ),
-            "test_brier_score": self._optional_float(test_metrics.get("brier_score")),
-            "test_log_loss": self._optional_float(test_metrics.get("log_loss")),
-            "test_calibration_error": self._optional_float(test_calibration_error),
         }
+        for metric_name, metric_value in ranking_metrics.items():
+            if isinstance(metric_value, bool):
+                continue
+            row[f"ranking_{metric_name}"] = self._optional_float(metric_value)
+        for metric_name, metric_value in test_metrics.items():
+            if isinstance(metric_value, bool):
+                continue
+            row[f"test_{metric_name}"] = self._optional_float(metric_value)
+        if ranking_calibration_error is not None:
+            row["ranking_calibration_error"] = self._optional_float(
+                ranking_calibration_error
+            )
+        if test_calibration_error is not None:
+            row["test_calibration_error"] = self._optional_float(test_calibration_error)
+        return row
 
     def _add_candidate_selection_scores(
         self,
@@ -487,49 +575,53 @@ class FeatureSubsetSearchStep(BasePipelineStep):
         scored = successful.copy(deep=True)
         scored["ranking_metric_score"] = self._rank_score(
             scored["ranking_value"],
-            higher_is_better=ranking_metric not in {"brier_score", "log_loss"},
+            higher_is_better=not feature_subset_search_lower_is_better(ranking_metric),
         )
-        scored["auc_score"] = self._rank_score(scored.get("ranking_roc_auc"))
-        scored["ks_score"] = self._rank_score(scored.get("ranking_ks_statistic"))
-        scored["average_precision_score"] = self._rank_score(
-            scored.get("ranking_average_precision")
-        )
-        scored["brier_score_rank"] = self._rank_score(
-            scored.get("ranking_brier_score"),
-            higher_is_better=False,
-        )
-        scored["log_loss_score"] = self._rank_score(
-            scored.get("ranking_log_loss"),
-            higher_is_better=False,
-        )
-        scored["calibration_score"] = self._rank_score(
-            scored.get("ranking_calibration_error"),
-            higher_is_better=False,
-        )
+        metric_score_specs = [
+            ("ranking_roc_auc", "auc_score", True),
+            ("ranking_ks_statistic", "ks_score", True),
+            ("ranking_average_precision", "average_precision_score", True),
+            ("ranking_accuracy", "accuracy_score", True),
+            ("ranking_f1_score", "f1_score_rank", True),
+            ("ranking_macro_f1", "macro_f1_score", True),
+            ("ranking_weighted_f1", "weighted_f1_score", True),
+            ("ranking_r2", "r2_score", True),
+            ("ranking_explained_variance", "explained_variance_score", True),
+            ("ranking_brier_score", "brier_score_rank", False),
+            ("ranking_log_loss", "log_loss_score", False),
+            ("ranking_rmse", "rmse_score", False),
+            ("ranking_mae", "mae_score", False),
+            ("ranking_calibration_error", "calibration_score", False),
+        ]
+        for metric_column, score_column, higher_is_better in metric_score_specs:
+            if metric_column in scored.columns:
+                scored[score_column] = self._rank_score(
+                    scored[metric_column],
+                    higher_is_better=higher_is_better,
+                )
         scored["simplicity_score"] = self._rank_score(
             scored.get("feature_count"),
             higher_is_better=False,
         )
-        score_columns = [
-            "ranking_metric_score",
-            "auc_score",
-            "ks_score",
-            "average_precision_score",
-            "brier_score_rank",
-            "log_loss_score",
-            "calibration_score",
-            "simplicity_score",
-        ]
-        weights = {
+        weights: dict[str, float] = {
             "ranking_metric_score": 0.30,
             "auc_score": 0.18,
             "ks_score": 0.18,
             "average_precision_score": 0.10,
+            "accuracy_score": 0.16,
+            "f1_score_rank": 0.14,
+            "macro_f1_score": 0.16,
+            "weighted_f1_score": 0.14,
+            "r2_score": 0.16,
+            "explained_variance_score": 0.12,
             "brier_score_rank": 0.07,
             "log_loss_score": 0.07,
+            "rmse_score": 0.16,
+            "mae_score": 0.12,
             "calibration_score": 0.06,
             "simplicity_score": 0.04,
         }
+        score_columns = [column_name for column_name in weights if column_name in scored.columns]
         weighted_sum = pd.Series(0.0, index=scored.index)
         weight_sum = pd.Series(0.0, index=scored.index)
         for column_name in score_columns:
@@ -577,20 +669,46 @@ class FeatureSubsetSearchStep(BasePipelineStep):
             "calibration_score",
             "feature_count",
             "feature_set",
+            "ranking_metric",
+            "ranking_value",
             "ranking_roc_auc",
             "ranking_ks_statistic",
             "ranking_average_precision",
+            "ranking_accuracy",
+            "ranking_f1_score",
+            "ranking_macro_f1",
+            "ranking_weighted_f1",
             "ranking_brier_score",
             "ranking_log_loss",
+            "ranking_rmse",
+            "ranking_mae",
+            "ranking_r2",
+            "ranking_explained_variance",
             "ranking_calibration_error",
             "test_roc_auc",
             "test_ks_statistic",
+            "test_accuracy",
+            "test_f1_score",
+            "test_macro_f1",
+            "test_weighted_f1",
             "test_brier_score",
             "test_log_loss",
+            "test_rmse",
+            "test_mae",
+            "test_r2",
+            "test_explained_variance",
             "test_calibration_error",
         ]
+        metric_columns = [
+            column_name
+            for column_name in successful.columns
+            if column_name.startswith(("ranking_", "test_"))
+            and column_name not in column_order
+        ]
         resolved_columns = [
-            column_name for column_name in column_order if column_name in successful.columns
+            column_name
+            for column_name in [*column_order, *sorted(metric_columns)]
+            if column_name in successful.columns
         ]
         return (
             successful.loc[:, resolved_columns]
@@ -659,6 +777,7 @@ class FeatureSubsetSearchStep(BasePipelineStep):
             not context.config.subset_search.include_significance_tests
             or len(top_candidates) < 2
             or context.target_column is None
+            or context.config.target.mode != TargetMode.BINARY
         ):
             return pd.DataFrame()
         baseline_id = str(top_candidates.iloc[0]["candidate_id"])
@@ -1019,12 +1138,24 @@ class FeatureSubsetSearchStep(BasePipelineStep):
             "overall_selection_score",
             "feature_count",
             "feature_set",
+            "ranking_metric",
+            "ranking_value",
             "ranking_roc_auc",
             "ranking_ks_statistic",
+            "ranking_accuracy",
+            "ranking_macro_f1",
+            "ranking_rmse",
+            "ranking_mae",
+            "ranking_r2",
             "ranking_brier_score",
             "ranking_calibration_error",
             "test_roc_auc",
             "test_ks_statistic",
+            "test_accuracy",
+            "test_macro_f1",
+            "test_rmse",
+            "test_mae",
+            "test_r2",
         ]
         comparison = top_candidates.loc[
             :,
@@ -1122,6 +1253,13 @@ class FeatureSubsetSearchStep(BasePipelineStep):
                     "best_rank_when_included": self._optional_float(subset_rows["rank"].min())
                     if not subset_rows.empty
                     else None,
+                    "best_ranking_value_when_included": self._optional_float(
+                        subset_rows.sort_values("rank", kind="mergesort").iloc[0][
+                            "ranking_value"
+                        ]
+                    )
+                    if not subset_rows.empty
+                    else None,
                     "best_auc_when_included": self._optional_float(
                         subset_rows["ranking_roc_auc"].max()
                     )
@@ -1210,6 +1348,8 @@ class FeatureSubsetSearchStep(BasePipelineStep):
                     "candidate_count": int(len(candidate_rows)),
                     "best_candidate_id": best_row.get("candidate_id"),
                     "best_rank": best_row.get("rank"),
+                    "ranking_metric": best_row.get("ranking_metric"),
+                    "best_ranking_value": best_row.get("ranking_value"),
                     "best_ranking_roc_auc": best_row.get("ranking_roc_auc"),
                     "best_ranking_ks_statistic": best_row.get("ranking_ks_statistic"),
                     "mean_overall_selection_score": self._optional_float(
@@ -1261,7 +1401,11 @@ class FeatureSubsetSearchStep(BasePipelineStep):
                 )
                 for segment_value in top_values:
                     segment_frame = frame.loc[frame[segment_column].astype(str) == segment_value]
-                    metrics = self._binary_metric_summary(segment_frame, context.target_column)
+                    metrics = self._metric_summary(
+                        segment_frame,
+                        context.target_column,
+                        context.config.target.mode,
+                    )
                     if metrics["row_count"] < 20:
                         continue
                     rows.append(
@@ -1328,7 +1472,11 @@ class FeatureSubsetSearchStep(BasePipelineStep):
                 errors="coerce",
             ).dt.to_period("M").astype(str)
             for period, period_frame in working.dropna(subset=["_period"]).groupby("_period"):
-                metrics = self._binary_metric_summary(period_frame, context.target_column)
+                metrics = self._metric_summary(
+                    period_frame,
+                    context.target_column,
+                    context.config.target.mode,
+                )
                 if metrics["row_count"] < 20:
                     continue
                 rows.append(
@@ -1340,6 +1488,18 @@ class FeatureSubsetSearchStep(BasePipelineStep):
                     }
                 )
         return pd.DataFrame(rows)
+
+    def _metric_summary(
+        self,
+        frame: pd.DataFrame,
+        target_column: str,
+        target_mode: TargetMode,
+    ) -> dict[str, Any]:
+        if target_mode == TargetMode.BINARY:
+            return self._binary_metric_summary(frame, target_column)
+        if target_mode == TargetMode.MULTICLASS:
+            return self._multiclass_metric_summary(frame, target_column)
+        return self._continuous_metric_summary(frame, target_column)
 
     def _binary_metric_summary(
         self,
@@ -1391,12 +1551,106 @@ class FeatureSubsetSearchStep(BasePipelineStep):
             "calibration_error": self._optional_float(abs(target.mean() - score.mean())),
         }
 
+    def _multiclass_metric_summary(
+        self,
+        frame: pd.DataFrame,
+        target_column: str,
+    ) -> dict[str, Any]:
+        if frame.empty or target_column not in frame.columns or "predicted_class" not in frame:
+            return {
+                "row_count": 0,
+                "accuracy": None,
+                "macro_f1": None,
+                "weighted_f1": None,
+                "average_predicted_confidence": None,
+            }
+        aligned = frame[[target_column, "predicted_class"]].dropna()
+        if aligned.empty:
+            return {
+                "row_count": 0,
+                "accuracy": None,
+                "macro_f1": None,
+                "weighted_f1": None,
+                "average_predicted_confidence": None,
+            }
+        y_true = aligned[target_column].astype(int)
+        y_pred = aligned["predicted_class"].astype(int)
+        confidence = (
+            pd.to_numeric(frame.get("predicted_class_probability"), errors="coerce")
+            if "predicted_class_probability" in frame
+            else pd.Series(dtype=float)
+        )
+        return {
+            "row_count": int(len(aligned)),
+            "accuracy": self._safe_metric_value(lambda: accuracy_score(y_true, y_pred)),
+            "macro_f1": self._safe_metric_value(
+                lambda: f1_score(y_true, y_pred, average="macro", zero_division=0)
+            ),
+            "weighted_f1": self._safe_metric_value(
+                lambda: f1_score(y_true, y_pred, average="weighted", zero_division=0)
+            ),
+            "average_predicted_confidence": self._optional_float(confidence.mean())
+            if not confidence.empty
+            else None,
+        }
+
+    def _continuous_metric_summary(
+        self,
+        frame: pd.DataFrame,
+        target_column: str,
+    ) -> dict[str, Any]:
+        if frame.empty or target_column not in frame.columns or "predicted_value" not in frame:
+            return {
+                "row_count": 0,
+                "mean_actual": None,
+                "mean_predicted": None,
+                "rmse": None,
+                "mae": None,
+                "r2": None,
+                "explained_variance": None,
+            }
+        aligned = pd.DataFrame(
+            {
+                "target": pd.to_numeric(frame[target_column], errors="coerce"),
+                "prediction": pd.to_numeric(frame["predicted_value"], errors="coerce"),
+            }
+        ).dropna()
+        if aligned.empty:
+            return {
+                "row_count": 0,
+                "mean_actual": None,
+                "mean_predicted": None,
+                "rmse": None,
+                "mae": None,
+                "r2": None,
+                "explained_variance": None,
+            }
+        y_true = aligned["target"].to_numpy(dtype=float)
+        y_pred = aligned["prediction"].to_numpy(dtype=float)
+        return {
+            "row_count": int(len(aligned)),
+            "mean_actual": self._optional_float(np.mean(y_true)),
+            "mean_predicted": self._optional_float(np.mean(y_pred)),
+            "rmse": self._safe_metric_value(
+                lambda: float(np.sqrt(mean_squared_error(y_true, y_pred)))
+            ),
+            "mae": self._safe_metric_value(lambda: mean_absolute_error(y_true, y_pred)),
+            "r2": self._safe_metric_value(lambda: r2_score(y_true, y_pred)),
+            "explained_variance": self._safe_metric_value(
+                lambda: explained_variance_score(y_true, y_pred)
+            ),
+        }
+
     def _calibration_error(
         self,
         scored_frame: pd.DataFrame,
         target_column: str,
     ) -> float | None:
-        if scored_frame.empty or target_column not in scored_frame.columns:
+        if (
+            scored_frame.empty
+            or target_column not in scored_frame.columns
+            or "predicted_probability" not in scored_frame.columns
+        ):
             return None
         aligned = scored_frame[[target_column, "predicted_probability"]].dropna().copy()
         if len(aligned) < 10:
@@ -1491,6 +1745,13 @@ class FeatureSubsetSearchStep(BasePipelineStep):
             return "standardized"
         return "raw"
 
+    def _display_metric_for_target_mode(self, target_mode: TargetMode) -> str:
+        if target_mode == TargetMode.BINARY:
+            return "roc_auc"
+        if target_mode == TargetMode.MULTICLASS:
+            return "accuracy"
+        return "rmse"
+
     def _build_figures(
         self,
         *,
@@ -1511,39 +1772,54 @@ class FeatureSubsetSearchStep(BasePipelineStep):
     ) -> None:
         if top_candidates.empty:
             return
-        auc_scatter = px.scatter(
-            top_candidates,
-            x="feature_count",
-            y="ranking_roc_auc",
-            hover_name="candidate_id",
-            hover_data={"feature_set": True},
-            title="Subset Search: ROC AUC vs Feature Count",
-            labels={"feature_count": "Feature Count", "ranking_roc_auc": "ROC AUC"},
-        )
-        context.visualizations["subset_search_auc_frontier"] = apply_fintech_figure_theme(
-            auc_scatter,
-            title="Subset Search: ROC AUC vs Feature Count",
-        )
+        if "ranking_roc_auc" in top_candidates.columns:
+            auc_frame = top_candidates.dropna(subset=["ranking_roc_auc"])
+            if not auc_frame.empty:
+                auc_scatter = px.scatter(
+                    auc_frame,
+                    x="feature_count",
+                    y="ranking_roc_auc",
+                    hover_name="candidate_id",
+                    hover_data={"feature_set": True},
+                    title="Subset Search: ROC AUC vs Feature Count",
+                    labels={"feature_count": "Feature Count", "ranking_roc_auc": "ROC AUC"},
+                )
+                context.visualizations["subset_search_auc_frontier"] = (
+                    apply_fintech_figure_theme(
+                        auc_scatter,
+                        title="Subset Search: ROC AUC vs Feature Count",
+                    )
+                )
 
-        ks_scatter = px.scatter(
-            top_candidates,
-            x="feature_count",
-            y="ranking_ks_statistic",
-            hover_name="candidate_id",
-            hover_data={"feature_set": True},
-            title="Subset Search: KS vs Feature Count",
-            labels={"feature_count": "Feature Count", "ranking_ks_statistic": "KS Statistic"},
-        )
-        context.visualizations["subset_search_ks_frontier"] = apply_fintech_figure_theme(
-            ks_scatter,
-            title="Subset Search: KS vs Feature Count",
-        )
+        if "ranking_ks_statistic" in top_candidates.columns:
+            ks_frame = top_candidates.dropna(subset=["ranking_ks_statistic"])
+            if not ks_frame.empty:
+                ks_scatter = px.scatter(
+                    ks_frame,
+                    x="feature_count",
+                    y="ranking_ks_statistic",
+                    hover_name="candidate_id",
+                    hover_data={"feature_set": True},
+                    title="Subset Search: KS vs Feature Count",
+                    labels={
+                        "feature_count": "Feature Count",
+                        "ranking_ks_statistic": "KS Statistic",
+                    },
+                )
+                context.visualizations["subset_search_ks_frontier"] = (
+                    apply_fintech_figure_theme(
+                        ks_scatter,
+                        title="Subset Search: KS vs Feature Count",
+                    )
+                )
 
         frontier = px.scatter(
             top_candidates,
             x="feature_count",
             y="ranking_value",
-            color="ranking_ks_statistic",
+            color="ranking_ks_statistic"
+            if "ranking_ks_statistic" in top_candidates.columns
+            else "ranking_metric",
             hover_name="candidate_id",
             hover_data={"feature_set": True},
             title="Subset Search: Performance vs Parsimony",
@@ -1576,6 +1852,8 @@ class FeatureSubsetSearchStep(BasePipelineStep):
                 y="overall_selection_score",
                 color="ranking_roc_auc"
                 if "ranking_roc_auc" in leaderboard.columns
+                else "ranking_value"
+                if "ranking_value" in leaderboard.columns
                 else None,
                 title="Subset Search: Candidate Leaderboard Score",
                 labels={
@@ -1597,6 +1875,14 @@ class FeatureSubsetSearchStep(BasePipelineStep):
                 "ranking_roc_auc",
                 "ranking_ks_statistic",
                 "ranking_average_precision",
+                "ranking_accuracy",
+                "ranking_f1_score",
+                "ranking_macro_f1",
+                "ranking_weighted_f1",
+                "ranking_rmse",
+                "ranking_mae",
+                "ranking_r2",
+                "ranking_explained_variance",
                 "overall_selection_score",
                 "simplicity_score",
                 "calibration_score",
@@ -1706,17 +1992,21 @@ class FeatureSubsetSearchStep(BasePipelineStep):
                 )
             )
 
-        if not segment_performance.empty and "roc_auc" in segment_performance.columns:
-            segment_chart_frame = segment_performance.dropna(subset=["roc_auc"]).head(80)
+        segment_metric = self._display_metric_for_target_mode(context.config.target.mode)
+        if not segment_performance.empty and segment_metric in segment_performance.columns:
+            segment_chart_frame = segment_performance.dropna(subset=[segment_metric]).head(80)
             if not segment_chart_frame.empty:
                 segment_chart = px.bar(
                     segment_chart_frame,
                     x="segment_value",
-                    y="roc_auc",
+                    y=segment_metric,
                     color="candidate_id",
                     facet_col="segment_column",
                     title="Subset Search: Segment-Level Candidate Performance",
-                    labels={"segment_value": "Segment", "roc_auc": "ROC AUC"},
+                    labels={
+                        "segment_value": "Segment",
+                        segment_metric: segment_metric.replace("_", " ").title(),
+                    },
                 )
                 context.visualizations["subset_search_segment_performance_chart"] = (
                     apply_fintech_figure_theme(
@@ -1725,17 +2015,20 @@ class FeatureSubsetSearchStep(BasePipelineStep):
                     )
                 )
 
-        if not time_performance.empty and "roc_auc" in time_performance.columns:
-            time_chart_frame = time_performance.dropna(subset=["roc_auc"])
+        if not time_performance.empty and segment_metric in time_performance.columns:
+            time_chart_frame = time_performance.dropna(subset=[segment_metric])
             if not time_chart_frame.empty:
                 time_chart = px.line(
                     time_chart_frame,
                     x="period",
-                    y="roc_auc",
+                    y=segment_metric,
                     color="candidate_id",
                     markers=True,
                     title="Subset Search: Time-Split Candidate Performance",
-                    labels={"period": "Period", "roc_auc": "ROC AUC"},
+                    labels={
+                        "period": "Period",
+                        segment_metric: segment_metric.replace("_", " ").title(),
+                    },
                 )
                 context.visualizations["subset_search_time_performance_chart"] = (
                     apply_fintech_figure_theme(
@@ -1793,10 +2086,20 @@ class FeatureSubsetSearchStep(BasePipelineStep):
 
         prediction_frame = ranking_predictions.get(selected_candidate_id)
         candidate_meta = ranking_metadata.get(selected_candidate_id, {})
-        if prediction_frame is None or context.target_column is None:
+        if (
+            prediction_frame is None
+            or context.target_column is None
+            or context.config.target.mode != TargetMode.BINARY
+            or "predicted_probability" not in prediction_frame.columns
+        ):
             return
-        y_true = prediction_frame[context.target_column].astype(int).to_numpy()
-        scores = prediction_frame["predicted_probability"].to_numpy(dtype=float)
+        aligned_curve = prediction_frame[
+            [context.target_column, "predicted_probability"]
+        ].dropna()
+        if aligned_curve.empty or aligned_curve[context.target_column].nunique() < 2:
+            return
+        y_true = aligned_curve[context.target_column].astype(int).to_numpy()
+        scores = aligned_curve["predicted_probability"].to_numpy(dtype=float)
         fpr, tpr, _ = roc_curve(y_true, scores)
         roc_chart = px.line(
             pd.DataFrame({"fpr": fpr, "tpr": tpr}),
@@ -1874,20 +2177,46 @@ class FeatureSubsetSearchStep(BasePipelineStep):
             "ranking_roc_auc",
             "ranking_ks_statistic",
             "ranking_average_precision",
+            "ranking_accuracy",
+            "ranking_f1_score",
+            "ranking_macro_f1",
+            "ranking_weighted_f1",
             "ranking_brier_score",
             "ranking_log_loss",
+            "ranking_rmse",
+            "ranking_mae",
+            "ranking_r2",
+            "ranking_explained_variance",
+            "ranking_metric",
+            "ranking_value",
             "ranking_calibration_error",
             "overall_selection_score",
             "test_roc_auc",
             "test_ks_statistic",
             "test_average_precision",
+            "test_accuracy",
+            "test_f1_score",
+            "test_macro_f1",
+            "test_weighted_f1",
             "test_brier_score",
             "test_log_loss",
+            "test_rmse",
+            "test_mae",
+            "test_r2",
+            "test_explained_variance",
             "test_calibration_error",
         ]
         selected = pd.DataFrame([candidate_row.to_dict()])
+        metric_columns = [
+            column_name
+            for column_name in selected.columns
+            if column_name.startswith(("ranking_", "test_"))
+            and column_name not in column_order
+        ]
         resolved_columns = [
-            column_name for column_name in column_order if column_name in selected.columns
+            column_name
+            for column_name in [*column_order, *sorted(metric_columns)]
+            if column_name in selected.columns
         ]
         return selected.loc[:, resolved_columns].reset_index(drop=True)
 
@@ -1902,19 +2231,45 @@ class FeatureSubsetSearchStep(BasePipelineStep):
             "ranking_roc_auc",
             "ranking_ks_statistic",
             "ranking_average_precision",
+            "ranking_accuracy",
+            "ranking_f1_score",
+            "ranking_macro_f1",
+            "ranking_weighted_f1",
             "ranking_brier_score",
             "ranking_log_loss",
+            "ranking_rmse",
+            "ranking_mae",
+            "ranking_r2",
+            "ranking_explained_variance",
+            "ranking_metric",
+            "ranking_value",
             "ranking_calibration_error",
             "overall_selection_score",
             "test_roc_auc",
             "test_ks_statistic",
             "test_average_precision",
+            "test_accuracy",
+            "test_f1_score",
+            "test_macro_f1",
+            "test_weighted_f1",
             "test_brier_score",
             "test_log_loss",
+            "test_rmse",
+            "test_mae",
+            "test_r2",
+            "test_explained_variance",
             "test_calibration_error",
         ]
+        metric_columns = [
+            column_name
+            for column_name in candidates.columns
+            if column_name.startswith(("ranking_", "test_"))
+            and column_name not in column_order
+        ]
         resolved_columns = [
-            column_name for column_name in column_order if column_name in candidates.columns
+            column_name
+            for column_name in [*column_order, *sorted(metric_columns)]
+            if column_name in candidates.columns
         ]
         return (
             candidates.loc[:, resolved_columns]

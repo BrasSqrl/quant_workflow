@@ -74,16 +74,17 @@ Use before final model development when the candidate feature set is uncertain.
 Recommended setup:
 
 - Execution mode: `search_feature_subsets`
-- Target mode: `binary`
-- Model family: start with logistic regression unless testing another specific family
+- Target mode: `binary`, `multiclass`, or `continuous`
+- Model family: choose a feature-dependent family that matches the target mode
 - Candidate features: restrict to business-plausible fields
 - Max subset size: keep low enough to avoid combinatorial explosion
-- Ranking metric: include AUC/ROC and KS review
+- Ranking metric: use AUC/ROC or KS for binary, accuracy or F1 for
+  multiclass, and RMSE/MAE/R-squared for continuous targets
 
 Key checks:
 
 - review the ranked candidate table
-- compare AUC/ROC, KS, and model simplicity
+- compare target-appropriate metrics and model simplicity
 - review winning coefficients where available
 - run `fit_new_model` after choosing the final features
 

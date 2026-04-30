@@ -595,8 +595,9 @@ The controls under `Interactive Filters` do not change the model or rerun the
 pipeline. They only change the live display of exported run outputs.
 
 Feature-subset-search runs intentionally use a different result viewer. That
-viewer emphasizes candidate ranking, ROC/KS comparison, frontier charts, and
-comparison-only governance exports rather than prediction filtering.
+viewer emphasizes candidate ranking, target-appropriate comparison metrics,
+frontier charts, and comparison-only governance exports rather than prediction
+filtering.
 
 Examples:
 

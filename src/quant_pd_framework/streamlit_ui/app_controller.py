@@ -32,6 +32,10 @@ from quant_pd_framework import (
     TabularOutputFormat,
     TargetMode,
 )
+from quant_pd_framework.config import (
+    feature_subset_search_default_ranking_metric,
+    feature_subset_search_ranking_metrics_for_target_mode,
+)
 from quant_pd_framework.gui_support import (
     SUPPORTED_DTYPES,
     SUPPORTED_FEATURE_REVIEW_DECISIONS,
@@ -51,6 +55,7 @@ from quant_pd_framework.gui_support import (
     model_family_options_for_target_mode,
     model_types_for_family,
     model_types_for_target_mode,
+    subset_search_model_types_for_target_mode,
 )
 from quant_pd_framework.streamlit_ui.config_builder import (
     build_preview_configuration as ui_build_preview_configuration,
@@ -1063,16 +1068,33 @@ def run_app() -> None:
                 ),
             )
             selected_target_mode = TargetMode(target_mode)
-            available_family_options = model_family_options_for_target_mode(selected_target_mode)
-            valid_target_model_types = model_types_for_target_mode(selected_target_mode)
+            subset_search_model_filter = (
+                set(subset_search_model_types_for_target_mode(selected_target_mode))
+                if execution_mode == ExecutionMode.SEARCH_FEATURE_SUBSETS.value
+                else None
+            )
+            available_family_options = model_family_options_for_target_mode(
+                selected_target_mode,
+                allowed_model_types=subset_search_model_filter,
+            )
+            valid_target_model_types = (
+                list(subset_search_model_filter)
+                if subset_search_model_filter is not None
+                else model_types_for_target_mode(selected_target_mode)
+            )
             default_model_type = (
                 preset_inputs.model.model_type
                 if preset_inputs.model.model_type in valid_target_model_types
-                else model_types_for_family(selected_target_mode, available_family_options[0])[0]
+                else model_types_for_family(
+                    selected_target_mode,
+                    available_family_options[0],
+                    allowed_model_types=subset_search_model_filter,
+                )[0]
             )
             default_model_family = model_family_for_model_type(
                 default_model_type,
                 selected_target_mode,
+                allowed_model_types=subset_search_model_filter,
             )
             if st.session_state.get("model_family") not in available_family_options:
                 st.session_state["model_family"] = default_model_family
@@ -1087,7 +1109,11 @@ def run_app() -> None:
                     "so invalid model choices are hidden."
                 ),
             )
-            model_type_options = model_types_for_family(selected_target_mode, model_family)
+            model_type_options = model_types_for_family(
+                selected_target_mode,
+                model_family,
+                allowed_model_types=subset_search_model_filter,
+            )
             model_type_option_values = [model_type.value for model_type in model_type_options]
             if st.session_state.get("model_type") not in model_type_option_values:
                 fallback_model_type = (
@@ -1639,22 +1665,21 @@ def run_app() -> None:
                 index=["validation", "test"].index(preset_inputs.subset_search.ranking_split),
                 disabled=not subset_search_enabled,
             )
+            subset_search_ranking_metric_options = list(
+                feature_subset_search_ranking_metrics_for_target_mode(TargetMode(target_mode))
+            )
+            default_subset_search_ranking_metric = (
+                preset_inputs.subset_search.ranking_metric
+                if preset_inputs.subset_search.ranking_metric
+                in subset_search_ranking_metric_options
+                else feature_subset_search_default_ranking_metric(TargetMode(target_mode))
+            )
             subset_search_ranking_metric = st.selectbox(
                 "Ranking metric",
-                options=[
-                    "roc_auc",
-                    "ks_statistic",
-                    "average_precision",
-                    "brier_score",
-                    "log_loss",
-                ],
-                index=[
-                    "roc_auc",
-                    "ks_statistic",
-                    "average_precision",
-                    "brier_score",
-                    "log_loss",
-                ].index(preset_inputs.subset_search.ranking_metric),
+                options=subset_search_ranking_metric_options,
+                index=subset_search_ranking_metric_options.index(
+                    default_subset_search_ranking_metric
+                ),
                 format_func=lambda value: value.replace("_", " ").title(),
                 disabled=not subset_search_enabled,
             )
@@ -1670,7 +1695,7 @@ def run_app() -> None:
             )
             subset_search_top_curve_count = int(
                 st.number_input(
-                    "Top candidates in ROC/KS charts",
+                    "Top candidates in comparison charts",
                     min_value=2,
                     max_value=10,
                     value=int(preset_inputs.subset_search.top_curve_count),

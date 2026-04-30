@@ -51,7 +51,7 @@ comparison-only checkpoint sequence.
 | Stage ID | UI label | Required? | What it does | Main controls |
 | --- | --- | --- | --- | --- |
 | `prepare_data` | Prepare data | Required | Loads data, applies schema, creates target, validates setup, cleans data, builds simple derived features, creates train/validation/test splits, runs assumption checks, fits imputation rules, and applies governed transformations. | Step 1 `Dataset & Schema`; Step 2 `Core Setup`; Step 2 `Split Strategy`; Step 2 `Data Preparation`; Column Designer; Transformations table. |
-| `feature_subset_search` | Run feature subset search | Required | Enumerates candidate feature subsets for the selected supported model family, fits candidates, ranks them by the selected metric, and records comparison evidence. | Step 2 `Core Setup` -> `Execution mode = search_feature_subsets`; Step 2 `Feature Subset Search`; enabled feature roles. |
+| `feature_subset_search` | Run feature subset search | Required | Enumerates candidate feature subsets for the selected feature-dependent model family, fits candidates, ranks them by a target-appropriate metric, and records comparison evidence. | Step 2 `Core Setup` -> `Execution mode = search_feature_subsets`; Step 2 `Feature Subset Search`; enabled feature roles. |
 | `export_package` | Export package | Required | Writes subset-search ranking tables, comparison charts, winning-subset details, manifests, and report outputs. It does not create the final model-development package. | Step 2 `Output Options`; feature-subset-search settings. |
 
 ## Where Stage Evidence Is Stored

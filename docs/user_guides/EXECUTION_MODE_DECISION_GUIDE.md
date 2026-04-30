@@ -63,6 +63,8 @@ Behavior:
 
 - the training step becomes a model-loading step
 - saved schema and feature contracts can override the live editor when prior config is supplied
+- binary, multiclass, and continuous saved models are scored with the target
+  mode and model type from the original run configuration
 - labeled scoring runs produce validation diagnostics
 - unlabeled scoring runs produce score-only documentation and skip invalid label-dependent diagnostics
 
@@ -84,14 +86,14 @@ Use this when:
 - the user has a candidate feature pool
 - the goal is to compare model performance across feature combinations
 - the output should inform feature selection before final model development
-- AUC/ROC, KS, calibration, parsimony, risk-flag, feature-frequency,
-  contribution-consistency, transformation, and significance comparisons are
-  needed
+- target-appropriate ranking, parsimony, risk-flag, feature-frequency,
+  contribution-consistency, transformation, and candidate comparison evidence
+  is needed
 
 Required inputs:
 
-- binary target
-- selected model family that supports subset comparison
+- binary, multiclass, or continuous target
+- selected feature-dependent model family that supports subset comparison
 - candidate feature pool
 - minimum and maximum subset sizes
 - ranking split and ranking metric
@@ -101,8 +103,10 @@ Typical outputs:
 - candidate ranking tables
 - candidate leaderboard and top-candidate comparison workspace
 - selection rationale and automated risk flags
-- ROC/AUC and KS comparisons
-- calibration and performance-versus-parsimony comparisons
+- ROC/AUC and KS comparisons for binary targets
+- accuracy/F1 comparisons for multiclass targets
+- RMSE/MAE/R-squared comparisons for continuous targets
+- calibration and performance-versus-parsimony comparisons where relevant
 - selected winning subset details
 - feature-frequency views
 - contribution-consistency, redundancy, feature-family, excluded-feature, and

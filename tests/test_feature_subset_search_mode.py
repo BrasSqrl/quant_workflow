@@ -123,8 +123,8 @@ def test_feature_subset_search_mode_exports_comparison_only_bundle() -> None:
         assert "Non-Winning Candidate Ranking" in interactive_html
 
 
-def test_feature_subset_search_requires_binary_target() -> None:
-    with pytest.raises(ValueError, match="only supported for binary targets"):
+def test_feature_subset_search_rejects_target_incompatible_ranking_metric() -> None:
+    with pytest.raises(ValueError, match="ranking metric 'roc_auc' is not valid"):
         FrameworkConfig(
             schema=SchemaConfig(column_specs=[]),
             cleaning=CleaningConfig(),
@@ -139,3 +139,116 @@ def test_feature_subset_search_requires_binary_target() -> None:
             model=ModelConfig(model_type=ModelType.LINEAR_REGRESSION),
             subset_search=FeatureSubsetSearchConfig(enabled=True),
         ).validate()
+
+
+def test_feature_subset_search_supports_continuous_models() -> None:
+    dataframe = build_synthetic_dataframe(row_count=220)
+    dataframe["loss_rate"] = (
+        0.10
+        + (dataframe["balance"] / dataframe["balance"].max()) * 0.35
+        + dataframe["utilization"] * 0.20
+    ).clip(0.0, 1.0)
+
+    with temporary_artifact_root("pytest_subset_search_continuous") as output_root:
+        config = FrameworkConfig(
+            schema=SchemaConfig(
+                column_specs=[
+                    ColumnSpec(name="as_of_date", dtype="datetime", role=ColumnRole.DATE),
+                    ColumnSpec(name="account_id", dtype="string", role=ColumnRole.IDENTIFIER),
+                    ColumnSpec(name="default_status", enabled=False),
+                ]
+            ),
+            cleaning=CleaningConfig(),
+            feature_engineering=FeatureEngineeringConfig(),
+            target=TargetConfig(
+                source_column="loss_rate",
+                mode=TargetMode.CONTINUOUS,
+                output_column="loss_rate_target",
+            ),
+            split=SplitConfig(
+                data_structure=DataStructure.CROSS_SECTIONAL,
+                train_size=0.6,
+                validation_size=0.2,
+                test_size=0.2,
+                date_column="as_of_date",
+            ),
+            execution=ExecutionConfig(mode=ExecutionMode.SEARCH_FEATURE_SUBSETS),
+            model=ModelConfig(model_type=ModelType.LINEAR_REGRESSION),
+            subset_search=FeatureSubsetSearchConfig(
+                enabled=True,
+                candidate_feature_names=["balance", "utilization", "inquiries"],
+                min_subset_size=1,
+                max_subset_size=2,
+                max_candidate_features=6,
+                ranking_metric="rmse",
+                top_candidate_count=5,
+                include_significance_tests=True,
+            ),
+            artifacts=ArtifactConfig(output_root=output_root),
+        )
+
+        context = QuantModelOrchestrator(config=config).run(dataframe)
+
+        candidate_table = context.diagnostics_tables["subset_search_candidates"]
+        assert {"ranking_rmse", "ranking_mae", "ranking_r2", "ranking_value"}.issubset(
+            candidate_table.columns
+        )
+        assert "ranking_roc_auc" not in candidate_table.columns
+        assert "subset_search_significance_tests" not in context.diagnostics_tables
+        assert "subset_search_metric_frontier" in context.visualizations
+        assert "subset_search_selected_roc_curve" not in context.visualizations
+
+
+def test_feature_subset_search_supports_multiclass_models() -> None:
+    dataframe = build_synthetic_dataframe(row_count=240)
+    dataframe["risk_grade"] = dataframe["fico_bucket"].map(
+        {"A": "prime", "B": "near_prime", "C": "subprime", "D": "subprime"}
+    )
+
+    with temporary_artifact_root("pytest_subset_search_multiclass") as output_root:
+        config = FrameworkConfig(
+            schema=SchemaConfig(
+                column_specs=[
+                    ColumnSpec(name="as_of_date", dtype="datetime", role=ColumnRole.DATE),
+                    ColumnSpec(name="account_id", dtype="string", role=ColumnRole.IDENTIFIER),
+                    ColumnSpec(name="default_status", enabled=False),
+                ]
+            ),
+            cleaning=CleaningConfig(),
+            feature_engineering=FeatureEngineeringConfig(),
+            target=TargetConfig(
+                source_column="risk_grade",
+                mode=TargetMode.MULTICLASS,
+                output_column="risk_grade_target",
+            ),
+            split=SplitConfig(
+                data_structure=DataStructure.CROSS_SECTIONAL,
+                train_size=0.6,
+                validation_size=0.2,
+                test_size=0.2,
+                date_column="as_of_date",
+            ),
+            execution=ExecutionConfig(mode=ExecutionMode.SEARCH_FEATURE_SUBSETS),
+            model=ModelConfig(model_type=ModelType.DECISION_TREE),
+            subset_search=FeatureSubsetSearchConfig(
+                enabled=True,
+                candidate_feature_names=["balance", "utilization", "inquiries"],
+                min_subset_size=1,
+                max_subset_size=2,
+                max_candidate_features=6,
+                ranking_metric="accuracy",
+                top_candidate_count=5,
+                include_significance_tests=True,
+            ),
+            artifacts=ArtifactConfig(output_root=output_root),
+        )
+
+        context = QuantModelOrchestrator(config=config).run(dataframe)
+
+        candidate_table = context.diagnostics_tables["subset_search_candidates"]
+        assert {"ranking_accuracy", "ranking_macro_f1", "ranking_value"}.issubset(
+            candidate_table.columns
+        )
+        assert "ranking_ks_statistic" not in candidate_table.columns
+        assert "subset_search_significance_tests" not in context.diagnostics_tables
+        assert "subset_search_metric_frontier" in context.visualizations

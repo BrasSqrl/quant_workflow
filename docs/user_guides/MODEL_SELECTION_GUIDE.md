@@ -125,8 +125,11 @@ third-party dependencies in this implementation pass. Use XGBoost when an
 installed gradient-boosted-tree model is needed.
 
 The SAS-equivalent models above are exposed for normal `fit_new_model` use.
-They are intentionally not added to feature-subset search yet, because subset
-search needs separate ranking and comparison logic for each target family.
+Feature-subset search also supports feature-dependent binary, multiclass, and
+continuous model families with target-specific metrics. Exponential smoothing
+and unobserved components remain excluded from subset search because they are
+univariate forecasting baselines and candidate feature sets do not change
+their fit.
 
 ## Suggested Development Pattern
 

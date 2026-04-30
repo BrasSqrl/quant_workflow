@@ -35,6 +35,10 @@ from quant_pd_framework import (
     VariableSelectionConfig,
     WorkflowGuardrailConfig,
 )
+from quant_pd_framework.config import (
+    feature_subset_search_default_ranking_metric,
+    feature_subset_search_ranking_metrics_for_target_mode,
+)
 from quant_pd_framework.gui_support import (
     FEATURE_REVIEW_COLUMNS,
     SCORECARD_OVERRIDE_COLUMNS,
@@ -46,6 +50,7 @@ from quant_pd_framework.gui_support import (
     parse_manual_review_frames,
     parse_scenario_rows,
     parse_transformation_frame,
+    subset_search_model_types_for_target_mode,
 )
 from quant_pd_framework.workflow_guardrails import evaluate_workflow_guardrails
 
@@ -68,6 +73,20 @@ def build_preview_configuration(
     try:
         target_mode = TargetMode(values["target_mode"])
         primary_model_type = ModelType(values["model_type"])
+        if values["execution_mode"] == ExecutionMode.SEARCH_FEATURE_SUBSETS.value:
+            supported_subset_models = subset_search_model_types_for_target_mode(target_mode)
+            if primary_model_type not in supported_subset_models:
+                primary_model_type = supported_subset_models[0]
+            supported_subset_metrics = feature_subset_search_ranking_metrics_for_target_mode(
+                target_mode
+            )
+            subset_search_ranking_metric = (
+                values["subset_search_ranking_metric"]
+                if values["subset_search_ranking_metric"] in supported_subset_metrics
+                else feature_subset_search_default_ranking_metric(target_mode)
+            )
+        else:
+            subset_search_ranking_metric = values["subset_search_ranking_metric"]
         supported_challenger_values = {
             model_type.value
             for model_type in model_types_for_target_mode(target_mode)
@@ -161,7 +180,7 @@ def build_preview_configuration(
                 max_subset_size=int(values["subset_search_max_subset_size"]),
                 max_candidate_features=int(values["subset_search_max_candidate_features"]),
                 ranking_split=values["subset_search_ranking_split"],
-                ranking_metric=values["subset_search_ranking_metric"],
+                ranking_metric=subset_search_ranking_metric,
                 top_candidate_count=int(values["subset_search_top_candidate_count"]),
                 top_curve_count=int(values["subset_search_top_curve_count"]),
                 include_significance_tests=values["subset_search_include_significance_tests"],

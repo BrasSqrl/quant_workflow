@@ -61,6 +61,7 @@ from .config import (
     TransformationType,
     VariableSelectionConfig,
     WorkflowGuardrailConfig,
+    feature_subset_search_model_types_for_target_mode,
 )
 from .presets import get_preset_definition, list_preset_definitions
 
@@ -1936,10 +1937,18 @@ MODEL_FAMILY_DEFINITIONS: dict[TargetMode, dict[str, tuple[str, tuple[ModelType,
 }
 
 
-def model_family_options_for_target_mode(target_mode: TargetMode) -> list[str]:
+def model_family_options_for_target_mode(
+    target_mode: TargetMode,
+    *,
+    allowed_model_types: set[ModelType] | None = None,
+) -> list[str]:
     """Returns selectable model-family keys for the selected target mode."""
 
-    return list(MODEL_FAMILY_DEFINITIONS[target_mode])
+    family_keys: list[str] = []
+    for family_key, (_, model_types) in MODEL_FAMILY_DEFINITIONS[target_mode].items():
+        if allowed_model_types is None or allowed_model_types.intersection(model_types):
+            family_keys.append(family_key)
+    return family_keys
 
 
 def format_model_family(value: str) -> str:
@@ -1951,22 +1960,42 @@ def format_model_family(value: str) -> str:
     return value.replace("_", " ").title()
 
 
-def model_family_for_model_type(model_type: ModelType, target_mode: TargetMode) -> str:
+def model_family_for_model_type(
+    model_type: ModelType,
+    target_mode: TargetMode,
+    *,
+    allowed_model_types: set[ModelType] | None = None,
+) -> str:
     """Finds the first family that contains a model type for a target mode."""
 
     for family_key, (_, model_types) in MODEL_FAMILY_DEFINITIONS[target_mode].items():
-        if model_type in model_types:
+        if model_type in model_types and (
+            allowed_model_types is None or model_type in allowed_model_types
+        ):
             return family_key
-    return model_family_options_for_target_mode(target_mode)[0]
+    return model_family_options_for_target_mode(
+        target_mode,
+        allowed_model_types=allowed_model_types,
+    )[0]
 
 
-def model_types_for_family(target_mode: TargetMode, family_key: str) -> list[ModelType]:
+def model_types_for_family(
+    target_mode: TargetMode,
+    family_key: str,
+    *,
+    allowed_model_types: set[ModelType] | None = None,
+) -> list[ModelType]:
     """Returns valid model types for a selected target-mode/family pair."""
 
     family_map = MODEL_FAMILY_DEFINITIONS[target_mode]
     if family_key not in family_map:
-        family_key = model_family_options_for_target_mode(target_mode)[0]
+        family_key = model_family_options_for_target_mode(
+            target_mode,
+            allowed_model_types=allowed_model_types,
+        )[0]
     valid_model_types = set(model_types_for_target_mode(target_mode))
+    if allowed_model_types is not None:
+        valid_model_types = valid_model_types.intersection(allowed_model_types)
     return [
         model_type
         for model_type in family_map[family_key][1]
@@ -1985,3 +2014,9 @@ def model_types_for_target_mode(target_mode: TargetMode) -> list[ModelType]:
             continue
         supported.append(model_type)
     return supported
+
+
+def subset_search_model_types_for_target_mode(target_mode: TargetMode) -> list[ModelType]:
+    """Returns model families that support feature-subset search for a target mode."""
+
+    return list(feature_subset_search_model_types_for_target_mode(target_mode))

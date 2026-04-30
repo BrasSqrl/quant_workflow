@@ -475,8 +475,11 @@ gradient-boosted-tree implementation.
 ## 16. SAS-Equivalent Model Families
 
 These families were added for normal `fit_new_model` workflows to improve
-parity with common SAS/STAT and SAS/ETS development patterns. They are not
-enabled for feature subset search yet.
+parity with common SAS/STAT and SAS/ETS development patterns. Feature-subset
+search supports the feature-dependent members of these families where the
+candidate feature set changes the fitted model. Exponential smoothing and
+unobserved components are intentionally excluded from subset search because
+they are univariate forecasting baselines.
 
 ### Multiclass and Ordinal Classification
 

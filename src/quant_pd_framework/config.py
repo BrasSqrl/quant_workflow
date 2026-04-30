@@ -539,6 +539,67 @@ class ModelConfig:
             raise ValueError(f"{self.model_type.value} requires a multiclass target.")
 
 
+FEATURE_SUBSET_SEARCH_LOWER_IS_BETTER_METRICS = frozenset(
+    {"brier_score", "log_loss", "rmse", "mae"}
+)
+FEATURE_SUBSET_SEARCH_RANKING_METRICS_BY_TARGET_MODE: dict[TargetMode, tuple[str, ...]] = {
+    TargetMode.BINARY: (
+        "roc_auc",
+        "ks_statistic",
+        "average_precision",
+        "brier_score",
+        "log_loss",
+        "accuracy",
+        "f1_score",
+    ),
+    TargetMode.MULTICLASS: ("accuracy", "macro_f1", "weighted_f1", "log_loss"),
+    TargetMode.CONTINUOUS: ("rmse", "mae", "r2", "explained_variance"),
+}
+FEATURE_SUBSET_SEARCH_UNIVARIATE_ONLY_MODELS = frozenset(
+    {
+        ModelType.EXPONENTIAL_SMOOTHING_FORECAST,
+        ModelType.UNOBSERVED_COMPONENTS_FORECAST,
+    }
+)
+
+
+def feature_subset_search_ranking_metrics_for_target_mode(
+    target_mode: TargetMode,
+) -> tuple[str, ...]:
+    """Returns ranking metrics that are meaningful for a target mode."""
+
+    return FEATURE_SUBSET_SEARCH_RANKING_METRICS_BY_TARGET_MODE[target_mode]
+
+
+def feature_subset_search_default_ranking_metric(target_mode: TargetMode) -> str:
+    """Returns the default subset-search ranking metric for a target mode."""
+
+    return feature_subset_search_ranking_metrics_for_target_mode(target_mode)[0]
+
+
+def feature_subset_search_lower_is_better(metric_name: str) -> bool:
+    """Returns whether smaller values are better for a subset-search metric."""
+
+    return metric_name in FEATURE_SUBSET_SEARCH_LOWER_IS_BETTER_METRICS
+
+
+def feature_subset_search_model_types_for_target_mode(
+    target_mode: TargetMode,
+) -> tuple[ModelType, ...]:
+    """Returns model types that can produce feature-dependent subset comparisons."""
+
+    supported: list[ModelType] = []
+    for model_type in ModelType:
+        if model_type in FEATURE_SUBSET_SEARCH_UNIVARIATE_ONLY_MODELS:
+            continue
+        try:
+            ModelConfig(model_type=model_type).validate(target_mode)
+        except ValueError:
+            continue
+        supported.append(model_type)
+    return tuple(supported)
+
+
 @dataclass(slots=True)
 class ComparisonConfig:
     """Controls optional challenger-model training during development runs."""
@@ -596,16 +657,15 @@ class FeatureSubsetSearchConfig:
             raise ValueError(
                 "FeatureSubsetSearchConfig.ranking_split must be 'validation' or 'test'."
             )
-        if self.ranking_metric not in {
-            "roc_auc",
-            "ks_statistic",
-            "average_precision",
-            "brier_score",
-            "log_loss",
-        }:
+        supported_metrics = {
+            metric
+            for metrics in FEATURE_SUBSET_SEARCH_RANKING_METRICS_BY_TARGET_MODE.values()
+            for metric in metrics
+        }
+        if self.ranking_metric not in supported_metrics:
             raise ValueError(
-                "FeatureSubsetSearchConfig.ranking_metric only supports roc_auc, "
-                "ks_statistic, average_precision, brier_score, or log_loss."
+                "FeatureSubsetSearchConfig.ranking_metric is not supported. "
+                f"Use one of: {', '.join(sorted(supported_metrics))}."
             )
         if self.top_candidate_count <= 0:
             raise ValueError(
@@ -1886,21 +1946,24 @@ class FrameworkConfig:
         self.performance.validate()
         self.artifacts.validate()
         if self.execution.mode == ExecutionMode.SEARCH_FEATURE_SUBSETS:
-            if self.target.mode != TargetMode.BINARY:
+            supported_subset_models = feature_subset_search_model_types_for_target_mode(
+                self.target.mode
+            )
+            if self.model.model_type not in supported_subset_models:
                 raise ValueError(
-                    "Feature subset search is currently only supported for binary targets."
+                    "Feature subset search does not support "
+                    f"{self.model.model_type.value} for {self.target.mode.value} targets. "
+                    "Choose a feature-dependent model type for the selected target mode."
                 )
-            if self.model.model_type not in {
-                ModelType.LOGISTIC_REGRESSION,
-                ModelType.DISCRETE_TIME_HAZARD_MODEL,
-                ModelType.ELASTIC_NET_LOGISTIC_REGRESSION,
-                ModelType.SCORECARD_LOGISTIC_REGRESSION,
-                ModelType.PROBIT_REGRESSION,
-                ModelType.XGBOOST,
-            }:
+            supported_subset_metrics = feature_subset_search_ranking_metrics_for_target_mode(
+                self.target.mode
+            )
+            if self.subset_search.ranking_metric not in supported_subset_metrics:
                 raise ValueError(
-                    "Feature subset search currently supports logistic, discrete-time hazard, "
-                    "elastic-net logistic, scorecard logistic, probit, and XGBoost models."
+                    "Feature subset search ranking metric "
+                    f"{self.subset_search.ranking_metric!r} is not valid for "
+                    f"{self.target.mode.value} targets. Use one of: "
+                    f"{', '.join(supported_subset_metrics)}."
                 )
             if not self.subset_search.enabled:
                 raise ValueError(

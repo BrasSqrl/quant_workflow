@@ -1274,18 +1274,21 @@ Recommended scoring pattern:
 
 If `mode="score_existing_model"`, `existing_model_path` is required.
 
-If `mode="search_feature_subsets"`, the run must use a binary target and a
-supported binary subset-search model family: logistic, discrete-time hazard,
-elastic-net logistic, scorecard logistic, probit, or XGBoost. Newer GEE and
-tree-ensemble models are available in normal development and comparison
-workflows first, then can be promoted to subset search after additional
-selection-specific validation. The subset-search workflow exports
+If `mode="search_feature_subsets"`, the run compares feature combinations for
+the selected feature-dependent model family before final model development. It
+supports binary, multiclass, and continuous target modes with target-specific
+ranking metrics: binary ranking can use AUC/ROC, KS, average precision, Brier,
+log loss, accuracy, or F1; multiclass ranking can use accuracy, macro F1,
+weighted F1, or log loss; continuous ranking can use RMSE, MAE, R-squared, or
+explained variance. Univariate-only forecasting models such as exponential
+smoothing and unobserved components are excluded because candidate feature
+sets do not change those fits. The subset-search workflow exports
 comparison-only evidence rather than a fitted-model artifact bundle, with a
 candidate leaderboard, selected-candidate coefficient summary, selection
-rationale, AUC / ROC and KS visuals, calibration comparisons, parsimony
-frontiers, risk flags, feature inclusion and contribution-consistency views,
-redundancy diagnostics, transformation-effectiveness summaries, and ranked
-non-winning candidate tables for side-by-side comparison.
+rationale, target-appropriate comparison visuals, calibration where relevant,
+parsimony frontiers, risk flags, feature inclusion and contribution-consistency
+views, redundancy diagnostics, transformation-effectiveness summaries, and
+ranked non-winning candidate tables for side-by-side comparison.
 
 ### `ModelConfig`
 
@@ -1372,9 +1375,9 @@ Compatibility notes:
   two-stage LGD, mixed-effects, panel, quantile, Tobit, survival-style,
   forecasting, decision tree, random forest, extra trees, explainable
   boosting-style, and XGBoost
-- SAS-equivalent models added for normal `fit_new_model` workflows are not yet
-  eligible for feature subset search unless already listed in the subset-search
-  compatibility note above
+- feature-subset search now supports feature-dependent binary, multiclass, and
+  continuous model families; univariate-only forecasting models are excluded
+  because feature subsets do not affect their fit
 - beta and two-stage LGD models require bounded continuous targets in `[0, 1]`
 - panel regression requires `data_structure="panel"` and an entity column
 - true LightGBM is not included because the project currently avoids adding a
