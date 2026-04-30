@@ -731,4 +731,10 @@ def format_data_structure(value: str) -> str:
 
 
 def format_model_type(value: str) -> str:
-    return value.replace("_", " ").title()
+    display_names = {
+        "gee_logistic_regression": "GEE Logistic Regression",
+        "cox_proportional_hazards": "Cox Proportional Hazards",
+        "aft_survival_model": "AFT Survival Model",
+        "xgboost": "XGBoost",
+    }
+    return display_names.get(value, value.replace("_", " ").title())

@@ -242,6 +242,10 @@ def _build_model_config(payload: dict[str, Any]) -> ModelConfig:
         xgboost_colsample_bytree=payload.get("xgboost_colsample_bytree", 0.9),
         tobit_left_censoring=payload.get("tobit_left_censoring", 0.0),
         tobit_right_censoring=payload.get("tobit_right_censoring"),
+        regularization_alpha=payload.get("regularization_alpha", 1.0),
+        tree_n_estimators=payload.get("tree_n_estimators", 300),
+        tree_max_depth=payload.get("tree_max_depth", 5),
+        gee_group_column=payload.get("gee_group_column"),
     )
 
 

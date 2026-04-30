@@ -24,12 +24,23 @@ Factory entry point:
 | `elastic_net_logistic_regression` | binary | Sparse or collinear PD challenger | `ElasticNetLogisticRegressionAdapter` |
 | `scorecard_logistic_regression` | binary | Transparent PD scorecard development | `ScorecardLogisticRegressionAdapter` |
 | `probit_regression` | binary | Interpretable binary challenger | `ProbitRegressionAdapter` |
+| `gee_logistic_regression` | binary | Cluster-aware panel PD challenger | `GEELogisticRegressionAdapter` |
 | `linear_regression` | continuous or binary | Simple forecast baseline or linear-probability fallback | `LinearRegressionAdapter` |
+| `ridge_regression` | continuous | Shrunk continuous baseline for collinear features | `RidgeRegressionAdapter` |
+| `lasso_regression` | continuous | Sparse continuous baseline | `LassoRegressionAdapter` |
+| `elastic_net_regression` | continuous | Continuous shrinkage and selection blend | `ElasticNetRegressionAdapter` |
 | `beta_regression` | continuous | Bounded LGD severity in `(0, 1)` | `BetaRegressionAdapter` |
+| `fractional_logit` | continuous | Bounded rate/proportion model in `[0, 1]` | `FractionalLogitAdapter` |
+| `zero_one_inflated_beta` | continuous | LGD with true mass at 0, 1, and interior values | `ZeroOneInflatedBetaAdapter` |
 | `two_stage_lgd_model` | continuous | Positive-loss probability times severity | `TwoStageLGDModelAdapter` |
 | `panel_regression` | continuous | Panel forecasting / CCAR-style modeling | `PanelRegressionAdapter` |
 | `quantile_regression` | continuous | Tail or percentile forecasting | `QuantileRegressionAdapter` |
 | `tobit_regression` | continuous | Censored continuous targets | `TobitRegressionAdapter` |
+| `cox_proportional_hazards` | continuous | Time-to-event risk ranking | `CoxProportionalHazardsAdapter` |
+| `aft_survival_model` | continuous | Log-duration time-to-event baseline | `AFTSurvivalModelAdapter` |
+| `random_forest` | binary or continuous | Non-linear bagged-tree challenger | `RandomForestAdapter` |
+| `extra_trees` | binary or continuous | Randomized-tree sensitivity challenger | `ExtraTreesAdapter` |
+| `explainable_boosting_machine` | binary or continuous | EBM-style shallow boosted-tree challenger | `ExplainableBoostingMachineAdapter` |
 | `xgboost` | binary or continuous | Non-linear challenger | `XGBoostAdapter` |
 
 ## Common Design Pattern
@@ -201,6 +212,23 @@ When used in binary mode, predictions are clipped into `[0, 1]` for downstream
 diagnostics. This is convenient, but it does not make linear regression a true
 probability model.
 
+## 6A. Regularized Linear Regression
+
+### When to use it
+
+Use `ridge_regression`, `lasso_regression`, or `elastic_net_regression` for
+continuous LGD or forecasting targets when ordinary linear regression is too
+unstable because features are numerous or correlated.
+
+### Key configuration
+
+- `ModelConfig.regularization_alpha`
+- `ModelConfig.l1_ratio` for elastic net only
+
+### Constraints
+
+- requires `TargetMode.CONTINUOUS`
+
 ## 7. Beta Regression
 
 ### When to use it
@@ -221,6 +249,38 @@ to stay within `(0, 1)`.
 
 - requires `TargetMode.CONTINUOUS`
 - target values are clipped away from exact `0` and `1` before fitting
+
+## 7A. Fractional Logit
+
+### When to use it
+
+Use `fractional_logit` for bounded continuous rates or proportions, including
+LGD-style targets in `[0, 1]`, when a GLM-style bounded mean model is more
+appropriate than OLS.
+
+### Constraints
+
+- requires `TargetMode.CONTINUOUS`
+- target values should represent a bounded rate or proportion
+
+## 7B. Zero-One Inflated Beta
+
+### When to use it
+
+Use `zero_one_inflated_beta` when LGD or another bounded severity target has
+meaningful true observations at exactly `0` and exactly `1`, plus interior
+values between the boundaries.
+
+### Implementation note
+
+The adapter fits separate boundary classifiers for exact zero and exact one,
+then fits beta regression on interior observations. The final estimate combines
+boundary probabilities with conditional interior severity.
+
+### Constraints
+
+- requires `TargetMode.CONTINUOUS`
+- requires enough interior observations to fit the beta component
 
 ## 8. Two-Stage LGD Model
 
@@ -334,6 +394,70 @@ view.
 - `ModelConfig.xgboost_max_depth`
 - `ModelConfig.xgboost_subsample`
 - `ModelConfig.xgboost_colsample_bytree`
+
+## 13. GEE Logistic Regression
+
+### When to use it
+
+Use `gee_logistic_regression` for binary panel PD workflows where rows are
+clustered by borrower, account, loan, or another repeated-observation unit.
+The model estimates population-average effects with robust covariance.
+
+### Key configuration
+
+- `ModelConfig.gee_group_column`
+- `ModelConfig.max_iter`
+
+### Constraints
+
+- requires `TargetMode.BINARY`
+- if no group column is selected, rows are treated as independent groups
+
+## 14. Survival-Style Models
+
+### When to use them
+
+Use `cox_proportional_hazards` or `aft_survival_model` when the target is a
+positive duration or time-to-event value.
+
+### Implementation notes
+
+- `cox_proportional_hazards` uses statsmodels `PHReg` and reports hazard ratios.
+- `aft_survival_model` fits a log-duration regression and predicts positive
+  durations.
+
+### Constraints
+
+- requires `TargetMode.CONTINUOUS`
+- the current Cox implementation assumes observed events because no censoring
+  indicator is currently part of `ModelConfig`
+
+## 15. Random Forest, Extra Trees, and EBM-Style Models
+
+### When to use them
+
+Use these as non-linear challenger or sensitivity models when XGBoost is not
+the only tree-based view you want.
+
+### Implementation notes
+
+- `random_forest` uses sklearn random forests.
+- `extra_trees` uses sklearn extremely randomized trees.
+- `explainable_boosting_machine` is an EBM-style shallow boosted-tree adapter
+  built with existing sklearn dependencies. It is not the external
+  `interpret` package implementation.
+
+### Key configuration
+
+- `ModelConfig.tree_n_estimators`
+- `ModelConfig.tree_max_depth`
+- `ModelConfig.xgboost_learning_rate` for the EBM-style adapter
+
+### Dependency note
+
+True LightGBM is intentionally not exposed because this project currently does
+not add a new third-party dependency. XGBoost remains the installed
+gradient-boosted-tree implementation.
 
 ## Preset Alignment
 

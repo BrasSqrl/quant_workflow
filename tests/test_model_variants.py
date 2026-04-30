@@ -51,6 +51,39 @@ from tests.support import (
             ModelConfig(model_type=ModelType.PROBIT_REGRESSION, max_iter=300),
         ),
         (
+            ModelType.GEE_LOGISTIC_REGRESSION,
+            ModelConfig(
+                model_type=ModelType.GEE_LOGISTIC_REGRESSION,
+                max_iter=100,
+                gee_group_column="account_id",
+            ),
+        ),
+        (
+            ModelType.RANDOM_FOREST,
+            ModelConfig(
+                model_type=ModelType.RANDOM_FOREST,
+                tree_n_estimators=20,
+                tree_max_depth=3,
+            ),
+        ),
+        (
+            ModelType.EXTRA_TREES,
+            ModelConfig(
+                model_type=ModelType.EXTRA_TREES,
+                tree_n_estimators=20,
+                tree_max_depth=3,
+            ),
+        ),
+        (
+            ModelType.EXPLAINABLE_BOOSTING_MACHINE,
+            ModelConfig(
+                model_type=ModelType.EXPLAINABLE_BOOSTING_MACHINE,
+                tree_n_estimators=20,
+                tree_max_depth=2,
+                xgboost_learning_rate=0.05,
+            ),
+        ),
+        (
             ModelType.XGBOOST,
             ModelConfig(
                 model_type=ModelType.XGBOOST,
@@ -101,8 +134,37 @@ def test_binary_model_variants_run(model_type: ModelType, model_config: ModelCon
             ModelConfig(model_type=ModelType.BETA_REGRESSION, max_iter=300),
         ),
         (
+            ModelType.FRACTIONAL_LOGIT,
+            ModelConfig(model_type=ModelType.FRACTIONAL_LOGIT, max_iter=300),
+        ),
+        (
+            ModelType.ZERO_ONE_INFLATED_BETA,
+            ModelConfig(model_type=ModelType.ZERO_ONE_INFLATED_BETA, max_iter=300),
+        ),
+        (
             ModelType.TWO_STAGE_LGD_MODEL,
             ModelConfig(model_type=ModelType.TWO_STAGE_LGD_MODEL, max_iter=300),
+        ),
+        (
+            ModelType.RIDGE_REGRESSION,
+            ModelConfig(model_type=ModelType.RIDGE_REGRESSION, regularization_alpha=0.5),
+        ),
+        (
+            ModelType.LASSO_REGRESSION,
+            ModelConfig(
+                model_type=ModelType.LASSO_REGRESSION,
+                regularization_alpha=0.01,
+                max_iter=500,
+            ),
+        ),
+        (
+            ModelType.ELASTIC_NET_REGRESSION,
+            ModelConfig(
+                model_type=ModelType.ELASTIC_NET_REGRESSION,
+                regularization_alpha=0.01,
+                l1_ratio=0.35,
+                max_iter=500,
+            ),
         ),
         (
             ModelType.QUANTILE_REGRESSION,
@@ -116,6 +178,14 @@ def test_binary_model_variants_run(model_type: ModelType, model_config: ModelCon
                 tobit_left_censoring=0.0,
                 tobit_right_censoring=1.0,
             ),
+        ),
+        (
+            ModelType.COX_PROPORTIONAL_HAZARDS,
+            ModelConfig(model_type=ModelType.COX_PROPORTIONAL_HAZARDS, max_iter=100),
+        ),
+        (
+            ModelType.AFT_SURVIVAL_MODEL,
+            ModelConfig(model_type=ModelType.AFT_SURVIVAL_MODEL),
         ),
     ],
 )

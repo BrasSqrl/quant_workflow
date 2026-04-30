@@ -1127,6 +1127,31 @@ def run_app() -> None:
             )
 
         with left_config_column.expander("Model Settings", expanded=False):
+            tree_model_types = {
+                ModelType.RANDOM_FOREST.value,
+                ModelType.EXTRA_TREES.value,
+                ModelType.EXPLAINABLE_BOOSTING_MACHINE.value,
+            }
+            regularized_continuous_model_types = {
+                ModelType.RIDGE_REGRESSION.value,
+                ModelType.LASSO_REGRESSION.value,
+                ModelType.ELASTIC_NET_REGRESSION.value,
+            }
+            continuous_only_model_types = {
+                ModelType.LINEAR_REGRESSION.value,
+                ModelType.BETA_REGRESSION.value,
+                ModelType.FRACTIONAL_LOGIT.value,
+                ModelType.ZERO_ONE_INFLATED_BETA.value,
+                ModelType.TWO_STAGE_LGD_MODEL.value,
+                ModelType.PANEL_REGRESSION.value,
+                ModelType.QUANTILE_REGRESSION.value,
+                ModelType.TOBIT_REGRESSION.value,
+                ModelType.RIDGE_REGRESSION.value,
+                ModelType.LASSO_REGRESSION.value,
+                ModelType.ELASTIC_NET_REGRESSION.value,
+                ModelType.COX_PROPORTIONAL_HAZARDS.value,
+                ModelType.AFT_SURVIVAL_MODEL.value,
+            }
             threshold = (
                 st.number_input(
                     "Classification threshold",
@@ -1153,7 +1178,7 @@ def run_app() -> None:
                 value=preset_inputs.model.C,
                 step=0.1,
                 format="%.2f",
-                disabled=model_type in {ModelType.XGBOOST.value},
+                disabled=model_type in {ModelType.XGBOOST.value, *tree_model_types},
             )
             solver = st.selectbox(
                 "Solver",
@@ -1163,6 +1188,8 @@ def run_app() -> None:
                     ModelType.LINEAR_REGRESSION.value,
                     ModelType.TOBIT_REGRESSION.value,
                     ModelType.XGBOOST.value,
+                    *tree_model_types,
+                    *regularized_continuous_model_types,
                 },
             )
             class_weight = st.selectbox(
@@ -1172,12 +1199,7 @@ def run_app() -> None:
                 disabled=target_mode != TargetMode.BINARY.value
                 or model_type
                 in {
-                    ModelType.LINEAR_REGRESSION.value,
-                    ModelType.BETA_REGRESSION.value,
-                    ModelType.TWO_STAGE_LGD_MODEL.value,
-                    ModelType.PANEL_REGRESSION.value,
-                    ModelType.QUANTILE_REGRESSION.value,
-                    ModelType.TOBIT_REGRESSION.value,
+                    *continuous_only_model_types,
                 },
                 format_func=lambda value: "Balanced" if value == "balanced" else "No weighting",
             )
@@ -1188,7 +1210,20 @@ def run_app() -> None:
                 value=preset_inputs.model.l1_ratio,
                 step=0.05,
                 format="%.2f",
-                disabled=model_type != ModelType.ELASTIC_NET_LOGISTIC_REGRESSION.value,
+                disabled=model_type
+                not in {
+                    ModelType.ELASTIC_NET_LOGISTIC_REGRESSION.value,
+                    ModelType.ELASTIC_NET_REGRESSION.value,
+                },
+            )
+            regularization_alpha = st.number_input(
+                "Regularization alpha",
+                min_value=0.0,
+                max_value=100.0,
+                value=float(preset_inputs.model.regularization_alpha),
+                step=0.1,
+                format="%.2f",
+                disabled=model_type not in regularized_continuous_model_types,
             )
             scorecard_bins = int(
                 st.number_input(
@@ -1274,13 +1309,17 @@ def run_app() -> None:
                 disabled=model_type != ModelType.XGBOOST.value,
             )
             xgboost_learning_rate = st.number_input(
-                "XGBoost learning rate",
+                "XGBoost / EBM learning rate",
                 min_value=0.01,
                 max_value=0.5,
                 value=preset_inputs.model.xgboost_learning_rate,
                 step=0.01,
                 format="%.2f",
-                disabled=model_type != ModelType.XGBOOST.value,
+                disabled=model_type
+                not in {
+                    ModelType.XGBOOST.value,
+                    ModelType.EXPLAINABLE_BOOSTING_MACHINE.value,
+                },
             )
             xgboost_max_depth = st.number_input(
                 "XGBoost max depth",
@@ -1307,6 +1346,32 @@ def run_app() -> None:
                 step=0.05,
                 format="%.2f",
                 disabled=model_type != ModelType.XGBOOST.value,
+            )
+            tree_n_estimators = st.number_input(
+                "Tree / EBM estimators",
+                min_value=25,
+                max_value=2000,
+                value=int(preset_inputs.model.tree_n_estimators),
+                step=25,
+                disabled=model_type not in tree_model_types,
+            )
+            tree_max_depth = st.number_input(
+                "Tree / EBM max depth",
+                min_value=1,
+                max_value=20,
+                value=int(preset_inputs.model.tree_max_depth or 5),
+                step=1,
+                disabled=model_type not in tree_model_types,
+            )
+            gee_group_options = [""] + categorical_like_columns
+            gee_group_column = st.selectbox(
+                "GEE group column",
+                options=gee_group_options,
+                index=gee_group_options.index(preset_inputs.model.gee_group_column)
+                if preset_inputs.model.gee_group_column in gee_group_options
+                else 0,
+                format_func=lambda value: "None / independent rows" if value == "" else value,
+                disabled=model_type != ModelType.GEE_LOGISTIC_REGRESSION.value,
             )
             tobit_left_censoring = st.number_input(
                 "Tobit left censor",

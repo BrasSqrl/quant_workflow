@@ -103,6 +103,10 @@ def build_preview_configuration(
                 xgboost_colsample_bytree=float(values["xgboost_colsample_bytree"]),
                 tobit_left_censoring=float(values["tobit_left_censoring"]),
                 tobit_right_censoring=values["tobit_right_censoring"],
+                regularization_alpha=float(values["regularization_alpha"]),
+                tree_n_estimators=int(values["tree_n_estimators"]),
+                tree_max_depth=values["tree_max_depth"],
+                gee_group_column=values["gee_group_column"],
             ),
             cleaning=CleaningConfig(
                 trim_string_columns=values["trim_string_columns"],

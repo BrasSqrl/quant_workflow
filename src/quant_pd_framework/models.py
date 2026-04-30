@@ -14,10 +14,26 @@ import statsmodels.api as sm
 from scipy.optimize import minimize
 from scipy.stats import norm
 from sklearn.compose import ColumnTransformer
+from sklearn.ensemble import (
+    ExtraTreesClassifier,
+    ExtraTreesRegressor,
+    GradientBoostingClassifier,
+    GradientBoostingRegressor,
+    RandomForestClassifier,
+    RandomForestRegressor,
+)
 from sklearn.exceptions import ConvergenceWarning
-from sklearn.linear_model import LinearRegression, LogisticRegression, QuantileRegressor
+from sklearn.linear_model import (
+    ElasticNet,
+    Lasso,
+    LinearRegression,
+    LogisticRegression,
+    QuantileRegressor,
+    Ridge,
+)
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
+from statsmodels.duration.hazard_regression import PHReg
 from statsmodels.othermod.betareg import BetaModel
 from statsmodels.tools.sm_exceptions import HessianInversionWarning
 from xgboost import XGBClassifier, XGBRegressor
@@ -986,6 +1002,92 @@ class LinearRegressionAdapter(SklearnAdapter):
         return "Ordinary least squares linear regression fitted with sklearn.\n"
 
 
+class RidgeRegressionAdapter(SklearnAdapter):
+    """Ridge regression for continuous targets with coefficient shrinkage."""
+
+    model_type = ModelType.RIDGE_REGRESSION
+
+    def __init__(self, model_config: ModelConfig, target_mode: TargetMode) -> None:
+        if target_mode != TargetMode.CONTINUOUS:
+            raise ValueError("Ridge regression requires a continuous target.")
+        super().__init__(
+            model_config,
+            target_mode,
+            Ridge(alpha=model_config.regularization_alpha),
+            scale_numeric=True,
+        )
+
+    def predict_score(self, x_frame: pd.DataFrame) -> np.ndarray:
+        return self.estimator.predict(self._transform(x_frame))
+
+    @property
+    def summary_text(self) -> str:
+        return (
+            "Ridge regression fitted with sklearn.\n"
+            f"Regularization alpha: {self.model_config.regularization_alpha}\n"
+        )
+
+
+class LassoRegressionAdapter(SklearnAdapter):
+    """Lasso regression for continuous targets with sparse coefficient pressure."""
+
+    model_type = ModelType.LASSO_REGRESSION
+
+    def __init__(self, model_config: ModelConfig, target_mode: TargetMode) -> None:
+        if target_mode != TargetMode.CONTINUOUS:
+            raise ValueError("Lasso regression requires a continuous target.")
+        super().__init__(
+            model_config,
+            target_mode,
+            Lasso(
+                alpha=model_config.regularization_alpha,
+                max_iter=model_config.max_iter,
+            ),
+            scale_numeric=True,
+        )
+
+    def predict_score(self, x_frame: pd.DataFrame) -> np.ndarray:
+        return self.estimator.predict(self._transform(x_frame))
+
+    @property
+    def summary_text(self) -> str:
+        return (
+            "Lasso regression fitted with sklearn.\n"
+            f"Regularization alpha: {self.model_config.regularization_alpha}\n"
+        )
+
+
+class ElasticNetRegressionAdapter(SklearnAdapter):
+    """Elastic-net regression for continuous targets with mixed L1/L2 shrinkage."""
+
+    model_type = ModelType.ELASTIC_NET_REGRESSION
+
+    def __init__(self, model_config: ModelConfig, target_mode: TargetMode) -> None:
+        if target_mode != TargetMode.CONTINUOUS:
+            raise ValueError("Elastic-net regression requires a continuous target.")
+        super().__init__(
+            model_config,
+            target_mode,
+            ElasticNet(
+                alpha=model_config.regularization_alpha,
+                l1_ratio=model_config.l1_ratio,
+                max_iter=model_config.max_iter,
+            ),
+            scale_numeric=True,
+        )
+
+    def predict_score(self, x_frame: pd.DataFrame) -> np.ndarray:
+        return self.estimator.predict(self._transform(x_frame))
+
+    @property
+    def summary_text(self) -> str:
+        return (
+            "Elastic-net regression fitted with sklearn.\n"
+            f"Regularization alpha: {self.model_config.regularization_alpha}\n"
+            f"L1 ratio: {self.model_config.l1_ratio}\n"
+        )
+
+
 class QuantileRegressionAdapter(SklearnAdapter):
     """Median or user-selected quantile regression for forecast tail analysis."""
 
@@ -1098,6 +1200,200 @@ class BetaRegressionAdapter(BaseModelAdapter):
             lambda: self.results.summary().as_text(),
             source=f"{self.model_type.value}.summary",
             stage="summary",
+        )
+
+
+class ZeroOneInflatedBetaAdapter(BaseModelAdapter):
+    """Three-part LGD model for exact-zero, exact-one, and interior beta severity."""
+
+    model_type = ModelType.ZERO_ONE_INFLATED_BETA
+
+    def __init__(self, model_config: ModelConfig, target_mode: TargetMode) -> None:
+        if target_mode != TargetMode.CONTINUOUS:
+            raise ValueError("Zero-one inflated beta requires a continuous bounded target.")
+        super().__init__(model_config, target_mode)
+        self.preprocessor = None
+        self.zero_estimator = LogisticRegression(
+            max_iter=model_config.max_iter,
+            C=model_config.C,
+            solver=model_config.solver,
+            class_weight=model_config.class_weight,
+        )
+        self.one_estimator = LogisticRegression(
+            max_iter=model_config.max_iter,
+            C=model_config.C,
+            solver=model_config.solver,
+            class_weight=model_config.class_weight,
+        )
+        self.beta_results = None
+        self.constant_zero_probability_: float | None = None
+        self.constant_one_probability_: float | None = None
+
+    def fit(
+        self,
+        x_frame: pd.DataFrame,
+        y_values: pd.Series,
+        numeric_features: list[str],
+        categorical_features: list[str],
+    ) -> ZeroOneInflatedBetaAdapter:
+        self.raw_feature_names_ = list(x_frame.columns)
+        self.raw_numeric_features_ = list(numeric_features)
+        self.raw_categorical_features_ = list(categorical_features)
+        self.preprocessor = build_preprocessor(numeric_features, categorical_features)
+        x_matrix = self.preprocessor.fit_transform(x_frame)
+        self.feature_names_ = list(self.preprocessor.get_feature_names_out())
+        y_array = np.clip(y_values.astype(float).to_numpy(), 0.0, 1.0)
+        zero_indicator = y_array <= self.model_config.beta_clip_epsilon
+        one_indicator = y_array >= 1 - self.model_config.beta_clip_epsilon
+        self._fit_boundary_estimator(
+            self.zero_estimator,
+            zero_indicator.astype(int),
+            x_matrix,
+            boundary_name="zero",
+        )
+        self._fit_boundary_estimator(
+            self.one_estimator,
+            one_indicator.astype(int),
+            x_matrix,
+            boundary_name="one",
+        )
+        interior_mask = ~(zero_indicator | one_indicator)
+        if interior_mask.sum() < 10:
+            raise ValueError(
+                "Zero-one inflated beta requires at least 10 interior observations in (0, 1)."
+            )
+        clipped_target = np.clip(
+            y_array[interior_mask],
+            self.model_config.beta_clip_epsilon,
+            1 - self.model_config.beta_clip_epsilon,
+        )
+        x_interior = sm.add_constant(x_matrix[interior_mask], has_constant="add")
+        self.beta_results = self._run_with_warning_capture(
+            lambda: BetaModel(clipped_target, x_interior).fit(
+                maxiter=self.model_config.max_iter,
+                disp=False,
+            ),
+            source=f"{self.model_type.value}.beta_fit",
+        )
+        self._update_statsmodels_fit_diagnostics(
+            self.beta_results,
+            source=f"{self.model_type.value}.beta_fit",
+        )
+        return self
+
+    def _fit_boundary_estimator(
+        self,
+        estimator: LogisticRegression,
+        target: np.ndarray,
+        x_matrix: np.ndarray,
+        *,
+        boundary_name: str,
+    ) -> None:
+        unique_values = np.unique(target)
+        if len(unique_values) == 1:
+            probability = float(unique_values[0])
+            if boundary_name == "zero":
+                self.constant_zero_probability_ = probability
+            else:
+                self.constant_one_probability_ = probability
+            self._add_numerical_diagnostic(
+                source=f"{self.model_type.value}.{boundary_name}_classifier",
+                diagnostic_name=f"constant_{boundary_name}_probability",
+                value=probability,
+                status="warn",
+                detail=f"The {boundary_name} boundary indicator had one class.",
+            )
+            return
+        self._run_with_warning_capture(
+            lambda: estimator.fit(x_matrix, target),
+            source=f"{self.model_type.value}.{boundary_name}_classifier",
+        )
+        self._update_sklearn_fit_diagnostics(
+            estimator,
+            source=f"{self.model_type.value}.{boundary_name}_classifier",
+        )
+
+    def _transform(self, x_frame: pd.DataFrame) -> np.ndarray:
+        if self.preprocessor is None:
+            raise ValueError("The model adapter has not been fitted yet.")
+        return self.preprocessor.transform(x_frame)
+
+    def _boundary_probability(
+        self,
+        estimator: LogisticRegression,
+        transformed: np.ndarray,
+        constant_probability: float | None,
+    ) -> np.ndarray:
+        if constant_probability is not None:
+            return np.full(len(transformed), constant_probability, dtype=float)
+        return estimator.predict_proba(transformed)[:, 1]
+
+    def predict_score(self, x_frame: pd.DataFrame) -> np.ndarray:
+        transformed = self._transform(x_frame)
+        p_zero = self._boundary_probability(
+            self.zero_estimator,
+            transformed,
+            self.constant_zero_probability_,
+        )
+        p_one = self._boundary_probability(
+            self.one_estimator,
+            transformed,
+            self.constant_one_probability_,
+        )
+        boundary_total = np.maximum(p_zero + p_one, 1e-9)
+        overfull = boundary_total > 0.95
+        p_zero = np.where(overfull, p_zero / boundary_total * 0.95, p_zero)
+        p_one = np.where(overfull, p_one / boundary_total * 0.95, p_one)
+        p_interior = np.clip(1.0 - p_zero - p_one, 0.0, 1.0)
+        interior_mean = np.asarray(
+            self.beta_results.predict(sm.add_constant(transformed, has_constant="add"))
+        )
+        return np.clip(p_one + p_interior * interior_mean, 0.0, 1.0)
+
+    def get_feature_importance(self) -> pd.DataFrame:
+        zero_coef = (
+            np.zeros(len(self.feature_names_), dtype=float)
+            if self.constant_zero_probability_ is not None
+            else np.ravel(self.zero_estimator.coef_)
+        )
+        one_coef = (
+            np.zeros(len(self.feature_names_), dtype=float)
+            if self.constant_one_probability_ is not None
+            else np.ravel(self.one_estimator.coef_)
+        )
+        beta_params = np.asarray(self.beta_results.params)[1 : len(self.feature_names_) + 1]
+        combined = zero_coef + one_coef + beta_params
+        table = pd.DataFrame(
+            {
+                "feature_name": self.feature_names_,
+                "importance_value": np.abs(zero_coef) + np.abs(one_coef) + np.abs(beta_params),
+                "importance_type": "zero_one_inflated_absolute_coefficient",
+                "coefficient": combined,
+                "abs_coefficient": np.abs(combined),
+                "std_error": np.nan,
+                "p_value": np.nan,
+                "odds_ratio": np.nan,
+                "zero_boundary_coefficient": zero_coef,
+                "one_boundary_coefficient": one_coef,
+                "interior_beta_coefficient": beta_params,
+            }
+        )
+        return table.sort_values("importance_value", ascending=False).reset_index(drop=True)
+
+    def get_model_artifacts(self) -> dict[str, pd.DataFrame]:
+        return self._merge_model_artifacts(
+            {
+                "zero_one_inflated_beta_components": self.get_feature_importance(),
+            }
+        )
+
+    @property
+    def summary_text(self) -> str:
+        return (
+            "Zero-one inflated beta LGD model fitted.\n"
+            "Stage one: exact-zero probability.\n"
+            "Stage two: exact-one probability.\n"
+            "Stage three: beta regression for interior severity in (0, 1).\n"
         )
 
 
@@ -1290,7 +1586,13 @@ class XGBoostAdapter(SklearnAdapter):
                 n_jobs=1,
             )
         )
-        super().__init__(model_config, target_mode, estimator, scale_numeric=False)
+        super().__init__(
+            model_config,
+            target_mode,
+            estimator,
+            scale_numeric=False,
+            sparse_preprocessor=False,
+        )
 
     def predict_score(self, x_frame: pd.DataFrame) -> np.ndarray:
         transformed = self._transform(x_frame)
@@ -1305,6 +1607,137 @@ class XGBoostAdapter(SklearnAdapter):
             f"Estimators: {self.model_config.xgboost_n_estimators}\n"
             f"Learning rate: {self.model_config.xgboost_learning_rate}\n"
             f"Max depth: {self.model_config.xgboost_max_depth}\n"
+        )
+
+
+class RandomForestAdapter(SklearnAdapter):
+    """Random forest challenger for nonlinear benchmark comparisons."""
+
+    model_type = ModelType.RANDOM_FOREST
+
+    def __init__(self, model_config: ModelConfig, target_mode: TargetMode) -> None:
+        estimator = (
+            RandomForestClassifier(
+                n_estimators=model_config.tree_n_estimators,
+                max_depth=model_config.tree_max_depth,
+                class_weight=model_config.class_weight,
+                random_state=42,
+                n_jobs=1,
+            )
+            if target_mode == TargetMode.BINARY
+            else RandomForestRegressor(
+                n_estimators=model_config.tree_n_estimators,
+                max_depth=model_config.tree_max_depth,
+                random_state=42,
+                n_jobs=1,
+            )
+        )
+        super().__init__(
+            model_config,
+            target_mode,
+            estimator,
+            scale_numeric=False,
+            sparse_preprocessor=False,
+        )
+
+    def predict_score(self, x_frame: pd.DataFrame) -> np.ndarray:
+        transformed = self._transform(x_frame)
+        if self.is_binary_classifier:
+            return self.estimator.predict_proba(transformed)[:, 1]
+        return self.estimator.predict(transformed)
+
+    @property
+    def summary_text(self) -> str:
+        return (
+            "Random forest model fitted with sklearn.\n"
+            f"Trees: {self.model_config.tree_n_estimators}\n"
+            f"Max depth: {self.model_config.tree_max_depth}\n"
+        )
+
+
+class ExtraTreesAdapter(SklearnAdapter):
+    """Extremely randomized trees challenger for nonlinear benchmark comparisons."""
+
+    model_type = ModelType.EXTRA_TREES
+
+    def __init__(self, model_config: ModelConfig, target_mode: TargetMode) -> None:
+        estimator = (
+            ExtraTreesClassifier(
+                n_estimators=model_config.tree_n_estimators,
+                max_depth=model_config.tree_max_depth,
+                class_weight=model_config.class_weight,
+                random_state=42,
+                n_jobs=1,
+            )
+            if target_mode == TargetMode.BINARY
+            else ExtraTreesRegressor(
+                n_estimators=model_config.tree_n_estimators,
+                max_depth=model_config.tree_max_depth,
+                random_state=42,
+                n_jobs=1,
+            )
+        )
+        super().__init__(
+            model_config,
+            target_mode,
+            estimator,
+            scale_numeric=False,
+            sparse_preprocessor=False,
+        )
+
+    def predict_score(self, x_frame: pd.DataFrame) -> np.ndarray:
+        transformed = self._transform(x_frame)
+        if self.is_binary_classifier:
+            return self.estimator.predict_proba(transformed)[:, 1]
+        return self.estimator.predict(transformed)
+
+    @property
+    def summary_text(self) -> str:
+        return (
+            "Extra Trees model fitted with sklearn.\n"
+            f"Trees: {self.model_config.tree_n_estimators}\n"
+            f"Max depth: {self.model_config.tree_max_depth}\n"
+        )
+
+
+class ExplainableBoostingMachineAdapter(SklearnAdapter):
+    """No-new-dependency EBM-style shallow boosted-tree challenger."""
+
+    model_type = ModelType.EXPLAINABLE_BOOSTING_MACHINE
+
+    def __init__(self, model_config: ModelConfig, target_mode: TargetMode) -> None:
+        estimator = (
+            GradientBoostingClassifier(
+                n_estimators=model_config.tree_n_estimators,
+                learning_rate=model_config.xgboost_learning_rate,
+                max_depth=min(model_config.tree_max_depth or 2, 2),
+                random_state=42,
+            )
+            if target_mode == TargetMode.BINARY
+            else GradientBoostingRegressor(
+                n_estimators=model_config.tree_n_estimators,
+                learning_rate=model_config.xgboost_learning_rate,
+                max_depth=min(model_config.tree_max_depth or 2, 2),
+                random_state=42,
+            )
+        )
+        super().__init__(model_config, target_mode, estimator, scale_numeric=False)
+
+    def predict_score(self, x_frame: pd.DataFrame) -> np.ndarray:
+        transformed = self._transform(x_frame)
+        if self.is_binary_classifier:
+            return self.estimator.predict_proba(transformed)[:, 1]
+        return self.estimator.predict(transformed)
+
+    @property
+    def summary_text(self) -> str:
+        return (
+            "Explainable boosting-style model fitted with sklearn shallow boosted trees.\n"
+            "This avoids adding the external interpret package, so review PDP/ALE and "
+            "feature-importance outputs as the explanation layer.\n"
+            f"Estimators: {self.model_config.tree_n_estimators}\n"
+            f"Learning rate: {self.model_config.xgboost_learning_rate}\n"
+            f"Max tree depth: {min(self.model_config.tree_max_depth or 2, 2)}\n"
         )
 
 
@@ -1432,6 +1865,126 @@ class ProbitRegressionAdapter(StatsmodelsAdapter):
         return np.asarray(self.results.predict(self._transform(x_frame)))
 
 
+class FractionalLogitAdapter(StatsmodelsAdapter):
+    """Fractional logit / quasi-binomial model for bounded LGD rates."""
+
+    model_type = ModelType.FRACTIONAL_LOGIT
+
+    def __init__(self, model_config: ModelConfig, target_mode: TargetMode) -> None:
+        if target_mode != TargetMode.CONTINUOUS:
+            raise ValueError("Fractional logit requires a continuous bounded target.")
+        super().__init__(model_config, target_mode, scale_numeric=True)
+
+    def _fit_statsmodel(self, x_matrix: np.ndarray, y_values: pd.Series):
+        clipped_target = np.clip(y_values.astype(float), 0.0, 1.0)
+        model = sm.GLM(
+            clipped_target,
+            x_matrix,
+            family=sm.families.Binomial(),
+        )
+        return model.fit(maxiter=self.model_config.max_iter, disp=False)
+
+    def predict_score(self, x_frame: pd.DataFrame) -> np.ndarray:
+        return np.clip(np.asarray(self.results.predict(self._transform(x_frame))), 0.0, 1.0)
+
+
+class GEELogisticRegressionAdapter(BaseModelAdapter):
+    """GEE logistic model for clustered or repeated-observation binary PD data."""
+
+    model_type = ModelType.GEE_LOGISTIC_REGRESSION
+
+    def __init__(self, model_config: ModelConfig, target_mode: TargetMode) -> None:
+        if target_mode != TargetMode.BINARY:
+            raise ValueError("GEE logistic regression requires a binary target.")
+        super().__init__(model_config, target_mode)
+        self.preprocessor = None
+        self.results = None
+        self.model_feature_columns_: list[str] = []
+
+    def fit(
+        self,
+        x_frame: pd.DataFrame,
+        y_values: pd.Series,
+        numeric_features: list[str],
+        categorical_features: list[str],
+    ) -> GEELogisticRegressionAdapter:
+        group_column = self.model_config.gee_group_column
+        groups = (
+            x_frame[group_column].astype(str).to_numpy()
+            if group_column and group_column in x_frame.columns
+            else np.arange(len(x_frame))
+        )
+        self.model_feature_columns_ = [
+            column for column in x_frame.columns if column != group_column
+        ]
+        model_numeric = [
+            feature for feature in numeric_features if feature in self.model_feature_columns_
+        ]
+        model_categorical = [
+            feature for feature in categorical_features if feature in self.model_feature_columns_
+        ]
+        self.raw_feature_names_ = list(self.model_feature_columns_)
+        self.raw_numeric_features_ = model_numeric
+        self.raw_categorical_features_ = model_categorical
+        self.preprocessor = build_preprocessor(model_numeric, model_categorical)
+        x_matrix = self.preprocessor.fit_transform(x_frame.loc[:, self.model_feature_columns_])
+        x_with_const = sm.add_constant(x_matrix, has_constant="add")
+        self.feature_names_ = ["const", *self.preprocessor.get_feature_names_out().tolist()]
+        self.results = self._run_with_warning_capture(
+            lambda: sm.GEE(
+                y_values.astype(float),
+                x_with_const,
+                groups=groups,
+                family=sm.families.Binomial(),
+                cov_struct=sm.cov_struct.Exchangeable(),
+            ).fit(maxiter=self.model_config.max_iter),
+            source=f"{self.model_type.value}.gee_fit",
+        )
+        self._update_statsmodels_fit_diagnostics(
+            self.results,
+            source=f"{self.model_type.value}.gee_fit",
+        )
+        return self
+
+    def _transform(self, x_frame: pd.DataFrame) -> np.ndarray:
+        if self.preprocessor is None:
+            raise ValueError("The model adapter has not been fitted yet.")
+        transformed = self.preprocessor.transform(x_frame.loc[:, self.model_feature_columns_])
+        return sm.add_constant(transformed, has_constant="add")
+
+    def predict_score(self, x_frame: pd.DataFrame) -> np.ndarray:
+        return np.clip(np.asarray(self.results.predict(self._transform(x_frame))), 0.0, 1.0)
+
+    def get_feature_importance(self) -> pd.DataFrame:
+        params = np.asarray(self.results.params)
+        pvalues = np.asarray(getattr(self.results, "pvalues", np.full_like(params, np.nan)))
+        bse = np.asarray(getattr(self.results, "bse", np.full_like(params, np.nan)))
+        return (
+            pd.DataFrame(
+                {
+                    "feature_name": self.feature_names_,
+                    "importance_value": np.abs(params),
+                    "importance_type": "gee_absolute_coefficient",
+                    "coefficient": params,
+                    "abs_coefficient": np.abs(params),
+                    "std_error": bse,
+                    "p_value": pvalues,
+                    "odds_ratio": _safe_odds_ratio(params),
+                }
+            )
+            .sort_values("importance_value", ascending=False)
+            .reset_index(drop=True)
+        )
+
+    @property
+    def summary_text(self) -> str:
+        return self._run_with_warning_capture(
+            lambda: self.results.summary().as_text(),
+            source=f"{self.model_type.value}.summary",
+            stage="summary",
+        )
+
+
 @dataclass
 class TobitResults:
     """Stores the fitted parameters for the custom Tobit model."""
@@ -1547,6 +2100,124 @@ class TobitRegressionAdapter(StatsmodelsAdapter):
         return predictions
 
 
+class CoxProportionalHazardsAdapter(BaseModelAdapter):
+    """Cox proportional hazards model using statsmodels PHReg with observed events."""
+
+    model_type = ModelType.COX_PROPORTIONAL_HAZARDS
+
+    def __init__(self, model_config: ModelConfig, target_mode: TargetMode) -> None:
+        if target_mode != TargetMode.CONTINUOUS:
+            raise ValueError("Cox proportional hazards requires a continuous duration target.")
+        super().__init__(model_config, target_mode)
+        self.preprocessor = None
+        self.results = None
+
+    def fit(
+        self,
+        x_frame: pd.DataFrame,
+        y_values: pd.Series,
+        numeric_features: list[str],
+        categorical_features: list[str],
+    ) -> CoxProportionalHazardsAdapter:
+        self.raw_feature_names_ = list(x_frame.columns)
+        self.raw_numeric_features_ = list(numeric_features)
+        self.raw_categorical_features_ = list(categorical_features)
+        self.preprocessor = build_preprocessor(numeric_features, categorical_features)
+        x_matrix = self.preprocessor.fit_transform(x_frame)
+        self.feature_names_ = list(self.preprocessor.get_feature_names_out())
+        durations = np.clip(y_values.astype(float).to_numpy(), 1e-9, None)
+        status = np.ones(len(durations), dtype=int)
+        self.results = self._run_with_warning_capture(
+            lambda: PHReg(durations, x_matrix, status=status).fit(
+                maxiter=self.model_config.max_iter,
+                disp=False,
+            ),
+            source=f"{self.model_type.value}.phreg_fit",
+        )
+        self._update_statsmodels_fit_diagnostics(
+            self.results,
+            source=f"{self.model_type.value}.phreg_fit",
+        )
+        return self
+
+    def _transform(self, x_frame: pd.DataFrame) -> np.ndarray:
+        if self.preprocessor is None:
+            raise ValueError("The model adapter has not been fitted yet.")
+        return self.preprocessor.transform(x_frame)
+
+    def predict_score(self, x_frame: pd.DataFrame) -> np.ndarray:
+        linear_predictor = self._transform(x_frame) @ np.asarray(self.results.params)
+        return np.exp(np.clip(linear_predictor, -20, 20))
+
+    def get_feature_importance(self) -> pd.DataFrame:
+        params = np.asarray(self.results.params)
+        pvalues = np.asarray(getattr(self.results, "pvalues", np.full_like(params, np.nan)))
+        bse = np.asarray(getattr(self.results, "bse", np.full_like(params, np.nan)))
+        return (
+            pd.DataFrame(
+                {
+                    "feature_name": self.feature_names_,
+                    "importance_value": np.abs(params),
+                    "importance_type": "cox_absolute_log_hazard",
+                    "coefficient": params,
+                    "abs_coefficient": np.abs(params),
+                    "std_error": bse,
+                    "p_value": pvalues,
+                    "odds_ratio": np.nan,
+                    "hazard_ratio": _safe_odds_ratio(params),
+                }
+            )
+            .sort_values("importance_value", ascending=False)
+            .reset_index(drop=True)
+        )
+
+    @property
+    def summary_text(self) -> str:
+        return self._run_with_warning_capture(
+            lambda: self.results.summary().as_text(),
+            source=f"{self.model_type.value}.summary",
+            stage="summary",
+        )
+
+
+class AFTSurvivalModelAdapter(SklearnAdapter):
+    """Log-normal AFT-style duration model using linear regression on log duration."""
+
+    model_type = ModelType.AFT_SURVIVAL_MODEL
+
+    def __init__(self, model_config: ModelConfig, target_mode: TargetMode) -> None:
+        if target_mode != TargetMode.CONTINUOUS:
+            raise ValueError("AFT survival modeling requires a continuous duration target.")
+        super().__init__(
+            model_config,
+            target_mode,
+            LinearRegression(),
+            scale_numeric=True,
+        )
+
+    def fit(
+        self,
+        x_frame: pd.DataFrame,
+        y_values: pd.Series,
+        numeric_features: list[str],
+        categorical_features: list[str],
+    ) -> AFTSurvivalModelAdapter:
+        log_duration = np.log(np.clip(y_values.astype(float).to_numpy(), 1e-9, None))
+        return super().fit(
+            x_frame,
+            pd.Series(log_duration, index=y_values.index),
+            numeric_features,
+            categorical_features,
+        )
+
+    def predict_score(self, x_frame: pd.DataFrame) -> np.ndarray:
+        return np.exp(self.estimator.predict(self._transform(x_frame)))
+
+    @property
+    def summary_text(self) -> str:
+        return "AFT-style log-normal duration model fitted with sklearn linear regression.\n"
+
+
 def build_model_adapter(
     model_config: ModelConfig,
     target_mode: TargetMode,
@@ -1573,6 +2244,28 @@ def build_model_adapter(
         return ProbitRegressionAdapter(model_config, target_mode)
     if model_config.model_type == ModelType.LINEAR_REGRESSION:
         return LinearRegressionAdapter(model_config, target_mode)
+    if model_config.model_type == ModelType.FRACTIONAL_LOGIT:
+        return FractionalLogitAdapter(model_config, target_mode)
+    if model_config.model_type == ModelType.ZERO_ONE_INFLATED_BETA:
+        return ZeroOneInflatedBetaAdapter(model_config, target_mode)
+    if model_config.model_type == ModelType.RIDGE_REGRESSION:
+        return RidgeRegressionAdapter(model_config, target_mode)
+    if model_config.model_type == ModelType.LASSO_REGRESSION:
+        return LassoRegressionAdapter(model_config, target_mode)
+    if model_config.model_type == ModelType.ELASTIC_NET_REGRESSION:
+        return ElasticNetRegressionAdapter(model_config, target_mode)
+    if model_config.model_type == ModelType.EXPLAINABLE_BOOSTING_MACHINE:
+        return ExplainableBoostingMachineAdapter(model_config, target_mode)
+    if model_config.model_type == ModelType.GEE_LOGISTIC_REGRESSION:
+        return GEELogisticRegressionAdapter(model_config, target_mode)
+    if model_config.model_type == ModelType.COX_PROPORTIONAL_HAZARDS:
+        return CoxProportionalHazardsAdapter(model_config, target_mode)
+    if model_config.model_type == ModelType.AFT_SURVIVAL_MODEL:
+        return AFTSurvivalModelAdapter(model_config, target_mode)
+    if model_config.model_type == ModelType.RANDOM_FOREST:
+        return RandomForestAdapter(model_config, target_mode)
+    if model_config.model_type == ModelType.EXTRA_TREES:
+        return ExtraTreesAdapter(model_config, target_mode)
     if model_config.model_type == ModelType.BETA_REGRESSION:
         return BetaRegressionAdapter(model_config, target_mode)
     if model_config.model_type == ModelType.TWO_STAGE_LGD_MODEL:

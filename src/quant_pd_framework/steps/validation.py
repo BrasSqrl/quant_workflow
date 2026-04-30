@@ -88,6 +88,8 @@ class ValidationStep(BasePipelineStep):
                     )
                 if model_type in {
                     ModelType.BETA_REGRESSION,
+                    ModelType.FRACTIONAL_LOGIT,
+                    ModelType.ZERO_ONE_INFLATED_BETA,
                     ModelType.TWO_STAGE_LGD_MODEL,
                 }:
                     min_value = float(non_null_target.min())
@@ -95,6 +97,16 @@ class ValidationStep(BasePipelineStep):
                     if min_value < 0 or max_value > 1:
                         raise ValueError(
                             f"{model_type.value} requires target values bounded within [0, 1]."
+                        )
+                if model_type in {
+                    ModelType.COX_PROPORTIONAL_HAZARDS,
+                    ModelType.AFT_SURVIVAL_MODEL,
+                }:
+                    min_value = float(non_null_target.min())
+                    if min_value <= 0:
+                        context.warn(
+                            f"{model_type.value} expects a positive duration target. "
+                            "Non-positive values will be clipped during fitting."
                         )
 
         split_config = context.config.split

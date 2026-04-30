@@ -9,7 +9,7 @@ import joblib
 import pandas as pd
 
 from ..base import BasePipelineStep
-from ..config import ExecutionMode
+from ..config import ExecutionMode, ModelType
 from ..context import PipelineContext
 from ..models import build_model_adapter
 
@@ -38,6 +38,16 @@ class ModelTrainingStep(BasePipelineStep):
     def _fit_new_model(self, context: PipelineContext) -> PipelineContext:
         train_frame = context.split_frames["train"]
         x_train = train_frame[context.feature_columns]
+        if (
+            context.config.model.model_type == ModelType.GEE_LOGISTIC_REGRESSION
+            and context.config.model.gee_group_column
+            and context.config.model.gee_group_column in train_frame.columns
+            and context.config.model.gee_group_column not in x_train.columns
+        ):
+            x_train = pd.concat(
+                [x_train, train_frame[[context.config.model.gee_group_column]]],
+                axis=1,
+            )
         y_train = train_frame[context.target_column]
         target_mode = context.config.target.mode
         model_adapter = build_model_adapter(

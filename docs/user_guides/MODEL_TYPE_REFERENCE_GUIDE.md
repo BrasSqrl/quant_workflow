@@ -47,12 +47,23 @@ The most important setup decision is target mode:
 | `elastic_net_logistic_regression` | binary | Binary model with shrinkage for correlated or larger feature sets. |
 | `scorecard_logistic_regression` | binary | WoE-binned scorecard with points and reason codes. |
 | `probit_regression` | binary | Parametric challenger to logistic regression. |
+| `gee_logistic_regression` | binary | Cluster-aware panel PD model with robust GEE estimates. |
 | `linear_regression` | continuous or binary | Simple continuous baseline, forecast baseline, or linear-probability fallback. |
+| `ridge_regression` | continuous | Regularized continuous model that shrinks correlated coefficients. |
+| `lasso_regression` | continuous | Regularized continuous model with sparse feature-selection pressure. |
+| `elastic_net_regression` | continuous | Continuous model blending ridge shrinkage and lasso selection. |
 | `beta_regression` | continuous | LGD or severity model where the target is bounded in `(0, 1)`. |
+| `fractional_logit` | continuous | Bounded rate/proportion model for targets in `[0, 1]`. |
+| `zero_one_inflated_beta` | continuous | LGD/severity model with true mass at 0, 1, and interior values. |
 | `two_stage_lgd_model` | continuous | LGD model separating positive-loss likelihood from severity. |
 | `panel_regression` | continuous | Panel-style forecasting or CCAR-style development. |
 | `quantile_regression` | continuous | Tail, downside, or percentile forecasting. |
 | `tobit_regression` | continuous | Censored continuous outcomes. |
+| `cox_proportional_hazards` | continuous | Time-to-event risk ranking with hazard ratios. |
+| `aft_survival_model` | continuous | Log-duration time-to-event baseline. |
+| `random_forest` | binary or continuous | Bagged-tree non-linear challenger. |
+| `extra_trees` | binary or continuous | Randomized-tree non-linear challenger. |
+| `explainable_boosting_machine` | binary or continuous | EBM-style shallow boosted-tree challenger using existing dependencies. |
 | `xgboost` | binary or continuous | Non-linear challenger for complex relationships. |
 
 ## 1. Logistic Regression
@@ -670,6 +681,397 @@ Use `xgboost` when:
 - Strong performance should be paired with stronger explainability evidence.
 - Deep trees can overfit; review train/test divergence and cross-validation.
 
+## 13. GEE Logistic Regression
+
+### What It Does
+
+Generalized Estimating Equations logistic regression models a binary event while
+accounting for repeated observations in groups such as borrower, loan, or
+account. It estimates population-average effects and robust standard errors.
+
+### When To Use It
+
+Use `gee_logistic_regression` when:
+
+- the target is binary
+- the same entity appears multiple times
+- clustered standard errors are important
+- you want a panel-aware challenger to standard logistic regression
+
+### GUI Walkthrough
+
+1. In Step 1, mark the default/event field as the target.
+2. Mark the borrower/account/loan identifier as an identifier.
+3. In Step 2, set `Target mode` to `Binary`.
+4. Set `Model type` to `GEE Logistic Regression`.
+5. In `Model Settings`, set `GEE group column` to the repeated-observation ID
+   when available.
+6. Run Step 3 and compare results against regular logistic regression.
+
+### Outputs To Review
+
+- model summary
+- robust coefficient table
+- calibration, ROC/AUC, and KS outputs
+- model comparison outputs if enabled
+
+### Watchouts
+
+- If no group column is selected, the adapter treats rows as independent.
+- GEE effects are population-average effects, not subject-specific random
+  effects.
+
+## 14. Ridge Regression
+
+### What It Does
+
+Ridge regression is linear regression with L2 shrinkage. It stabilizes
+coefficients when continuous predictors are correlated, but it usually keeps all
+features in the model.
+
+### When To Use It
+
+Use `ridge_regression` for continuous LGD or forecasting targets when ordinary
+linear regression has unstable coefficients caused by collinearity.
+
+### GUI Walkthrough
+
+1. In Step 1, mark the continuous target and feature roles.
+2. In Step 2, set `Target mode` to `Continuous`.
+3. Set `Model type` to `Ridge Regression`.
+4. In `Model Settings`, tune `Regularization alpha`.
+5. Run Step 3 and compare against linear regression.
+
+### Outputs To Review
+
+- continuous split metrics
+- feature importance / coefficient magnitude
+- residual diagnostics
+- stability and cross-validation outputs when enabled
+
+### Watchouts
+
+- Ridge shrinks coefficients but does not remove features.
+- High alpha values can make coefficients more stable but less responsive.
+
+## 15. Lasso Regression
+
+### What It Does
+
+Lasso regression is linear regression with L1 regularization. It can shrink some
+coefficients to zero and therefore acts as a feature-selection pressure.
+
+### When To Use It
+
+Use `lasso_regression` when the target is continuous and you want a simpler
+linear model from a larger candidate feature set.
+
+### GUI Walkthrough
+
+1. Set the target to `Continuous`.
+2. Choose `Lasso Regression`.
+3. Tune `Regularization alpha`.
+4. Review which coefficients remain non-zero.
+5. Use challenger comparison before deciding whether to replace a simpler
+   baseline.
+
+### Outputs To Review
+
+- selected coefficient table
+- residual diagnostics
+- RMSE, MAE, and R-squared
+- feature stability outputs
+
+### Watchouts
+
+- A zero coefficient is a statistical result, not automatic business approval
+  to remove the feature.
+- Lasso can be unstable when predictors are highly correlated.
+
+## 16. Elastic-Net Regression
+
+### What It Does
+
+Elastic-net regression combines L1 and L2 regularization for continuous targets.
+It balances lasso-style feature selection with ridge-style coefficient
+stability.
+
+### When To Use It
+
+Use `elastic_net_regression` when continuous predictors are numerous and
+correlated, and you want both shrinkage and selection pressure.
+
+### GUI Walkthrough
+
+1. Set the target to `Continuous`.
+2. Choose `Elastic-Net Regression`.
+3. Tune `Regularization alpha`.
+4. Tune `Elastic-net l1 ratio`.
+5. Run Step 3 and review holdout performance and selected features.
+
+### Outputs To Review
+
+- coefficient table
+- residual diagnostics
+- continuous metrics
+- stability and cross-validation outputs
+
+### Watchouts
+
+- `Regularization alpha` controls shrinkage strength.
+- `Elastic-net l1 ratio` controls how much behavior is lasso-like versus
+  ridge-like.
+
+## 17. Fractional Logit
+
+### What It Does
+
+Fractional logit is a GLM-style bounded-response model for rates and
+proportions in `[0, 1]`. It is often useful for LGD-style severity rates when
+predictions should remain bounded.
+
+### When To Use It
+
+Use `fractional_logit` when:
+
+- the target is continuous
+- the values are rates or proportions
+- predictions outside `[0, 1]` would be invalid
+
+### GUI Walkthrough
+
+1. Mark the bounded rate/proportion field as the target.
+2. Set `Target mode` to `Continuous`.
+3. Choose `Fractional Logit`.
+4. Keep residual and actual-versus-predicted diagnostics enabled.
+5. Run Step 3 and verify bounded prediction behavior.
+
+### Outputs To Review
+
+- model summary
+- actual-versus-predicted charts
+- residual diagnostics
+- segment-level error tables
+
+### Watchouts
+
+- If exact zeros and ones are common and meaningful, consider
+  `zero_one_inflated_beta`.
+- The target should represent a true bounded proportion, not an arbitrary scaled
+  number.
+
+## 18. Zero-One Inflated Beta
+
+### What It Does
+
+Zero-one inflated beta modeling handles bounded severity targets with true mass
+at exactly `0`, exactly `1`, and interior values between `0` and `1`.
+
+### When To Use It
+
+Use `zero_one_inflated_beta` for LGD data where:
+
+- zero means a true no-loss or full-recovery outcome
+- one means a true full-loss outcome
+- interior values represent partial losses
+
+### GUI Walkthrough
+
+1. Mark the LGD/severity field as the target.
+2. Set `Target mode` to `Continuous`.
+3. Choose `Zero-One Inflated Beta`.
+4. Keep LGD, residual, and actual-versus-predicted diagnostics enabled.
+5. Run Step 3 and review boundary and interior model behavior.
+
+### Outputs To Review
+
+- boundary-model feature importance
+- interior beta-model coefficients
+- LGD segment diagnostics
+- actual-versus-predicted outputs
+
+### Watchouts
+
+- The model needs enough interior observations.
+- Only use it when zero and one values are real economic states, not coding
+  artifacts.
+
+## 19. Cox Proportional Hazards
+
+### What It Does
+
+Cox proportional hazards estimates the relationship between features and
+time-to-event risk. The framework reports hazard-ratio style feature evidence.
+
+### When To Use It
+
+Use `cox_proportional_hazards` when:
+
+- the target is a positive duration
+- the goal is time-to-event risk ranking
+- hazard-ratio interpretation is useful
+
+### GUI Walkthrough
+
+1. Create or select a positive duration target.
+2. Set `Target mode` to `Continuous`.
+3. Choose `Cox Proportional Hazards`.
+4. Run Step 3 and review hazard ratios and ranking evidence.
+
+### Outputs To Review
+
+- hazard-ratio feature importance
+- duration/risk score outputs
+- residual and segment diagnostics
+
+### Watchouts
+
+- The current implementation assumes observed events because censoring
+  indicators are not yet part of the model configuration.
+- Do not use it when the target is not a positive duration.
+
+## 20. AFT Survival Model
+
+### What It Does
+
+The AFT survival model fits a log-duration regression. It estimates how features
+accelerate or decelerate expected time to event.
+
+### When To Use It
+
+Use `aft_survival_model` when:
+
+- the target is a positive duration
+- expected duration is easier to explain than hazard ratios
+- a transparent time-to-event baseline is desired
+
+### GUI Walkthrough
+
+1. Create or select a positive duration target.
+2. Set `Target mode` to `Continuous`.
+3. Choose `AFT Survival Model`.
+4. Run Step 3 and review predicted durations.
+
+### Outputs To Review
+
+- continuous metrics
+- feature importance
+- residual diagnostics
+- actual-versus-predicted duration charts
+
+### Watchouts
+
+- The target is clipped to avoid invalid log durations.
+- This is a practical log-duration baseline, not a full censored survival
+  package.
+
+## 21. Random Forest
+
+### What It Does
+
+Random forest fits many decision trees on bootstrapped samples and averages
+their predictions. It can capture non-linear effects and interactions.
+
+### When To Use It
+
+Use `random_forest` as a non-linear challenger for binary or continuous targets
+when interpretability is still supported through feature importance and
+explainability outputs.
+
+### GUI Walkthrough
+
+1. Set the correct target mode.
+2. Choose `Random Forest`.
+3. In `Model Settings`, tune `Tree / EBM estimators` and `Tree / EBM max depth`.
+4. Keep explainability diagnostics enabled.
+5. Run Step 3 and compare against simpler baselines.
+
+### Outputs To Review
+
+- split metrics
+- feature importance
+- permutation importance
+- PDP, ICE, and ALE outputs
+
+### Watchouts
+
+- It is less transparent than coefficient or scorecard models.
+- Review train/test divergence and explainability evidence before using it as a
+  preferred model.
+
+## 22. Extra Trees
+
+### What It Does
+
+Extra Trees is a randomized tree ensemble. It is similar to random forest but
+adds more randomness to split selection, often making it useful as a sensitivity
+challenger.
+
+### When To Use It
+
+Use `extra_trees` when you want a fast non-linear sensitivity check or a second
+tree-ensemble view beside random forest or XGBoost.
+
+### GUI Walkthrough
+
+1. Set the correct target mode.
+2. Choose `Extra Trees`.
+3. Tune `Tree / EBM estimators` and `Tree / EBM max depth`.
+4. Keep explainability diagnostics enabled.
+5. Run Step 3 and compare against the baseline and other challengers.
+
+### Outputs To Review
+
+- split metrics
+- feature importance
+- permutation importance
+- PDP, ICE, and ALE outputs
+
+### Watchouts
+
+- Randomized split behavior can be harder to explain to validators.
+- Use it as challenger evidence unless there is a strong governance reason to
+  promote it.
+
+## 23. Explainable Boosting Machine
+
+### What It Does
+
+The current `explainable_boosting_machine` option is an EBM-style shallow
+boosted-tree adapter built with existing sklearn dependencies. It is intended to
+provide a more transparent non-linear challenger when paired with PDP/ALE
+outputs.
+
+### When To Use It
+
+Use it when:
+
+- the target is binary or continuous
+- non-linear shape effects are expected
+- a shallow boosted-tree challenger is more useful than a deeper black-box model
+
+### GUI Walkthrough
+
+1. Set the correct target mode.
+2. Choose `Explainable Boosting Machine`.
+3. Tune `Tree / EBM estimators`, `Tree / EBM max depth`, and
+   `XGBoost / EBM learning rate`.
+4. Keep PDP, ICE, ALE, and feature-importance diagnostics enabled.
+5. Run Step 3 and review whether the shape effects are business-sensible.
+
+### Outputs To Review
+
+- feature importance
+- PDP, ICE, and ALE outputs
+- calibration or residual diagnostics
+- split metrics and model comparison outputs
+
+### Watchouts
+
+- This is not the external `interpret` package's native EBM implementation.
+- True LightGBM is not included because this implementation pass does not add
+  third-party packages.
+
 ## Choosing Between Similar Models
 
 | If you are deciding between... | Usually start with... | Why |
@@ -677,12 +1079,17 @@ Use `xgboost` when:
 | Logistic vs scorecard | Logistic, then scorecard if points/WoE are required | Logistic is simpler; scorecard is better for governed points-based implementation. |
 | Logistic vs elastic-net | Logistic, then elastic-net if features are numerous or correlated | Elastic-net helps when coefficient stability is weak. |
 | Logistic vs probit | Logistic | Probit is usually a challenger, not the default. |
+| Logistic vs GEE logistic | Logistic for independent rows, GEE for repeated entities | GEE is useful when clustered inference matters. |
 | Linear vs beta | Beta if the target is a true bounded proportion | Linear can predict outside valid bounds. |
+| Linear vs regularized linear | Linear first, then ridge/lasso/elastic-net if stability is weak | Regularization can improve stability but adds tuning judgment. |
+| Fractional logit vs beta | Fractional logit when boundary handling matters less | Beta is best for mostly interior `(0, 1)` outcomes. |
+| Beta vs zero-one inflated beta | Zero-one inflated beta if exact zero and one are true economic states | It models boundary mass explicitly. |
 | Beta vs two-stage LGD | Two-stage LGD if there are many true zeros | Beta is better for mostly positive bounded severity. |
 | Linear vs quantile | Quantile if the business question is percentile-specific | Linear estimates the mean; quantile estimates a percentile. |
 | Linear vs Tobit | Tobit if the target is censored | Tobit explicitly handles censoring. |
 | Panel vs linear | Panel if entity-time structure matters | Panel setup documents repeated observations over time. |
-| Interpretable model vs XGBoost | Interpretable model first, XGBoost as challenger | This keeps governance evidence cleaner. |
+| Cox vs AFT | Cox for hazard ratios, AFT for duration estimates | They answer different time-to-event questions. |
+| Interpretable model vs tree ensemble | Interpretable model first, tree models as challengers | This keeps governance evidence cleaner. |
 
 ## Recommended Review Pattern
 

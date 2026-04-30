@@ -115,6 +115,36 @@ MODEL_STORY_CARDS: dict[ModelType, ModelStoryCard] = {
         ),
         glossary_terms=("Probit", "AUC", "Calibration"),
     ),
+    ModelType.GEE_LOGISTIC_REGRESSION: ModelStoryCard(
+        model_type=ModelType.GEE_LOGISTIC_REGRESSION,
+        title="GEE Logistic Regression",
+        target_mode="Binary",
+        summary=(
+            "Cluster-aware logistic model for repeated observations using robust GEE estimates."
+        ),
+        best_for=(
+            "Panel PD development",
+            "Borrower-level repeated rows",
+            "Cluster-robust inference",
+        ),
+        avoid_when=(
+            "There is no natural grouping column",
+            "You need subject-specific random effects rather than population-average effects",
+        ),
+        key_settings=("GEE group column", "Classification threshold", "Max iterations"),
+        outputs_to_review=(
+            "Model summary",
+            "Robust coefficient significance",
+            "Calibration",
+            "AUC/KS",
+        ),
+        validation_questions=(
+            "Does the group column represent the repeated-observation unit?",
+            "Are signs and significance stable versus regular logistic regression?",
+            "Does the population-average interpretation match the business use case?",
+        ),
+        glossary_terms=("GEE", "PD", "AUC", "KS"),
+    ),
     ModelType.LINEAR_REGRESSION: ModelStoryCard(
         model_type=ModelType.LINEAR_REGRESSION,
         title="Linear Regression",
@@ -131,6 +161,60 @@ MODEL_STORY_CARDS: dict[ModelType, ModelStoryCard] = {
         ),
         glossary_terms=("LGD",),
     ),
+    ModelType.RIDGE_REGRESSION: ModelStoryCard(
+        model_type=ModelType.RIDGE_REGRESSION,
+        title="Ridge Regression",
+        target_mode="Continuous",
+        summary=(
+            "Regularized linear regression that shrinks correlated coefficients "
+            "without dropping them."
+        ),
+        best_for=(
+            "Continuous LGD or forecast baselines",
+            "Correlated financial statement features",
+        ),
+        avoid_when=("Sparse feature selection is required", "The target is binary"),
+        key_settings=("Regularization alpha", "Feature transformations", "Split strategy"),
+        outputs_to_review=("RMSE", "MAE", "Coefficient magnitudes", "Residual diagnostics"),
+        validation_questions=(
+            "Did shrinkage reduce unstable coefficient swings?",
+            "Are heavily correlated features still interpretable together?",
+        ),
+        glossary_terms=("LGD",),
+    ),
+    ModelType.LASSO_REGRESSION: ModelStoryCard(
+        model_type=ModelType.LASSO_REGRESSION,
+        title="Lasso Regression",
+        target_mode="Continuous",
+        summary="Regularized linear regression that can shrink weak feature coefficients to zero.",
+        best_for=("Continuous feature screening", "High-dimensional forecast baselines"),
+        avoid_when=("Small coefficient changes are materially important", "The target is binary"),
+        key_settings=("Regularization alpha", "Feature transformations", "Split strategy"),
+        outputs_to_review=("Selected coefficients", "RMSE", "MAE", "Residual diagnostics"),
+        validation_questions=(
+            "Are zeroed features plausible exclusions?",
+            "Does the simpler model retain acceptable holdout performance?",
+        ),
+        glossary_terms=("LGD",),
+    ),
+    ModelType.ELASTIC_NET_REGRESSION: ModelStoryCard(
+        model_type=ModelType.ELASTIC_NET_REGRESSION,
+        title="Elastic-Net Regression",
+        target_mode="Continuous",
+        summary="Continuous regression combining ridge-style shrinkage and lasso-style selection.",
+        best_for=("Correlated continuous predictors", "Feature screening with shrinkage"),
+        avoid_when=(
+            "A fully unregularized coefficient estimate is required",
+            "The target is binary",
+        ),
+        key_settings=("Regularization alpha", "Elastic-net l1 ratio", "Feature transformations"),
+        outputs_to_review=("Selected coefficients", "RMSE", "MAE", "Residual diagnostics"),
+        validation_questions=(
+            "Does the l1 ratio balance stability and sparsity?",
+            "Are selected features stable across validation and test splits?",
+        ),
+        glossary_terms=("LGD",),
+    ),
     ModelType.BETA_REGRESSION: ModelStoryCard(
         model_type=ModelType.BETA_REGRESSION,
         title="Beta Regression",
@@ -144,6 +228,47 @@ MODEL_STORY_CARDS: dict[ModelType, ModelStoryCard] = {
             "Are boundary values handled correctly?",
             "Is severity mostly positive and bounded?",
             "Would a two-stage LGD model be more appropriate?",
+        ),
+        glossary_terms=("LGD",),
+    ),
+    ModelType.FRACTIONAL_LOGIT: ModelStoryCard(
+        model_type=ModelType.FRACTIONAL_LOGIT,
+        title="Fractional Logit",
+        target_mode="Continuous",
+        summary=(
+            "Bounded-response GLM for rates, proportions, or LGD values constrained to 0 through 1."
+        ),
+        best_for=("LGD rates", "Utilization or recovery proportions", "Bounded forecasts"),
+        avoid_when=(
+            "The target is unbounded",
+            "Boundary masses at zero or one need separate modeling",
+        ),
+        key_settings=("Beta clip epsilon", "Feature transformations", "Split strategy"),
+        outputs_to_review=("Model summary", "Actual versus predicted", "Residual diagnostics"),
+        validation_questions=(
+            "Are predictions staying within the valid 0 to 1 range?",
+            "Are boundary observations common enough to require a zero-one model?",
+        ),
+        glossary_terms=("LGD", "GLM"),
+    ),
+    ModelType.ZERO_ONE_INFLATED_BETA: ModelStoryCard(
+        model_type=ModelType.ZERO_ONE_INFLATED_BETA,
+        title="Zero-One Inflated Beta",
+        target_mode="Continuous",
+        summary=(
+            "Three-part bounded LGD model for outcomes with true mass at zero, "
+            "one, and the interior."
+        ),
+        best_for=("LGD with full recoveries and full losses", "Boundary-heavy severity modeling"),
+        avoid_when=(
+            "There are too few interior observations",
+            "Zeros or ones are data-quality artifacts",
+        ),
+        key_settings=("Beta clip epsilon", "Max iterations", "Boundary diagnostics"),
+        outputs_to_review=("Boundary models", "Interior beta model", "LGD segment diagnostics"),
+        validation_questions=(
+            "Are zero and one outcomes true economic states?",
+            "Do boundary and interior drivers tell a coherent story?",
         ),
         glossary_terms=("LGD",),
     ),
@@ -214,6 +339,127 @@ MODEL_STORY_CARDS: dict[ModelType, ModelStoryCard] = {
             "Is censoring different from missingness or true zero?",
         ),
         glossary_terms=("Tobit",),
+    ),
+    ModelType.COX_PROPORTIONAL_HAZARDS: ModelStoryCard(
+        model_type=ModelType.COX_PROPORTIONAL_HAZARDS,
+        title="Cox Proportional Hazards",
+        target_mode="Continuous",
+        summary="Survival-style duration model that ranks time-to-event risk with hazard ratios.",
+        best_for=("Duration-to-default or prepayment ranking", "Time-to-event challenger evidence"),
+        avoid_when=(
+            "You need censoring indicators not currently configured",
+            "The target is not a positive duration",
+        ),
+        key_settings=("Date and duration definition", "Feature transformations", "Split strategy"),
+        outputs_to_review=(
+            "Hazard ratios",
+            "Concordance-style ranking evidence",
+            "Residual diagnostics",
+        ),
+        validation_questions=(
+            "Is the target a positive time-to-event duration?",
+            "Is the proportional hazards assumption reasonable enough for challenger use?",
+        ),
+        glossary_terms=("Survival",),
+    ),
+    ModelType.AFT_SURVIVAL_MODEL: ModelStoryCard(
+        model_type=ModelType.AFT_SURVIVAL_MODEL,
+        title="AFT Survival Model",
+        target_mode="Continuous",
+        summary=(
+            "Log-duration regression that estimates how features accelerate "
+            "or decelerate time to event."
+        ),
+        best_for=(
+            "Duration baselines",
+            "Forecasting expected time-to-event",
+            "Transparent survival challenger",
+        ),
+        avoid_when=(
+            "The target contains non-positive durations",
+            "A censored survival likelihood is required",
+        ),
+        key_settings=("Duration target", "Feature transformations", "Split strategy"),
+        outputs_to_review=("Duration predictions", "Residual diagnostics", "Feature importance"),
+        validation_questions=(
+            "Are durations strictly positive after cleaning?",
+            "Do predicted durations align with observed event timing?",
+        ),
+        glossary_terms=("Survival",),
+    ),
+    ModelType.RANDOM_FOREST: ModelStoryCard(
+        model_type=ModelType.RANDOM_FOREST,
+        title="Random Forest",
+        target_mode="Binary or Continuous",
+        summary=(
+            "Bagged tree ensemble for non-linear benchmark modeling with robust default settings."
+        ),
+        best_for=("Non-linear challenger models", "Interaction-heavy data", "Benchmarking"),
+        avoid_when=(
+            "Coefficient-level transparency is required",
+            "The dataset is too small for tree ensembles",
+        ),
+        key_settings=("Tree / EBM estimators", "Tree / EBM max depth", "Class weight"),
+        outputs_to_review=(
+            "Feature importance",
+            "Permutation importance",
+            "PDP",
+            "ALE",
+            "Holdout metrics",
+        ),
+        validation_questions=(
+            "Does the ensemble improve holdout performance versus interpretable baselines?",
+            "Are top drivers stable and explainable?",
+        ),
+        glossary_terms=("Challenger", "PDP", "ALE"),
+    ),
+    ModelType.EXTRA_TREES: ModelStoryCard(
+        model_type=ModelType.EXTRA_TREES,
+        title="Extra Trees",
+        target_mode="Binary or Continuous",
+        summary=(
+            "Highly randomized tree ensemble for fast non-linear challenger "
+            "and sensitivity modeling."
+        ),
+        best_for=("Non-linear sensitivity checks", "Fast tree benchmarks", "Noisy feature spaces"),
+        avoid_when=(
+            "Coefficient-level transparency is required",
+            "Randomized splits are hard to defend",
+        ),
+        key_settings=("Tree / EBM estimators", "Tree / EBM max depth", "Class weight"),
+        outputs_to_review=(
+            "Feature importance",
+            "Permutation importance",
+            "PDP",
+            "ALE",
+            "Holdout metrics",
+        ),
+        validation_questions=(
+            "Does extra randomization produce stable results?",
+            "Are performance gains consistent across validation and test splits?",
+        ),
+        glossary_terms=("Challenger", "PDP", "ALE"),
+    ),
+    ModelType.EXPLAINABLE_BOOSTING_MACHINE: ModelStoryCard(
+        model_type=ModelType.EXPLAINABLE_BOOSTING_MACHINE,
+        title="Explainable Boosting Machine",
+        target_mode="Binary or Continuous",
+        summary=(
+            "No-new-dependency EBM-style shallow boosted-tree model used with PDP/ALE outputs "
+            "for transparent non-linear review."
+        ),
+        best_for=("Interpretable non-linear challenger models", "Shape review through PDP/ALE"),
+        avoid_when=(
+            "You require the external interpret package's native EBM implementation",
+            "The governance standard forbids boosted trees",
+        ),
+        key_settings=("Tree / EBM estimators", "Tree / EBM max depth", "Learning rate"),
+        outputs_to_review=("Feature importance", "PDP", "ICE", "ALE", "Holdout metrics"),
+        validation_questions=(
+            "Do feature shapes make business sense?",
+            "Does performance justify a non-linear model over scorecard/logistic baselines?",
+        ),
+        glossary_terms=("PDP", "ICE", "ALE", "Challenger"),
     ),
     ModelType.XGBOOST: ModelStoryCard(
         model_type=ModelType.XGBOOST,

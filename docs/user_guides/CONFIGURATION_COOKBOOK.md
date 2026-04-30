@@ -118,13 +118,14 @@ Recommended setup:
 
 - Preset: `LGD Severity`
 - Target mode: `continuous`
-- Model type: `two_stage_lgd_model`, `beta_regression`, or `tobit_regression`
+- Model type: `two_stage_lgd_model`, `beta_regression`,
+  `fractional_logit`, `zero_one_inflated_beta`, or `tobit_regression`
 - Data structure: usually `cross_sectional` or `panel`
 - Scenario testing: useful for macro or collateral shocks
 
 Key checks:
 
-- target bounds and censoring are understood
+- target bounds, boundary values, and censoring are understood
 - zero-loss and positive-loss behavior are reviewed
 - residual diagnostics are reviewed
 - calibration and segment error are reviewed
@@ -137,7 +138,9 @@ Recommended setup:
 
 - Preset: `CCAR Forecasting`
 - Target mode: usually `continuous`
-- Model type: `panel_regression`, `linear_regression`, `quantile_regression`, or XGBoost challenger
+- Model type: `panel_regression`, `linear_regression`, regularized
+  regression, `quantile_regression`, survival-style models for duration
+  targets, or tree-based challengers
 - Data structure: `time_series` or `panel`
 - Date column: required
 - Scenario testing: on

@@ -282,7 +282,12 @@ class AssumptionCheckStep(BasePipelineStep):
         )
 
         model_type = context.config.model.model_type
-        if model_type in {ModelType.BETA_REGRESSION, ModelType.TWO_STAGE_LGD_MODEL}:
+        if model_type in {
+            ModelType.BETA_REGRESSION,
+            ModelType.FRACTIONAL_LOGIT,
+            ModelType.ZERO_ONE_INFLATED_BETA,
+            ModelType.TWO_STAGE_LGD_MODEL,
+        }:
             rows.append(
                 self._row(
                     check_name="bounded_target_unit_interval",
@@ -290,6 +295,20 @@ class AssumptionCheckStep(BasePipelineStep):
                     observed_value=f"[{target_min:.4f}, {target_max:.4f}]",
                     threshold="[0, 1]",
                     passed=0.0 <= target_min and target_max <= 1.0,
+                )
+            )
+        if model_type in {
+            ModelType.COX_PROPORTIONAL_HAZARDS,
+            ModelType.AFT_SURVIVAL_MODEL,
+        }:
+            rows.append(
+                self._row(
+                    check_name="positive_duration_target",
+                    subject="train_target",
+                    observed_value=target_min,
+                    threshold="> 0",
+                    passed=target_min > 0,
+                    status_if_failed="warn",
                 )
             )
         if model_type == ModelType.TWO_STAGE_LGD_MODEL:

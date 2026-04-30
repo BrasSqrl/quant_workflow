@@ -1274,7 +1274,11 @@ Recommended scoring pattern:
 If `mode="score_existing_model"`, `existing_model_path` is required.
 
 If `mode="search_feature_subsets"`, the run must use a binary target and a
-supported binary model family. The subset-search workflow exports
+supported binary subset-search model family: logistic, discrete-time hazard,
+elastic-net logistic, scorecard logistic, probit, or XGBoost. Newer GEE and
+tree-ensemble models are available in normal development and comparison
+workflows first, then can be promoted to subset search after additional
+selection-specific validation. The subset-search workflow exports
 comparison-only evidence rather than a fitted-model artifact bundle, with a
 candidate leaderboard, selected-candidate coefficient summary, selection
 rationale, AUC / ROC and KS visuals, calibration comparisons, parsimony
@@ -1290,12 +1294,23 @@ Supported model families:
 - `elastic_net_logistic_regression`
 - `scorecard_logistic_regression`
 - `probit_regression`
+- `gee_logistic_regression`
 - `linear_regression`
+- `ridge_regression`
+- `lasso_regression`
+- `elastic_net_regression`
 - `beta_regression`
+- `fractional_logit`
+- `zero_one_inflated_beta`
 - `two_stage_lgd_model`
 - `panel_regression`
 - `quantile_regression`
 - `tobit_regression`
+- `cox_proportional_hazards`
+- `aft_survival_model`
+- `random_forest`
+- `extra_trees`
+- `explainable_boosting_machine`
 - `xgboost`
 
 Exposed hyperparameters:
@@ -1317,13 +1332,24 @@ Exposed hyperparameters:
 - `xgboost_colsample_bytree`
 - `tobit_left_censoring`
 - `tobit_right_censoring`
+- `regularization_alpha`
+- `tree_n_estimators`
+- `tree_max_depth`
+- `gee_group_column`
 
 Compatibility notes:
 
-- binary targets support logistic, elastic-net logistic, scorecard logistic, probit, and XGBoost
-- continuous targets support linear, beta, two-stage LGD, panel, quantile, Tobit, and XGBoost
+- binary targets support logistic, discrete-time hazard, elastic-net logistic,
+  scorecard logistic, probit, GEE logistic, random forest, extra trees,
+  explainable boosting-style, and XGBoost
+- continuous targets support linear, regularized linear, beta, fractional
+  logit, zero-one inflated beta, two-stage LGD, panel, quantile, Tobit,
+  survival-style, random forest, extra trees, explainable boosting-style, and
+  XGBoost
 - beta and two-stage LGD models require bounded continuous targets in `[0, 1]`
 - panel regression requires `data_structure="panel"` and an entity column
+- true LightGBM is not included because the project currently avoids adding a
+  new third-party dependency; XGBoost remains the installed boosted-tree option
 
 ### `ComparisonConfig`
 

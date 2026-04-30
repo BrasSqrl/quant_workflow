@@ -261,7 +261,8 @@ column designer role assignments.
 | `Inverse regularization (C)` | `ModelConfig.C` | logistic, elastic-net, LGD stage one |
 | `Solver` | `ModelConfig.solver` | logistic-family and LGD stage one |
 | `Class weight` | `ModelConfig.class_weight` | binary models where applicable |
-| `Elastic-net l1 ratio` | `ModelConfig.l1_ratio` | `ElasticNetLogisticRegressionAdapter` |
+| `Elastic-net l1 ratio` | `ModelConfig.l1_ratio` | elastic-net logistic and elastic-net regression adapters |
+| `Regularization alpha` | `ModelConfig.regularization_alpha` | ridge, lasso, and elastic-net regression adapters |
 | `Scorecard bins` | `ModelConfig.scorecard_bins` | `ScorecardLogisticRegressionAdapter` |
 | `Scorecard monotonicity` | `ScorecardConfig.monotonicity` | scorecard bin optimization |
 | `Scorecard min bin share` | `ScorecardConfig.min_bin_share` | scorecard bin optimization |
@@ -270,7 +271,9 @@ column designer role assignments.
 | `Scorecard odds reference` | `ScorecardConfig.odds_reference` | score scaling |
 | `Reason code count` | `ScorecardConfig.reason_code_count` | prediction-side reason codes |
 | `Quantile alpha` | `ModelConfig.quantile_alpha` | `QuantileRegressionAdapter` |
-| `XGBoost ...` controls | `ModelConfig.xgboost_*` | `XGBoostAdapter` |
+| `XGBoost ...` controls | `ModelConfig.xgboost_*` | `XGBoostAdapter`; learning rate also feeds the EBM-style adapter |
+| `Tree / EBM ...` controls | `ModelConfig.tree_n_estimators`, `ModelConfig.tree_max_depth` | random forest, extra trees, and EBM-style adapters |
+| `GEE group column` | `ModelConfig.gee_group_column` | `GEELogisticRegressionAdapter` |
 | `Tobit ...` controls | `ModelConfig.tobit_*` | `TobitRegressionAdapter` |
 
 ## 10. Step 2 Group: Feature Subset Search

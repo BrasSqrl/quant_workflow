@@ -27,6 +27,17 @@ class ModelType(StrEnum):
     SCORECARD_LOGISTIC_REGRESSION = "scorecard_logistic_regression"
     PROBIT_REGRESSION = "probit_regression"
     LINEAR_REGRESSION = "linear_regression"
+    FRACTIONAL_LOGIT = "fractional_logit"
+    ZERO_ONE_INFLATED_BETA = "zero_one_inflated_beta"
+    RIDGE_REGRESSION = "ridge_regression"
+    LASSO_REGRESSION = "lasso_regression"
+    ELASTIC_NET_REGRESSION = "elastic_net_regression"
+    EXPLAINABLE_BOOSTING_MACHINE = "explainable_boosting_machine"
+    GEE_LOGISTIC_REGRESSION = "gee_logistic_regression"
+    COX_PROPORTIONAL_HAZARDS = "cox_proportional_hazards"
+    AFT_SURVIVAL_MODEL = "aft_survival_model"
+    RANDOM_FOREST = "random_forest"
+    EXTRA_TREES = "extra_trees"
     BETA_REGRESSION = "beta_regression"
     TWO_STAGE_LGD_MODEL = "two_stage_lgd_model"
     PANEL_REGRESSION = "panel_regression"
@@ -392,6 +403,10 @@ class ModelConfig:
     xgboost_colsample_bytree: float = 0.9
     tobit_left_censoring: float | None = 0.0
     tobit_right_censoring: float | None = None
+    regularization_alpha: float = 1.0
+    tree_n_estimators: int = 300
+    tree_max_depth: int | None = 5
+    gee_group_column: str | None = None
 
     def validate(self, target_mode: TargetMode) -> None:
         if self.max_iter <= 0:
@@ -420,6 +435,12 @@ class ModelConfig:
             raise ValueError("ModelConfig.xgboost_subsample must be in (0, 1].")
         if not 0 < self.xgboost_colsample_bytree <= 1:
             raise ValueError("ModelConfig.xgboost_colsample_bytree must be in (0, 1].")
+        if self.regularization_alpha < 0:
+            raise ValueError("ModelConfig.regularization_alpha cannot be negative.")
+        if self.tree_n_estimators <= 0:
+            raise ValueError("ModelConfig.tree_n_estimators must be greater than 0.")
+        if self.tree_max_depth is not None and self.tree_max_depth <= 0:
+            raise ValueError("ModelConfig.tree_max_depth must be positive when provided.")
         if (
             self.tobit_left_censoring is not None
             and self.tobit_right_censoring is not None
@@ -432,6 +453,13 @@ class ModelConfig:
             ModelType.TWO_STAGE_LGD_MODEL,
             ModelType.PANEL_REGRESSION,
             ModelType.QUANTILE_REGRESSION,
+            ModelType.FRACTIONAL_LOGIT,
+            ModelType.ZERO_ONE_INFLATED_BETA,
+            ModelType.RIDGE_REGRESSION,
+            ModelType.LASSO_REGRESSION,
+            ModelType.ELASTIC_NET_REGRESSION,
+            ModelType.COX_PROPORTIONAL_HAZARDS,
+            ModelType.AFT_SURVIVAL_MODEL,
         }:
             raise ValueError(f"{self.model_type.value} is only supported for continuous targets.")
         if target_mode == TargetMode.CONTINUOUS and self.model_type in {
@@ -440,11 +468,13 @@ class ModelConfig:
             ModelType.ELASTIC_NET_LOGISTIC_REGRESSION,
             ModelType.SCORECARD_LOGISTIC_REGRESSION,
             ModelType.PROBIT_REGRESSION,
+            ModelType.GEE_LOGISTIC_REGRESSION,
         }:
             raise ValueError(
                 f"{self.model_type.value} requires a binary target. "
-                "Use linear, beta, two-stage LGD, panel, quantile, Tobit, or XGBoost "
-                "for continuous targets."
+                "Use linear, bounded LGD, regularized linear, beta, two-stage LGD, "
+                "panel, quantile, survival, Tobit, tree, or XGBoost models for "
+                "continuous targets."
             )
 
 
