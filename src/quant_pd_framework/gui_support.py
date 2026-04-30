@@ -1821,9 +1821,167 @@ def default_challengers_for_target_mode(target_mode: TargetMode) -> list[ModelTy
             ModelType.PROBIT_REGRESSION,
             ModelType.XGBOOST,
         ]
+    if target_mode == TargetMode.MULTICLASS:
+        return [
+            ModelType.MULTINOMIAL_LOGISTIC_REGRESSION,
+            ModelType.ORDINAL_LOGISTIC_REGRESSION,
+            ModelType.DECISION_TREE,
+        ]
     return [
         ModelType.BETA_REGRESSION,
         ModelType.TWO_STAGE_LGD_MODEL,
         ModelType.QUANTILE_REGRESSION,
         ModelType.XGBOOST,
     ]
+
+
+MODEL_FAMILY_DEFINITIONS: dict[TargetMode, dict[str, tuple[str, tuple[ModelType, ...]]]] = {
+    TargetMode.BINARY: {
+        "binary_logistic_pd": (
+            "Logistic / PD",
+            (
+                ModelType.LOGISTIC_REGRESSION,
+                ModelType.ELASTIC_NET_LOGISTIC_REGRESSION,
+                ModelType.SCORECARD_LOGISTIC_REGRESSION,
+                ModelType.PROBIT_REGRESSION,
+                ModelType.GEE_LOGISTIC_REGRESSION,
+                ModelType.DISCRETE_TIME_HAZARD_MODEL,
+            ),
+        ),
+        "binary_linear_baseline": (
+            "Linear / Baseline",
+            (ModelType.LINEAR_REGRESSION,),
+        ),
+        "binary_smooth_nonlinear": (
+            "Smooth / Nonlinear",
+            (
+                ModelType.GAM_SPLINE_LOGISTIC,
+                ModelType.DECISION_TREE,
+                ModelType.RANDOM_FOREST,
+                ModelType.EXTRA_TREES,
+                ModelType.EXPLAINABLE_BOOSTING_MACHINE,
+                ModelType.XGBOOST,
+            ),
+        ),
+    },
+    TargetMode.MULTICLASS: {
+        "multiclass_class_models": (
+            "Class Models",
+            (
+                ModelType.MULTINOMIAL_LOGISTIC_REGRESSION,
+                ModelType.ORDINAL_LOGISTIC_REGRESSION,
+                ModelType.DECISION_TREE,
+            ),
+        ),
+    },
+    TargetMode.CONTINUOUS: {
+        "continuous_linear_regularized": (
+            "Linear / Regularized",
+            (
+                ModelType.LINEAR_REGRESSION,
+                ModelType.RIDGE_REGRESSION,
+                ModelType.LASSO_REGRESSION,
+                ModelType.ELASTIC_NET_REGRESSION,
+            ),
+        ),
+        "continuous_lgd_severity": (
+            "LGD / Severity",
+            (
+                ModelType.FRACTIONAL_LOGIT,
+                ModelType.BETA_REGRESSION,
+                ModelType.ZERO_ONE_INFLATED_BETA,
+                ModelType.TWO_STAGE_LGD_MODEL,
+                ModelType.TOBIT_REGRESSION,
+            ),
+        ),
+        "continuous_glm_count_skewed": (
+            "GLM / Count / Skewed",
+            (
+                ModelType.POISSON_REGRESSION,
+                ModelType.NEGATIVE_BINOMIAL_REGRESSION,
+                ModelType.GAMMA_REGRESSION,
+                ModelType.TWEEDIE_REGRESSION,
+            ),
+        ),
+        "continuous_panel_forecasting": (
+            "Panel / Forecasting",
+            (
+                ModelType.PANEL_REGRESSION,
+                ModelType.MIXED_EFFECTS_REGRESSION,
+                ModelType.SARIMAX_FORECAST,
+                ModelType.EXPONENTIAL_SMOOTHING_FORECAST,
+                ModelType.UNOBSERVED_COMPONENTS_FORECAST,
+            ),
+        ),
+        "continuous_survival_duration": (
+            "Survival / Duration",
+            (
+                ModelType.COX_PROPORTIONAL_HAZARDS,
+                ModelType.AFT_SURVIVAL_MODEL,
+            ),
+        ),
+        "continuous_smooth_nonlinear": (
+            "Smooth / Nonlinear",
+            (
+                ModelType.GAM_SPLINE_REGRESSION,
+                ModelType.QUANTILE_REGRESSION,
+                ModelType.DECISION_TREE,
+                ModelType.RANDOM_FOREST,
+                ModelType.EXTRA_TREES,
+                ModelType.EXPLAINABLE_BOOSTING_MACHINE,
+                ModelType.XGBOOST,
+            ),
+        ),
+    },
+}
+
+
+def model_family_options_for_target_mode(target_mode: TargetMode) -> list[str]:
+    """Returns selectable model-family keys for the selected target mode."""
+
+    return list(MODEL_FAMILY_DEFINITIONS[target_mode])
+
+
+def format_model_family(value: str) -> str:
+    """Formats model-family keys for display."""
+
+    for family_map in MODEL_FAMILY_DEFINITIONS.values():
+        if value in family_map:
+            return family_map[value][0]
+    return value.replace("_", " ").title()
+
+
+def model_family_for_model_type(model_type: ModelType, target_mode: TargetMode) -> str:
+    """Finds the first family that contains a model type for a target mode."""
+
+    for family_key, (_, model_types) in MODEL_FAMILY_DEFINITIONS[target_mode].items():
+        if model_type in model_types:
+            return family_key
+    return model_family_options_for_target_mode(target_mode)[0]
+
+
+def model_types_for_family(target_mode: TargetMode, family_key: str) -> list[ModelType]:
+    """Returns valid model types for a selected target-mode/family pair."""
+
+    family_map = MODEL_FAMILY_DEFINITIONS[target_mode]
+    if family_key not in family_map:
+        family_key = model_family_options_for_target_mode(target_mode)[0]
+    valid_model_types = set(model_types_for_target_mode(target_mode))
+    return [
+        model_type
+        for model_type in family_map[family_key][1]
+        if model_type in valid_model_types
+    ]
+
+
+def model_types_for_target_mode(target_mode: TargetMode) -> list[ModelType]:
+    """Returns model families that pass config validation for a target mode."""
+
+    supported: list[ModelType] = []
+    for model_type in ModelType:
+        try:
+            ModelConfig(model_type=model_type).validate(target_mode)
+        except ValueError:
+            continue
+        supported.append(model_type)
+    return supported

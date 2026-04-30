@@ -68,7 +68,7 @@ class SplitStep(BasePipelineStep):
             dataframe[target_column]
             if labels_available
             and split_config.stratify
-            and context.config.target.mode == TargetMode.BINARY
+            and context.config.target.mode in {TargetMode.BINARY, TargetMode.MULTICLASS}
             else None
         )
 
@@ -90,7 +90,7 @@ class SplitStep(BasePipelineStep):
             temp_frame[target_column]
             if labels_available
             and split_config.stratify
-            and context.config.target.mode == TargetMode.BINARY
+            and context.config.target.mode in {TargetMode.BINARY, TargetMode.MULTICLASS}
             else None
         )
         validation_share_of_temp = split_config.validation_size / holdout_size

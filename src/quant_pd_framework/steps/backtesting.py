@@ -34,6 +34,9 @@ class BacktestStep(BasePipelineStep):
         score_column = (
             "predicted_probability"
             if context.config.target.mode == TargetMode.BINARY
+            else "predicted_class_probability"
+            if context.config.target.mode == TargetMode.MULTICLASS
+            and "predicted_class_probability" in scored_test.columns
             else "predicted_value"
         )
         band_count = min(

@@ -62,6 +62,16 @@ class EvaluationStep(BasePipelineStep):
                     labels_available and context.target_column in frame.columns,
                     context,
                 )
+            elif target_mode == TargetMode.MULTICLASS:
+                scored_frame, metrics = self._score_multiclass_split(
+                    frame,
+                    split_name,
+                    context.target_column,
+                    context.feature_columns,
+                    context.model,
+                    labels_available and context.target_column in frame.columns,
+                    context,
+                )
             else:
                 scored_frame, metrics = self._score_continuous_split(
                     frame,
@@ -160,6 +170,70 @@ class EvaluationStep(BasePipelineStep):
         }
 
         return scored_frame, metrics
+
+    def _score_multiclass_split(
+        self,
+        frame: pd.DataFrame,
+        split_name: str,
+        target_column: str,
+        feature_columns: list[str],
+        model,
+        labels_available: bool,
+        context: PipelineContext,
+    ) -> tuple[pd.DataFrame, dict[str, float | int | None]]:
+        x_values = frame[feature_columns]
+        predicted_class = np.asarray(model.predict_class(x_values, threshold=0.5)).astype(int)
+        probabilities = self._predict_multiclass_probabilities(model, x_values)
+
+        scored_frame = self._build_scored_frame(frame, context, target_column)
+        scored_frame["split"] = split_name
+        scored_frame["predicted_class"] = predicted_class
+        scored_frame["predicted_value"] = predicted_class
+        if probabilities is not None and probabilities.size:
+            scored_frame["predicted_class_probability"] = probabilities.max(axis=1)
+            for class_index in range(probabilities.shape[1]):
+                scored_frame[f"predicted_probability_class_{class_index}"] = probabilities[
+                    :, class_index
+                ]
+        self._append_prediction_outputs(scored_frame, model, x_values)
+
+        if not labels_available:
+            return scored_frame, {
+                "row_count": int(len(frame)),
+                "labels_available": False,
+                "accuracy": None,
+                "macro_f1": None,
+                "log_loss": None,
+            }
+
+        y_true = frame[target_column].astype(int)
+        labels = sorted(set(y_true.unique()).union(set(predicted_class)))
+        return scored_frame, {
+            "row_count": int(len(frame)),
+            "labels_available": True,
+            "class_count": int(len(labels)),
+            "accuracy": self._safe_metric(lambda: accuracy_score(y_true, predicted_class)),
+            "macro_f1": self._safe_metric(
+                lambda: f1_score(y_true, predicted_class, average="macro", zero_division=0)
+            ),
+            "weighted_f1": self._safe_metric(
+                lambda: f1_score(y_true, predicted_class, average="weighted", zero_division=0)
+            ),
+            "log_loss": self._safe_metric(
+                lambda: log_loss(y_true, probabilities, labels=labels)
+                if probabilities is not None
+                else None
+            ),
+        }
+
+    def _predict_multiclass_probabilities(self, model, x_values: pd.DataFrame) -> np.ndarray | None:
+        probability_getter = getattr(model, "predict_proba", None)
+        if not callable(probability_getter):
+            return None
+        probabilities = np.asarray(probability_getter(x_values))
+        if probabilities.ndim != 2:
+            return None
+        return probabilities
 
     def _score_continuous_split(
         self,

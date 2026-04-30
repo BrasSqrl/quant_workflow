@@ -25,7 +25,12 @@ from quant_pd_framework.gui_support import (
     build_gui_inputs_from_preset,
     build_subset_search_feature_options,
     default_challengers_for_target_mode,
+    format_model_family,
     frames_equivalent,
+    model_family_for_model_type,
+    model_family_options_for_target_mode,
+    model_types_for_family,
+    model_types_for_target_mode,
     parse_positive_values,
     parse_scenario_rows,
 )
@@ -184,6 +189,49 @@ def test_default_challengers_for_target_mode_returns_matching_families() -> None
     assert ModelType.TWO_STAGE_LGD_MODEL in default_challengers_for_target_mode(
         TargetMode.CONTINUOUS
     )
+    assert ModelType.ORDINAL_LOGISTIC_REGRESSION in default_challengers_for_target_mode(
+        TargetMode.MULTICLASS
+    )
+    assert ModelType.POISSON_REGRESSION not in default_challengers_for_target_mode(
+        TargetMode.MULTICLASS
+    )
+
+
+def test_model_types_for_target_mode_filters_incompatible_families() -> None:
+    multiclass_models = model_types_for_target_mode(TargetMode.MULTICLASS)
+
+    assert ModelType.MULTINOMIAL_LOGISTIC_REGRESSION in multiclass_models
+    assert ModelType.ORDINAL_LOGISTIC_REGRESSION in multiclass_models
+    assert ModelType.DECISION_TREE in multiclass_models
+    assert ModelType.POISSON_REGRESSION not in multiclass_models
+
+
+def test_model_family_hierarchy_covers_valid_models() -> None:
+    for target_mode in TargetMode:
+        family_model_types = {
+            model_type
+            for family_key in model_family_options_for_target_mode(target_mode)
+            for model_type in model_types_for_family(target_mode, family_key)
+        }
+        assert set(model_types_for_target_mode(target_mode)) == family_model_types
+
+
+def test_model_family_helpers_resolve_expected_groups() -> None:
+    assert (
+        model_family_for_model_type(
+            ModelType.SCORECARD_LOGISTIC_REGRESSION,
+            TargetMode.BINARY,
+        )
+        == "binary_logistic_pd"
+    )
+    assert (
+        model_family_for_model_type(
+            ModelType.UNOBSERVED_COMPONENTS_FORECAST,
+            TargetMode.CONTINUOUS,
+        )
+        == "continuous_panel_forecasting"
+    )
+    assert format_model_family("continuous_glm_count_skewed") == "GLM / Count / Skewed"
 
 
 def test_frames_equivalent_ignores_dtype_only_differences() -> None:

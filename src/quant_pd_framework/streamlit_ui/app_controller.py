@@ -45,7 +45,12 @@ from quant_pd_framework.gui_support import (
     build_subset_search_feature_options,
     build_transformation_editor_frame,
     default_challengers_for_target_mode,
+    format_model_family,
     list_gui_preset_options,
+    model_family_for_model_type,
+    model_family_options_for_target_mode,
+    model_types_for_family,
+    model_types_for_target_mode,
 )
 from quant_pd_framework.streamlit_ui.config_builder import (
     build_preview_configuration as ui_build_preview_configuration,
@@ -274,6 +279,10 @@ def initialize_preset_state() -> GUIBuildInputs:
         return preset_inputs
 
     st.session_state["model_type"] = preset_inputs.model.model_type.value
+    st.session_state["model_family"] = model_family_for_model_type(
+        preset_inputs.model.model_type,
+        preset_inputs.target_mode,
+    )
     st.session_state["target_mode"] = preset_inputs.target_mode.value
     st.session_state["data_structure"] = preset_inputs.data_structure.value
     st.session_state["target_output_column"] = preset_inputs.target_output_column
@@ -1040,13 +1049,59 @@ def run_app() -> None:
                     "Feature subset search compares candidate feature sets for the "
                     "currently selected model family and exports comparison-only outputs."
                 )
+            target_mode = st.selectbox(
+                "Target mode",
+                options=[target_mode.value for target_mode in TargetMode],
+                format_func=lambda value: value.title(),
+                index=[target_mode.value for target_mode in TargetMode].index(
+                    preset_inputs.target_mode.value
+                ),
+                help=(
+                    "Binary is the default PD setup. Continuous is intended for "
+                    "LGD, regression, and forecast workflows. Multiclass is for "
+                    "three-or-more-class grade, stage, or category targets."
+                ),
+            )
+            selected_target_mode = TargetMode(target_mode)
+            available_family_options = model_family_options_for_target_mode(selected_target_mode)
+            valid_target_model_types = model_types_for_target_mode(selected_target_mode)
+            default_model_type = (
+                preset_inputs.model.model_type
+                if preset_inputs.model.model_type in valid_target_model_types
+                else model_types_for_family(selected_target_mode, available_family_options[0])[0]
+            )
+            default_model_family = model_family_for_model_type(
+                default_model_type,
+                selected_target_mode,
+            )
+            if st.session_state.get("model_family") not in available_family_options:
+                st.session_state["model_family"] = default_model_family
+            model_family = st.selectbox(
+                "Model family",
+                options=available_family_options,
+                format_func=format_model_family,
+                index=available_family_options.index(st.session_state["model_family"]),
+                key="model_family",
+                help=(
+                    "Families group related model types and are filtered by target mode "
+                    "so invalid model choices are hidden."
+                ),
+            )
+            model_type_options = model_types_for_family(selected_target_mode, model_family)
+            model_type_option_values = [model_type.value for model_type in model_type_options]
+            if st.session_state.get("model_type") not in model_type_option_values:
+                fallback_model_type = (
+                    default_model_type
+                    if default_model_type.value in model_type_option_values
+                    else model_type_options[0]
+                )
+                st.session_state["model_type"] = fallback_model_type.value
             model_type = st.selectbox(
                 "Model type",
-                options=[model_type.value for model_type in ModelType],
+                options=model_type_option_values,
                 format_func=ui_format_model_type,
-                index=[model_type.value for model_type in ModelType].index(
-                    preset_inputs.model.model_type.value
-                ),
+                index=model_type_option_values.index(st.session_state["model_type"]),
+                key="model_type",
                 help=ui_glossary_help_text(
                     "PD",
                     "LGD",
@@ -1057,18 +1112,6 @@ def run_app() -> None:
                 ),
             )
             ui_render_model_story_card(model_type, advanced=advanced_workspace)
-            target_mode = st.selectbox(
-                "Target mode",
-                options=[target_mode.value for target_mode in TargetMode],
-                format_func=lambda value: value.title(),
-                index=[target_mode.value for target_mode in TargetMode].index(
-                    preset_inputs.target_mode.value
-                ),
-                help=(
-                    "Binary is the default PD setup. Continuous is intended for "
-                    "PD, LGD, and forecast workflows supported by the framework."
-                ),
-            )
             data_structure = st.selectbox(
                 "Data structure",
                 options=[data_structure.value for data_structure in DataStructure],
@@ -1131,16 +1174,38 @@ def run_app() -> None:
                 ModelType.RANDOM_FOREST.value,
                 ModelType.EXTRA_TREES.value,
                 ModelType.EXPLAINABLE_BOOSTING_MACHINE.value,
+                ModelType.DECISION_TREE.value,
+            }
+            tree_ensemble_model_types = {
+                ModelType.RANDOM_FOREST.value,
+                ModelType.EXTRA_TREES.value,
+                ModelType.EXPLAINABLE_BOOSTING_MACHINE.value,
             }
             regularized_continuous_model_types = {
                 ModelType.RIDGE_REGRESSION.value,
                 ModelType.LASSO_REGRESSION.value,
                 ModelType.ELASTIC_NET_REGRESSION.value,
             }
+            spline_model_types = {
+                ModelType.GAM_SPLINE_REGRESSION.value,
+                ModelType.GAM_SPLINE_LOGISTIC.value,
+            }
+            glm_continuous_model_types = {
+                ModelType.POISSON_REGRESSION.value,
+                ModelType.NEGATIVE_BINOMIAL_REGRESSION.value,
+                ModelType.GAMMA_REGRESSION.value,
+                ModelType.TWEEDIE_REGRESSION.value,
+            }
+            forecasting_model_types = {
+                ModelType.SARIMAX_FORECAST.value,
+                ModelType.EXPONENTIAL_SMOOTHING_FORECAST.value,
+                ModelType.UNOBSERVED_COMPONENTS_FORECAST.value,
+            }
             continuous_only_model_types = {
                 ModelType.LINEAR_REGRESSION.value,
                 ModelType.BETA_REGRESSION.value,
                 ModelType.FRACTIONAL_LOGIT.value,
+                *glm_continuous_model_types,
                 ModelType.ZERO_ONE_INFLATED_BETA.value,
                 ModelType.TWO_STAGE_LGD_MODEL.value,
                 ModelType.PANEL_REGRESSION.value,
@@ -1149,8 +1214,15 @@ def run_app() -> None:
                 ModelType.RIDGE_REGRESSION.value,
                 ModelType.LASSO_REGRESSION.value,
                 ModelType.ELASTIC_NET_REGRESSION.value,
+                ModelType.GAM_SPLINE_REGRESSION.value,
+                ModelType.MIXED_EFFECTS_REGRESSION.value,
                 ModelType.COX_PROPORTIONAL_HAZARDS.value,
                 ModelType.AFT_SURVIVAL_MODEL.value,
+                *forecasting_model_types,
+            }
+            multiclass_only_model_types = {
+                ModelType.MULTINOMIAL_LOGISTIC_REGRESSION.value,
+                ModelType.ORDINAL_LOGISTIC_REGRESSION.value,
             }
             threshold = (
                 st.number_input(
@@ -1178,7 +1250,14 @@ def run_app() -> None:
                 value=preset_inputs.model.C,
                 step=0.1,
                 format="%.2f",
-                disabled=model_type in {ModelType.XGBOOST.value, *tree_model_types},
+                disabled=model_type
+                in {
+                    ModelType.XGBOOST.value,
+                    *tree_model_types,
+                    *glm_continuous_model_types,
+                    *forecasting_model_types,
+                    ModelType.MIXED_EFFECTS_REGRESSION.value,
+                },
             )
             solver = st.selectbox(
                 "Solver",
@@ -1190,6 +1269,11 @@ def run_app() -> None:
                     ModelType.XGBOOST.value,
                     *tree_model_types,
                     *regularized_continuous_model_types,
+                    *glm_continuous_model_types,
+                    *spline_model_types,
+                    *forecasting_model_types,
+                    ModelType.MIXED_EFFECTS_REGRESSION.value,
+                    ModelType.ORDINAL_LOGISTIC_REGRESSION.value,
                 },
             )
             class_weight = st.selectbox(
@@ -1200,6 +1284,7 @@ def run_app() -> None:
                 or model_type
                 in {
                     *continuous_only_model_types,
+                    *multiclass_only_model_types,
                 },
                 format_func=lambda value: "Balanced" if value == "balanced" else "No weighting",
             )
@@ -1353,7 +1438,7 @@ def run_app() -> None:
                 max_value=2000,
                 value=int(preset_inputs.model.tree_n_estimators),
                 step=25,
-                disabled=model_type not in tree_model_types,
+                disabled=model_type not in tree_ensemble_model_types,
             )
             tree_max_depth = st.number_input(
                 "Tree / EBM max depth",
@@ -1372,6 +1457,74 @@ def run_app() -> None:
                 else 0,
                 format_func=lambda value: "None / independent rows" if value == "" else value,
                 disabled=model_type != ModelType.GEE_LOGISTIC_REGRESSION.value,
+            )
+            mixed_effects_group_column = st.selectbox(
+                "Mixed-effects group column",
+                options=gee_group_options,
+                index=gee_group_options.index(preset_inputs.model.mixed_effects_group_column)
+                if preset_inputs.model.mixed_effects_group_column in gee_group_options
+                else 0,
+                format_func=lambda value: "None / row-level random intercepts"
+                if value == ""
+                else value,
+                disabled=model_type != ModelType.MIXED_EFFECTS_REGRESSION.value,
+            )
+            spline_n_knots = st.number_input(
+                "Spline knots",
+                min_value=3,
+                max_value=12,
+                value=int(preset_inputs.model.spline_n_knots),
+                step=1,
+                disabled=model_type not in spline_model_types,
+            )
+            spline_degree = st.number_input(
+                "Spline degree",
+                min_value=1,
+                max_value=5,
+                value=int(preset_inputs.model.spline_degree),
+                step=1,
+                disabled=model_type not in spline_model_types,
+            )
+            tweedie_variance_power = st.number_input(
+                "Tweedie variance power",
+                min_value=1.0,
+                max_value=2.0,
+                value=float(preset_inputs.model.tweedie_variance_power),
+                step=0.1,
+                format="%.1f",
+                disabled=model_type != ModelType.TWEEDIE_REGRESSION.value,
+            )
+            sarimax_order_p = st.number_input(
+                "SARIMAX AR order p",
+                min_value=0,
+                max_value=5,
+                value=int(preset_inputs.model.sarimax_order_p),
+                step=1,
+                disabled=model_type != ModelType.SARIMAX_FORECAST.value,
+            )
+            sarimax_order_d = st.number_input(
+                "SARIMAX differencing d",
+                min_value=0,
+                max_value=2,
+                value=int(preset_inputs.model.sarimax_order_d),
+                step=1,
+                disabled=model_type != ModelType.SARIMAX_FORECAST.value,
+            )
+            sarimax_order_q = st.number_input(
+                "SARIMAX MA order q",
+                min_value=0,
+                max_value=5,
+                value=int(preset_inputs.model.sarimax_order_q),
+                step=1,
+                disabled=model_type != ModelType.SARIMAX_FORECAST.value,
+            )
+            seasonal_periods_text = st.text_input(
+                "Seasonal periods",
+                value=""
+                if preset_inputs.model.seasonal_periods is None
+                else str(preset_inputs.model.seasonal_periods),
+                disabled=model_type not in forecasting_model_types,
+                help="Optional season length, such as 4 for quarterly or 12 for monthly data.",
             )
             tobit_left_censoring = st.number_input(
                 "Tobit left censor",
@@ -2301,14 +2454,19 @@ def run_app() -> None:
             )
 
         comparison_enabled = preset_inputs.comparison.enabled
+        supported_challenger_options = [
+            candidate.value
+            for candidate in model_types_for_target_mode(TargetMode(target_mode))
+            if candidate != ModelType(model_type)
+        ]
         challenger_model_types = [
             candidate.value
             for candidate in preset_inputs.comparison.challenger_model_types
-            if candidate.value != model_type
+            if candidate.value != model_type and candidate.value in supported_challenger_options
         ] or [
             challenger.value
             for challenger in default_challengers_for_target_mode(TargetMode(target_mode))
-            if challenger.value != model_type
+            if challenger.value != model_type and challenger.value in supported_challenger_options
         ]
         ranking_metric = preset_inputs.comparison.ranking_metric or "auto"
         feature_policy_enabled = preset_inputs.feature_policy.enabled
@@ -2444,18 +2602,21 @@ def run_app() -> None:
                     "Enable model comparison mode",
                     value=preset_inputs.comparison.enabled,
                 )
+                supported_challenger_options = [
+                    candidate.value
+                    for candidate in model_types_for_target_mode(TargetMode(target_mode))
+                    if candidate != ModelType(model_type)
+                ]
+                saved_challenger_defaults = [
+                    candidate.value
+                    for candidate in preset_inputs.comparison.challenger_model_types
+                    if candidate.value != model_type
+                    and candidate.value in supported_challenger_options
+                ]
                 challenger_model_types = st.multiselect(
                     "Challenger model families",
-                    options=[
-                        candidate.value
-                        for candidate in ModelType
-                        if candidate != ModelType(model_type)
-                    ],
-                    default=[
-                        candidate.value
-                        for candidate in preset_inputs.comparison.challenger_model_types
-                        if candidate.value != model_type
-                    ]
+                    options=supported_challenger_options,
+                    default=saved_challenger_defaults
                     or [
                         challenger.value
                         for challenger in default_challengers_for_target_mode(
@@ -2474,6 +2635,10 @@ def run_app() -> None:
                         "average_precision",
                         "ks_statistic",
                         "brier_score",
+                        "accuracy",
+                        "macro_f1",
+                        "weighted_f1",
+                        "log_loss",
                         "rmse",
                         "mae",
                         "r2",
@@ -3332,6 +3497,7 @@ def run_app() -> None:
     tobit_right_censoring = (
         float(tobit_right_censoring_text) if tobit_right_censoring_text.strip() else None
     )
+    seasonal_periods = int(seasonal_periods_text) if seasonal_periods_text.strip() else None
     preview_config, preview_findings, preview_error = ui_build_preview_configuration(
         edited_schema=edited_schema,
         feature_dictionary_frame=feature_dictionary_frame,

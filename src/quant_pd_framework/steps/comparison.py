@@ -41,7 +41,11 @@ class ModelComparisonStep(BasePipelineStep):
         evaluator = EvaluationStep()
         target_mode = context.config.target.mode
         ranking_metric = comparison_config.ranking_metric or (
-            "roc_auc" if target_mode == TargetMode.BINARY else "rmse"
+            "roc_auc"
+            if target_mode == TargetMode.BINARY
+            else "accuracy"
+            if target_mode == TargetMode.MULTICLASS
+            else "rmse"
         )
         rows: list[dict[str, object]] = []
         prediction_snapshots: dict[str, pd.DataFrame] = {}
@@ -102,6 +106,16 @@ class ModelComparisonStep(BasePipelineStep):
                         True,
                         context,
                     )
+                elif target_mode == TargetMode.MULTICLASS:
+                    scored_frame, metrics = evaluator._score_multiclass_split(
+                        frame,
+                        split_name,
+                        context.target_column,
+                        context.feature_columns,
+                        challenger,
+                        True,
+                        context,
+                    )
                 else:
                     scored_frame, metrics = evaluator._score_continuous_split(
                         frame,
@@ -134,7 +148,13 @@ class ModelComparisonStep(BasePipelineStep):
         if comparison_table.empty:
             return context
         if ranking_metric not in comparison_table.columns:
-            ranking_metric = "roc_auc" if target_mode == TargetMode.BINARY else "rmse"
+            ranking_metric = (
+                "roc_auc"
+                if target_mode == TargetMode.BINARY
+                else "accuracy"
+                if target_mode == TargetMode.MULTICLASS
+                else "rmse"
+            )
 
         comparison_table["ranking_metric"] = ranking_metric
         comparison_table["ranking_value"] = comparison_table[ranking_metric]

@@ -153,7 +153,94 @@ Key checks:
 - structural-break and stationarity outputs are reviewed
 - scenario outputs are documented
 
-## Recipe 8: Large Data Run
+## Recipe 8: Multiclass Grade Or Stage Model
+
+Use when the target is a three-or-more-class outcome rather than a binary event
+or continuous value.
+
+Recommended setup:
+
+- Execution mode: `fit_new_model`
+- Target mode: `multiclass`
+- Model type: `multinomial_logistic_regression` for unordered classes
+- Model type: `ordinal_logistic_regression` for ordered grades, stages, or
+  bands
+- Model type: `decision_tree` when transparent segmentation is the primary
+  objective
+- Stratified split: on when class sizes are sufficient
+
+Key checks:
+
+- the class order is documented when ordinal logistic is used
+- the target mapping exported in metadata is reviewed
+- class accuracy, macro F1, weighted F1, and log loss are reviewed
+- binary PD diagnostics are not expected for multiclass runs
+
+## Recipe 9: Count Or Severity GLM
+
+Use when the target resembles a SAS-style GLM use case.
+
+Recommended setup:
+
+- Execution mode: `fit_new_model`
+- Target mode: `continuous`
+- Model type: `poisson_regression` for non-negative counts
+- Model type: `negative_binomial_regression` for overdispersed counts
+- Model type: `gamma_regression` for strictly positive skewed severities
+- Model type: `tweedie_regression` for zero-plus-positive severity or loss
+  targets
+- Tweedie variance power: document the selected value
+
+Key checks:
+
+- target support matches the selected family
+- residual and actual-versus-predicted diagnostics are reviewed
+- segment-level error is reviewed for material bias
+- model assumptions are documented in the decision summary
+
+## Recipe 10: Smooth Nonlinear Spline Model
+
+Use when a linear model underfits a smooth relationship but a black-box model is
+hard to justify.
+
+Recommended setup:
+
+- Execution mode: `fit_new_model`
+- Target mode: `binary` for `gam_spline_logistic`
+- Target mode: `continuous` for `gam_spline_regression`
+- Spline knots: start low and increase only when supported by validation
+- Spline degree: keep the default unless there is a documented reason
+- Explainability: PDP, ICE, ALE, and feature-effect monotonicity on
+
+Key checks:
+
+- feature-effect curves are smooth and business-sensible
+- train/test divergence does not indicate overfitting
+- spline settings are documented as model assumptions
+
+## Recipe 11: Mixed Effects Or Forecasting Challenger
+
+Use when repeated-observation structure or time-series behavior is central to
+the business question.
+
+Recommended setup:
+
+- `mixed_effects_regression` for continuous repeated-observation data with a
+  meaningful random-intercept group
+- `sarimax_forecast` for ARIMA-style forecasts with optional exogenous drivers
+- `exponential_smoothing_forecast` for trend and optional seasonality baseline
+- `unobserved_components_forecast` for state-space trend or seasonality
+  decomposition
+- Date roles and time-aware split: required for forecasting workflows
+
+Key checks:
+
+- group column is defensible for mixed effects
+- future scoring does not require unavailable group-level random effects
+- forecast order, trend, and seasonality assumptions are documented
+- forecasting statistical tests and structural-break diagnostics are reviewed
+
+## Recipe 12: Large Data Run
 
 Use when data is too large for comfortable browser upload or full in-memory
 diagnostics.
@@ -179,7 +266,7 @@ Key checks:
 - full-data scoring folder is exported
 - sampled exports are clearly documented
 
-## Recipe 9: Memory-Optimized Full-Data Fit
+## Recipe 13: Memory-Optimized Full-Data Fit
 
 Use when the model must be fit on the full train split, but the source file is
 large enough that duplicated pandas dataframes can exhaust RAM.
@@ -207,7 +294,7 @@ Key checks:
 - prediction files contain scores and audit identifiers, not a duplicated full
   feature matrix
 
-## Recipe 10: Fast Iteration Run
+## Recipe 14: Fast Iteration Run
 
 Use when testing setup before creating a full evidence package.
 

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import numpy as np
+import pandas as pd
 import pytest
 
 from quant_pd_framework import (
@@ -17,6 +19,7 @@ from quant_pd_framework import (
     TargetConfig,
     TargetMode,
 )
+from quant_pd_framework.models import build_model_adapter
 from tests.support import (
     build_binary_dataframe,
     build_common_schema,
@@ -252,3 +255,163 @@ def test_panel_regression_variant_runs_on_panel_data() -> None:
         assert context.metrics["test"]["rmse"] is not None
         assert context.feature_importance is not None
         assert "segment_id" in context.feature_columns
+
+
+@pytest.mark.parametrize(
+    "model_type",
+    [
+        ModelType.MULTINOMIAL_LOGISTIC_REGRESSION,
+        ModelType.ORDINAL_LOGISTIC_REGRESSION,
+        ModelType.DECISION_TREE,
+    ],
+)
+def test_multiclass_model_variants_run(model_type: ModelType) -> None:
+    dataframe = build_binary_dataframe(row_count=180)
+    dataframe["risk_grade"] = pd.qcut(
+        dataframe["utilization"].rank(method="first"),
+        q=3,
+        labels=["low", "medium", "high"],
+    ).astype(str)
+    with temporary_artifact_root(f"pytest_{model_type.value}") as artifact_root:
+        config = FrameworkConfig(
+            schema=build_common_schema("account_id"),
+            cleaning=CleaningConfig(),
+            feature_engineering=FeatureEngineeringConfig(),
+            target=TargetConfig(
+                source_column="risk_grade",
+                mode=TargetMode.MULTICLASS,
+                output_column="target_class",
+            ),
+            split=SplitConfig(
+                data_structure=DataStructure.CROSS_SECTIONAL,
+                date_column="as_of_date",
+                train_size=0.6,
+                validation_size=0.2,
+                test_size=0.2,
+            ),
+            model=ModelConfig(
+                model_type=model_type,
+                max_iter=250,
+                tree_max_depth=3,
+            ),
+            artifacts=ArtifactConfig(output_root=artifact_root),
+        )
+
+        context = QuantModelOrchestrator(config=config).run(dataframe)
+
+        assert context.metrics["test"]["accuracy"] is not None
+        assert context.feature_importance is not None
+        assert "predicted_class" in context.predictions["test"].columns
+
+
+@pytest.mark.parametrize(
+    ("model_type", "target_mode", "model_config"),
+    [
+        (
+            ModelType.POISSON_REGRESSION,
+            TargetMode.CONTINUOUS,
+            ModelConfig(model_type=ModelType.POISSON_REGRESSION, max_iter=100),
+        ),
+        (
+            ModelType.NEGATIVE_BINOMIAL_REGRESSION,
+            TargetMode.CONTINUOUS,
+            ModelConfig(model_type=ModelType.NEGATIVE_BINOMIAL_REGRESSION, max_iter=100),
+        ),
+        (
+            ModelType.GAMMA_REGRESSION,
+            TargetMode.CONTINUOUS,
+            ModelConfig(model_type=ModelType.GAMMA_REGRESSION, max_iter=100),
+        ),
+        (
+            ModelType.TWEEDIE_REGRESSION,
+            TargetMode.CONTINUOUS,
+            ModelConfig(model_type=ModelType.TWEEDIE_REGRESSION, max_iter=100),
+        ),
+        (
+            ModelType.GAM_SPLINE_REGRESSION,
+            TargetMode.CONTINUOUS,
+            ModelConfig(
+                model_type=ModelType.GAM_SPLINE_REGRESSION,
+                spline_n_knots=4,
+                spline_degree=2,
+            ),
+        ),
+        (
+            ModelType.GAM_SPLINE_LOGISTIC,
+            TargetMode.BINARY,
+            ModelConfig(
+                model_type=ModelType.GAM_SPLINE_LOGISTIC,
+                spline_n_knots=4,
+                spline_degree=2,
+                max_iter=250,
+            ),
+        ),
+        (
+            ModelType.MIXED_EFFECTS_REGRESSION,
+            TargetMode.CONTINUOUS,
+            ModelConfig(
+                model_type=ModelType.MIXED_EFFECTS_REGRESSION,
+                mixed_effects_group_column="segment",
+                max_iter=100,
+            ),
+        ),
+        (
+            ModelType.SARIMAX_FORECAST,
+            TargetMode.CONTINUOUS,
+            ModelConfig(model_type=ModelType.SARIMAX_FORECAST, max_iter=50),
+        ),
+        (
+            ModelType.EXPONENTIAL_SMOOTHING_FORECAST,
+            TargetMode.CONTINUOUS,
+            ModelConfig(model_type=ModelType.EXPONENTIAL_SMOOTHING_FORECAST),
+        ),
+        (
+            ModelType.UNOBSERVED_COMPONENTS_FORECAST,
+            TargetMode.CONTINUOUS,
+            ModelConfig(model_type=ModelType.UNOBSERVED_COMPONENTS_FORECAST, max_iter=50),
+        ),
+    ],
+)
+def test_sas_equivalent_adapters_fit_and_predict(
+    model_type: ModelType,
+    target_mode: TargetMode,
+    model_config: ModelConfig,
+) -> None:
+    rng = np.random.default_rng(123)
+    row_count = 72
+    frame = pd.DataFrame(
+        {
+            "feature_a": rng.normal(size=row_count),
+            "feature_b": rng.uniform(0.1, 1.0, size=row_count),
+            "segment": np.repeat(["a", "b", "c", "d"], row_count // 4),
+        }
+    )
+    if target_mode == TargetMode.BINARY:
+        target = ((frame["feature_a"] + frame["feature_b"]) > 0.8).astype(int)
+    elif model_type in {
+        ModelType.POISSON_REGRESSION,
+        ModelType.NEGATIVE_BINOMIAL_REGRESSION,
+    }:
+        target = pd.Series(rng.poisson(2.0, size=row_count), dtype=float)
+    elif model_type in {
+        ModelType.GAMMA_REGRESSION,
+        ModelType.TWEEDIE_REGRESSION,
+    }:
+        target = pd.Series(np.exp(0.2 + frame["feature_b"] + rng.normal(0, 0.1, row_count)))
+    else:
+        target = pd.Series(
+            10 + np.arange(row_count) * 0.05 + frame["feature_a"] * 0.2,
+            dtype=float,
+        )
+
+    adapter = build_model_adapter(model_config, target_mode)
+    adapter.fit(
+        frame,
+        target,
+        numeric_features=["feature_a", "feature_b"],
+        categorical_features=["segment"],
+    )
+    predictions = adapter.predict_score(frame.head(10))
+
+    assert len(predictions) == 10
+    assert adapter.get_feature_importance() is not None

@@ -71,6 +71,8 @@ class ValidationStep(BasePipelineStep):
                     raise ValueError(
                         "Binary target mode requires exactly two distinct target values."
                     )
+                if target_mode == TargetMode.MULTICLASS and unique_count < 3:
+                    raise ValueError("Multiclass target mode requires at least three classes.")
                 if target_mode == TargetMode.CONTINUOUS and not pd.api.types.is_numeric_dtype(
                     non_null_target
                 ):

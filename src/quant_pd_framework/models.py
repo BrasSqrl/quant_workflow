@@ -32,10 +32,15 @@ from sklearn.linear_model import (
     Ridge,
 )
 from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import OneHotEncoder, StandardScaler
+from sklearn.preprocessing import OneHotEncoder, SplineTransformer, StandardScaler
+from sklearn.tree import DecisionTreeClassifier, DecisionTreeRegressor
 from statsmodels.duration.hazard_regression import PHReg
+from statsmodels.miscmodels.ordinal_model import OrderedModel
 from statsmodels.othermod.betareg import BetaModel
 from statsmodels.tools.sm_exceptions import HessianInversionWarning
+from statsmodels.tsa.holtwinters import ExponentialSmoothing
+from statsmodels.tsa.statespace.sarimax import SARIMAX
+from statsmodels.tsa.statespace.structural import UnobservedComponents
 from xgboost import XGBClassifier, XGBRegressor
 
 from .config import (
@@ -1088,6 +1093,202 @@ class ElasticNetRegressionAdapter(SklearnAdapter):
         )
 
 
+class MultinomialLogisticRegressionAdapter(SklearnAdapter):
+    """Multinomial logistic model for unordered multiclass outcomes."""
+
+    model_type = ModelType.MULTINOMIAL_LOGISTIC_REGRESSION
+
+    def __init__(self, model_config: ModelConfig, target_mode: TargetMode) -> None:
+        if target_mode != TargetMode.MULTICLASS:
+            raise ValueError("Multinomial logistic regression requires a multiclass target.")
+        super().__init__(
+            model_config,
+            target_mode,
+            LogisticRegression(
+                max_iter=model_config.max_iter,
+                C=model_config.C,
+                solver="lbfgs",
+                class_weight=model_config.class_weight,
+            ),
+            scale_numeric=True,
+        )
+
+    def fit(
+        self,
+        x_frame: pd.DataFrame,
+        y_values: pd.Series,
+        numeric_features: list[str],
+        categorical_features: list[str],
+    ) -> MultinomialLogisticRegressionAdapter:
+        return super().fit(x_frame, y_values.astype(int), numeric_features, categorical_features)
+
+    def predict_score(self, x_frame: pd.DataFrame) -> np.ndarray:
+        return self.estimator.predict(self._transform(x_frame)).astype(float)
+
+    def predict_class(self, x_frame: pd.DataFrame, threshold: float) -> np.ndarray | None:
+        return self.estimator.predict(self._transform(x_frame)).astype(int)
+
+    def predict_proba(self, x_frame: pd.DataFrame) -> np.ndarray:
+        return self.estimator.predict_proba(self._transform(x_frame))
+
+    def get_feature_importance(self) -> pd.DataFrame:
+        coefficients = np.asarray(self.estimator.coef_)
+        importance = np.mean(np.abs(coefficients), axis=0)
+        signed_average = np.mean(coefficients, axis=0)
+        return (
+            pd.DataFrame(
+                {
+                    "feature_name": self.feature_names_,
+                    "importance_value": importance,
+                    "importance_type": "multinomial_mean_absolute_coefficient",
+                    "coefficient": signed_average,
+                    "abs_coefficient": importance,
+                    "std_error": np.nan,
+                    "p_value": np.nan,
+                    "odds_ratio": np.nan,
+                }
+            )
+            .sort_values("importance_value", ascending=False)
+            .reset_index(drop=True)
+        )
+
+    @property
+    def summary_text(self) -> str:
+        return (
+            "Multinomial logistic regression fitted with sklearn.\n"
+            f"Classes: {', '.join(str(value) for value in self.estimator.classes_)}\n"
+        )
+
+
+class GAMSplineAdapter(BaseModelAdapter):
+    """Spline-expanded regression/logistic adapter approximating a lightweight GAM."""
+
+    model_type = ModelType.GAM_SPLINE_REGRESSION
+
+    def __init__(self, model_config: ModelConfig, target_mode: TargetMode) -> None:
+        if target_mode not in {TargetMode.BINARY, TargetMode.CONTINUOUS}:
+            raise ValueError("Spline GAM-style models support binary or continuous targets.")
+        super().__init__(model_config, target_mode)
+        self.model_type = model_config.model_type
+        self.preprocessor = None
+        self.estimator = (
+            LogisticRegression(
+                max_iter=model_config.max_iter,
+                C=model_config.C,
+                solver=model_config.solver,
+                class_weight=model_config.class_weight,
+            )
+            if target_mode == TargetMode.BINARY
+            else Ridge(alpha=model_config.regularization_alpha)
+        )
+
+    def fit(
+        self,
+        x_frame: pd.DataFrame,
+        y_values: pd.Series,
+        numeric_features: list[str],
+        categorical_features: list[str],
+    ) -> GAMSplineAdapter:
+        self.raw_feature_names_ = list(x_frame.columns)
+        self.raw_numeric_features_ = list(numeric_features)
+        self.raw_categorical_features_ = list(categorical_features)
+        self.preprocessor = self._build_spline_preprocessor(numeric_features, categorical_features)
+        x_matrix = self.preprocessor.fit_transform(x_frame)
+        self.feature_names_ = list(self.preprocessor.get_feature_names_out())
+        target_values = y_values.astype(int if self.is_binary_classifier else float)
+        self._run_with_warning_capture(
+            lambda: self.estimator.fit(x_matrix, target_values),
+            source=f"{self.model_type.value}.estimator",
+        )
+        self._update_sklearn_fit_diagnostics(
+            self.estimator,
+            source=f"{self.model_type.value}.estimator",
+        )
+        return self
+
+    def _build_spline_preprocessor(
+        self,
+        numeric_features: list[str],
+        categorical_features: list[str],
+    ) -> ColumnTransformer:
+        transformers: list[tuple[str, Any, list[str]]] = []
+        if numeric_features:
+            transformers.append(
+                (
+                    "numeric_spline",
+                    Pipeline(
+                        steps=[
+                            (
+                                "spline",
+                                SplineTransformer(
+                                    n_knots=self.model_config.spline_n_knots,
+                                    degree=self.model_config.spline_degree,
+                                    include_bias=False,
+                                ),
+                            ),
+                            ("scaler", StandardScaler()),
+                        ]
+                    ),
+                    numeric_features,
+                )
+            )
+        if categorical_features:
+            transformers.append(
+                (
+                    "categorical",
+                    OneHotEncoder(handle_unknown="ignore", sparse_output=False),
+                    categorical_features,
+                )
+            )
+        if not transformers:
+            raise ValueError("Spline GAM-style modeling requires at least one feature.")
+        return ColumnTransformer(transformers=transformers, sparse_threshold=0.0)
+
+    def _transform(self, x_frame: pd.DataFrame) -> np.ndarray:
+        if self.preprocessor is None:
+            raise ValueError("The model adapter has not been fitted yet.")
+        return self.preprocessor.transform(x_frame)
+
+    def predict_score(self, x_frame: pd.DataFrame) -> np.ndarray:
+        transformed = self._transform(x_frame)
+        if self.is_binary_classifier:
+            return self.estimator.predict_proba(transformed)[:, 1]
+        return self.estimator.predict(transformed)
+
+    def get_feature_importance(self) -> pd.DataFrame:
+        if hasattr(self.estimator, "coef_"):
+            coefficients = np.ravel(self.estimator.coef_)
+        else:
+            coefficients = np.zeros(len(self.feature_names_), dtype=float)
+        return (
+            pd.DataFrame(
+                {
+                    "feature_name": self.feature_names_,
+                    "importance_value": np.abs(coefficients),
+                    "importance_type": "spline_absolute_coefficient",
+                    "coefficient": coefficients,
+                    "abs_coefficient": np.abs(coefficients),
+                    "std_error": np.nan,
+                    "p_value": np.nan,
+                    "odds_ratio": _safe_odds_ratio(coefficients)
+                    if self.is_binary_classifier
+                    else np.nan,
+                }
+            )
+            .sort_values("importance_value", ascending=False)
+            .reset_index(drop=True)
+        )
+
+    @property
+    def summary_text(self) -> str:
+        family = "logistic" if self.is_binary_classifier else "ridge regression"
+        return (
+            f"Spline-expanded GAM-style {family} model fitted with sklearn.\n"
+            f"Spline knots: {self.model_config.spline_n_knots}\n"
+            f"Spline degree: {self.model_config.spline_degree}\n"
+        )
+
+
 class QuantileRegressionAdapter(SklearnAdapter):
     """Median or user-selected quantile regression for forecast tail analysis."""
 
@@ -1700,6 +1901,75 @@ class ExtraTreesAdapter(SklearnAdapter):
         )
 
 
+class DecisionTreeAdapter(SklearnAdapter):
+    """Single decision tree for transparent SAS-style tree benchmarking."""
+
+    model_type = ModelType.DECISION_TREE
+
+    def __init__(self, model_config: ModelConfig, target_mode: TargetMode) -> None:
+        estimator = (
+            DecisionTreeClassifier(
+                max_depth=model_config.tree_max_depth,
+                class_weight=model_config.class_weight
+                if target_mode == TargetMode.BINARY
+                else None,
+                random_state=42,
+            )
+            if target_mode in {TargetMode.BINARY, TargetMode.MULTICLASS}
+            else DecisionTreeRegressor(
+                max_depth=model_config.tree_max_depth,
+                random_state=42,
+            )
+        )
+        super().__init__(
+            model_config,
+            target_mode,
+            estimator,
+            scale_numeric=False,
+            sparse_preprocessor=False,
+        )
+
+    def fit(
+        self,
+        x_frame: pd.DataFrame,
+        y_values: pd.Series,
+        numeric_features: list[str],
+        categorical_features: list[str],
+    ) -> DecisionTreeAdapter:
+        target = (
+            y_values.astype(int)
+            if self.target_mode in {TargetMode.BINARY, TargetMode.MULTICLASS}
+            else y_values.astype(float)
+        )
+        return super().fit(x_frame, target, numeric_features, categorical_features)
+
+    def predict_score(self, x_frame: pd.DataFrame) -> np.ndarray:
+        transformed = self._transform(x_frame)
+        if self.target_mode == TargetMode.BINARY:
+            return self.estimator.predict_proba(transformed)[:, 1]
+        if self.target_mode == TargetMode.MULTICLASS:
+            return self.estimator.predict(transformed).astype(float)
+        return self.estimator.predict(transformed)
+
+    def predict_class(self, x_frame: pd.DataFrame, threshold: float) -> np.ndarray | None:
+        transformed = self._transform(x_frame)
+        if self.target_mode == TargetMode.BINARY:
+            return (self.estimator.predict_proba(transformed)[:, 1] >= threshold).astype(int)
+        if self.target_mode == TargetMode.MULTICLASS:
+            return self.estimator.predict(transformed).astype(int)
+        return None
+
+    def predict_proba(self, x_frame: pd.DataFrame) -> np.ndarray:
+        return self.estimator.predict_proba(self._transform(x_frame))
+
+    @property
+    def summary_text(self) -> str:
+        return (
+            "Single decision tree fitted with sklearn.\n"
+            f"Max depth: {self.model_config.tree_max_depth}\n"
+        )
+
+
 class ExplainableBoostingMachineAdapter(SklearnAdapter):
     """No-new-dependency EBM-style shallow boosted-tree challenger."""
 
@@ -1888,6 +2158,166 @@ class FractionalLogitAdapter(StatsmodelsAdapter):
         return np.clip(np.asarray(self.results.predict(self._transform(x_frame))), 0.0, 1.0)
 
 
+class GLMRegressionAdapter(StatsmodelsAdapter):
+    """Statsmodels GLM adapter for SAS GENMOD-style continuous/count models."""
+
+    model_type = ModelType.POISSON_REGRESSION
+
+    def __init__(self, model_config: ModelConfig, target_mode: TargetMode) -> None:
+        if target_mode != TargetMode.CONTINUOUS:
+            raise ValueError("GLM regression families require a continuous numeric target.")
+        super().__init__(model_config, target_mode, scale_numeric=True)
+        self.model_type = model_config.model_type
+
+    def _fit_statsmodel(self, x_matrix: np.ndarray, y_values: pd.Series):
+        target = y_values.astype(float)
+        family = self._resolve_family()
+        if self.model_config.model_type in {
+            ModelType.POISSON_REGRESSION,
+            ModelType.NEGATIVE_BINOMIAL_REGRESSION,
+        }:
+            target = np.clip(target, 0.0, None)
+        elif self.model_config.model_type in {
+            ModelType.GAMMA_REGRESSION,
+            ModelType.TWEEDIE_REGRESSION,
+        }:
+            target = np.clip(target, 1e-9, None)
+        return sm.GLM(target, x_matrix, family=family).fit(maxiter=self.model_config.max_iter)
+
+    def _resolve_family(self):
+        if self.model_config.model_type == ModelType.POISSON_REGRESSION:
+            return sm.families.Poisson()
+        if self.model_config.model_type == ModelType.NEGATIVE_BINOMIAL_REGRESSION:
+            return sm.families.NegativeBinomial()
+        if self.model_config.model_type == ModelType.GAMMA_REGRESSION:
+            return sm.families.Gamma(link=sm.families.links.Log())
+        if self.model_config.model_type == ModelType.TWEEDIE_REGRESSION:
+            return sm.families.Tweedie(
+                var_power=self.model_config.tweedie_variance_power,
+                link=sm.families.links.Log(),
+            )
+        raise ValueError(f"Unsupported GLM model type: {self.model_config.model_type.value}")
+
+    def predict_score(self, x_frame: pd.DataFrame) -> np.ndarray:
+        return np.clip(np.asarray(self.results.predict(self._transform(x_frame))), 0.0, None)
+
+
+class OrdinalLogisticRegressionAdapter(BaseModelAdapter):
+    """Ordered logit model for ordinal multiclass outcomes."""
+
+    model_type = ModelType.ORDINAL_LOGISTIC_REGRESSION
+
+    def __init__(self, model_config: ModelConfig, target_mode: TargetMode) -> None:
+        if target_mode != TargetMode.MULTICLASS:
+            raise ValueError("Ordinal logistic regression requires a multiclass target.")
+        super().__init__(model_config, target_mode)
+        self.preprocessor = None
+        self.results = None
+        self.class_labels_: np.ndarray = np.array([], dtype=int)
+
+    def fit(
+        self,
+        x_frame: pd.DataFrame,
+        y_values: pd.Series,
+        numeric_features: list[str],
+        categorical_features: list[str],
+    ) -> OrdinalLogisticRegressionAdapter:
+        self.raw_feature_names_ = list(x_frame.columns)
+        self.raw_numeric_features_ = list(numeric_features)
+        self.raw_categorical_features_ = list(categorical_features)
+        self.preprocessor = self._build_ordinal_preprocessor(
+            numeric_features,
+            categorical_features,
+        )
+        x_matrix = self.preprocessor.fit_transform(x_frame)
+        self.feature_names_ = list(self.preprocessor.get_feature_names_out())
+        target = y_values.astype(int).to_numpy()
+        self.class_labels_ = np.sort(np.unique(target))
+        self.results = self._run_with_warning_capture(
+            lambda: OrderedModel(target, x_matrix, distr="logit").fit(
+                method="bfgs",
+                maxiter=self.model_config.max_iter,
+                disp=False,
+            ),
+            source=f"{self.model_type.value}.ordered_logit_fit",
+        )
+        self._update_statsmodels_fit_diagnostics(
+            self.results,
+            source=f"{self.model_type.value}.ordered_logit_fit",
+        )
+        return self
+
+    def _build_ordinal_preprocessor(
+        self,
+        numeric_features: list[str],
+        categorical_features: list[str],
+    ) -> ColumnTransformer:
+        transformers: list[tuple[str, Any, list[str]]] = []
+        if numeric_features:
+            transformers.append(("numeric", StandardScaler(), numeric_features))
+        if categorical_features:
+            transformers.append(
+                (
+                    "categorical",
+                    OneHotEncoder(
+                        drop="first",
+                        handle_unknown="ignore",
+                        sparse_output=False,
+                    ),
+                    categorical_features,
+                )
+            )
+        if not transformers:
+            raise ValueError("Ordinal logistic regression requires at least one feature.")
+        return ColumnTransformer(transformers=transformers, sparse_threshold=0.0)
+
+    def _transform(self, x_frame: pd.DataFrame) -> np.ndarray:
+        if self.preprocessor is None:
+            raise ValueError("The model adapter has not been fitted yet.")
+        return self.preprocessor.transform(x_frame)
+
+    def predict_proba(self, x_frame: pd.DataFrame) -> np.ndarray:
+        probabilities = np.asarray(
+            self.results.model.predict(self.results.params, self._transform(x_frame))
+        )
+        return probabilities.reshape((len(x_frame), len(self.class_labels_)))
+
+    def predict_score(self, x_frame: pd.DataFrame) -> np.ndarray:
+        return self.predict_class(x_frame, threshold=0.5).astype(float)
+
+    def predict_class(self, x_frame: pd.DataFrame, threshold: float) -> np.ndarray | None:
+        probabilities = self.predict_proba(x_frame)
+        return self.class_labels_[np.argmax(probabilities, axis=1)].astype(int)
+
+    def get_feature_importance(self) -> pd.DataFrame:
+        params = np.asarray(self.results.params)
+        feature_params = params[: len(self.feature_names_)]
+        return (
+            pd.DataFrame(
+                {
+                    "feature_name": self.feature_names_,
+                    "importance_value": np.abs(feature_params),
+                    "importance_type": "ordinal_logit_absolute_coefficient",
+                    "coefficient": feature_params,
+                    "abs_coefficient": np.abs(feature_params),
+                    "std_error": np.nan,
+                    "p_value": np.nan,
+                    "odds_ratio": _safe_odds_ratio(feature_params),
+                }
+            )
+            .sort_values("importance_value", ascending=False)
+            .reset_index(drop=True)
+        )
+
+    @property
+    def summary_text(self) -> str:
+        return self._run_with_warning_capture(
+            lambda: self.results.summary().as_text(),
+            source=f"{self.model_type.value}.summary",
+            stage="summary",
+        )
+
+
 class GEELogisticRegressionAdapter(BaseModelAdapter):
     """GEE logistic model for clustered or repeated-observation binary PD data."""
 
@@ -1970,6 +2400,104 @@ class GEELogisticRegressionAdapter(BaseModelAdapter):
                     "std_error": bse,
                     "p_value": pvalues,
                     "odds_ratio": _safe_odds_ratio(params),
+                }
+            )
+            .sort_values("importance_value", ascending=False)
+            .reset_index(drop=True)
+        )
+
+    @property
+    def summary_text(self) -> str:
+        return self._run_with_warning_capture(
+            lambda: self.results.summary().as_text(),
+            source=f"{self.model_type.value}.summary",
+            stage="summary",
+        )
+
+
+class MixedEffectsRegressionAdapter(BaseModelAdapter):
+    """Random-intercept mixed-effects regression using statsmodels MixedLM."""
+
+    model_type = ModelType.MIXED_EFFECTS_REGRESSION
+
+    def __init__(self, model_config: ModelConfig, target_mode: TargetMode) -> None:
+        if target_mode != TargetMode.CONTINUOUS:
+            raise ValueError("Mixed-effects regression requires a continuous target.")
+        super().__init__(model_config, target_mode)
+        self.preprocessor = None
+        self.results = None
+        self.model_feature_columns_: list[str] = []
+
+    def fit(
+        self,
+        x_frame: pd.DataFrame,
+        y_values: pd.Series,
+        numeric_features: list[str],
+        categorical_features: list[str],
+    ) -> MixedEffectsRegressionAdapter:
+        group_column = self.model_config.mixed_effects_group_column
+        groups = (
+            x_frame[group_column].astype(str).to_numpy()
+            if group_column and group_column in x_frame.columns
+            else np.arange(len(x_frame))
+        )
+        self.model_feature_columns_ = [
+            column for column in x_frame.columns if column != group_column
+        ]
+        model_numeric = [
+            feature for feature in numeric_features if feature in self.model_feature_columns_
+        ]
+        model_categorical = [
+            feature for feature in categorical_features if feature in self.model_feature_columns_
+        ]
+        self.raw_feature_names_ = list(self.model_feature_columns_)
+        self.raw_numeric_features_ = model_numeric
+        self.raw_categorical_features_ = model_categorical
+        self.preprocessor = build_preprocessor(model_numeric, model_categorical)
+        x_matrix = self.preprocessor.fit_transform(x_frame.loc[:, self.model_feature_columns_])
+        x_with_const = sm.add_constant(x_matrix, has_constant="add")
+        self.feature_names_ = ["const", *self.preprocessor.get_feature_names_out().tolist()]
+        self.results = self._run_with_warning_capture(
+            lambda: sm.MixedLM(y_values.astype(float), x_with_const, groups=groups).fit(
+                maxiter=self.model_config.max_iter,
+                reml=False,
+                method="lbfgs",
+            ),
+            source=f"{self.model_type.value}.mixedlm_fit",
+        )
+        self._update_statsmodels_fit_diagnostics(
+            self.results,
+            source=f"{self.model_type.value}.mixedlm_fit",
+        )
+        return self
+
+    def _transform(self, x_frame: pd.DataFrame) -> np.ndarray:
+        if self.preprocessor is None:
+            raise ValueError("The model adapter has not been fitted yet.")
+        transformed = self.preprocessor.transform(x_frame.loc[:, self.model_feature_columns_])
+        return sm.add_constant(transformed, has_constant="add")
+
+    def predict_score(self, x_frame: pd.DataFrame) -> np.ndarray:
+        fixed_effects = np.asarray(self.results.fe_params)
+        return self._transform(x_frame) @ fixed_effects
+
+    def get_feature_importance(self) -> pd.DataFrame:
+        params = np.asarray(self.results.fe_params)
+        pvalues = np.asarray(getattr(self.results, "pvalues", np.full_like(params, np.nan)))[
+            : len(params)
+        ]
+        bse = np.asarray(getattr(self.results, "bse_fe", np.full_like(params, np.nan)))
+        return (
+            pd.DataFrame(
+                {
+                    "feature_name": self.feature_names_,
+                    "importance_value": np.abs(params),
+                    "importance_type": "mixed_effects_absolute_fixed_effect",
+                    "coefficient": params,
+                    "abs_coefficient": np.abs(params),
+                    "std_error": bse,
+                    "p_value": pvalues,
+                    "odds_ratio": np.nan,
                 }
             )
             .sort_values("importance_value", ascending=False)
@@ -2218,6 +2746,270 @@ class AFTSurvivalModelAdapter(SklearnAdapter):
         return "AFT-style log-normal duration model fitted with sklearn linear regression.\n"
 
 
+class SARIMAXForecastAdapter(BaseModelAdapter):
+    """SARIMAX forecasting model with optional exogenous feature matrix."""
+
+    model_type = ModelType.SARIMAX_FORECAST
+
+    def __init__(self, model_config: ModelConfig, target_mode: TargetMode) -> None:
+        if target_mode != TargetMode.CONTINUOUS:
+            raise ValueError("SARIMAX forecasting requires a continuous target.")
+        super().__init__(model_config, target_mode)
+        self.preprocessor = None
+        self.results = None
+        self.train_row_count_: int = 0
+        self.prediction_calls_: int = 0
+
+    def fit(
+        self,
+        x_frame: pd.DataFrame,
+        y_values: pd.Series,
+        numeric_features: list[str],
+        categorical_features: list[str],
+    ) -> SARIMAXForecastAdapter:
+        self.raw_feature_names_ = list(x_frame.columns)
+        self.raw_numeric_features_ = list(numeric_features)
+        self.raw_categorical_features_ = list(categorical_features)
+        self.preprocessor = build_preprocessor(
+            numeric_features,
+            categorical_features,
+            scale_numeric=True,
+        )
+        exog = self.preprocessor.fit_transform(x_frame)
+        self.feature_names_ = list(self.preprocessor.get_feature_names_out())
+        self.train_row_count_ = len(y_values)
+        order = (
+            self.model_config.sarimax_order_p,
+            self.model_config.sarimax_order_d,
+            self.model_config.sarimax_order_q,
+        )
+        self.results = self._run_with_warning_capture(
+            lambda: SARIMAX(
+                y_values.astype(float).to_numpy(),
+                exog=exog,
+                order=order,
+                enforce_stationarity=False,
+                enforce_invertibility=False,
+            ).fit(disp=False, maxiter=self.model_config.max_iter),
+            source=f"{self.model_type.value}.sarimax_fit",
+        )
+        self._update_statsmodels_fit_diagnostics(
+            self.results,
+            source=f"{self.model_type.value}.sarimax_fit",
+        )
+        return self
+
+    def _transform(self, x_frame: pd.DataFrame) -> np.ndarray:
+        if self.preprocessor is None:
+            raise ValueError("The model adapter has not been fitted yet.")
+        return self.preprocessor.transform(x_frame)
+
+    def predict_score(self, x_frame: pd.DataFrame) -> np.ndarray:
+        exog = self._transform(x_frame)
+        if self.prediction_calls_ == 0 and len(x_frame) == self.train_row_count_:
+            self.prediction_calls_ += 1
+            return np.asarray(self.results.fittedvalues)
+        self.prediction_calls_ += 1
+        return np.asarray(self.results.get_forecast(steps=len(x_frame), exog=exog).predicted_mean)
+
+    def get_feature_importance(self) -> pd.DataFrame:
+        params = np.asarray(self.results.params)
+        names = list(getattr(self.results, "param_names", [])) or [
+            f"parameter_{index}" for index in range(len(params))
+        ]
+        return (
+            pd.DataFrame(
+                {
+                    "feature_name": names,
+                    "importance_value": np.abs(params),
+                    "importance_type": "sarimax_absolute_parameter",
+                    "coefficient": params,
+                    "abs_coefficient": np.abs(params),
+                    "std_error": np.nan,
+                    "p_value": np.nan,
+                    "odds_ratio": np.nan,
+                }
+            )
+            .sort_values("importance_value", ascending=False)
+            .reset_index(drop=True)
+        )
+
+    @property
+    def summary_text(self) -> str:
+        return self._run_with_warning_capture(
+            lambda: self.results.summary().as_text(),
+            source=f"{self.model_type.value}.summary",
+            stage="summary",
+        )
+
+
+class ExponentialSmoothingForecastAdapter(BaseModelAdapter):
+    """SAS/ETS-style exponential smoothing forecast over the target series."""
+
+    model_type = ModelType.EXPONENTIAL_SMOOTHING_FORECAST
+
+    def __init__(self, model_config: ModelConfig, target_mode: TargetMode) -> None:
+        if target_mode != TargetMode.CONTINUOUS:
+            raise ValueError("Exponential smoothing requires a continuous target.")
+        super().__init__(model_config, target_mode)
+        self.results = None
+        self.train_row_count_: int = 0
+        self.prediction_calls_: int = 0
+
+    def fit(
+        self,
+        x_frame: pd.DataFrame,
+        y_values: pd.Series,
+        numeric_features: list[str],
+        categorical_features: list[str],
+    ) -> ExponentialSmoothingForecastAdapter:
+        self.raw_feature_names_ = list(x_frame.columns)
+        self.raw_numeric_features_ = list(numeric_features)
+        self.raw_categorical_features_ = list(categorical_features)
+        self.feature_names_ = ["level", "trend"]
+        self.train_row_count_ = len(y_values)
+        seasonal_periods = self.model_config.seasonal_periods
+        seasonal = (
+            "add"
+            if seasonal_periods and self.train_row_count_ >= seasonal_periods * 2
+            else None
+        )
+        self.results = self._run_with_warning_capture(
+            lambda: ExponentialSmoothing(
+                y_values.astype(float).to_numpy(),
+                trend="add",
+                seasonal=seasonal,
+                seasonal_periods=seasonal_periods if seasonal else None,
+                initialization_method="estimated",
+            ).fit(optimized=True),
+            source=f"{self.model_type.value}.exponential_smoothing_fit",
+        )
+        return self
+
+    def predict_score(self, x_frame: pd.DataFrame) -> np.ndarray:
+        if self.prediction_calls_ == 0 and len(x_frame) == self.train_row_count_:
+            self.prediction_calls_ += 1
+            return np.asarray(self.results.fittedvalues)
+        self.prediction_calls_ += 1
+        return np.asarray(self.results.forecast(len(x_frame)))
+
+    def get_feature_importance(self) -> pd.DataFrame:
+        params = getattr(self.results, "params", {})
+        rows = [
+            {
+                "feature_name": str(name),
+                "importance_value": abs(float(value))
+                if np.isscalar(value) and pd.notna(value)
+                else np.nan,
+                "importance_type": "exponential_smoothing_parameter",
+                "coefficient": float(value) if np.isscalar(value) and pd.notna(value) else np.nan,
+                "abs_coefficient": abs(float(value))
+                if np.isscalar(value) and pd.notna(value)
+                else np.nan,
+                "std_error": np.nan,
+                "p_value": np.nan,
+                "odds_ratio": np.nan,
+            }
+            for name, value in params.items()
+            if np.isscalar(value)
+        ]
+        return pd.DataFrame(rows) if rows else self._fallback_importance()
+
+    def _fallback_importance(self) -> pd.DataFrame:
+        return pd.DataFrame(
+            [
+                {
+                    "feature_name": "time_series_level",
+                    "importance_value": 1.0,
+                    "importance_type": "forecast_component",
+                    "coefficient": np.nan,
+                    "abs_coefficient": np.nan,
+                    "std_error": np.nan,
+                    "p_value": np.nan,
+                    "odds_ratio": np.nan,
+                }
+            ]
+        )
+
+    @property
+    def summary_text(self) -> str:
+        return "Exponential smoothing forecast fitted with statsmodels.\n"
+
+
+class UnobservedComponentsForecastAdapter(BaseModelAdapter):
+    """Unobserved-components forecast with local linear trend."""
+
+    model_type = ModelType.UNOBSERVED_COMPONENTS_FORECAST
+
+    def __init__(self, model_config: ModelConfig, target_mode: TargetMode) -> None:
+        if target_mode != TargetMode.CONTINUOUS:
+            raise ValueError("Unobserved components forecasting requires a continuous target.")
+        super().__init__(model_config, target_mode)
+        self.results = None
+        self.train_row_count_: int = 0
+        self.prediction_calls_: int = 0
+
+    def fit(
+        self,
+        x_frame: pd.DataFrame,
+        y_values: pd.Series,
+        numeric_features: list[str],
+        categorical_features: list[str],
+    ) -> UnobservedComponentsForecastAdapter:
+        self.raw_feature_names_ = list(x_frame.columns)
+        self.raw_numeric_features_ = list(numeric_features)
+        self.raw_categorical_features_ = list(categorical_features)
+        self.feature_names_ = ["level", "trend"]
+        self.train_row_count_ = len(y_values)
+        seasonal = self.model_config.seasonal_periods
+        self.results = self._run_with_warning_capture(
+            lambda: UnobservedComponents(
+                y_values.astype(float).to_numpy(),
+                level="local linear trend",
+                seasonal=seasonal,
+            ).fit(disp=False, maxiter=self.model_config.max_iter),
+            source=f"{self.model_type.value}.ucm_fit",
+        )
+        self._update_statsmodels_fit_diagnostics(
+            self.results,
+            source=f"{self.model_type.value}.ucm_fit",
+        )
+        return self
+
+    def predict_score(self, x_frame: pd.DataFrame) -> np.ndarray:
+        if self.prediction_calls_ == 0 and len(x_frame) == self.train_row_count_:
+            self.prediction_calls_ += 1
+            return np.asarray(self.results.fittedvalues)
+        self.prediction_calls_ += 1
+        return np.asarray(self.results.get_forecast(steps=len(x_frame)).predicted_mean)
+
+    def get_feature_importance(self) -> pd.DataFrame:
+        params = np.asarray(self.results.params)
+        names = list(getattr(self.results, "param_names", [])) or [
+            f"parameter_{index}" for index in range(len(params))
+        ]
+        return pd.DataFrame(
+            {
+                "feature_name": names,
+                "importance_value": np.abs(params),
+                "importance_type": "unobserved_components_absolute_parameter",
+                "coefficient": params,
+                "abs_coefficient": np.abs(params),
+                "std_error": np.nan,
+                "p_value": np.nan,
+                "odds_ratio": np.nan,
+            }
+        )
+
+    @property
+    def summary_text(self) -> str:
+        return self._run_with_warning_capture(
+            lambda: self.results.summary().as_text(),
+            source=f"{self.model_type.value}.summary",
+            stage="summary",
+        )
+
+
 def build_model_adapter(
     model_config: ModelConfig,
     target_mode: TargetMode,
@@ -2242,10 +3034,21 @@ def build_model_adapter(
         )
     if model_config.model_type == ModelType.PROBIT_REGRESSION:
         return ProbitRegressionAdapter(model_config, target_mode)
+    if model_config.model_type == ModelType.MULTINOMIAL_LOGISTIC_REGRESSION:
+        return MultinomialLogisticRegressionAdapter(model_config, target_mode)
+    if model_config.model_type == ModelType.ORDINAL_LOGISTIC_REGRESSION:
+        return OrdinalLogisticRegressionAdapter(model_config, target_mode)
     if model_config.model_type == ModelType.LINEAR_REGRESSION:
         return LinearRegressionAdapter(model_config, target_mode)
     if model_config.model_type == ModelType.FRACTIONAL_LOGIT:
         return FractionalLogitAdapter(model_config, target_mode)
+    if model_config.model_type in {
+        ModelType.POISSON_REGRESSION,
+        ModelType.NEGATIVE_BINOMIAL_REGRESSION,
+        ModelType.GAMMA_REGRESSION,
+        ModelType.TWEEDIE_REGRESSION,
+    }:
+        return GLMRegressionAdapter(model_config, target_mode)
     if model_config.model_type == ModelType.ZERO_ONE_INFLATED_BETA:
         return ZeroOneInflatedBetaAdapter(model_config, target_mode)
     if model_config.model_type == ModelType.RIDGE_REGRESSION:
@@ -2254,10 +3057,17 @@ def build_model_adapter(
         return LassoRegressionAdapter(model_config, target_mode)
     if model_config.model_type == ModelType.ELASTIC_NET_REGRESSION:
         return ElasticNetRegressionAdapter(model_config, target_mode)
+    if model_config.model_type in {
+        ModelType.GAM_SPLINE_REGRESSION,
+        ModelType.GAM_SPLINE_LOGISTIC,
+    }:
+        return GAMSplineAdapter(model_config, target_mode)
     if model_config.model_type == ModelType.EXPLAINABLE_BOOSTING_MACHINE:
         return ExplainableBoostingMachineAdapter(model_config, target_mode)
     if model_config.model_type == ModelType.GEE_LOGISTIC_REGRESSION:
         return GEELogisticRegressionAdapter(model_config, target_mode)
+    if model_config.model_type == ModelType.MIXED_EFFECTS_REGRESSION:
+        return MixedEffectsRegressionAdapter(model_config, target_mode)
     if model_config.model_type == ModelType.COX_PROPORTIONAL_HAZARDS:
         return CoxProportionalHazardsAdapter(model_config, target_mode)
     if model_config.model_type == ModelType.AFT_SURVIVAL_MODEL:
@@ -2266,6 +3076,8 @@ def build_model_adapter(
         return RandomForestAdapter(model_config, target_mode)
     if model_config.model_type == ModelType.EXTRA_TREES:
         return ExtraTreesAdapter(model_config, target_mode)
+    if model_config.model_type == ModelType.DECISION_TREE:
+        return DecisionTreeAdapter(model_config, target_mode)
     if model_config.model_type == ModelType.BETA_REGRESSION:
         return BetaRegressionAdapter(model_config, target_mode)
     if model_config.model_type == ModelType.TWO_STAGE_LGD_MODEL:
@@ -2278,5 +3090,11 @@ def build_model_adapter(
         return TobitRegressionAdapter(model_config, target_mode)
     if model_config.model_type == ModelType.XGBOOST:
         return XGBoostAdapter(model_config, target_mode)
+    if model_config.model_type == ModelType.SARIMAX_FORECAST:
+        return SARIMAXForecastAdapter(model_config, target_mode)
+    if model_config.model_type == ModelType.EXPONENTIAL_SMOOTHING_FORECAST:
+        return ExponentialSmoothingForecastAdapter(model_config, target_mode)
+    if model_config.model_type == ModelType.UNOBSERVED_COMPONENTS_FORECAST:
+        return UnobservedComponentsForecastAdapter(model_config, target_mode)
 
     raise ValueError(f"Unsupported model type '{model_config.model_type}'.")

@@ -170,6 +170,12 @@ class DiagnosticsStep(BasePipelineStep):
                     )
                 if context.config.model.model_type == ModelType.DISCRETE_TIME_HAZARD_MODEL:
                     self._add_lifetime_pd_outputs(context, labels_available)
+            elif target_mode == TargetMode.MULTICLASS:
+                context.warn(
+                    "Multiclass diagnostics currently export split metrics, feature "
+                    "importance, model artifacts, and prediction tables; binary "
+                    "calibration and continuous residual plots are skipped."
+                )
             else:
                 if diagnostic_config.quantile_analysis:
                     self._add_regression_quantile_outputs(context, labels_available)
@@ -265,15 +271,13 @@ class DiagnosticsStep(BasePipelineStep):
     def _add_metric_overview_outputs(self, context: PipelineContext) -> None:
         metrics_table = pd.DataFrame(context.metrics).T.rename_axis("split").reset_index()
         numeric_columns = metrics_table.select_dtypes(include="number").columns.tolist()
-        comparison_columns = [
-            column
-            for column in (
-                ["roc_auc", "average_precision", "ks_statistic", "brier_score"]
-                if context.config.target.mode == TargetMode.BINARY
-                else ["rmse", "mae", "r2", "explained_variance"]
-            )
-            if column in numeric_columns
-        ]
+        if context.config.target.mode == TargetMode.BINARY:
+            candidate_columns = ["roc_auc", "average_precision", "ks_statistic", "brier_score"]
+        elif context.config.target.mode == TargetMode.MULTICLASS:
+            candidate_columns = ["accuracy", "macro_f1", "weighted_f1", "log_loss"]
+        else:
+            candidate_columns = ["rmse", "mae", "r2", "explained_variance"]
+        comparison_columns = [column for column in candidate_columns if column in numeric_columns]
         if not comparison_columns:
             return
         metric_overview = metrics_table.melt(

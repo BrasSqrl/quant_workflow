@@ -150,6 +150,25 @@ def test_streamlit_subset_size_controls_clamp_when_features_are_deselected() -> 
     assert _find_by_label(at.number_input, "Maximum subset size").value <= 3
 
 
+def test_streamlit_target_mode_change_filters_stale_binary_challengers() -> None:
+    at = _build_app_test()
+    at.run(timeout=120)
+
+    _find_by_label(at.selectbox, "Target mode").select("continuous").run(timeout=120)
+    _find_by_label(at.selectbox, "Model family").select("continuous_panel_forecasting").run(
+        timeout=120
+    )
+    _find_by_label(at.selectbox, "Model type").select("unobserved_components_forecast").run(
+        timeout=120
+    )
+
+    error_messages = [element.value for element in at.error]
+    assert not any(
+        "elastic_net_logistic_regression requires a binary target" in message
+        for message in error_messages
+    )
+
+
 def test_streamlit_app_scores_existing_model_bundle() -> None:
     model_path, config_path = _build_existing_model_bundle()
 

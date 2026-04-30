@@ -49,6 +49,11 @@ class TargetConstructionStep(BasePipelineStep):
                 dataframe[source_column],
                 context.config.target.positive_values,
             ).astype("Int64")
+        elif context.config.target.mode == TargetMode.MULTICLASS:
+            target_series, class_mapping = self._build_multiclass_target(
+                dataframe[source_column]
+            )
+            context.metadata["multiclass_target_mapping"] = class_mapping
         else:
             target_series = pd.to_numeric(dataframe[source_column], errors="coerce").astype(
                 "float64"
@@ -96,6 +101,31 @@ class TargetConstructionStep(BasePipelineStep):
             "The target source is not already binary. Provide TargetConfig.positive_values "
             "to identify which source values should map to the positive class."
         )
+
+    def _build_multiclass_target(self, source: pd.Series) -> tuple[pd.Series, dict[str, int]]:
+        non_null = source.dropna()
+        if non_null.empty:
+            return pd.Series(pd.NA, index=source.index, dtype="Int64"), {}
+
+        if pd.api.types.is_numeric_dtype(non_null):
+            ordered_values = sorted(non_null.unique())
+        else:
+            ordered_values = sorted(non_null.unique(), key=lambda value: str(value))
+        mapping = {
+            self._normalize_value(value): index
+            for index, value in enumerate(ordered_values)
+        }
+        target = source.map(
+            lambda value: (
+                pd.NA
+                if pd.isna(value)
+                else mapping.get(self._normalize_value(value), pd.NA)
+            )
+        ).astype("Int64")
+        display_mapping = {
+            str(value): index for index, value in enumerate(ordered_values)
+        }
+        return target, display_mapping
 
     def _normalize_value(self, value: Any) -> str | None:
         if pd.isna(value):

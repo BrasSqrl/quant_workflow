@@ -34,8 +34,21 @@ class ModelType(StrEnum):
     ELASTIC_NET_REGRESSION = "elastic_net_regression"
     EXPLAINABLE_BOOSTING_MACHINE = "explainable_boosting_machine"
     GEE_LOGISTIC_REGRESSION = "gee_logistic_regression"
+    MULTINOMIAL_LOGISTIC_REGRESSION = "multinomial_logistic_regression"
+    ORDINAL_LOGISTIC_REGRESSION = "ordinal_logistic_regression"
+    POISSON_REGRESSION = "poisson_regression"
+    NEGATIVE_BINOMIAL_REGRESSION = "negative_binomial_regression"
+    GAM_SPLINE_REGRESSION = "gam_spline_regression"
+    GAM_SPLINE_LOGISTIC = "gam_spline_logistic"
+    GAMMA_REGRESSION = "gamma_regression"
+    TWEEDIE_REGRESSION = "tweedie_regression"
+    MIXED_EFFECTS_REGRESSION = "mixed_effects_regression"
     COX_PROPORTIONAL_HAZARDS = "cox_proportional_hazards"
     AFT_SURVIVAL_MODEL = "aft_survival_model"
+    DECISION_TREE = "decision_tree"
+    SARIMAX_FORECAST = "sarimax_forecast"
+    EXPONENTIAL_SMOOTHING_FORECAST = "exponential_smoothing_forecast"
+    UNOBSERVED_COMPONENTS_FORECAST = "unobserved_components_forecast"
     RANDOM_FOREST = "random_forest"
     EXTRA_TREES = "extra_trees"
     BETA_REGRESSION = "beta_regression"
@@ -79,9 +92,10 @@ class LargeDataExportPolicy(StrEnum):
 
 
 class TargetMode(StrEnum):
-    """Controls whether the framework should build a binary or continuous target."""
+    """Controls whether the framework should build a binary, multiclass, or continuous target."""
 
     BINARY = "binary"
+    MULTICLASS = "multiclass"
     CONTINUOUS = "continuous"
 
 
@@ -407,6 +421,14 @@ class ModelConfig:
     tree_n_estimators: int = 300
     tree_max_depth: int | None = 5
     gee_group_column: str | None = None
+    mixed_effects_group_column: str | None = None
+    spline_n_knots: int = 5
+    spline_degree: int = 3
+    tweedie_variance_power: float = 1.5
+    sarimax_order_p: int = 1
+    sarimax_order_d: int = 0
+    sarimax_order_q: int = 0
+    seasonal_periods: int | None = None
 
     def validate(self, target_mode: TargetMode) -> None:
         if self.max_iter <= 0:
@@ -441,6 +463,16 @@ class ModelConfig:
             raise ValueError("ModelConfig.tree_n_estimators must be greater than 0.")
         if self.tree_max_depth is not None and self.tree_max_depth <= 0:
             raise ValueError("ModelConfig.tree_max_depth must be positive when provided.")
+        if self.spline_n_knots < 3:
+            raise ValueError("ModelConfig.spline_n_knots must be at least 3.")
+        if self.spline_degree < 1:
+            raise ValueError("ModelConfig.spline_degree must be at least 1.")
+        if not 1.0 <= self.tweedie_variance_power <= 2.0:
+            raise ValueError("ModelConfig.tweedie_variance_power must be in [1, 2].")
+        if min(self.sarimax_order_p, self.sarimax_order_d, self.sarimax_order_q) < 0:
+            raise ValueError("SARIMAX order values cannot be negative.")
+        if self.seasonal_periods is not None and self.seasonal_periods < 2:
+            raise ValueError("ModelConfig.seasonal_periods must be at least 2 when provided.")
         if (
             self.tobit_left_censoring is not None
             and self.tobit_right_censoring is not None
@@ -460,8 +492,31 @@ class ModelConfig:
             ModelType.ELASTIC_NET_REGRESSION,
             ModelType.COX_PROPORTIONAL_HAZARDS,
             ModelType.AFT_SURVIVAL_MODEL,
+            ModelType.POISSON_REGRESSION,
+            ModelType.NEGATIVE_BINOMIAL_REGRESSION,
+            ModelType.GAM_SPLINE_REGRESSION,
+            ModelType.GAMMA_REGRESSION,
+            ModelType.TWEEDIE_REGRESSION,
+            ModelType.MIXED_EFFECTS_REGRESSION,
+            ModelType.SARIMAX_FORECAST,
+            ModelType.EXPONENTIAL_SMOOTHING_FORECAST,
+            ModelType.UNOBSERVED_COMPONENTS_FORECAST,
         }:
             raise ValueError(f"{self.model_type.value} is only supported for continuous targets.")
+        if target_mode == TargetMode.BINARY and self.model_type in {
+            ModelType.MULTINOMIAL_LOGISTIC_REGRESSION,
+            ModelType.ORDINAL_LOGISTIC_REGRESSION,
+        }:
+            raise ValueError(f"{self.model_type.value} requires a multiclass target.")
+        if target_mode == TargetMode.MULTICLASS and self.model_type not in {
+            ModelType.MULTINOMIAL_LOGISTIC_REGRESSION,
+            ModelType.ORDINAL_LOGISTIC_REGRESSION,
+            ModelType.DECISION_TREE,
+        }:
+            raise ValueError(
+                f"{self.model_type.value} is not supported for multiclass targets. "
+                "Use multinomial logistic, ordinal logistic, or decision tree."
+            )
         if target_mode == TargetMode.CONTINUOUS and self.model_type in {
             ModelType.LOGISTIC_REGRESSION,
             ModelType.DISCRETE_TIME_HAZARD_MODEL,
@@ -469,6 +524,7 @@ class ModelConfig:
             ModelType.SCORECARD_LOGISTIC_REGRESSION,
             ModelType.PROBIT_REGRESSION,
             ModelType.GEE_LOGISTIC_REGRESSION,
+            ModelType.GAM_SPLINE_LOGISTIC,
         }:
             raise ValueError(
                 f"{self.model_type.value} requires a binary target. "
@@ -476,6 +532,11 @@ class ModelConfig:
                 "panel, quantile, survival, Tobit, tree, or XGBoost models for "
                 "continuous targets."
             )
+        if target_mode == TargetMode.CONTINUOUS and self.model_type in {
+            ModelType.MULTINOMIAL_LOGISTIC_REGRESSION,
+            ModelType.ORDINAL_LOGISTIC_REGRESSION,
+        }:
+            raise ValueError(f"{self.model_type.value} requires a multiclass target.")
 
 
 @dataclass(slots=True)

@@ -215,7 +215,7 @@ class CrossValidationStep(BasePipelineStep):
         fold_train: pd.DataFrame,
         fold_id: int,
     ) -> bool:
-        if context.config.target.mode != TargetMode.BINARY:
+        if context.config.target.mode not in {TargetMode.BINARY, TargetMode.MULTICLASS}:
             return True
         if fold_train[context.target_column].nunique(dropna=True) >= 2:
             return True
@@ -263,6 +263,17 @@ class CrossValidationStep(BasePipelineStep):
                 context,
             )
             return metrics
+        if context.config.target.mode == TargetMode.MULTICLASS:
+            _, metrics = evaluator._score_multiclass_split(
+                fold_validation,
+                "cross_validation",
+                context.target_column,
+                context.feature_columns,
+                fold_model,
+                True,
+                context,
+            )
+            return metrics
 
         _, metrics = evaluator._score_continuous_split(
             fold_validation,
@@ -297,6 +308,8 @@ class CrossValidationStep(BasePipelineStep):
                 "matthews_correlation",
             ]
             if target_mode == TargetMode.BINARY
+            else ["accuracy", "macro_f1", "weighted_f1", "log_loss"]
+            if target_mode == TargetMode.MULTICLASS
             else ["rmse", "mae", "r2", "explained_variance"]
         )
         rows: list[dict[str, Any]] = []

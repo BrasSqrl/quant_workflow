@@ -246,6 +246,14 @@ def _build_model_config(payload: dict[str, Any]) -> ModelConfig:
         tree_n_estimators=payload.get("tree_n_estimators", 300),
         tree_max_depth=payload.get("tree_max_depth", 5),
         gee_group_column=payload.get("gee_group_column"),
+        mixed_effects_group_column=payload.get("mixed_effects_group_column"),
+        spline_n_knots=payload.get("spline_n_knots", 5),
+        spline_degree=payload.get("spline_degree", 3),
+        tweedie_variance_power=payload.get("tweedie_variance_power", 1.5),
+        sarimax_order_p=payload.get("sarimax_order_p", 1),
+        sarimax_order_d=payload.get("sarimax_order_d", 0),
+        sarimax_order_q=payload.get("sarimax_order_q", 0),
+        seasonal_periods=payload.get("seasonal_periods"),
     )
 
 

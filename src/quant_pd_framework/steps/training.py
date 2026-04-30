@@ -48,6 +48,16 @@ class ModelTrainingStep(BasePipelineStep):
                 [x_train, train_frame[[context.config.model.gee_group_column]]],
                 axis=1,
             )
+        if (
+            context.config.model.model_type == ModelType.MIXED_EFFECTS_REGRESSION
+            and context.config.model.mixed_effects_group_column
+            and context.config.model.mixed_effects_group_column in train_frame.columns
+            and context.config.model.mixed_effects_group_column not in x_train.columns
+        ):
+            x_train = pd.concat(
+                [x_train, train_frame[[context.config.model.mixed_effects_group_column]]],
+                axis=1,
+            )
         y_train = train_frame[context.target_column]
         target_mode = context.config.target.mode
         model_adapter = build_model_adapter(

@@ -20,16 +20,17 @@ Every model run starts the same way:
 4. Open Step 2, `Model Configuration`.
 5. Choose `fit_new_model` unless you are scoring a saved model or running
    feature-subset search.
-6. Choose the model type.
-7. Read the Model Type Story Card that appears beside the selector. It explains
+6. Choose the target mode.
+7. Choose the model family.
+8. Choose the model type within that family.
+9. Read the Model Type Story Card that appears beside the selector. It explains
    best-use cases, avoid conditions, key settings, outputs to review, and
    validation questions for the selected model.
-8. Choose the correct target mode: `binary` or `continuous`.
-9. Configure split strategy, model settings, diagnostics, exports, and optional
+10. Configure split strategy, model settings, diagnostics, exports, and optional
    challenger or policy settings.
-10. Open Step 3, `Readiness Check`, resolve blocking issues, and run the
+11. Open Step 3, `Readiness Check`, resolve blocking issues, and run the
    workflow.
-11. Review Step 4 outputs and the Step 5 Decision Room / decision summary.
+12. Review Step 4 outputs and the Step 5 Decision Room / decision summary.
 
 The most important setup decision is target mode:
 
@@ -37,6 +38,13 @@ The most important setup decision is target mode:
   cure / no cure, fraud / no fraud, or approval / decline.
 - Use `continuous` when the target is a numeric amount, rate, loss severity,
   balance, forecast value, or bounded severity.
+- Use `multiclass` when the target has three or more classes, such as rating
+  grade, stage, action category, or risk band.
+
+The GUI then narrows model selection by family. For example, binary targets
+show `Logistic / PD`, `Linear / Baseline`, and `Smooth / Nonlinear`; continuous
+targets show families such as `LGD / Severity`, `GLM / Count / Skewed`, and
+`Panel / Forecasting`.
 
 ## Quick Model Map
 
@@ -48,19 +56,32 @@ The most important setup decision is target mode:
 | `scorecard_logistic_regression` | binary | WoE-binned scorecard with points and reason codes. |
 | `probit_regression` | binary | Parametric challenger to logistic regression. |
 | `gee_logistic_regression` | binary | Cluster-aware panel PD model with robust GEE estimates. |
+| `gam_spline_logistic` | binary | Smooth non-linear binary model using spline-expanded features. |
+| `multinomial_logistic_regression` | multiclass | Unordered multi-class outcome model. |
+| `ordinal_logistic_regression` | multiclass | Ordered grade, stage, or rating outcome model. |
 | `linear_regression` | continuous or binary | Simple continuous baseline, forecast baseline, or linear-probability fallback. |
 | `ridge_regression` | continuous | Regularized continuous model that shrinks correlated coefficients. |
 | `lasso_regression` | continuous | Regularized continuous model with sparse feature-selection pressure. |
 | `elastic_net_regression` | continuous | Continuous model blending ridge shrinkage and lasso selection. |
 | `beta_regression` | continuous | LGD or severity model where the target is bounded in `(0, 1)`. |
 | `fractional_logit` | continuous | Bounded rate/proportion model for targets in `[0, 1]`. |
+| `poisson_regression` | continuous | Count outcome GLM. |
+| `negative_binomial_regression` | continuous | Overdispersed count outcome GLM. |
+| `gamma_regression` | continuous | Strictly positive skewed severity GLM. |
+| `tweedie_regression` | continuous | Compound zero-plus-positive severity GLM. |
+| `gam_spline_regression` | continuous | Smooth non-linear continuous model using spline-expanded features. |
 | `zero_one_inflated_beta` | continuous | LGD/severity model with true mass at 0, 1, and interior values. |
 | `two_stage_lgd_model` | continuous | LGD model separating positive-loss likelihood from severity. |
+| `mixed_effects_regression` | continuous | Random-intercept model for repeated-observation continuous targets. |
 | `panel_regression` | continuous | Panel-style forecasting or CCAR-style development. |
 | `quantile_regression` | continuous | Tail, downside, or percentile forecasting. |
 | `tobit_regression` | continuous | Censored continuous outcomes. |
 | `cox_proportional_hazards` | continuous | Time-to-event risk ranking with hazard ratios. |
 | `aft_survival_model` | continuous | Log-duration time-to-event baseline. |
+| `decision_tree` | binary, multiclass, or continuous | Transparent tree segmentation model. |
+| `sarimax_forecast` | continuous | SARIMAX forecast with optional exogenous features. |
+| `exponential_smoothing_forecast` | continuous | ETS-style trend and optional seasonal forecast. |
+| `unobserved_components_forecast` | continuous | State-space level, trend, and optional seasonal forecast. |
 | `random_forest` | binary or continuous | Bagged-tree non-linear challenger. |
 | `extra_trees` | binary or continuous | Randomized-tree non-linear challenger. |
 | `explainable_boosting_machine` | binary or continuous | EBM-style shallow boosted-tree challenger using existing dependencies. |
@@ -1072,6 +1093,185 @@ Use it when:
 - True LightGBM is not included because this implementation pass does not add
   third-party packages.
 
+## 24. SAS-Equivalent Fit-New-Model Families
+
+These model families were added to make Quant Studio closer to common SAS/STAT
+and SAS/ETS model-development patterns while still using the project's existing
+Python dependency stack. They are available in normal `fit_new_model` runs.
+They are not currently enabled for `search_feature_subsets`.
+
+### Multinomial Logistic Regression
+
+Use `multinomial_logistic_regression` when the target has three or more
+unordered classes, such as an action category, treatment group, or non-ordered
+risk segment.
+
+GUI setup:
+
+1. In Step 1, mark the class field as the target.
+2. Set `Target mode` to `Multiclass`.
+3. Set `Model type` to `Multinomial Logistic Regression`.
+4. Keep normal split and feature policy checks enabled.
+5. Review class accuracy, macro F1, weighted F1, log loss, class
+   probabilities, feature importance, and the exported target mapping.
+
+Watchouts:
+
+- Do not use this when the classes are naturally ordered; use ordinal logistic
+  instead.
+- Binary ROC/AUC, KS, calibration, lift/gain, and WoE diagnostics are skipped
+  because they are two-class diagnostics.
+
+### Ordinal Logistic Regression
+
+Use `ordinal_logistic_regression` when the target classes have a real order,
+such as rating grade, delinquency stage, internal risk band, or severity tier.
+
+GUI setup:
+
+1. In Step 1, mark the ordered class field as the target.
+2. Ensure the raw target values sort in the intended order, or encode them
+   before loading the file.
+3. Set `Target mode` to `Multiclass`.
+4. Set `Model type` to `Ordinal Logistic Regression`.
+5. Review class predictions, class probabilities, class-level metrics, feature
+   importance, and the target mapping.
+
+Watchouts:
+
+- Only use this when adjacent class order is meaningful.
+- If class order is arbitrary, use multinomial logistic regression.
+
+### Count GLMs
+
+Use `poisson_regression` or `negative_binomial_regression` for non-negative
+count targets, such as event counts, delinquency counts, incidents, or volumes.
+
+GUI setup:
+
+1. Mark the count field as a continuous target.
+2. Set `Target mode` to `Continuous`.
+3. Choose `Poisson Regression` for first-pass count modeling.
+4. Choose `Negative Binomial Regression` when the count variance is materially
+   larger than the count mean.
+5. Review continuous metrics, actual-versus-predicted plots, residual outputs,
+   and coefficient/feature-importance evidence.
+
+Watchouts:
+
+- Counts should be non-negative.
+- Poisson can understate uncertainty when the data is overdispersed.
+- Negative binomial is usually the stronger SAS-style challenger when count
+  variance is high.
+
+### Gamma And Tweedie GLMs
+
+Use `gamma_regression` for strictly positive skewed continuous targets and
+`tweedie_regression` for compound outcomes with many zeros plus positive
+amounts.
+
+GUI setup:
+
+1. Mark the severity, balance, loss, or amount field as the target.
+2. Set `Target mode` to `Continuous`.
+3. Choose `Gamma Regression` for positive skewed targets.
+4. Choose `Tweedie Regression` for zero-plus-positive targets.
+5. For Tweedie, review `Tweedie variance power` in Model Settings.
+6. Review residual diagnostics, actual-versus-predicted outputs, segment error,
+   and model summary evidence.
+
+Watchouts:
+
+- Gamma is not appropriate for zero or negative targets.
+- Tweedie variance power should be treated as a model assumption, not a hidden
+  default.
+
+### Spline GAM Logistic And Regression
+
+Use `gam_spline_logistic` or `gam_spline_regression` when a relationship is
+smoothly non-linear but should remain more explainable than a deep tree model.
+
+GUI setup:
+
+1. Set the target mode to `Binary` for `gam_spline_logistic` or `Continuous`
+   for `gam_spline_regression`.
+2. Choose the relevant spline GAM model type.
+3. Review `Spline knots` and `Spline degree` in Model Settings.
+4. Keep PDP, ICE, ALE, and feature-effect diagnostics enabled.
+5. Review feature shape plots and whether the learned curves make business
+   sense.
+
+Watchouts:
+
+- Spline basis coefficients are not raw-feature coefficients.
+- More knots can improve fit but increase complexity and overfitting risk.
+
+### Mixed Effects Regression
+
+Use `mixed_effects_regression` when the continuous target has repeated
+observations by entity, borrower, account, facility, region, or portfolio and a
+random-intercept structure is appropriate.
+
+GUI setup:
+
+1. Mark the continuous target.
+2. Mark the repeated-observation entity field as an identifier or keep it
+   available in the data.
+3. Set `Target mode` to `Continuous`.
+4. Set `Model type` to `Mixed Effects Regression`.
+5. Set `Mixed-effects group column` to the repeated-observation group.
+6. Review fixed-effect feature importance and repeated-observation governance
+   notes.
+
+Watchouts:
+
+- The group column must represent a defensible random-intercept grouping.
+- For portability to future data, scoring uses the fixed-effect component
+  rather than requiring known random effects for every future group.
+
+### Decision Tree
+
+Use `decision_tree` when transparent segmentation is useful for a binary,
+multiclass, or continuous target.
+
+GUI setup:
+
+1. Set the correct target mode.
+2. Choose `Decision Tree`.
+3. Review tree depth controls in Model Settings.
+4. Review feature importance and train/test divergence.
+
+Watchouts:
+
+- A single tree is easy to explain but can be unstable.
+- Use it as a transparent challenger or segmentation aid unless validation
+  evidence supports it as the final model.
+
+### Forecasting Models
+
+Use `sarimax_forecast`, `exponential_smoothing_forecast`, or
+`unobserved_components_forecast` for continuous time-series or CCAR-style
+forecasting challengers.
+
+GUI setup:
+
+1. Mark the forecast value as the continuous target.
+2. Mark the date field as a date column.
+3. Use a time-aware split where possible.
+4. Choose `SARIMAX Forecast` when ARIMA-style order and exogenous variables are
+   needed.
+5. Choose `Exponential Smoothing Forecast` for a trend/seasonality baseline.
+6. Choose `Unobserved Components Forecast` when level, trend, and seasonality
+   decomposition is useful.
+7. Review forecasting statistical tests, structural-break diagnostics,
+   residuals, and actual-versus-predicted views.
+
+Watchouts:
+
+- Forecasting rows must be meaningfully ordered.
+- SARIMAX order settings should match the data and be documented.
+- Very short histories may not support seasonal or state-space settings.
+
 ## Choosing Between Similar Models
 
 | If you are deciding between... | Usually start with... | Why |
@@ -1080,14 +1280,20 @@ Use it when:
 | Logistic vs elastic-net | Logistic, then elastic-net if features are numerous or correlated | Elastic-net helps when coefficient stability is weak. |
 | Logistic vs probit | Logistic | Probit is usually a challenger, not the default. |
 | Logistic vs GEE logistic | Logistic for independent rows, GEE for repeated entities | GEE is useful when clustered inference matters. |
+| Multinomial vs ordinal logistic | Ordinal only when class order is real | Multinomial treats classes as unordered; ordinal imposes order. |
 | Linear vs beta | Beta if the target is a true bounded proportion | Linear can predict outside valid bounds. |
 | Linear vs regularized linear | Linear first, then ridge/lasso/elastic-net if stability is weak | Regularization can improve stability but adds tuning judgment. |
+| Poisson vs negative binomial | Poisson first, negative binomial if overdispersed | Negative binomial is more flexible for high-variance counts. |
+| Gamma vs Tweedie | Gamma for strictly positive targets, Tweedie for zero-plus-positive targets | The target's support determines which GLM is defensible. |
+| Linear vs spline GAM | Linear first, spline GAM if non-linear shape is expected | Spline GAM adds smooth non-linearity while retaining shape-review outputs. |
 | Fractional logit vs beta | Fractional logit when boundary handling matters less | Beta is best for mostly interior `(0, 1)` outcomes. |
 | Beta vs zero-one inflated beta | Zero-one inflated beta if exact zero and one are true economic states | It models boundary mass explicitly. |
 | Beta vs two-stage LGD | Two-stage LGD if there are many true zeros | Beta is better for mostly positive bounded severity. |
 | Linear vs quantile | Quantile if the business question is percentile-specific | Linear estimates the mean; quantile estimates a percentile. |
 | Linear vs Tobit | Tobit if the target is censored | Tobit explicitly handles censoring. |
 | Panel vs linear | Panel if entity-time structure matters | Panel setup documents repeated observations over time. |
+| Mixed effects vs panel regression | Mixed effects when random-intercept grouping matters | Panel regression documents entity-time structure; mixed effects estimates group-level random intercepts. |
+| SARIMAX vs ETS vs UCM | SARIMAX for ARIMA/exogenous terms; ETS/UCM for trend-seasonality baselines | They answer different forecasting structure questions. |
 | Cox vs AFT | Cox for hazard ratios, AFT for duration estimates | They answer different time-to-event questions. |
 | Interpretable model vs tree ensemble | Interpretable model first, tree models as challengers | This keeps governance evidence cleaner. |
 

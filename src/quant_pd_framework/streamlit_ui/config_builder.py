@@ -40,6 +40,7 @@ from quant_pd_framework.gui_support import (
     SCORECARD_OVERRIDE_COLUMNS,
     GUIBuildInputs,
     build_framework_config_from_editor,
+    model_types_for_target_mode,
     parse_expected_signs,
     parse_feature_dictionary_frame,
     parse_manual_review_frames,
@@ -65,6 +66,18 @@ def build_preview_configuration(
     values = control_values
 
     try:
+        target_mode = TargetMode(values["target_mode"])
+        primary_model_type = ModelType(values["model_type"])
+        supported_challenger_values = {
+            model_type.value
+            for model_type in model_types_for_target_mode(target_mode)
+            if model_type != primary_model_type
+        }
+        challenger_model_types = [
+            ModelType(challenger_type)
+            for challenger_type in values["challenger_model_types"]
+            if challenger_type in supported_challenger_values
+        ]
         scenario_testing_config = parse_scenario_rows(
             values["scenario_rows"].to_dict(orient="records")
         )
@@ -87,7 +100,7 @@ def build_preview_configuration(
             if values["selected_preset_name_value"] == "custom"
             else values["selected_preset"],
             model=ModelConfig(
-                model_type=ModelType(values["model_type"]),
+                model_type=primary_model_type,
                 max_iter=int(values["max_iter"]),
                 C=float(values["inverse_regularization"]),
                 solver=values["solver"],
@@ -107,6 +120,14 @@ def build_preview_configuration(
                 tree_n_estimators=int(values["tree_n_estimators"]),
                 tree_max_depth=values["tree_max_depth"],
                 gee_group_column=values["gee_group_column"],
+                mixed_effects_group_column=values["mixed_effects_group_column"],
+                spline_n_knots=int(values["spline_n_knots"]),
+                spline_degree=int(values["spline_degree"]),
+                tweedie_variance_power=float(values["tweedie_variance_power"]),
+                sarimax_order_p=int(values["sarimax_order_p"]),
+                sarimax_order_d=int(values["sarimax_order_d"]),
+                sarimax_order_q=int(values["sarimax_order_q"]),
+                seasonal_periods=values["seasonal_periods"],
             ),
             cleaning=CleaningConfig(
                 trim_string_columns=values["trim_string_columns"],
@@ -124,12 +145,9 @@ def build_preview_configuration(
                 enabled=(
                     values["execution_mode"] != ExecutionMode.SEARCH_FEATURE_SUBSETS.value
                     and values["comparison_enabled"]
-                    and bool(values["challenger_model_types"])
+                    and bool(challenger_model_types)
                 ),
-                challenger_model_types=[
-                    ModelType(challenger_type)
-                    for challenger_type in values["challenger_model_types"]
-                ],
+                challenger_model_types=challenger_model_types,
                 ranking_metric=None
                 if values["ranking_metric"] == "auto"
                 else values["ranking_metric"],
@@ -168,7 +186,7 @@ def build_preview_configuration(
                 else None,
                 minimum_information_value=float(values["policy_min_iv"])
                 if values["feature_policy_enabled"]
-                and TargetMode(values["target_mode"]) == TargetMode.BINARY
+                and target_mode == TargetMode.BINARY
                 else None,
                 expected_signs=parse_expected_signs(values["policy_expected_signs"]),
                 monotonic_features=parse_expected_signs(values["policy_monotonic_features"]),
@@ -211,15 +229,15 @@ def build_preview_configuration(
                 enabled=values["suitability_checks_enabled"],
                 min_events_per_feature=float(values["suitability_min_events_per_feature"])
                 if values["suitability_checks_enabled"]
-                and TargetMode(values["target_mode"]) == TargetMode.BINARY
+                and target_mode == TargetMode.BINARY
                 else None,
                 min_class_rate=float(values["suitability_min_class_rate"])
                 if values["suitability_checks_enabled"]
-                and TargetMode(values["target_mode"]) == TargetMode.BINARY
+                and target_mode == TargetMode.BINARY
                 else None,
                 max_class_rate=float(values["suitability_max_class_rate"])
                 if values["suitability_checks_enabled"]
-                and TargetMode(values["target_mode"]) == TargetMode.BINARY
+                and target_mode == TargetMode.BINARY
                 else None,
                 max_dominant_category_share=float(values["suitability_max_dominant_category_share"])
                 if values["suitability_checks_enabled"]
@@ -383,7 +401,7 @@ def build_preview_configuration(
             existing_config_path=Path(values["existing_config_path_text"].strip())
             if values["existing_config_path_text"].strip()
             else None,
-            target_mode=TargetMode(values["target_mode"]),
+            target_mode=target_mode,
             target_output_column=values["target_output_column"].strip() or "default_flag",
             positive_values_text=values["positive_values_text"],
             drop_target_source_column=values["drop_target_source_column"],

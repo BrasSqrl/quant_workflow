@@ -25,19 +25,32 @@ Factory entry point:
 | `scorecard_logistic_regression` | binary | Transparent PD scorecard development | `ScorecardLogisticRegressionAdapter` |
 | `probit_regression` | binary | Interpretable binary challenger | `ProbitRegressionAdapter` |
 | `gee_logistic_regression` | binary | Cluster-aware panel PD challenger | `GEELogisticRegressionAdapter` |
+| `multinomial_logistic_regression` | multiclass | Unordered class outcomes | `MultinomialLogisticRegressionAdapter` |
+| `ordinal_logistic_regression` | multiclass | Ordered class outcomes | `OrdinalLogisticRegressionAdapter` |
 | `linear_regression` | continuous or binary | Simple forecast baseline or linear-probability fallback | `LinearRegressionAdapter` |
 | `ridge_regression` | continuous | Shrunk continuous baseline for collinear features | `RidgeRegressionAdapter` |
 | `lasso_regression` | continuous | Sparse continuous baseline | `LassoRegressionAdapter` |
 | `elastic_net_regression` | continuous | Continuous shrinkage and selection blend | `ElasticNetRegressionAdapter` |
 | `beta_regression` | continuous | Bounded LGD severity in `(0, 1)` | `BetaRegressionAdapter` |
 | `fractional_logit` | continuous | Bounded rate/proportion model in `[0, 1]` | `FractionalLogitAdapter` |
+| `poisson_regression` | continuous | Count outcome GLM | `GLMRegressionAdapter` |
+| `negative_binomial_regression` | continuous | Overdispersed count GLM | `GLMRegressionAdapter` |
+| `gamma_regression` | continuous | Positive skewed severity GLM | `GLMRegressionAdapter` |
+| `tweedie_regression` | continuous | Compound zero-plus-positive GLM | `GLMRegressionAdapter` |
+| `gam_spline_regression` | continuous | Explainable nonlinear continuous effects | `GAMSplineAdapter` |
+| `gam_spline_logistic` | binary | Explainable nonlinear PD effects | `GAMSplineAdapter` |
 | `zero_one_inflated_beta` | continuous | LGD with true mass at 0, 1, and interior values | `ZeroOneInflatedBetaAdapter` |
 | `two_stage_lgd_model` | continuous | Positive-loss probability times severity | `TwoStageLGDModelAdapter` |
+| `mixed_effects_regression` | continuous | Random-intercept repeated-observation regression | `MixedEffectsRegressionAdapter` |
 | `panel_regression` | continuous | Panel forecasting / CCAR-style modeling | `PanelRegressionAdapter` |
 | `quantile_regression` | continuous | Tail or percentile forecasting | `QuantileRegressionAdapter` |
 | `tobit_regression` | continuous | Censored continuous targets | `TobitRegressionAdapter` |
 | `cox_proportional_hazards` | continuous | Time-to-event risk ranking | `CoxProportionalHazardsAdapter` |
 | `aft_survival_model` | continuous | Log-duration time-to-event baseline | `AFTSurvivalModelAdapter` |
+| `decision_tree` | binary, multiclass, or continuous | Transparent tree segmentation | `DecisionTreeAdapter` |
+| `sarimax_forecast` | continuous | ARIMA-style forecast with exogenous features | `SARIMAXForecastAdapter` |
+| `exponential_smoothing_forecast` | continuous | ETS-style trend/seasonal forecast | `ExponentialSmoothingForecastAdapter` |
+| `unobserved_components_forecast` | continuous | State-space trend/seasonal forecast | `UnobservedComponentsForecastAdapter` |
 | `random_forest` | binary or continuous | Non-linear bagged-tree challenger | `RandomForestAdapter` |
 | `extra_trees` | binary or continuous | Randomized-tree sensitivity challenger | `ExtraTreesAdapter` |
 | `explainable_boosting_machine` | binary or continuous | EBM-style shallow boosted-tree challenger | `ExplainableBoostingMachineAdapter` |
@@ -459,6 +472,54 @@ True LightGBM is intentionally not exposed because this project currently does
 not add a new third-party dependency. XGBoost remains the installed
 gradient-boosted-tree implementation.
 
+## 16. SAS-Equivalent Model Families
+
+These families were added for normal `fit_new_model` workflows to improve
+parity with common SAS/STAT and SAS/ETS development patterns. They are not
+enabled for feature subset search yet.
+
+### Multiclass and Ordinal Classification
+
+- `multinomial_logistic_regression` supports unordered class outcomes.
+- `ordinal_logistic_regression` supports ordered class outcomes.
+- `decision_tree` can also run against multiclass targets.
+
+Use `TargetMode.MULTICLASS` for these models. The framework exports class
+predictions, class probabilities where available, accuracy, macro F1, weighted
+F1, log loss, feature importance, and model artifacts. Binary PD calibration,
+threshold, lift/gain, and WoE/IV diagnostics are intentionally skipped.
+
+### Count and Severity GLMs
+
+- `poisson_regression` for non-negative count outcomes.
+- `negative_binomial_regression` for overdispersed counts.
+- `gamma_regression` for strictly positive skewed outcomes.
+- `tweedie_regression` for compound zero-plus-positive severity outcomes.
+
+These are implemented through statsmodels GLM families and use the existing
+continuous-target evaluation path.
+
+### GAM-Style Spline Models
+
+- `gam_spline_logistic` for binary PD-style targets.
+- `gam_spline_regression` for continuous targets.
+
+These are lightweight spline-expanded models using existing sklearn
+dependencies, not an external GAM package.
+
+### Mixed Effects and Forecasting
+
+- `mixed_effects_regression` fits a random-intercept MixedLM with an optional
+  grouping column.
+- `sarimax_forecast` fits a SARIMAX model with the configured `(p, d, q)` order
+  and exogenous feature matrix.
+- `exponential_smoothing_forecast` fits an ETS-style trend/seasonal baseline.
+- `unobserved_components_forecast` fits a state-space level/trend/seasonal
+  model.
+
+Forecasting models require a continuous target and are best used with
+time-aware splits.
+
 ## Preset Alignment
 
 Preset defaults are defined in `src/quant_pd_framework/presets.py`.
@@ -480,6 +541,7 @@ The framework can train challenger models alongside the primary model and rank
 them using:
 
 - binary defaults such as `roc_auc` or `average_precision`
+- multiclass defaults such as `accuracy`, macro F1, weighted F1, or log loss
 - continuous metrics such as `rmse` or `mae`
 
 ## Audit Notes

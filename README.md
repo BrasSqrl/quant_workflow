@@ -776,7 +776,8 @@ The GUI now includes several development-focused enterprise UX surfaces:
   target, model family, metrics, feature set, warnings, and reviewer decision.
 - `Guidance Library` provides compact in-app explanations for major workflow
   choices without requiring users to leave the GUI.
-- `Model Type Story Cards` appear beside the Step 2 model selector and explain
+- `Model Type Story Cards` appear beside the Step 2 hierarchical model selector
+  after the user chooses target mode, model family, and model type. They explain
   each model's best use, avoid conditions, key settings, outputs, and review
   questions.
 - `Explain this output` expanders appear on high-value Step 4 and Step 5
@@ -1295,19 +1296,32 @@ Supported model families:
 - `scorecard_logistic_regression`
 - `probit_regression`
 - `gee_logistic_regression`
+- `multinomial_logistic_regression`
+- `ordinal_logistic_regression`
 - `linear_regression`
 - `ridge_regression`
 - `lasso_regression`
 - `elastic_net_regression`
 - `beta_regression`
 - `fractional_logit`
+- `poisson_regression`
+- `negative_binomial_regression`
+- `gamma_regression`
+- `tweedie_regression`
+- `gam_spline_regression`
+- `gam_spline_logistic`
 - `zero_one_inflated_beta`
 - `two_stage_lgd_model`
+- `mixed_effects_regression`
 - `panel_regression`
 - `quantile_regression`
 - `tobit_regression`
 - `cox_proportional_hazards`
 - `aft_survival_model`
+- `decision_tree`
+- `sarimax_forecast`
+- `exponential_smoothing_forecast`
+- `unobserved_components_forecast`
 - `random_forest`
 - `extra_trees`
 - `explainable_boosting_machine`
@@ -1336,16 +1350,31 @@ Exposed hyperparameters:
 - `tree_n_estimators`
 - `tree_max_depth`
 - `gee_group_column`
+- `mixed_effects_group_column`
+- `spline_n_knots`
+- `spline_degree`
+- `tweedie_variance_power`
+- `sarimax_order_p`
+- `sarimax_order_d`
+- `sarimax_order_q`
+- `seasonal_periods`
 
 Compatibility notes:
 
 - binary targets support logistic, discrete-time hazard, elastic-net logistic,
-  scorecard logistic, probit, GEE logistic, random forest, extra trees,
-  explainable boosting-style, and XGBoost
+  scorecard logistic, probit, GEE logistic, spline GAM logistic, decision tree,
+  random forest, extra trees, explainable boosting-style, and XGBoost
+- multiclass targets support multinomial logistic, ordinal logistic, and
+  decision tree. Multiclass support includes fit, scoring, metrics, and exports;
+  binary PD calibration/threshold diagnostics are not run for multiclass targets.
 - continuous targets support linear, regularized linear, beta, fractional
-  logit, zero-one inflated beta, two-stage LGD, panel, quantile, Tobit,
-  survival-style, random forest, extra trees, explainable boosting-style, and
-  XGBoost
+  logit, count/severity GLMs, spline GAM regression, zero-one inflated beta,
+  two-stage LGD, mixed-effects, panel, quantile, Tobit, survival-style,
+  forecasting, decision tree, random forest, extra trees, explainable
+  boosting-style, and XGBoost
+- SAS-equivalent models added for normal `fit_new_model` workflows are not yet
+  eligible for feature subset search unless already listed in the subset-search
+  compatibility note above
 - beta and two-stage LGD models require bounded continuous targets in `[0, 1]`
 - panel regression requires `data_structure="panel"` and an entity column
 - true LightGBM is not included because the project currently avoids adding a

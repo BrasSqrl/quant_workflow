@@ -222,12 +222,19 @@ Notes:
 | `Execution mode` | `ExecutionConfig.mode` | `orchestrator._resolve_execution_config`, `ModelTrainingStep` |
 | `Existing model artifact path` | `ExecutionConfig.existing_model_path` | `ModelTrainingStep` |
 | `Existing run config path` | `ExecutionConfig.existing_config_path` | `orchestrator._resolve_execution_config` |
+| `Target mode` | `TargetConfig.mode` | `TargetConstructionStep`, `ModelConfig.validate(...)`; valid values are `binary`, `continuous`, and `multiclass` |
+| `Model family` | runtime-only UI grouping | `model_family_options_for_target_mode(...)`, `model_types_for_family(...)`; filters model choices before config assembly |
 | `Model type` | `ModelConfig.model_type` | `build_model_adapter(...)`; `streamlit_ui.model_story_cards` renders guidance only |
-| `Target mode` | `TargetConfig.mode` | `TargetConstructionStep`, `ModelConfig.validate(...)` |
 | `Data structure` | `SplitConfig.data_structure` | `SplitStep` |
 | `Output target name` | `TargetConfig.output_column` | `TargetConstructionStep` |
 | `Positive target values` | `TargetConfig.positive_values` | `TargetConstructionStep` |
 | `Drop source target column` | `TargetConfig.drop_source_column` | `TargetConstructionStep` |
+
+Model selection is intentionally hierarchical: the selected `Target mode`
+limits the available `Model family` choices, and the selected family limits the
+`Model type` dropdown. The exported configuration still stores only
+`ModelConfig.model_type`; `Model family` is a UI navigation aid, not a model
+runtime parameter.
 
 Execution-mode meaning:
 
@@ -238,6 +245,11 @@ Execution-mode meaning:
 - `search_feature_subsets`
   Runs the dedicated feature-subset-search workflow and exports only
   comparison-ready ranking evidence.
+
+SAS-equivalent additions such as multinomial logistic, ordinal logistic, GLM
+count/severity models, spline GAM models, mixed effects, decision tree, and
+forecasting adapters are available through `fit_new_model`. They are not yet
+part of `search_feature_subsets`.
 
 ## 8. Step 2 Group: Split Strategy
 
@@ -274,6 +286,14 @@ column designer role assignments.
 | `XGBoost ...` controls | `ModelConfig.xgboost_*` | `XGBoostAdapter`; learning rate also feeds the EBM-style adapter |
 | `Tree / EBM ...` controls | `ModelConfig.tree_n_estimators`, `ModelConfig.tree_max_depth` | random forest, extra trees, and EBM-style adapters |
 | `GEE group column` | `ModelConfig.gee_group_column` | `GEELogisticRegressionAdapter` |
+| `Mixed-effects group column` | `ModelConfig.mixed_effects_group_column` | `MixedEffectsRegressionAdapter` |
+| `Spline knots` | `ModelConfig.spline_n_knots` | `GAMSplineAdapter` |
+| `Spline degree` | `ModelConfig.spline_degree` | `GAMSplineAdapter` |
+| `Tweedie variance power` | `ModelConfig.tweedie_variance_power` | `GLMRegressionAdapter` for Tweedie |
+| `SARIMAX AR order p` | `ModelConfig.sarimax_order_p` | `SARIMAXForecastAdapter` |
+| `SARIMAX differencing d` | `ModelConfig.sarimax_order_d` | `SARIMAXForecastAdapter` |
+| `SARIMAX MA order q` | `ModelConfig.sarimax_order_q` | `SARIMAXForecastAdapter` |
+| `Seasonal periods` | `ModelConfig.seasonal_periods` | `ExponentialSmoothingForecastAdapter`, `UnobservedComponentsForecastAdapter` |
 | `Tobit ...` controls | `ModelConfig.tobit_*` | `TobitRegressionAdapter` |
 
 ## 10. Step 2 Group: Feature Subset Search
