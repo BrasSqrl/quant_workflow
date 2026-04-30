@@ -280,15 +280,15 @@ These controls only matter when `ExecutionConfig.mode` is
 
 | GUI control | Config field(s) | Main implementation | Export evidence |
 | --- | --- | --- | --- |
-| `Candidate features` | `FeatureSubsetSearchConfig.candidate_feature_names` | `build_subset_search_feature_options(...)`, `FeatureSubsetSearchStep` | `subset_search_scope`, `subset_search_candidates` |
-| `Locked include features` | `FeatureSubsetSearchConfig.locked_include_features` | `FeatureSubsetSearchStep` | `subset_search_candidates` |
-| `Locked exclude features` | `FeatureSubsetSearchConfig.locked_exclude_features` | `FeatureSubsetSearchStep` | `subset_search_candidates` |
+| `Candidate features` | `FeatureSubsetSearchConfig.candidate_feature_names` | `build_subset_search_feature_options(...)`, `FeatureSubsetSearchStep` | `subset_search_scope`, `subset_search_candidates`, `subset_search_leaderboard`, `subset_search_feature_family_view` |
+| `Locked include features` | `FeatureSubsetSearchConfig.locked_include_features` | `FeatureSubsetSearchStep` | `subset_search_candidates`, `subset_search_leaderboard` |
+| `Locked exclude features` | `FeatureSubsetSearchConfig.locked_exclude_features` | `FeatureSubsetSearchStep` | `subset_search_candidates`, `subset_search_excluded_feature_insights` |
 | `Minimum subset size` | `FeatureSubsetSearchConfig.min_subset_size` | `FeatureSubsetSearchStep` | `subset_search_scope` |
 | `Maximum subset size` | `FeatureSubsetSearchConfig.max_subset_size` | `FeatureSubsetSearchStep` | `subset_search_scope` |
 | `Maximum candidate features` | `FeatureSubsetSearchConfig.max_candidate_features` | `FeatureSubsetSearchStep` | `subset_search_scope` |
-| `Ranking split` | `FeatureSubsetSearchConfig.ranking_split` | `FeatureSubsetSearchStep` | `subset_search_candidates`, `subset_search_frontier` |
-| `Ranking metric` | `FeatureSubsetSearchConfig.ranking_metric` | `FeatureSubsetSearchStep` | `subset_search_candidates`, `subset_search_frontier` |
-| `Top candidates to retain` | `FeatureSubsetSearchConfig.top_candidate_count` | `FeatureSubsetSearchStep` | `subset_search_candidates`, `subset_search_feature_frequency`, `subset_search_significance_tests` |
+| `Ranking split` | `FeatureSubsetSearchConfig.ranking_split` | `FeatureSubsetSearchStep` | `subset_search_candidates`, `subset_search_frontier`, `subset_search_segment_performance`, `subset_search_time_performance` |
+| `Ranking metric` | `FeatureSubsetSearchConfig.ranking_metric` | `FeatureSubsetSearchStep` | `subset_search_candidates`, `subset_search_frontier`, `subset_search_selection_rationale`, `subset_search_leaderboard` |
+| `Top candidates to retain` | `FeatureSubsetSearchConfig.top_candidate_count` | `FeatureSubsetSearchStep` | `subset_search_candidates`, `subset_search_top_candidate_comparison`, `subset_search_feature_frequency`, `subset_search_contribution_consistency`, `subset_search_redundancy_diagnostics`, `subset_search_significance_tests` |
 | `Include paired significance tests ...` | `FeatureSubsetSearchConfig.include_significance_tests` | `FeatureSubsetSearchStep` | `subset_search_significance_tests` |
 
 ## 11. Step 2 Group: Data Preparation
@@ -641,11 +641,14 @@ For an audit review, the most important files are:
 - `tables/governance/report_payload_audit.*`
 - `config/configuration_template.xlsx`
 - `reports/interactive_report.html`
-- `tables/feature_subset_search/subset_search_candidates.csv`,
-  `tables/feature_subset_search/subset_search_frontier.csv`,
-  `tables/feature_subset_search/subset_search_feature_frequency.csv`, and
-  `tables/feature_subset_search/subset_search_significance_tests.csv` when
-  the third execution mode is used
+- `tables/feature_subset_search/subset_search_candidates.*`,
+  `subset_search_leaderboard.*`, `subset_search_top_candidate_comparison.*`,
+  `subset_search_selection_rationale.*`, `subset_search_feature_frequency.*`,
+  `subset_search_candidate_risk_flags.*`,
+  `subset_search_contribution_consistency.*`,
+  `subset_search_redundancy_diagnostics.*`,
+  `subset_search_transformation_effectiveness.*`, and related subset-search
+  comparison tables when the third execution mode is used
 
 Together these create the formal record of what the GUI settings actually
 became in code.

@@ -23,6 +23,7 @@ Use these guides:
 - [Configuration Cookbook](./CONFIGURATION_COOKBOOK.md)
 - [Model Selection Guide](./MODEL_SELECTION_GUIDE.md)
 - [Model Type Reference Guide](./MODEL_TYPE_REFERENCE_GUIDE.md)
+- [Feature Subset Search Report Roadmap](../FEATURE_SUBSET_SEARCH_REPORT_ROADMAP.md)
 - [Large Data Playbook](./LARGE_DATA_PLAYBOOK.md)
 - [Glossary](./GLOSSARY.md)
 

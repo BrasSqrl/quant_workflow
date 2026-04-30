@@ -20,6 +20,8 @@ users can find the right document without reading everything.
 | Work with multi-GB datasets | [Large Data Playbook](./user_guides/LARGE_DATA_PLAYBOOK.md) |
 | Understand checkpoint execution stages | [Checkpoint Stage Guide](./CHECKPOINT_STAGE_GUIDE.md) |
 | Review implemented in-app guidance surfaces | [UI Usability Roadmap](./UI_USABILITY_ROADMAP.md) |
+| Understand the interactive report redesign | [Interactive Report Usability Roadmap](./INTERACTIVE_REPORT_USABILITY_ROADMAP.md) |
+| Understand subset-search comparison reporting | [Feature Subset Search Report Roadmap](./FEATURE_SUBSET_SEARCH_REPORT_ROADMAP.md) |
 | Run locally on macOS | [macOS Setup](./MACOS_SETUP.md) |
 | Decode terminology | [Glossary](./user_guides/GLOSSARY.md) |
 
@@ -101,3 +103,5 @@ Use these when you need implementation-level detail or audit traceability:
 - [UI / UX Standard](./UI_UX_STANDARD.md)
 - [Enterprise UI Redesign Standard](./UI_ENTERPRISE_REDESIGN.md)
 - [UI Usability Roadmap](./UI_USABILITY_ROADMAP.md)
+- [Interactive Report Usability Roadmap](./INTERACTIVE_REPORT_USABILITY_ROADMAP.md)
+- [Feature Subset Search Report Roadmap](./FEATURE_SUBSET_SEARCH_REPORT_ROADMAP.md)

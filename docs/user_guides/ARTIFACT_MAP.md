@@ -164,11 +164,34 @@ package:
 
 - The cover section summarizes the run, target mode, warning count, splits,
   and primary KPIs.
+- A sticky report navigation bar lets reviewers jump by section instead of
+  scrolling through the entire file. If JavaScript is unavailable, the sections
+  remain visible as a readable long-form report.
+- The `Executive Landing Page` is the default first view. It combines run
+  context, primary metrics, review priorities, and an evidence map that links to
+  each major section.
+- Search filters report cards by chart, table, feature name, warning text, or
+  section wording. Clearing the search restores the selected section.
+- Reviewer mode can switch between validator, executive, and technical views.
+  Executive mode hides supporting evidence so a meeting can focus on high-value
+  outputs first.
+- Compact view reduces descriptive text and locator rows for faster screen
+  review. Show-all / print view opens every section sequentially for audit or
+  PDF printing.
+- Section badges show `Pass`, `Watch`, `Fail`, `Ready`, or `Not Run` status
+  plus chart and table counts. These badges are navigation aids; the underlying
+  diagnostic tables remain the source of record.
 - Diagnostic sections use the same taxonomy as the live Results & Artifacts
   view: Model Performance, Calibration / Thresholds, Stability / Drift, Sample
   / Segmentation, Feature Effects / Explainability, Statistical Tests, Feature
   Subset Search, Scorecard / Binning Workbench, Credit-Risk Development, Data
   Quality, Backtesting / Time Diagnostics, and Governance / Export Bundle.
+- Each chart and table card includes an artifact locator with the internal key
+  and the likely exported file location. Table links use CSV for non-Parquet
+  Step 1 inputs and Parquet for Parquet Step 1 inputs.
+- Sections split cards into `Featured Evidence` and `Supporting Evidence` so a
+  reviewer can start with the most decision-useful outputs without losing the
+  audit trail.
 - Companion charts are generated from existing run outputs where possible, such
   as annotated ROC, precision-recall, KS separation, calibration residual bars,
   PSI/VIF threshold bars, missingness heatmaps, feature-importance waterfalls,
@@ -197,11 +220,22 @@ package:
 When `search_feature_subsets` is used, outputs are comparison-oriented rather
 than final model-development artifacts. Important files include:
 
-- `tables/feature_subset_search/subset_search_candidates.csv`
-- `tables/feature_subset_search/subset_search_frontier.csv`
-- `tables/feature_subset_search/subset_search_feature_frequency.csv`
-- `tables/feature_subset_search/subset_search_significance_tests.csv`
-- ROC/AUC and KS comparison charts in the report
+- `tables/feature_subset_search/subset_search_leaderboard.*`
+- `tables/feature_subset_search/subset_search_top_candidate_comparison.*`
+- `tables/feature_subset_search/subset_search_selection_rationale.*`
+- `tables/feature_subset_search/subset_search_candidate_risk_flags.*`
+- `tables/feature_subset_search/subset_search_candidates.*`
+- `tables/feature_subset_search/subset_search_frontier.*`
+- `tables/feature_subset_search/subset_search_feature_frequency.*`
+- `tables/feature_subset_search/subset_search_significance_tests.*`
+- `tables/feature_subset_search/subset_search_contribution_consistency.*`
+- `tables/feature_subset_search/subset_search_redundancy_diagnostics.*`
+- `tables/feature_subset_search/subset_search_excluded_feature_insights.*`
+- `tables/feature_subset_search/subset_search_feature_family_view.*`
+- `tables/feature_subset_search/subset_search_transformation_effectiveness.*`
+- segment and time performance tables when eligible fields are available
+- ROC/AUC, KS, leaderboard, calibration, risk-flag, transformation, and feature
+  family charts in the report
 - winning subset coefficient and feature summary where available
 
 Use these outputs to choose candidate features, then run `fit_new_model` to

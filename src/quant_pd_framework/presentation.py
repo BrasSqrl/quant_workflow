@@ -174,6 +174,22 @@ SECTION_SPECS: OrderedDict[str, dict[str, str]] = OrderedDict(
     ]
 )
 
+REPORT_TABLE_SECTION_DIRECTORIES = {
+    "model_performance": "model_performance",
+    "calibration_thresholds": "calibration",
+    "stability_drift": "stability",
+    "sample_segmentation": "segmentation",
+    "feature_effects": "explainability",
+    "statistical_tests": "statistical_tests",
+    "feature_subset_search": "feature_subset_search",
+    "scorecard_workbench": "scorecard",
+    "credit_risk_development": "credit_risk",
+    "data_quality": "diagnostics",
+    "backtesting_time": "backtesting",
+    "governance_export": "governance",
+    "advanced_visual_analytics": "explainability",
+}
+
 TABLE_LABELS = {
     "split_metrics": "Split Metric Summary",
     "feature_importance": "Feature Importance Table",
@@ -193,6 +209,7 @@ TABLE_LABELS = {
     "governed_transformations": "Governed Transformations",
     "interaction_candidates": "Interaction Candidates",
     "subset_search_scope": "Subset Search Scope",
+    "subset_search_leaderboard": "Candidate Leaderboard",
     "subset_search_candidates": "Subset Search Candidate Ranking",
     "subset_search_frontier": "Subset Search Frontier",
     "subset_search_feature_frequency": "Subset Search Feature Frequency",
@@ -200,6 +217,16 @@ TABLE_LABELS = {
     "subset_search_selected_candidate": "Selected Candidate Snapshot",
     "subset_search_selected_coefficients": "Selected Candidate Coefficients",
     "subset_search_nonwinning_candidates": "Non-Winning Candidate Ranking",
+    "subset_search_top_candidate_comparison": "Top Candidate Comparison",
+    "subset_search_selection_rationale": "Selection Rationale",
+    "subset_search_candidate_risk_flags": "Candidate Risk Flags",
+    "subset_search_contribution_consistency": "Contribution Consistency",
+    "subset_search_redundancy_diagnostics": "Redundancy Diagnostics",
+    "subset_search_excluded_feature_insights": "Excluded Feature Insights",
+    "subset_search_feature_family_view": "Feature Family View",
+    "subset_search_transformation_effectiveness": "Transformation Effectiveness",
+    "subset_search_segment_performance": "Segment-Level Candidate Performance",
+    "subset_search_time_performance": "Time-Split Candidate Performance",
     "variable_selection": "Variable Selection",
     "manual_review_feature_decisions": "Manual Feature Review",
     "scorecard_bin_overrides": "Scorecard Bin Overrides",
@@ -329,6 +356,16 @@ FIGURE_LABELS = {
     "subset_search_auc_frontier": "Subset Search ROC AUC Frontier",
     "subset_search_ks_frontier": "Subset Search KS Frontier",
     "subset_search_metric_frontier": "Subset Search Performance Frontier",
+    "subset_search_leaderboard_score_chart": "Candidate Leaderboard Score",
+    "subset_search_metric_comparison_heatmap": "Top Candidate Metric Heatmap",
+    "subset_search_calibration_comparison": "Candidate Calibration Comparison",
+    "subset_search_risk_flag_summary": "Candidate Risk Flag Summary",
+    "subset_search_contribution_consistency_chart": "Contribution Consistency Chart",
+    "subset_search_redundancy_watchlist": "Redundant Feature Watchlist",
+    "subset_search_segment_performance_chart": "Segment Performance Comparison",
+    "subset_search_time_performance_chart": "Time-Split Performance Comparison",
+    "subset_search_transformation_effectiveness_chart": "Transformation Effectiveness Chart",
+    "subset_search_feature_family_chart": "Feature Family Selection Pattern",
     "subset_search_selected_roc_curve": "Selected Candidate ROC Curve",
     "subset_search_selected_ks_curve": "Selected Candidate KS Curve",
     "subset_search_feature_frequency_chart": "Subset Search Feature Frequency",
@@ -448,6 +485,41 @@ ASSET_DESCRIPTIONS = {
     ),
     "subset_search_nonwinning_candidates": (
         "Ranked non-winning candidate subsets for side-by-side ROC AUC, KS, and parsimony review."
+    ),
+    "subset_search_leaderboard": (
+        "Ranked candidate leaderboard with performance, parsimony, calibration, and "
+        "overall selection score."
+    ),
+    "subset_search_top_candidate_comparison": (
+        "Side-by-side comparison workspace for the retained top candidate subsets."
+    ),
+    "subset_search_selection_rationale": (
+        "Narrative explanation of why the selected subset was chosen and what needs review."
+    ),
+    "subset_search_candidate_risk_flags": (
+        "Automated watch flags for complexity, metric gaps, calibration, redundancy, and "
+        "coefficient instability."
+    ),
+    "subset_search_contribution_consistency": (
+        "Feature coefficient or importance consistency across the top-ranked candidates."
+    ),
+    "subset_search_redundancy_diagnostics": (
+        "High-correlation feature pairs that may create redundant candidate subsets."
+    ),
+    "subset_search_excluded_feature_insights": (
+        "Features excluded from the selected subset with their best observed candidate rank."
+    ),
+    "subset_search_feature_family_view": (
+        "Candidate features grouped by business family and inferred transformation type."
+    ),
+    "subset_search_transformation_effectiveness": (
+        "Performance pattern for raw, binned, WoE, lagged, interaction, and other feature forms."
+    ),
+    "subset_search_segment_performance": (
+        "Top-candidate performance by available low-cardinality segment fields."
+    ),
+    "subset_search_time_performance": (
+        "Top-candidate performance by monthly period when a date column is available."
     ),
     "variable_selection": "Train-split feature screening results and selection rationale.",
     "manual_review_feature_decisions": (
@@ -769,6 +841,36 @@ ASSET_DESCRIPTIONS = {
     "subset_search_metric_frontier": (
         "Performance-versus-parsimony scatter used to choose a candidate subset to carry forward."
     ),
+    "subset_search_leaderboard_score_chart": (
+        "Overall selection score by candidate, combining performance, parsimony, and calibration."
+    ),
+    "subset_search_metric_comparison_heatmap": (
+        "Heatmap comparing normalized top-candidate metrics in one compact view."
+    ),
+    "subset_search_calibration_comparison": (
+        "Calibration error by candidate to highlight probability-alignment risk."
+    ),
+    "subset_search_risk_flag_summary": (
+        "Count of automated risk flags by candidate and severity."
+    ),
+    "subset_search_contribution_consistency_chart": (
+        "Top features by candidate appearances and coefficient-sign consistency."
+    ),
+    "subset_search_redundancy_watchlist": (
+        "High-correlation feature pairs that appear together in top candidates."
+    ),
+    "subset_search_segment_performance_chart": (
+        "Top-candidate ROC AUC by available segment values."
+    ),
+    "subset_search_time_performance_chart": (
+        "Top-candidate ROC AUC over monthly periods."
+    ),
+    "subset_search_transformation_effectiveness_chart": (
+        "Selection-score pattern by inferred transformation type."
+    ),
+    "subset_search_feature_family_chart": (
+        "Top-candidate feature appearances by business feature family."
+    ),
     "subset_search_selected_roc_curve": ("Held-out ROC curve for the winning candidate subset."),
     "subset_search_selected_ks_curve": ("Held-out KS curve for the winning candidate subset."),
     "subset_search_feature_frequency_chart": (
@@ -842,12 +944,17 @@ FEATURED_ASSETS = {
     "feature_importance_overview",
     "feature_importance_waterfall",
     "subset_search_candidates",
+    "subset_search_leaderboard",
     "subset_search_frontier",
     "subset_search_auc_frontier",
     "subset_search_ks_frontier",
+    "subset_search_metric_comparison_heatmap",
+    "subset_search_leaderboard_score_chart",
     "subset_search_selected_candidate",
     "subset_search_selected_coefficients",
     "subset_search_selected_roc_curve",
+    "subset_search_selection_rationale",
+    "subset_search_top_candidate_comparison",
     "roc_curve_chart",
     "roc_curve_annotated",
     "precision_recall_curve_annotated",
@@ -887,6 +994,24 @@ class AssetDescriptor:
     section: str
     description: str
     featured: bool
+
+
+@dataclass(frozen=True, slots=True)
+class ReportSectionSummary:
+    """Compact evidence status used by the exported interactive report."""
+
+    section_id: str
+    title: str
+    description: str
+    figure_count: int
+    table_count: int
+    status_label: str
+    status_class: str
+    status_reason: str
+
+    @property
+    def asset_count(self) -> int:
+        return self.figure_count + self.table_count
 
 
 CHART_GUIDANCE = {
@@ -960,6 +1085,27 @@ CHART_GUIDANCE = {
     "feature_effect_stability_small_multiples": (
         "Curves with similar shape across splits are more defensible than effects that reverse "
         "or move sharply."
+    ),
+    "subset_search_leaderboard_score_chart": (
+        "Higher is better. The score combines ranking performance, calibration, and parsimony; "
+        "use it as a decision aid, not as a replacement for the configured ranking metric."
+    ),
+    "subset_search_metric_comparison_heatmap": (
+        "Scan for candidates that perform consistently across metrics instead of winning only "
+        "one metric."
+    ),
+    "subset_search_calibration_comparison": (
+        "Lower calibration error is better. High values suggest the candidate may rank well but "
+        "produce less reliable probabilities."
+    ),
+    "subset_search_risk_flag_summary": (
+        "Fewer flags are better. Flags identify review topics, not automatic rejection."
+    ),
+    "subset_search_redundancy_watchlist": (
+        "High-correlation pairs can make a subset less stable and harder to defend."
+    ),
+    "subset_search_transformation_effectiveness_chart": (
+        "Compare whether transformed feature families are actually improving candidate quality."
     ),
     "advanced_contribution_beeswarm": (
         "This is a coefficient proxy, not formal SHAP. Wider spread indicates features whose "
@@ -1042,11 +1188,20 @@ def report_chart_guidance(asset_key: str) -> str:
 SUBSET_SEARCH_HIGHLIGHT_TABLE_KEYS = {
     "subset_search_selected_candidate",
     "subset_search_selected_coefficients",
+    "subset_search_selection_rationale",
+    "subset_search_leaderboard",
+    "subset_search_top_candidate_comparison",
     "subset_search_nonwinning_candidates",
+    "subset_search_candidate_risk_flags",
 }
 SUBSET_SEARCH_HIGHLIGHT_FIGURE_KEYS = {
     "subset_search_selected_roc_curve",
     "subset_search_selected_ks_curve",
+    "subset_search_leaderboard_score_chart",
+    "subset_search_metric_comparison_heatmap",
+    "subset_search_calibration_comparison",
+    "subset_search_risk_flag_summary",
+    "subset_search_feature_frequency_chart",
 }
 
 
@@ -1117,6 +1272,83 @@ def prune_subset_search_highlight_assets(
             ],
         }
     return filtered
+
+
+def build_report_section_summaries(
+    catalog: OrderedDict[str, dict[str, list[AssetDescriptor]]],
+    tables: Mapping[str, pd.DataFrame],
+    *,
+    warning_count: int,
+) -> OrderedDict[str, ReportSectionSummary]:
+    """Builds status/count metadata for the report navigation and evidence map."""
+
+    summaries: OrderedDict[str, ReportSectionSummary] = OrderedDict()
+    for section_id, payload in catalog.items():
+        figure_count = len(payload["figures"])
+        table_count = len(payload["tables"])
+        status_label, status_class, status_reason = _resolve_section_status(
+            section_id,
+            payload["tables"],
+            tables,
+            warning_count=warning_count,
+        )
+        summaries[section_id] = ReportSectionSummary(
+            section_id=section_id,
+            title=payload["title"],
+            description=payload["description"],
+            figure_count=figure_count,
+            table_count=table_count,
+            status_label=status_label,
+            status_class=status_class,
+            status_reason=status_reason,
+        )
+    return summaries
+
+
+def _resolve_section_status(
+    section_id: str,
+    table_descriptors: list[AssetDescriptor],
+    tables: Mapping[str, pd.DataFrame],
+    *,
+    warning_count: int,
+) -> tuple[str, str, str]:
+    if section_id == "governance_export":
+        if warning_count > 0:
+            return "Watch", "watch", f"{warning_count:,} warning(s) recorded."
+        return "Pass", "great", "No run warnings were recorded."
+    if not table_descriptors:
+        return "Ready", "info", "Charts or evidence are available for review."
+
+    has_assets = False
+    for descriptor in table_descriptors:
+        table = tables.get(descriptor.key)
+        if table is None or table.empty:
+            continue
+        has_assets = True
+        status_values = _lower_table_column_values(table, "status")
+        severity_values = _lower_table_column_values(table, "severity")
+        if any(value in {"fail", "failed", "error", "critical"} for value in status_values):
+            return "Fail", "bad", f"{descriptor.title} contains failed checks."
+        if any(value in {"error", "critical"} for value in severity_values):
+            return "Fail", "bad", f"{descriptor.title} contains error-severity rows."
+        if any(value in {"warn", "warning", "watch"} for value in status_values):
+            return "Watch", "watch", f"{descriptor.title} contains watch conditions."
+        if any(value in {"warn", "warning"} for value in severity_values):
+            return "Watch", "watch", f"{descriptor.title} contains warning rows."
+
+    if has_assets:
+        return "Pass", "great", "No failed or warning status rows were detected."
+    return "Not Run", "info", "No table rows were available in this section."
+
+
+def _lower_table_column_values(table: pd.DataFrame, column_name: str) -> set[str]:
+    if column_name not in table.columns:
+        return set()
+    return {
+        str(value).strip().lower()
+        for value in table[column_name].dropna().tolist()
+        if str(value).strip()
+    }
 
 
 def infer_asset_section(asset_key: str, *, kind: str) -> str:
@@ -1238,6 +1470,8 @@ def infer_asset_section(asset_key: str, *, kind: str) -> str:
         "scenario_segment_impact",
     }:
         return "model_performance"
+    if asset_key.startswith("subset_search_"):
+        return "feature_subset_search"
     if asset_key in {
         "subset_search_scope",
         "subset_search_candidates",
@@ -3424,6 +3658,7 @@ def build_interactive_report_html(
     max_tables_per_section: int = 6,
     include_enhanced_report_visuals: bool = True,
     include_advanced_visual_analytics: bool = False,
+    tabular_output_format: str = "csv",
     predictions: Mapping[str, pd.DataFrame] | None = None,
 ) -> str:
     """Builds the polished standalone HTML dashboard report for each run."""
@@ -3458,8 +3693,14 @@ def build_interactive_report_html(
         subset_search_highlight_html = _build_subset_search_highlight_html(
             tables=diagnostics_tables,
             figures=report_visualizations,
+            tabular_output_format=tabular_output_format,
         )
         asset_catalog = prune_subset_search_highlight_assets(asset_catalog)
+    section_summaries = build_report_section_summaries(
+        asset_catalog,
+        diagnostics_tables,
+        warning_count=warning_count,
+    )
     metric_cards = summarize_run_kpis(
         metrics=metrics,
         input_rows=input_rows,
@@ -3502,17 +3743,41 @@ def build_interactive_report_html(
             table_preview_rows=table_preview_rows,
             max_figures_per_section=max_figures_per_section,
             max_tables_per_section=max_tables_per_section,
+            section_summary=section_summaries[section_id],
+            tabular_output_format=tabular_output_format,
         )
         for section_id, section_payload in asset_catalog.items()
         if section_payload["figures"] or section_payload["tables"]
     )
+    governance_summary = section_summaries["governance_export"]
     sections_html = diagnostic_sections_html + _build_governance_section_html(
         execution_mode=execution_mode,
         warning_count=warning_count,
         warnings=warnings,
         events=events,
+        section_summary=governance_summary,
+    )
+    active_summaries = OrderedDict(
+        (section_id, summary)
+        for section_id, summary in section_summaries.items()
+        if summary.asset_count > 0 or section_id == "governance_export"
+    )
+    report_controls_html = _build_report_controls_html(active_summaries)
+    overview_html = _build_report_overview_html(
+        run_id=run_id,
+        model_type=model_type,
+        execution_mode=execution_mode,
+        target_mode=target_mode,
+        labels_available=labels_available,
+        warning_count=warning_count,
+        input_rows=input_rows,
+        feature_count=feature_count,
+        metric_cards=metric_cards,
+        section_summaries=active_summaries,
+        warnings=warnings,
     )
     plotly_render_script = _build_plotly_render_script()
+    report_interaction_script = _build_report_interaction_script()
     plotly_js_bundle = get_plotlyjs()
 
     return f"""<!DOCTYPE html>
@@ -3839,9 +4104,346 @@ def build_interactive_report_html(
         font-size: 12px;
         line-height: 1.35;
       }}
+      .report-control-panel {{
+        position: sticky;
+        top: 0;
+        z-index: 20;
+        margin-top: 24px;
+        padding: 16px;
+        border-radius: 24px;
+        background: rgba(255, 253, 250, 0.94);
+        border: 1px solid rgba(17, 32, 51, 0.09);
+        box-shadow: 0 18px 38px rgba(17, 32, 51, 0.08);
+        backdrop-filter: blur(16px);
+      }}
+      .report-control-row {{
+        display: grid;
+        grid-template-columns: minmax(220px, 1fr) minmax(260px, 1.2fr) 190px auto auto;
+        gap: 12px;
+        align-items: end;
+      }}
+      .control-kicker {{
+        color: var(--accent);
+        font-size: 11px;
+        font-weight: 800;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+      }}
+      .report-control-title {{
+        margin-top: 3px;
+        font-size: 17px;
+        font-weight: 800;
+      }}
+      .report-search-label,
+      .report-select-label,
+      .report-toggle {{
+        display: grid;
+        gap: 5px;
+        color: var(--muted);
+        font-size: 11px;
+        font-weight: 800;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+      }}
+      .report-search-label input,
+      .report-select-label select {{
+        width: 100%;
+        min-height: 40px;
+        border-radius: 14px;
+        border: 1px solid var(--line);
+        background: rgba(255, 255, 255, 0.92);
+        color: var(--text);
+        font: inherit;
+        font-size: 13px;
+        font-weight: 700;
+        letter-spacing: normal;
+        padding: 0 12px;
+        text-transform: none;
+      }}
+      .report-toggle {{
+        align-content: end;
+        grid-template-columns: auto 1fr;
+        min-height: 40px;
+        border-radius: 14px;
+        border: 1px solid var(--line);
+        background: rgba(255, 255, 255, 0.75);
+        padding: 9px 11px;
+        white-space: nowrap;
+      }}
+      .report-toggle input {{
+        accent-color: var(--good);
+      }}
+      .report-nav-tabs {{
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+        gap: 10px;
+        margin-top: 14px;
+      }}
+      .report-nav-tab,
+      .section-map-card {{
+        appearance: none;
+        border: 1px solid rgba(17, 32, 51, 0.08);
+        background: rgba(255, 255, 255, 0.74);
+        color: var(--text);
+        cursor: pointer;
+        font-family: inherit;
+        text-align: left;
+      }}
+      .report-nav-tab {{
+        display: grid;
+        gap: 4px;
+        min-height: 58px;
+        border-radius: 18px;
+        padding: 11px 13px;
+      }}
+      .report-nav-tab span {{
+        font-weight: 850;
+        line-height: 1.1;
+      }}
+      .report-nav-tab small,
+      .section-map-card small,
+      .section-map-card em {{
+        color: var(--muted);
+        font-size: 11px;
+        font-style: normal;
+      }}
+      .report-nav-tab.is-active,
+      .section-map-card:hover {{
+        border-color: rgba(42, 111, 151, 0.38);
+        background: linear-gradient(135deg, rgba(42, 111, 151, 0.12), #FFFFFF);
+        box-shadow: 0 14px 28px rgba(42, 111, 151, 0.10);
+      }}
+      .report-tabs-enabled:not(.report-show-all) .report-section:not(.is-active) {{
+        display: none;
+      }}
+      .report-tabs-enabled.report-searching .report-section {{
+        display: block;
+      }}
+      .overview-grid {{
+        display: grid;
+        grid-template-columns: minmax(260px, 0.8fr) minmax(260px, 0.8fr) minmax(300px, 1fr);
+        gap: 18px;
+      }}
+      .overview-card {{
+        min-height: 100%;
+      }}
+      .context-list {{
+        display: grid;
+        gap: 10px;
+        margin: 0;
+      }}
+      .context-list div {{
+        display: flex;
+        justify-content: space-between;
+        gap: 14px;
+        padding-bottom: 8px;
+        border-bottom: 1px solid rgba(17, 32, 51, 0.06);
+      }}
+      .context-list dt {{
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 800;
+        text-transform: uppercase;
+      }}
+      .context-list dd {{
+        margin: 0;
+        text-align: right;
+        font-weight: 800;
+      }}
+      .priority-grid {{
+        display: grid;
+        gap: 10px;
+      }}
+      .priority-card {{
+        display: grid;
+        gap: 4px;
+        border-radius: 16px;
+        padding: 12px;
+        background: rgba(96, 112, 137, 0.08);
+        border: 1px solid rgba(96, 112, 137, 0.18);
+      }}
+      .priority-card span {{
+        font-size: 11px;
+        font-weight: 850;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }}
+      .priority-card strong {{
+        font-size: 13px;
+        line-height: 1.3;
+      }}
+      .priority-card--great {{
+        background: rgba(15, 139, 95, 0.10);
+        border-color: rgba(15, 139, 95, 0.22);
+      }}
+      .priority-card--watch {{
+        background: rgba(217, 154, 43, 0.12);
+        border-color: rgba(217, 154, 43, 0.24);
+      }}
+      .priority-card--bad {{
+        background: rgba(196, 69, 54, 0.12);
+        border-color: rgba(196, 69, 54, 0.24);
+      }}
+      .section-header--sub {{
+        align-items: start;
+        margin-top: 24px;
+      }}
+      .section-header--sub h3 {{
+        margin: 0;
+        font-size: 20px;
+      }}
+      .section-map-grid {{
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+        gap: 12px;
+      }}
+      .section-map-card {{
+        display: grid;
+        gap: 8px;
+        min-height: 132px;
+        border-radius: 20px;
+        padding: 15px;
+      }}
+      .section-map-card strong {{
+        font-size: 16px;
+      }}
+      .section-status {{
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: fit-content;
+        border-radius: 999px;
+        padding: 7px 10px;
+        background: rgba(96, 112, 137, 0.10);
+        color: var(--info);
+        border: 1px solid rgba(96, 112, 137, 0.18);
+        font-size: 11px;
+        font-weight: 850;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        white-space: nowrap;
+      }}
+      .section-status--great {{
+        background: rgba(15, 139, 95, 0.11);
+        color: var(--great);
+        border-color: rgba(15, 139, 95, 0.22);
+      }}
+      .section-status--watch {{
+        background: rgba(217, 154, 43, 0.14);
+        color: #8A5A09;
+        border-color: rgba(217, 154, 43, 0.24);
+      }}
+      .section-status--bad {{
+        background: rgba(196, 69, 54, 0.13);
+        color: var(--bad);
+        border-color: rgba(196, 69, 54, 0.24);
+      }}
+      .evidence-group {{
+        margin-top: 18px;
+      }}
+      .evidence-group > summary {{
+        display: flex;
+        justify-content: space-between;
+        gap: 14px;
+        cursor: pointer;
+        border-radius: 18px;
+        padding: 13px 15px;
+        background: rgba(243, 238, 229, 0.68);
+        color: var(--text);
+      }}
+      .evidence-group > summary span,
+      .evidence-group-head h3 {{
+        font-weight: 850;
+      }}
+      .evidence-group > summary small,
+      .evidence-group-head p {{
+        color: var(--muted);
+      }}
+      .evidence-group-head {{
+        margin-bottom: 14px;
+      }}
+      .evidence-group-head h3 {{
+        margin: 0;
+        font-size: 20px;
+      }}
+      .evidence-group-head p {{
+        margin: 4px 0 0;
+      }}
+      .asset-location {{
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        align-items: center;
+        margin: 0 0 4px;
+        padding: 9px 10px;
+        border-radius: 14px;
+        background: rgba(248, 250, 252, 0.92);
+        border: 1px solid rgba(17, 32, 51, 0.06);
+        color: var(--muted);
+        font-size: 12px;
+      }}
+      .asset-location code {{
+        color: var(--text);
+        font-weight: 800;
+      }}
+      .asset-location a {{
+        color: var(--good);
+        font-weight: 800;
+        text-decoration: none;
+      }}
+      .asset-location a:hover {{
+        text-decoration: underline;
+      }}
+      .report-mode-executive .evidence-group:not(.evidence-group--featured),
+      .report-mode-executive .asset-card[data-featured="false"] {{
+        display: none;
+      }}
+      .report-compact .section-shell {{
+        padding: 18px;
+      }}
+      .report-compact .asset-card {{
+        gap: 6px;
+        padding: 14px;
+      }}
+      .report-compact .asset-card p,
+      .report-compact .chart-guidance,
+      .report-compact .asset-location,
+      .report-compact .asset-note {{
+        display: none;
+      }}
+      .is-search-hidden {{
+        display: none !important;
+      }}
+      .report-search-empty {{
+        margin-top: 16px;
+        padding: 13px 15px;
+        border-radius: 16px;
+        background: rgba(217, 154, 43, 0.12);
+        color: #8A5A09;
+        font-weight: 800;
+      }}
       .asset-card ul, .asset-card ol {{
         margin: 10px 0 0 18px;
         color: var(--muted);
+      }}
+      @media print {{
+        body {{
+          background: #FFFFFF;
+        }}
+        .page {{
+          width: 100%;
+          padding: 0;
+        }}
+        .report-control-panel {{
+          display: none;
+        }}
+        .report-section {{
+          display: block !important;
+          break-inside: avoid;
+        }}
+        .asset-card {{
+          break-inside: avoid;
+        }}
       }}
       @media (max-width: 900px) {{
         .page {{
@@ -3854,8 +4456,21 @@ def build_interactive_report_html(
         .hero-head {{
           grid-template-columns: 1fr;
         }}
+        .report-control-panel {{
+          position: static;
+        }}
+        .report-control-row {{
+          grid-template-columns: 1fr;
+        }}
+        .overview-grid {{
+          grid-template-columns: 1fr;
+        }}
         .section-shell {{
           padding: 22px;
+        }}
+        .section-header {{
+          display: grid;
+          align-items: start;
         }}
         .figure-grid {{
           grid-template-columns: 1fr;
@@ -3874,8 +4489,8 @@ def build_interactive_report_html(
               Formal model-development evidence package for
               {escape(model_type.replace("_", " ").title())}, operating in
               {escape(execution_mode.replace("_", " ").title())}. Review the
-              executive metrics first, then expand each diagnostic section for
-              supporting charts, tables, and export evidence.
+              executive metrics first, then use the section navigation, search,
+              reviewer mode, or print view to move through the evidence package.
             </p>
           </div>
           <aside class="report-status-grid" aria-label="Report status">
@@ -3905,26 +4520,307 @@ def build_interactive_report_html(
         <div class="split-strip">{split_chips_html}</div>
         <div class="metrics-grid">{metric_cards_html}</div>
       </section>
+      {report_controls_html}
+      {overview_html}
       {subset_search_highlight_html}
       {sections_html}
     </main>
     <script>{plotly_js_bundle}</script>
+    <script>{report_interaction_script}</script>
     <script>{plotly_render_script}</script>
   </body>
 </html>
 """
 
 
+def _build_report_controls_html(
+    section_summaries: OrderedDict[str, ReportSectionSummary],
+) -> str:
+    nav_buttons = [
+        (
+            '<button class="report-nav-tab is-active" type="button" '
+            'data-section-target="overview" aria-selected="true">'
+            '<span>Overview</span><small>Start here</small></button>'
+        )
+    ]
+    nav_buttons.extend(
+        _build_report_nav_button(summary)
+        for summary in section_summaries.values()
+        if summary.asset_count > 0 or summary.section_id == "governance_export"
+    )
+    return f"""
+    <nav class="report-control-panel" aria-label="Interactive report controls">
+      <div class="report-control-row">
+        <div>
+          <div class="control-kicker">Report Navigation</div>
+          <div class="report-control-title">Jump to the evidence you need</div>
+        </div>
+        <label class="report-search-label">
+          <span>Search report</span>
+          <input
+            id="reportSearch"
+            type="search"
+            placeholder="Search charts, tables, features, warnings..."
+            autocomplete="off"
+          />
+        </label>
+        <label class="report-select-label">
+          <span>Reviewer mode</span>
+          <select id="reviewerMode">
+            <option value="validator" selected>Validator</option>
+            <option value="executive">Executive</option>
+            <option value="technical">Technical</option>
+          </select>
+        </label>
+        <label class="report-toggle">
+          <input id="compactReportToggle" type="checkbox" />
+          <span>Compact view</span>
+        </label>
+        <label class="report-toggle">
+          <input id="showAllReportToggle" type="checkbox" />
+          <span>Show all / print view</span>
+        </label>
+      </div>
+      <div class="report-nav-tabs">
+        {"".join(nav_buttons)}
+      </div>
+    </nav>
+    """
+
+
+def _build_report_nav_button(summary: ReportSectionSummary) -> str:
+    return f"""
+    <button
+      class="report-nav-tab"
+      type="button"
+      data-section-target="{escape(summary.section_id)}"
+      aria-selected="false"
+      title="{escape(summary.status_reason)}"
+    >
+      <span>{escape(_short_section_title(summary.title))}</span>
+      <small>
+        {escape(summary.status_label)} | {summary.figure_count} chart(s) |
+        {summary.table_count} table(s)
+      </small>
+    </button>
+    """
+
+
+def _short_section_title(title: str) -> str:
+    replacements = {
+        "Model Performance": "Performance",
+        "Calibration / Thresholds": "Calibration",
+        "Stability / Drift": "Stability",
+        "Sample / Segmentation": "Segments",
+        "Feature Effects / Explainability": "Explainability",
+        "Advanced Visual Analytics": "Advanced",
+        "Statistical Tests": "Tests",
+        "Feature Subset Search": "Subset Search",
+        "Scorecard / Binning Workbench": "Scorecard",
+        "Credit-Risk Development": "Credit Risk",
+        "Backtesting / Time Diagnostics": "Backtesting",
+        "Governance / Export Bundle": "Governance",
+    }
+    return replacements.get(title, title)
+
+
+def _build_report_overview_html(
+    *,
+    run_id: str,
+    model_type: str,
+    execution_mode: str,
+    target_mode: str,
+    labels_available: bool,
+    warning_count: int,
+    input_rows: int | None,
+    feature_count: int,
+    metric_cards: list[dict[str, str]],
+    section_summaries: OrderedDict[str, ReportSectionSummary],
+    warnings: list[str],
+) -> str:
+    priority_cards = _build_review_priority_cards(
+        warning_count=warning_count,
+        section_summaries=section_summaries,
+        warnings=warnings,
+    )
+    section_cards = "".join(
+        _build_report_section_map_card(summary)
+        for summary in section_summaries.values()
+        if summary.asset_count > 0 or summary.section_id == "governance_export"
+    )
+    metric_rows = "".join(
+        f"""
+        <tr>
+          <th>{escape(card["label"])}</th>
+          <td>{escape(card["value"])}</td>
+        </tr>
+        """
+        for card in metric_cards
+    )
+    label_status = "Available" if labels_available else "Not available"
+    return f"""
+    <section
+      class="section-shell report-section is-active"
+      id="overview"
+      data-section-id="overview"
+    >
+      <div class="section-header">
+        <div>
+          <h2>Executive Landing Page</h2>
+          <p>
+            Start here for run context, review priorities, primary metrics, and the
+            evidence map. Use the section tabs above for focused review.
+          </p>
+        </div>
+        <span class="section-status section-status--info">Overview</span>
+      </div>
+      <div class="overview-grid">
+        <article class="asset-card overview-card" data-featured="true">
+          <h3>Run Context</h3>
+          <dl class="context-list">
+            <div><dt>Run ID</dt><dd>{escape(run_id)}</dd></div>
+            <div><dt>Model</dt><dd>{escape(model_type.replace("_", " ").title())}</dd></div>
+            <div><dt>Execution</dt><dd>{escape(execution_mode.replace("_", " ").title())}</dd></div>
+            <div><dt>Target</dt><dd>{escape(target_mode.title())}</dd></div>
+            <div><dt>Labels</dt><dd>{label_status}</dd></div>
+            <div><dt>Rows</dt><dd>{escape(format_metric_value(input_rows))}</dd></div>
+            <div><dt>Features</dt><dd>{escape(format_metric_value(feature_count))}</dd></div>
+          </dl>
+        </article>
+        <article class="asset-card overview-card" data-featured="true">
+          <h3>Primary Metrics</h3>
+          <div class="table-shell table-shell--compact">
+            <table class="asset-table overview-metric-table">
+              <tbody>{metric_rows}</tbody>
+            </table>
+          </div>
+        </article>
+        <article class="asset-card overview-card" data-featured="true">
+          <h3>Review Priorities</h3>
+          <div class="priority-grid">{priority_cards}</div>
+        </article>
+      </div>
+      <div class="section-header section-header--sub">
+        <div>
+          <h3>Evidence Map</h3>
+          <p>Each tile jumps to a report section and shows its status and available evidence.</p>
+        </div>
+      </div>
+      <div class="section-map-grid">{section_cards}</div>
+    </section>
+    """
+
+
+def _build_review_priority_cards(
+    *,
+    warning_count: int,
+    section_summaries: OrderedDict[str, ReportSectionSummary],
+    warnings: list[str],
+) -> str:
+    failing_sections = [
+        summary for summary in section_summaries.values() if summary.status_class == "bad"
+    ]
+    watch_sections = [
+        summary for summary in section_summaries.values() if summary.status_class == "watch"
+    ]
+    if failing_sections:
+        primary_status = "Fail"
+        primary_class = "bad"
+        primary_copy = f"{len(failing_sections)} section(s) contain failed checks."
+    elif warning_count > 0 or watch_sections:
+        primary_status = "Watch"
+        primary_class = "watch"
+        primary_copy = f"{warning_count:,} warning(s) and {len(watch_sections)} watch section(s)."
+    else:
+        primary_status = "Pass"
+        primary_class = "great"
+        primary_copy = "No failed checks or run warnings were detected."
+    first_warning = warnings[0] if warnings else "No warnings recorded."
+    evidence_count = sum(summary.asset_count for summary in section_summaries.values())
+    return "".join(
+        [
+            _build_priority_card(primary_status, primary_class, primary_copy),
+            _build_priority_card(
+                "Evidence",
+                "info",
+                f"{evidence_count:,} report cards available.",
+            ),
+            _build_priority_card(
+                "First Warning",
+                "watch" if warnings else "great",
+                first_warning,
+            ),
+        ]
+    )
+
+
+def _build_priority_card(label: str, status_class: str, copy: str) -> str:
+    return f"""
+    <div class="priority-card priority-card--{escape(status_class)}">
+      <span>{escape(label)}</span>
+      <strong>{escape(copy)}</strong>
+    </div>
+    """
+
+
+def _build_report_section_map_card(summary: ReportSectionSummary) -> str:
+    return f"""
+    <button
+      class="section-map-card"
+      type="button"
+      data-section-target="{escape(summary.section_id)}"
+      title="{escape(summary.status_reason)}"
+    >
+      <span class="section-status section-status--{escape(summary.status_class)}">
+        {escape(summary.status_label)}
+      </span>
+      <strong>{escape(summary.title)}</strong>
+      <small>{summary.figure_count} chart(s) | {summary.table_count} table(s)</small>
+      <em>{escape(summary.status_reason)}</em>
+    </button>
+    """
+
+
 def _build_subset_search_highlight_html(
     *,
     tables: Mapping[str, pd.DataFrame],
     figures: Mapping[str, go.Figure],
+    tabular_output_format: str,
 ) -> str:
     selected_candidate = tables.get("subset_search_selected_candidate", pd.DataFrame())
     selected_coefficients = tables.get("subset_search_selected_coefficients", pd.DataFrame())
+    selection_rationale = tables.get("subset_search_selection_rationale", pd.DataFrame())
+    leaderboard = tables.get("subset_search_leaderboard", pd.DataFrame())
+    top_candidate_comparison = tables.get(
+        "subset_search_top_candidate_comparison",
+        pd.DataFrame(),
+    )
     nonwinning_candidates = tables.get("subset_search_nonwinning_candidates", pd.DataFrame())
+    risk_flags = tables.get("subset_search_candidate_risk_flags", pd.DataFrame())
 
     summary_cards: list[str] = []
+    for table_key, table, preview_rows in [
+        ("subset_search_selection_rationale", selection_rationale, 3),
+        ("subset_search_leaderboard", leaderboard, 15),
+        ("subset_search_top_candidate_comparison", top_candidate_comparison, 10),
+    ]:
+        if table.empty:
+            continue
+        summary_cards.append(
+            _build_table_card_html(
+                AssetDescriptor(
+                    key=table_key,
+                    title=friendly_asset_title(table_key, kind="table"),
+                    kind="table",
+                    section="feature_subset_search",
+                    description=ASSET_DESCRIPTIONS.get(table_key, ""),
+                    featured=True,
+                ),
+                table,
+                preview_rows=preview_rows,
+                tabular_output_format=tabular_output_format,
+            )
+        )
     if not selected_candidate.empty:
         summary_cards.append(
             _build_table_card_html(
@@ -3944,6 +4840,7 @@ def _build_subset_search_highlight_html(
                 ),
                 selected_candidate,
                 preview_rows=1,
+                tabular_output_format=tabular_output_format,
             )
         )
     if not selected_coefficients.empty:
@@ -3965,6 +4862,7 @@ def _build_subset_search_highlight_html(
                 ),
                 selected_coefficients,
                 preview_rows=25,
+                tabular_output_format=tabular_output_format,
             )
         )
 
@@ -3981,51 +4879,85 @@ def _build_subset_search_highlight_html(
             figures[figure_key],
         )
         for figure_key in [
+            "subset_search_leaderboard_score_chart",
+            "subset_search_metric_comparison_heatmap",
+            "subset_search_calibration_comparison",
+            "subset_search_risk_flag_summary",
+            "subset_search_feature_frequency_chart",
             "subset_search_selected_roc_curve",
             "subset_search_selected_ks_curve",
         ]
         if figure_key in figures
     )
 
-    ranked_table_html = ""
-    if not nonwinning_candidates.empty:
-        ranked_table_html = _build_table_card_html(
-            AssetDescriptor(
-                key="subset_search_nonwinning_candidates",
-                title=friendly_asset_title(
-                    "subset_search_nonwinning_candidates",
+    review_table_cards: list[str] = []
+    if not risk_flags.empty:
+        review_table_cards.append(
+            _build_table_card_html(
+                AssetDescriptor(
+                    key="subset_search_candidate_risk_flags",
+                    title=friendly_asset_title(
+                        "subset_search_candidate_risk_flags",
+                        kind="table",
+                    ),
                     kind="table",
+                    section="feature_subset_search",
+                    description=ASSET_DESCRIPTIONS.get(
+                        "subset_search_candidate_risk_flags",
+                        "",
+                    ),
+                    featured=True,
                 ),
-                kind="table",
-                section="feature_subset_search",
-                description=ASSET_DESCRIPTIONS.get(
-                    "subset_search_nonwinning_candidates",
-                    "",
-                ),
-                featured=True,
-            ),
-            nonwinning_candidates,
-            preview_rows=25,
+                risk_flags,
+                preview_rows=25,
+                tabular_output_format=tabular_output_format,
+            )
         )
+    if not nonwinning_candidates.empty:
+        review_table_cards.append(
+            _build_table_card_html(
+                AssetDescriptor(
+                    key="subset_search_nonwinning_candidates",
+                    title=friendly_asset_title(
+                        "subset_search_nonwinning_candidates",
+                        kind="table",
+                    ),
+                    kind="table",
+                    section="feature_subset_search",
+                    description=ASSET_DESCRIPTIONS.get(
+                        "subset_search_nonwinning_candidates",
+                        "",
+                    ),
+                    featured=True,
+                ),
+                nonwinning_candidates,
+                preview_rows=25,
+                tabular_output_format=tabular_output_format,
+            )
+        )
+    review_tables_html = "".join(review_table_cards)
 
-    if not summary_cards and not figure_cards and not ranked_table_html:
+    if not summary_cards and not figure_cards and not review_tables_html:
         return ""
 
     return f"""
-    <section class="section-shell" id="subset_search_selection_summary">
+    <section
+      class="section-shell report-section"
+      id="subset_search_selection_summary"
+      data-section-id="feature_subset_search"
+    >
       <div class="section-header">
         <div>
           <h2>Selected Candidate Summary</h2>
           <p>
-            Selected-candidate evidence sits first in the subset-search report. The winning
-            subset is shown with its coefficients or feature-importance values, while the
-            alternative subsets are kept in a ranked comparison table for cleaner review.
+            This section is intentionally comparison-first. Use it to decide which
+            feature subset should move into the normal model-development workflow.
           </p>
         </div>
       </div>
       {"<div class='table-grid'>" + "".join(summary_cards) + "</div>" if summary_cards else ""}
       {"<div class='figure-grid'>" + figure_cards + "</div>" if figure_cards else ""}
-      {"<div class='table-grid'>" + ranked_table_html + "</div>" if ranked_table_html else ""}
+      {"<div class='table-grid'>" + review_tables_html + "</div>" if review_tables_html else ""}
     </section>
     """
 
@@ -4042,29 +4974,69 @@ def _build_section_html(
     table_preview_rows: int,
     max_figures_per_section: int,
     max_tables_per_section: int,
+    section_summary: ReportSectionSummary,
+    tabular_output_format: str,
 ) -> str:
     visible_figure_descriptors = figure_descriptors[:max_figures_per_section]
     visible_table_descriptors = table_descriptors[:max_tables_per_section]
-    figure_cards = "".join(
+    featured_figure_cards = "".join(
         _build_figure_card_html(descriptor, figures[descriptor.key])
         for descriptor in visible_figure_descriptors
-        if descriptor.key in figures
+        if descriptor.key in figures and descriptor.featured
     )
-    table_cards = "".join(
+    supporting_figure_cards = "".join(
+        _build_figure_card_html(descriptor, figures[descriptor.key])
+        for descriptor in visible_figure_descriptors
+        if descriptor.key in figures and not descriptor.featured
+    )
+    featured_table_cards = "".join(
         _build_table_card_html(
             descriptor,
             tables[descriptor.key],
             preview_rows=table_preview_rows,
+            tabular_output_format=tabular_output_format,
         )
         for descriptor in visible_table_descriptors
-        if descriptor.key in tables
+        if descriptor.key in tables and descriptor.featured
+    )
+    supporting_table_cards = "".join(
+        _build_table_card_html(
+            descriptor,
+            tables[descriptor.key],
+            preview_rows=table_preview_rows,
+            tabular_output_format=tabular_output_format,
+        )
+        for descriptor in visible_table_descriptors
+        if descriptor.key in tables and not descriptor.featured
     )
 
+    figure_cards = featured_figure_cards + supporting_figure_cards
+    table_cards = featured_table_cards + supporting_table_cards
     if not figure_cards and not table_cards:
         return ""
 
+    featured_html = _build_evidence_group_html(
+        "Featured Evidence",
+        "Primary charts and tables to review first.",
+        featured_figure_cards,
+        featured_table_cards,
+        featured=True,
+    )
+    supporting_html = _build_evidence_group_html(
+        "Supporting Evidence",
+        "Additional charts and table previews retained for validation and audit review.",
+        supporting_figure_cards,
+        supporting_table_cards,
+        featured=False,
+    )
+
     return f"""
-    <details class="section-shell" id="{escape(section_id)}" open>
+    <details
+      class="section-shell report-section"
+      id="{escape(section_id)}"
+      data-section-id="{escape(section_id)}"
+      open
+    >
       <summary class="section-summary">
         <div class="section-header">
           <div>
@@ -4079,11 +5051,59 @@ def _build_section_html(
         )
     }
           </div>
+          {_build_section_status_badge_html(section_summary)}
         </div>
       </summary>
-      {"<div class='figure-grid'>" + figure_cards + "</div>" if figure_cards else ""}
-      {"<div class='table-grid'>" + table_cards + "</div>" if table_cards else ""}
+      {featured_html}
+      {supporting_html}
     </details>
+    """
+
+
+def _build_evidence_group_html(
+    title: str,
+    description: str,
+    figure_cards: str,
+    table_cards: str,
+    *,
+    featured: bool,
+) -> str:
+    if not figure_cards and not table_cards:
+        return ""
+    group_class = "evidence-group evidence-group--featured" if featured else "evidence-group"
+    figure_grid = f'<div class="figure-grid">{figure_cards}</div>' if figure_cards else ""
+    table_grid = f'<div class="table-grid">{table_cards}</div>' if table_cards else ""
+    content = figure_grid + table_grid
+    if featured:
+        return f"""
+        <section class="{group_class}">
+          <div class="evidence-group-head">
+            <h3>{escape(title)}</h3>
+            <p>{escape(description)}</p>
+          </div>
+          {content}
+        </section>
+        """
+    return f"""
+    <details class="{group_class}" open>
+      <summary>
+        <span>{escape(title)}</span>
+        <small>{escape(description)}</small>
+      </summary>
+      {content}
+    </details>
+    """
+
+
+def _build_section_status_badge_html(summary: ReportSectionSummary) -> str:
+    return f"""
+    <span
+      class="section-status section-status--{escape(summary.status_class)}"
+      title="{escape(summary.status_reason)}"
+    >
+      {escape(summary.status_label)} | {summary.figure_count} chart(s) |
+      {summary.table_count} table(s)
+    </span>
     """
 
 
@@ -4102,6 +5122,43 @@ def _build_chart_guidance_html(descriptor: AssetDescriptor) -> str:
     return f'<div class="chart-guidance">{escape(guidance)}</div>'
 
 
+def _build_asset_locator_html(
+    descriptor: AssetDescriptor,
+    *,
+    anchor_id: str | None = None,
+    tabular_output_format: str = "csv",
+) -> str:
+    safe_name = _sanitize_report_name(descriptor.key)
+    if descriptor.kind == "table":
+        directory_name = REPORT_TABLE_SECTION_DIRECTORIES.get(descriptor.section, "diagnostics")
+        suffix = "parquet" if tabular_output_format == "parquet" else "csv"
+        artifact_link = f"../tables/{directory_name}/{safe_name}.{suffix}"
+        return f"""
+        <div class="asset-location">
+          <span>Key <code>{escape(descriptor.key)}</code></span>
+          <a href="{escape(artifact_link)}">Open full table export</a>
+        </div>
+        """
+    figure_html = f"../figures/html/{safe_name}.html"
+    figure_png = f"../figures/png/{safe_name}.png"
+    anchor_link = f"#{anchor_id}" if anchor_id else f"#card_{safe_name}"
+    return f"""
+    <div class="asset-location">
+      <span>Key <code>{escape(descriptor.key)}</code></span>
+      <a href="{escape(anchor_link)}">Report anchor</a>
+      <a href="{escape(figure_html)}">Optional HTML figure</a>
+      <a href="{escape(figure_png)}">Optional PNG figure</a>
+    </div>
+    """
+
+
+def _sanitize_report_name(name: str) -> str:
+    return "".join(
+        character if character.isalnum() or character in {"_", "-"} else "_"
+        for character in name
+    )
+
+
 def _build_figure_card_html(descriptor: AssetDescriptor, figure: go.Figure) -> str:
     safe_figure = go.Figure(figure)
     _make_figure_display_safe(safe_figure)
@@ -4116,13 +5173,21 @@ def _build_figure_card_html(descriptor: AssetDescriptor, figure: go.Figure) -> s
     config_payload = json.dumps(plotly_display_config(), separators=(",", ":"))
     config_payload_html = escape(config_payload)
     payload_id = f"{figure_id}_payload"
+    card_id = f"card_{_sanitize_report_name(descriptor.key)}"
     fallback = (
         "Chart loading. If this remains visible, open the report in a modern "
         "browser or serve it from a local HTTP server."
     )
     description = escape(descriptor.description or "")
     return f"""
-    <article class="asset-card">
+    <article
+      class="asset-card"
+      id="{escape(card_id)}"
+      data-asset-key="{escape(descriptor.key)}"
+      data-section="{escape(descriptor.section)}"
+      data-kind="chart"
+      data-featured="{str(descriptor.featured).lower()}"
+    >
       <div class="asset-card__topline">
         <span class="asset-kicker">Chart</span>
         {_build_asset_badge_html(descriptor)}
@@ -4130,6 +5195,7 @@ def _build_figure_card_html(descriptor: AssetDescriptor, figure: go.Figure) -> s
       <h3>{escape(descriptor.title)}</h3>
       {f"<p>{description}</p>" if description else ""}
       {_build_chart_guidance_html(descriptor)}
+      {_build_asset_locator_html(descriptor, anchor_id=figure_id)}
       <div
         class="plot-shell plotly-lazy"
         id="{escape(figure_id)}"
@@ -4151,23 +5217,36 @@ def _build_table_card_html(
     table: pd.DataFrame,
     *,
     preview_rows: int,
+    tabular_output_format: str = "csv",
 ) -> str:
     preview = _prepare_table_preview(table).head(preview_rows)
     description = escape(descriptor.description or "")
+    card_id = f"card_{_sanitize_report_name(descriptor.key)}"
     return f"""
-    <article class="asset-card">
+    <article
+      class="asset-card"
+      id="{escape(card_id)}"
+      data-asset-key="{escape(descriptor.key)}"
+      data-section="{escape(descriptor.section)}"
+      data-kind="table"
+      data-featured="{str(descriptor.featured).lower()}"
+    >
       <div class="asset-card__topline">
         <span class="asset-kicker">Table</span>
         {_build_asset_badge_html(descriptor)}
       </div>
       <h3>{escape(descriptor.title)}</h3>
       {f"<p>{description}</p>" if description else ""}
+      {_build_asset_locator_html(
+        descriptor,
+        tabular_output_format=tabular_output_format,
+    )}
       <div class="table-shell">
         {preview.to_html(index=False, classes="asset-table", border=0)}
       </div>
       <div class="asset-note">
-        Showing {min(len(table), preview_rows)} of {len(table):,} rows. Full export is available
-        in the tables directory.
+        Showing {min(len(table), preview_rows)} of {len(table):,} rows. Use the linked table
+        export for exact values and complete rows.
       </div>
     </article>
     """
@@ -4203,6 +5282,7 @@ def _build_governance_section_html(
     warning_count: int,
     warnings: list[str],
     events: list[str],
+    section_summary: ReportSectionSummary,
 ) -> str:
     warning_items = (
         "".join(f"<li>{escape(warning)}</li>" for warning in warnings)
@@ -4262,32 +5342,225 @@ def _build_governance_section_html(
             ]
         )
     return f"""
-    <section class="section-shell" id="governance_export">
+    <section
+      class="section-shell report-section"
+      id="governance_export"
+      data-section-id="governance_export"
+    >
       <div class="section-header">
         <div>
           <h2>{escape(SECTION_SPECS["governance_export"]["title"])}</h2>
           <p>{escape(SECTION_SPECS["governance_export"]["description"])}</p>
         </div>
+        {_build_section_status_badge_html(section_summary)}
       </div>
       <div class="table-grid">
-        <article class="asset-card">
+        <article class="asset-card" data-featured="true" data-kind="governance">
           <h3>Run Warnings</h3>
           <p>Alerts, caveats, and validation notes that need reviewer attention.</p>
           <div class="asset-note">Warning count: {escape(format_metric_value(warning_count))}</div>
           <ul>{warning_items}</ul>
         </article>
-        <article class="asset-card">
+        <article class="asset-card" data-featured="false" data-kind="governance">
           <h3>Pipeline Events</h3>
           <p>Ordered execution events captured during orchestration.</p>
           <ol>{event_items}</ol>
         </article>
-        <article class="asset-card">
+        <article class="asset-card" data-featured="true" data-kind="governance">
           <h3>Bundle Contents</h3>
           <p>Primary artifacts included so the run can be reviewed or rerun outside the GUI.</p>
           <ul>{export_items}</ul>
         </article>
       </div>
     </section>
+    """
+
+
+def _build_report_interaction_script() -> str:
+    return r"""
+      (function () {
+        var body = document.body;
+        var sections = Array.prototype.slice.call(
+          document.querySelectorAll(".report-section")
+        );
+        var buttons = Array.prototype.slice.call(
+          document.querySelectorAll("[data-section-target]")
+        );
+        var searchInput = document.getElementById("reportSearch");
+        var reviewerMode = document.getElementById("reviewerMode");
+        var compactToggle = document.getElementById("compactReportToggle");
+        var showAllToggle = document.getElementById("showAllReportToggle");
+        var currentSection = "overview";
+        var emptySearch = document.createElement("div");
+
+        emptySearch.className = "report-search-empty";
+        emptySearch.hidden = true;
+        emptySearch.textContent =
+          "No report cards matched the current search. Clear the search to restore the report.";
+
+        var controlPanel = document.querySelector(".report-control-panel");
+        if (controlPanel) {
+          controlPanel.appendChild(emptySearch);
+        }
+
+        function sectionMatches(section, sectionId) {
+          return section.id === sectionId || section.dataset.sectionId === sectionId;
+        }
+
+        function activateSection(sectionId) {
+          currentSection = sectionId || "overview";
+          var activeSection = null;
+          sections.forEach(function (section) {
+            var isActive = sectionMatches(section, currentSection);
+            section.classList.toggle("is-active", isActive);
+            if (isActive && section.tagName.toLowerCase() === "details") {
+              section.open = true;
+            }
+            if (isActive) {
+              activeSection = section;
+            }
+          });
+          buttons.forEach(function (button) {
+            var isActive = button.dataset.sectionTarget === currentSection;
+            button.classList.toggle("is-active", isActive);
+            button.setAttribute("aria-selected", isActive ? "true" : "false");
+          });
+          resizePlots(activeSection);
+        }
+
+        function resizePlots(container) {
+          window.setTimeout(function () {
+            if (!window.Plotly) {
+              return;
+            }
+            var scope = container || document;
+            scope.querySelectorAll(".plotly-lazy").forEach(function (node) {
+              if (node.data) {
+                window.Plotly.Plots.resize(node);
+              }
+            });
+          }, 80);
+        }
+
+        function syncReviewerMode() {
+          var mode = reviewerMode ? reviewerMode.value : "validator";
+          body.classList.remove(
+            "report-mode-validator",
+            "report-mode-executive",
+            "report-mode-technical"
+          );
+          body.classList.add("report-mode-" + mode);
+        }
+
+        function syncCompactMode() {
+          body.classList.toggle(
+            "report-compact",
+            Boolean(compactToggle && compactToggle.checked)
+          );
+        }
+
+        function syncShowAllMode() {
+          body.classList.toggle(
+            "report-show-all",
+            Boolean(showAllToggle && showAllToggle.checked)
+          );
+          if (showAllToggle && showAllToggle.checked) {
+            sections.forEach(function (section) {
+              if (section.tagName.toLowerCase() === "details") {
+                section.open = true;
+              }
+            });
+            resizePlots(document);
+          }
+        }
+
+        function cardMatches(card, query) {
+          return card.textContent.toLowerCase().indexOf(query) !== -1;
+        }
+
+        function applySearch() {
+          var query = searchInput ? searchInput.value.trim().toLowerCase() : "";
+          var matchedSections = 0;
+          body.classList.toggle("report-searching", Boolean(query));
+
+          sections.forEach(function (section) {
+            var cards = Array.prototype.slice.call(
+              section.querySelectorAll(".asset-card")
+            );
+            var sectionTextMatches =
+              section.textContent.toLowerCase().indexOf(query) !== -1;
+            var matchedCards = 0;
+
+            cards.forEach(function (card) {
+              var matched = !query || cardMatches(card, query);
+              card.classList.toggle("is-search-hidden", !matched);
+              if (matched) {
+                matchedCards += 1;
+              }
+            });
+
+            var sectionMatched = !query || matchedCards > 0 || sectionTextMatches;
+            section.classList.toggle("is-search-hidden", !sectionMatched);
+            if (sectionMatched && query) {
+              matchedSections += 1;
+              if (section.tagName.toLowerCase() === "details") {
+                section.open = true;
+              }
+            }
+          });
+
+          emptySearch.hidden = !query || matchedSections > 0;
+          if (query) {
+            resizePlots(document);
+          }
+          if (!query) {
+            activateSection(currentSection);
+          }
+        }
+
+        buttons.forEach(function (button) {
+          button.addEventListener("click", function () {
+            if (showAllToggle) {
+              showAllToggle.checked = false;
+            }
+            if (searchInput) {
+              searchInput.value = "";
+            }
+            sections.forEach(function (section) {
+              section.classList.remove("is-search-hidden");
+              section.querySelectorAll(".asset-card").forEach(function (card) {
+                card.classList.remove("is-search-hidden");
+              });
+            });
+            body.classList.remove("report-searching");
+            syncShowAllMode();
+            activateSection(button.dataset.sectionTarget || "overview");
+            var activeSection = document.querySelector(".report-section.is-active");
+            if (activeSection) {
+              activeSection.scrollIntoView({ behavior: "smooth", block: "start" });
+            }
+          });
+        });
+
+        if (searchInput) {
+          searchInput.addEventListener("input", applySearch);
+        }
+        if (reviewerMode) {
+          reviewerMode.addEventListener("change", syncReviewerMode);
+        }
+        if (compactToggle) {
+          compactToggle.addEventListener("change", syncCompactMode);
+        }
+        if (showAllToggle) {
+          showAllToggle.addEventListener("change", syncShowAllMode);
+        }
+
+        body.classList.add("report-tabs-enabled");
+        syncReviewerMode();
+        syncCompactMode();
+        syncShowAllMode();
+        activateSection(currentSection);
+      })();
     """
 
 

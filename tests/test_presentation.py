@@ -321,7 +321,10 @@ def test_interactive_report_html_wraps_plot_and_table_content() -> None:
         split_summary={"test": {"rows": 20}},
         warnings=[],
         events=[],
-        diagnostics_tables={"psi": table},
+        diagnostics_tables={
+            "psi": table,
+            "split_metrics": pd.DataFrame({"split": ["test"], "roc_auc": [0.81]}),
+        },
         visualizations={"segment_performance_chart": figure},
     )
 
@@ -329,6 +332,18 @@ def test_interactive_report_html_wraps_plot_and_table_content() -> None:
     assert 'class="plot-fallback"' in html
     assert 'class="static-plot-fallback"' not in html
     assert 'class="table-shell"' in html
+    assert 'class="report-control-panel"' in html
+    assert 'data-section-target="overview"' in html
+    assert 'id="reportSearch"' in html
+    assert "Reviewer mode" in html
+    assert "Show all / print view" in html
+    assert "Executive Landing Page" in html
+    assert "Evidence Map" in html
+    assert "Featured Evidence" in html
+    assert "Supporting Evidence" in html
+    assert "Open full table export" in html
+    assert "../tables/stability/psi.csv" in html
+    assert "Optional HTML figure" in html
     assert "Quant Studio Report test_run" in html
     assert "Quant Studio Regulatory Model Development Report" in html
     assert '<script src="https://cdn.plot.ly/' not in html
@@ -422,3 +437,37 @@ def test_interactive_report_can_skip_enhanced_companion_visuals() -> None:
     )
 
     assert "ROC Curve With Review Bands" not in html
+
+
+def test_interactive_report_surfaces_section_status_from_failed_checks() -> None:
+    html = build_interactive_report_html(
+        run_id="test_run",
+        model_type="logistic_regression",
+        execution_mode="fit_new_model",
+        target_mode="binary",
+        labels_available=True,
+        warning_count=0,
+        metrics={},
+        input_rows=100,
+        feature_count=5,
+        split_summary={"test": {"rows": 20}},
+        warnings=[],
+        events=[],
+        diagnostics_tables={
+            "assumption_checks": pd.DataFrame(
+                {
+                    "subject": ["model"],
+                    "status": ["fail"],
+                    "severity": ["error"],
+                }
+            )
+        },
+        visualizations={},
+        include_enhanced_report_visuals=False,
+        tabular_output_format="parquet",
+    )
+
+    assert 'section-status section-status--bad' in html
+    assert "Fail | 0 chart(s) |" in html
+    assert "Suitability And Assumption Checks contains failed checks." in html
+    assert "../tables/diagnostics/assumption_checks.parquet" in html

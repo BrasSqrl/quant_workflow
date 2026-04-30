@@ -68,15 +68,32 @@ def test_feature_subset_search_mode_exports_comparison_only_bundle() -> None:
         context = QuantModelOrchestrator(config=config).run(dataframe)
 
         assert "subset_search_candidates" in context.diagnostics_tables
+        assert "subset_search_leaderboard" in context.diagnostics_tables
         assert "subset_search_frontier" in context.diagnostics_tables
         assert "subset_search_feature_frequency" in context.diagnostics_tables
         assert "subset_search_selected_candidate" in context.diagnostics_tables
         assert "subset_search_selected_coefficients" in context.diagnostics_tables
         assert "subset_search_nonwinning_candidates" in context.diagnostics_tables
+        assert "subset_search_top_candidate_comparison" in context.diagnostics_tables
+        assert "subset_search_selection_rationale" in context.diagnostics_tables
+        assert "subset_search_feature_family_view" in context.diagnostics_tables
+        assert "subset_search_transformation_effectiveness" in context.diagnostics_tables
         candidate_table = context.diagnostics_tables["subset_search_candidates"]
-        assert {"ranking_roc_auc", "ranking_ks_statistic", "rank"}.issubset(
-            candidate_table.columns
+        assert {
+            "ranking_roc_auc",
+            "ranking_ks_statistic",
+            "ranking_calibration_error",
+            "overall_selection_score",
+            "rank",
+        }.issubset(candidate_table.columns)
+        leaderboard = context.diagnostics_tables["subset_search_leaderboard"]
+        assert {"overall_selection_score", "simplicity_score", "calibration_score"}.issubset(
+            leaderboard.columns
         )
+        assert leaderboard["overall_selection_score"].notna().any()
+        assert "subset_search_leaderboard_score_chart" in context.visualizations
+        assert "subset_search_metric_comparison_heatmap" in context.visualizations
+        assert "subset_search_calibration_comparison" in context.visualizations
         assert "subset_search_selected_roc_curve" in context.visualizations
         assert "subset_search_selected_ks_curve" in context.visualizations
         assert context.artifacts["report"].exists()
@@ -99,6 +116,9 @@ def test_feature_subset_search_mode_exports_comparison_only_bundle() -> None:
         assert "model" not in manifest["core_artifacts"]
         assert "interactive_report" in manifest["core_artifacts"]
         interactive_html = context.artifacts["interactive_report"].read_text(encoding="utf-8")
+        assert "Candidate Leaderboard" in interactive_html
+        assert "Selection Rationale" in interactive_html
+        assert "Top Candidate Comparison" in interactive_html
         assert "Selected Candidate Coefficients" in interactive_html
         assert "Non-Winning Candidate Ranking" in interactive_html
 

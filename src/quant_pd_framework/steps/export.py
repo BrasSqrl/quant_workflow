@@ -1541,6 +1541,22 @@ class ArtifactExportStep(BasePipelineStep):
             "subset_search_selected_coefficients",
             pd.DataFrame(),
         )
+        selection_rationale = context.diagnostics_tables.get(
+            "subset_search_selection_rationale",
+            pd.DataFrame(),
+        )
+        leaderboard = context.diagnostics_tables.get(
+            "subset_search_leaderboard",
+            pd.DataFrame(),
+        )
+        top_candidate_comparison = context.diagnostics_tables.get(
+            "subset_search_top_candidate_comparison",
+            pd.DataFrame(),
+        )
+        risk_flags = context.diagnostics_tables.get(
+            "subset_search_candidate_risk_flags",
+            pd.DataFrame(),
+        )
         nonwinning_candidates = context.diagnostics_tables.get(
             "subset_search_nonwinning_candidates",
             pd.DataFrame(),
@@ -1567,8 +1583,42 @@ class ArtifactExportStep(BasePipelineStep):
             f"- Validation KS: `{best_candidate.get('ranking_ks_statistic', 'n/a')}`",
             f"- Test ROC AUC: `{best_candidate.get('test_roc_auc', 'n/a')}`",
             f"- Test KS: `{best_candidate.get('test_ks_statistic', 'n/a')}`",
+            f"- Overall selection score: `{best_candidate.get('overall_selection_score', 'n/a')}`",
             "",
         ]
+        if not selection_rationale.empty:
+            lines.extend(["## Selection Rationale", ""])
+            for _, row in selection_rationale.iterrows():
+                lines.append(f"- {row.get('selection_rationale', '')}")
+            lines.append("")
+        if not leaderboard.empty:
+            lines.extend(
+                [
+                    "## Candidate Leaderboard",
+                    "",
+                    (
+                        "The leaderboard combines discrimination, calibration, and parsimony. "
+                        "The configured ranking metric still determines the selected candidate."
+                    ),
+                    "",
+                    f"- Exported leaderboard rows: `{len(leaderboard)}`",
+                    "- Review `subset_search_leaderboard` for all candidate metrics.",
+                    "",
+                ]
+            )
+        if not top_candidate_comparison.empty:
+            lines.extend(
+                [
+                    "## Top Candidate Comparison Workspace",
+                    "",
+                    f"- Retained top candidates: `{len(top_candidate_comparison)}`",
+                    (
+                        "- Review performance, feature count, selected feature sets, "
+                        "and risk flags together."
+                    ),
+                    "",
+                ]
+            )
         if not selected_coefficients.empty:
             lines.extend(
                 [
@@ -1584,13 +1634,26 @@ class ArtifactExportStep(BasePipelineStep):
                     f"(magnitude `{magnitude}`)"
                 )
             lines.append("")
+        if not risk_flags.empty:
+            lines.extend(
+                [
+                    "## Candidate Risk Flags",
+                    "",
+                    f"- Automated risk flags raised: `{len(risk_flags)}`",
+                    (
+                        "- These flags identify review topics; they do not automatically "
+                        "reject a candidate."
+                    ),
+                    "",
+                ]
+            )
         if not nonwinning_candidates.empty:
             lines.extend(
                 [
                     "## Ranked Non-Winning Candidates",
                     "",
                     f"- Exported non-winning candidates: `{len(nonwinning_candidates)}`",
-                    "- Review `subset_search_nonwinning_candidates.csv` for the full ranked table.",
+                    "- Review `subset_search_nonwinning_candidates.*` for the full ranked table.",
                     "",
                 ]
             )
@@ -2233,6 +2296,7 @@ class ArtifactExportStep(BasePipelineStep):
             include_advanced_visual_analytics=(
                 should_expand_visuals and context.config.artifacts.include_advanced_visual_analytics
             ),
+            tabular_output_format=resolve_tabular_output_format(context.metadata).value,
             predictions=context.predictions,
         )
 

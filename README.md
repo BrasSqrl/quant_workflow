@@ -1276,8 +1276,11 @@ If `mode="score_existing_model"`, `existing_model_path` is required.
 If `mode="search_feature_subsets"`, the run must use a binary target and a
 supported binary model family. The subset-search workflow exports
 comparison-only evidence rather than a fitted-model artifact bundle, with a
-selected-candidate coefficient summary, selected-candidate ROC / KS visuals,
-and ranked non-winning candidate tables for side-by-side comparison.
+candidate leaderboard, selected-candidate coefficient summary, selection
+rationale, AUC / ROC and KS visuals, calibration comparisons, parsimony
+frontiers, risk flags, feature inclusion and contribution-consistency views,
+redundancy diagnostics, transformation-effectiveness summaries, and ranked
+non-winning candidate tables for side-by-side comparison.
 
 ### `ModelConfig`
 
@@ -1708,6 +1711,13 @@ interactive report. If a chart is downsampled or skipped to keep the report
 portable, the decision is written to `tables/governance/report_payload_audit.*`.
 Full diagnostic tables remain exported separately.
 
+The standalone interactive report now opens with an executive landing page and
+sticky section navigation. Reviewers can search report cards, switch between
+validator/executive/technical modes, use compact view for faster screen review,
+or use show-all / print view for an audit-style sequential report. Each section
+shows a health badge and chart/table counts, and each chart or table card shows
+the internal key plus the CSV or Parquet artifact location used by that run.
+
 For file-backed runs, the large-data workflow is intentionally split:
 
 - `data/sample_development/` contains the governed sample loaded into pandas for
@@ -2035,7 +2045,10 @@ When `execution.mode="score_existing_model"`, this stage instead loads a previou
 When `execution.mode="search_feature_subsets"`, the normal training and
 downstream final-model packaging path is replaced by the dedicated
 `FeatureSubsetSearchStep`, which fits the selected model family across
-candidate feature subsets and exports only comparison-ready evidence.
+candidate feature subsets and exports only comparison-ready evidence. The
+selected subset is still chosen by the configured ranking metric; the exported
+overall selection score is an additional review aid that combines performance,
+calibration, and simplicity.
 
 When scorecard development is active, this stage can also apply manual numeric
 bin overrides supplied through the review workflow.

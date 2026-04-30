@@ -84,7 +84,9 @@ Use this when:
 - the user has a candidate feature pool
 - the goal is to compare model performance across feature combinations
 - the output should inform feature selection before final model development
-- AUC/ROC, KS, frontier, frequency, and significance comparisons are needed
+- AUC/ROC, KS, calibration, parsimony, risk-flag, feature-frequency,
+  contribution-consistency, transformation, and significance comparisons are
+  needed
 
 Required inputs:
 
@@ -97,9 +99,15 @@ Required inputs:
 Typical outputs:
 
 - candidate ranking tables
+- candidate leaderboard and top-candidate comparison workspace
+- selection rationale and automated risk flags
 - ROC/AUC and KS comparisons
+- calibration and performance-versus-parsimony comparisons
 - selected winning subset details
 - feature-frequency views
+- contribution-consistency, redundancy, feature-family, excluded-feature, and
+  transformation-effectiveness diagnostics
+- segment and time candidate performance when eligible fields are available
 - frontier charts
 - paired significance tests
 
