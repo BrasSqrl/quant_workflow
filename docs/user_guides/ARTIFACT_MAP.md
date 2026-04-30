@@ -73,8 +73,9 @@ live in `metadata/`.
 `config/configuration_template.xlsx` is the offline review workbook. It includes
 editable sheets for schema, feature dictionary, transformations, manual feature
 review, and scorecard bin overrides. It also includes instruction,
-allowed-value, example, and required-column sheets plus header comments and
-dropdown validation so offline edits are easier to upload safely.
+allowed-value, transform-catalog, example, and required-column sheets plus
+header comments and dropdown validation so offline edits are easier to upload
+safely.
 
 ## Checkpointed Execution Artifacts
 

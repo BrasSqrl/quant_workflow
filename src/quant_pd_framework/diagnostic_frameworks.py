@@ -1906,17 +1906,35 @@ def _run_delong_test(
 ) -> dict[str, Any] | None:
     y_true = np.asarray(y_true, dtype=int)
     if len(np.unique(y_true)) < 2:
-        return None
+        return {
+            "statistic": np.nan,
+            "p_value": np.nan,
+            "status": "review",
+            "detail": "DeLong testing is uninformative because the evaluated labels are one-class.",
+        }
     try:
         aucs, covariance = _fast_delong(
             np.vstack([baseline_scores, challenger_scores])[:, np.argsort(-y_true)],
             int(y_true.sum()),
         )
-    except Exception:
-        return None
+    except Exception as exc:
+        return {
+            "statistic": np.nan,
+            "p_value": np.nan,
+            "status": "review",
+            "detail": f"DeLong testing could not be calculated: {exc}",
+        }
     variance = covariance[0, 0] + covariance[1, 1] - 2.0 * covariance[0, 1]
     if variance <= 0:
-        return None
+        return {
+            "statistic": np.nan,
+            "p_value": np.nan,
+            "status": "review",
+            "detail": (
+                "DeLong testing is uninformative because the paired AUC variance "
+                "is non-positive."
+            ),
+        }
     z_statistic = float((aucs[0] - aucs[1]) / np.sqrt(variance))
     p_value = float(2.0 * (1.0 - norm.cdf(abs(z_statistic))))
     return {

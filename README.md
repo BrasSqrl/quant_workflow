@@ -116,11 +116,10 @@ The framework also includes development-focused workflow features:
   git metadata
 - feature dictionary / variable catalog support for business definitions,
   lineage, and inclusion rationale
-- governed transformation layer for winsorization, log transforms, Yeo-Johnson,
-  Box-Cox, natural splines, capped z-scores, piecewise-linear hinges, ratio
-  features, lag and differencing features, EWMA and rolling features, rolling
-  volatility features, percent-change features, interaction features, and
-  manual bins
+- governed transformation layer for numeric shape changes, scaling/ranking,
+  financial ratios and arithmetic combinations, interactions, time-aware
+  panel features, train-fit bins, WoE/bad-rate/target encodings, categorical
+  encodings, date features, and row-level missingness signals
 - variable-selection workflow with train-split screening and selection rationale
 - manual review workflow for approve/reject decisions and scorecard bin
   overrides
@@ -1462,31 +1461,36 @@ Important fields:
 
 Supported transformation families:
 
-- `winsorize`
-- `log1p`
-- `box_cox`
-- `natural_spline`
-- `yeo_johnson`
-- `capped_zscore`
-- `piecewise_linear`
-- `ratio`
-- `interaction`
-- `lag`
-- `difference`
-- `ewma`
-- `rolling_mean`
-- `rolling_median`
-- `rolling_min`
-- `rolling_max`
-- `rolling_std`
-- `pct_change`
-- `manual_bins`
+- numeric shape: `winsorize`, `log1p`, `signed_log1p`, `box_cox`,
+  `yeo_johnson`, `sqrt`, `reciprocal`, `square`, `power`,
+  `absolute_value`, `natural_spline`, `capped_zscore`, and
+  `piecewise_linear`
+- scaling and rank: `standard_scale`, `robust_scale`, `min_max_scale`,
+  `percentile_rank`, `normal_score`, `center_mean`, and `center_median`
+- combinations: `ratio`, `safe_ratio`, `margin_ratio`,
+  `debt_service_ratio`, `add`, `subtract`, `product`, and `interaction`
+- time-aware panel features: `lag`, `difference`, `pct_change`, `ewma`,
+  `rolling_mean`, `rolling_median`, `rolling_min`, `rolling_max`,
+  `rolling_std`, `rolling_sum`, `rolling_range`, `rolling_cv`,
+  `rolling_slope`, `expanding_mean`, `cumulative_sum`,
+  `cumulative_count`, `months_since_event`, and `change_from_baseline`
+- bins and encodings: `manual_bins`, `quantile_bins`, `equal_width_bins`,
+  `monotonic_bins`, `woe_encoding`, `bad_rate_encoding`,
+  `rare_category_collapse`, `frequency_encoding`, `ordinal_encoding`, and
+  `target_encoding`
+- date and missingness features: `date_year`, `date_month`,
+  `date_quarter`, `date_month_end_flag`, `date_fiscal_quarter`,
+  `date_age_days`, `date_age_months`, `row_missing_count`,
+  `row_missing_share`, and `any_missing_flag`
 
 Each `TransformationSpec` defines the source feature, optional secondary
 feature, output feature, and transform-specific parameters such as quantiles,
-categorical indicator values, lag windows, rolling windows, z-score caps, or
-manual bin edges. Auto-generated screened interactions are persisted back into
-the saved run config so existing-model scoring can replay the same features.
+categorical indicator values, lag windows, rolling windows, z-score caps,
+bin counts, target-encoding smoothing, fiscal start month, or manual bin
+edges. The review workbook includes a `transform_catalog` sheet that explains
+each transform, its parameters, and expected output type. Auto-generated
+screened interactions are persisted back into the saved run config so
+existing-model scoring can replay the same features.
 
 ### `AdvancedImputationConfig` And Expanded Diagnostic Framework Configs
 
@@ -2044,31 +2048,21 @@ The current advanced-imputation slice also supports:
 
 Fits and applies explicit, reproducible feature transformations such as:
 
-- winsorization
-- `log1p`
-- `box_cox`
-- `natural_spline`
-- `yeo_johnson`
-- `capped_zscore`
-- `piecewise_linear`
-- ratio features
-- interaction features
-- lag features
-- difference features
-- EWMA features
-- rolling-mean features
-- rolling-median features
-- rolling-min features
-- rolling-max features
-- rolling-standard-deviation features
-- percent-change features
-- manual-bin categorical features
+- numeric reshaping, scaling, ranks, splines, and capped z-scores
+- financial ratios, arithmetic combinations, and interactions
+- lag, difference, percent-change, rolling, expanding, cumulative, baseline,
+  and event-distance panel features
+- manual, quantile, equal-width, and monotonic bins
+- WoE, bad-rate, frequency, ordinal, rare-category, and target encodings
+- date-part, fiscal-quarter, age, and row-missingness features
 
 These transforms are fit on the training split, replayed on the remaining
-splits, and exported through a `governed_transformations` audit table. When the
-interaction engine is enabled, train-split screened candidates are exported
-through `interaction_candidates` and the selected interactions are persisted
-into the saved run config.
+splits, and exported through a `governed_transformations` audit table. The
+offline review workbook includes a `transform_catalog` reference sheet and a
+long-list-safe dropdown for `transform_type`. When the interaction engine is
+enabled, train-split screened candidates are exported through
+`interaction_candidates` and the selected interactions are persisted into the
+saved run config.
 
 ### 11. Variable Selection
 

@@ -9,7 +9,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 from patsy import build_design_matrices, dmatrix
-from scipy.stats import boxcox, boxcox_normmax, yeojohnson, yeojohnson_normmax
+from scipy.stats import boxcox, boxcox_normmax, norm, yeojohnson, yeojohnson_normmax
 
 from ..base import BasePipelineStep
 from ..config import (
@@ -29,6 +29,89 @@ class ResolvedTransformation:
     spec: TransformationSpec
     output_feature: str
     learned_parameters: dict[str, Any]
+
+
+NUMERIC_SCALING_TRANSFORMS = {
+    TransformationType.STANDARD_SCALE,
+    TransformationType.ROBUST_SCALE,
+    TransformationType.MIN_MAX_SCALE,
+    TransformationType.PERCENTILE_RANK,
+    TransformationType.NORMAL_SCORE,
+}
+
+NUMERIC_DIRECT_TRANSFORMS = {
+    TransformationType.SIGNED_LOG1P,
+    TransformationType.SQRT,
+    TransformationType.RECIPROCAL,
+    TransformationType.SQUARE,
+    TransformationType.POWER,
+    TransformationType.ABSOLUTE_VALUE,
+    TransformationType.CENTER_MEAN,
+    TransformationType.CENTER_MEDIAN,
+}
+
+PAIR_NUMERIC_TRANSFORMS = {
+    TransformationType.RATIO,
+    TransformationType.SAFE_RATIO,
+    TransformationType.MARGIN_RATIO,
+    TransformationType.DEBT_SERVICE_RATIO,
+    TransformationType.ADD,
+    TransformationType.SUBTRACT,
+    TransformationType.PRODUCT,
+}
+
+TEMPORAL_NUMERIC_TRANSFORMS = {
+    TransformationType.LAG,
+    TransformationType.DIFFERENCE,
+    TransformationType.EWMA,
+    TransformationType.ROLLING_MEAN,
+    TransformationType.ROLLING_MEDIAN,
+    TransformationType.ROLLING_MIN,
+    TransformationType.ROLLING_MAX,
+    TransformationType.ROLLING_STD,
+    TransformationType.ROLLING_SUM,
+    TransformationType.ROLLING_RANGE,
+    TransformationType.ROLLING_CV,
+    TransformationType.ROLLING_SLOPE,
+    TransformationType.EXPANDING_MEAN,
+    TransformationType.CUMULATIVE_SUM,
+    TransformationType.CUMULATIVE_COUNT,
+    TransformationType.MONTHS_SINCE_EVENT,
+    TransformationType.CHANGE_FROM_BASELINE,
+    TransformationType.PCT_CHANGE,
+}
+
+BINNING_TRANSFORMS = {
+    TransformationType.MANUAL_BINS,
+    TransformationType.QUANTILE_BINS,
+    TransformationType.EQUAL_WIDTH_BINS,
+    TransformationType.MONOTONIC_BINS,
+}
+
+ENCODING_TRANSFORMS = {
+    TransformationType.WOE_ENCODING,
+    TransformationType.BAD_RATE_ENCODING,
+    TransformationType.RARE_CATEGORY_COLLAPSE,
+    TransformationType.FREQUENCY_ENCODING,
+    TransformationType.ORDINAL_ENCODING,
+    TransformationType.TARGET_ENCODING,
+}
+
+DATE_TRANSFORMS = {
+    TransformationType.DATE_YEAR,
+    TransformationType.DATE_MONTH,
+    TransformationType.DATE_QUARTER,
+    TransformationType.DATE_MONTH_END_FLAG,
+    TransformationType.DATE_FISCAL_QUARTER,
+    TransformationType.DATE_AGE_DAYS,
+    TransformationType.DATE_AGE_MONTHS,
+}
+
+ROW_MISSINGNESS_TRANSFORMS = {
+    TransformationType.ROW_MISSING_COUNT,
+    TransformationType.ROW_MISSING_SHARE,
+    TransformationType.ANY_MISSING_FLAG,
+}
 
 
 class TransformationStep(BasePipelineStep):
@@ -75,6 +158,7 @@ class TransformationStep(BasePipelineStep):
                         split_frame,
                         resolved,
                         context=context,
+                        split_name=split_name,
                     )
                 working_dataframe = self._apply_transformation(
                     working_dataframe,
@@ -160,20 +244,14 @@ class TransformationStep(BasePipelineStep):
         train_frame: pd.DataFrame,
         spec: TransformationSpec,
     ) -> ResolvedTransformation:
-        if spec.source_feature not in context.feature_columns:
-            raise ValueError(
-                f"Transformation source '{spec.source_feature}' is not in the feature set."
-            )
-        if spec.source_feature not in train_frame.columns:
-            raise ValueError(
-                f"Transformation source '{spec.source_feature}' is missing from the train split."
-            )
+        source_features = self._source_feature_names(spec)
+        self._validate_source_columns(context, train_frame, spec, source_features)
 
         output_feature = self._resolve_output_feature_name(spec)
         if output_feature == context.target_column:
             raise ValueError("Governed transformations cannot overwrite the target column.")
 
-        source_series = train_frame[spec.source_feature]
+        source_series = train_frame[source_features[0]]
         learned_parameters: dict[str, Any] = {}
 
         if spec.transform_type == TransformationType.WINSORIZE:
@@ -244,47 +322,101 @@ class TransformationStep(BasePipelineStep):
             learned_parameters = {
                 "hinge_point": float(spec.parameter_value),
             }
-        elif spec.transform_type in {
-            TransformationType.RATIO,
-            TransformationType.INTERACTION,
-        }:
-            secondary_feature = spec.secondary_feature or ""
-            if secondary_feature not in context.feature_columns:
-                raise ValueError(
-                    f"Secondary feature '{secondary_feature}' is not in the feature set."
-                )
-            if secondary_feature not in train_frame.columns:
-                raise ValueError(
-                    f"Secondary feature '{secondary_feature}' is missing from the train split."
-                )
-            if spec.transform_type == TransformationType.RATIO:
-                self._numeric_series(source_series, spec.source_feature)
-                self._numeric_series(train_frame[secondary_feature], secondary_feature)
-            else:
-                left_role, right_role = self._interaction_roles(train_frame, spec)
+        elif spec.transform_type in NUMERIC_SCALING_TRANSFORMS:
+            numeric_series = self._numeric_series(source_series, spec.source_feature)
+            non_null = numeric_series.dropna()
+            if spec.transform_type == TransformationType.STANDARD_SCALE:
+                std_value = float(non_null.std(ddof=0))
                 learned_parameters = {
-                    "left_role": left_role,
-                    "right_role": right_role,
+                    "mean": float(non_null.mean()),
+                    "std": std_value if np.isfinite(std_value) and std_value > 0 else 0.0,
                 }
-        elif spec.transform_type in {
-            TransformationType.LAG,
-            TransformationType.DIFFERENCE,
-            TransformationType.EWMA,
-            TransformationType.ROLLING_MEAN,
-            TransformationType.ROLLING_MEDIAN,
-            TransformationType.ROLLING_MIN,
-            TransformationType.ROLLING_MAX,
-            TransformationType.ROLLING_STD,
-            TransformationType.PCT_CHANGE,
-        }:
+            elif spec.transform_type == TransformationType.ROBUST_SCALE:
+                lower_quartile = float(non_null.quantile(0.25))
+                upper_quartile = float(non_null.quantile(0.75))
+                iqr = upper_quartile - lower_quartile
+                learned_parameters = {
+                    "median": float(non_null.median()),
+                    "iqr": float(iqr) if np.isfinite(iqr) and iqr > 0 else 0.0,
+                }
+            elif spec.transform_type == TransformationType.MIN_MAX_SCALE:
+                min_value = float(non_null.min())
+                max_value = float(non_null.max())
+                learned_parameters = {
+                    "min": min_value,
+                    "max": max_value,
+                    "range": max_value - min_value,
+                }
+            else:
+                quantile_grid = np.linspace(0.0, 1.0, 1001)
+                quantile_values = (
+                    non_null.quantile(quantile_grid)
+                    .drop_duplicates()
+                    .to_numpy(dtype=float)
+                )
+                quantile_positions = np.linspace(0.0, 1.0, len(quantile_values))
+                learned_parameters = {
+                    "rank_values": tuple(float(value) for value in quantile_values),
+                    "rank_positions": tuple(float(value) for value in quantile_positions),
+                    "non_null_count": int(non_null.shape[0]),
+                }
+        elif spec.transform_type in NUMERIC_DIRECT_TRANSFORMS:
+            numeric_series = self._numeric_series(source_series, spec.source_feature)
+            learned_parameters = {
+                "epsilon": 1e-12,
+                "power": None if spec.parameter_value is None else float(spec.parameter_value),
+            }
+            if spec.transform_type == TransformationType.CENTER_MEAN:
+                learned_parameters["center"] = float(numeric_series.mean())
+            elif spec.transform_type == TransformationType.CENTER_MEDIAN:
+                learned_parameters["center"] = float(numeric_series.median())
+        elif spec.transform_type in PAIR_NUMERIC_TRANSFORMS:
+            secondary_feature = spec.secondary_feature or ""
+            self._numeric_series(source_series, spec.source_feature)
+            self._numeric_series(train_frame[secondary_feature], secondary_feature)
+            learned_parameters = {"epsilon": 1e-12}
+        elif spec.transform_type == TransformationType.INTERACTION:
+            left_role, right_role = self._interaction_roles(train_frame, spec)
+            learned_parameters = {
+                "left_role": left_role,
+                "right_role": right_role,
+            }
+        elif spec.transform_type in TEMPORAL_NUMERIC_TRANSFORMS:
             self._numeric_series(source_series, spec.source_feature)
             learned_parameters = {
                 "lag_periods": 1 if spec.lag_periods is None else int(spec.lag_periods),
                 "window_size": 3 if spec.window_size is None else int(spec.window_size),
             }
-        elif spec.transform_type == TransformationType.MANUAL_BINS:
+        elif spec.transform_type in BINNING_TRANSFORMS:
             self._numeric_series(source_series, spec.source_feature)
-            learned_parameters = {"bin_edges": list(spec.bin_edges)}
+            learned_parameters = {
+                "bin_edges": self._fit_bin_edges(
+                    train_frame=train_frame,
+                    source_feature=spec.source_feature,
+                    spec=spec,
+                    target_column=context.target_column,
+                )
+            }
+        elif spec.transform_type in ENCODING_TRANSFORMS:
+            learned_parameters = self._fit_encoding_parameters(
+                context=context,
+                train_frame=train_frame,
+                spec=spec,
+            )
+        elif spec.transform_type in DATE_TRANSFORMS:
+            date_values = pd.to_datetime(source_series, errors="coerce")
+            if date_values.dropna().empty:
+                raise ValueError(
+                    f"Date transformation source '{spec.source_feature}' has no valid dates."
+                )
+            learned_parameters = self._fit_date_parameters(
+                train_frame=train_frame,
+                source_feature=spec.source_feature,
+                spec=spec,
+                context=context,
+            )
+        elif spec.transform_type in ROW_MISSINGNESS_TRANSFORMS:
+            learned_parameters = {"source_features": tuple(source_features)}
         else:
             raise ValueError(f"Unsupported transformation type '{spec.transform_type.value}'.")
 
@@ -300,8 +432,9 @@ class TransformationStep(BasePipelineStep):
         resolved: ResolvedTransformation,
         *,
         context: PipelineContext,
+        split_name: str | None = None,
     ) -> pd.DataFrame:
-        working = frame.copy(deep=True)
+        working = frame.copy(deep=False)
         spec = resolved.spec
         source_name = spec.source_feature
         output_name = resolved.output_feature
@@ -371,13 +504,25 @@ class TransformationStep(BasePipelineStep):
             values = pd.to_numeric(working[source_name], errors="coerce")
             hinge_point = float(resolved.learned_parameters["hinge_point"])
             working[output_name] = np.maximum(values - hinge_point, 0.0)
-        elif spec.transform_type == TransformationType.RATIO:
-            numerator = pd.to_numeric(working[source_name], errors="coerce")
-            denominator = pd.to_numeric(
-                working[spec.secondary_feature or ""],
-                errors="coerce",
+        elif spec.transform_type in NUMERIC_SCALING_TRANSFORMS:
+            working[output_name] = self._apply_numeric_scaling_transform(
+                working[source_name],
+                spec.transform_type,
+                resolved.learned_parameters,
             )
-            working[output_name] = numerator.div(denominator.replace({0: np.nan}))
+        elif spec.transform_type in NUMERIC_DIRECT_TRANSFORMS:
+            working[output_name] = self._apply_numeric_direct_transform(
+                working[source_name],
+                spec.transform_type,
+                resolved.learned_parameters,
+            )
+        elif spec.transform_type in PAIR_NUMERIC_TRANSFORMS:
+            working[output_name] = self._apply_pair_numeric_transform(
+                working[source_name],
+                working[spec.secondary_feature or ""],
+                spec.transform_type,
+                resolved.learned_parameters,
+            )
         elif spec.transform_type == TransformationType.INTERACTION:
             left = self._interaction_operand(
                 working,
@@ -392,17 +537,7 @@ class TransformationStep(BasePipelineStep):
                 spec.categorical_value,
             )
             working[output_name] = left * right
-        elif spec.transform_type in {
-            TransformationType.LAG,
-            TransformationType.DIFFERENCE,
-            TransformationType.EWMA,
-            TransformationType.ROLLING_MEAN,
-            TransformationType.ROLLING_MEDIAN,
-            TransformationType.ROLLING_MIN,
-            TransformationType.ROLLING_MAX,
-            TransformationType.ROLLING_STD,
-            TransformationType.PCT_CHANGE,
-        }:
+        elif spec.transform_type in TEMPORAL_NUMERIC_TRANSFORMS:
             working[output_name] = self._apply_temporal_numeric_transform(
                 working,
                 source_name,
@@ -411,17 +546,532 @@ class TransformationStep(BasePipelineStep):
                 lag_periods=int(resolved.learned_parameters["lag_periods"]),
                 window_size=int(resolved.learned_parameters["window_size"]),
             ).fillna(0.0)
-        elif spec.transform_type == TransformationType.MANUAL_BINS:
+        elif spec.transform_type in BINNING_TRANSFORMS:
             values = pd.to_numeric(working[source_name], errors="coerce")
-            bin_edges = [-np.inf, *resolved.learned_parameters["bin_edges"], np.inf]
-            working[output_name] = pd.cut(
+            working[output_name] = self._apply_binned_feature(
                 values,
-                bins=bin_edges,
-                include_lowest=True,
-                duplicates="drop",
-            ).astype("category")
+                resolved.learned_parameters["bin_edges"],
+            )
+        elif spec.transform_type in ENCODING_TRANSFORMS:
+            working[output_name] = self._apply_encoding_transform(
+                working,
+                spec,
+                resolved.learned_parameters,
+                context=context,
+                split_name=split_name,
+            )
+        elif spec.transform_type in DATE_TRANSFORMS:
+            working[output_name] = self._apply_date_transform(
+                working,
+                spec,
+                resolved.learned_parameters,
+                context=context,
+            )
+        elif spec.transform_type in ROW_MISSINGNESS_TRANSFORMS:
+            working[output_name] = self._apply_missingness_transform(
+                working,
+                spec.transform_type,
+                list(resolved.learned_parameters["source_features"]),
+            )
 
         return working
+
+    def _source_feature_names(self, spec: TransformationSpec) -> list[str]:
+        if spec.transform_type in ROW_MISSINGNESS_TRANSFORMS:
+            return [
+                feature_name.strip()
+                for feature_name in spec.source_feature.split(",")
+                if feature_name.strip()
+            ]
+        return [spec.source_feature.strip()]
+
+    def _validate_source_columns(
+        self,
+        context: PipelineContext,
+        train_frame: pd.DataFrame,
+        spec: TransformationSpec,
+        source_features: list[str],
+    ) -> None:
+        if not source_features:
+            raise ValueError("Transformation source_feature cannot be blank.")
+        if spec.transform_type not in ROW_MISSINGNESS_TRANSFORMS and len(source_features) != 1:
+            raise ValueError(
+                f"{spec.transform_type.value} supports exactly one source_feature. "
+                "Use comma-separated source features only for row missingness transforms."
+            )
+        for source_feature in source_features:
+            if source_feature not in train_frame.columns:
+                raise ValueError(
+                    f"Transformation source '{source_feature}' is missing from the train split."
+                )
+            if context.target_column and source_feature == context.target_column:
+                raise ValueError("Governed transformations cannot use the target as source.")
+
+        secondary_feature = (spec.secondary_feature or "").strip()
+        if secondary_feature:
+            if secondary_feature not in train_frame.columns:
+                raise ValueError(
+                    f"Secondary feature '{secondary_feature}' is missing from the train split."
+                )
+            if context.target_column and secondary_feature == context.target_column:
+                raise ValueError("Governed transformations cannot use the target as secondary.")
+
+    def _apply_numeric_scaling_transform(
+        self,
+        series: pd.Series,
+        transform_type: TransformationType,
+        parameters: dict[str, Any],
+    ) -> pd.Series:
+        values = pd.to_numeric(series, errors="coerce")
+        if transform_type == TransformationType.STANDARD_SCALE:
+            std_value = float(parameters["std"])
+            if std_value == 0.0:
+                return pd.Series(0.0, index=series.index)
+            return (values - float(parameters["mean"])) / std_value
+        if transform_type == TransformationType.ROBUST_SCALE:
+            iqr = float(parameters["iqr"])
+            if iqr == 0.0:
+                return pd.Series(0.0, index=series.index)
+            return (values - float(parameters["median"])) / iqr
+        if transform_type == TransformationType.MIN_MAX_SCALE:
+            value_range = float(parameters["range"])
+            if value_range == 0.0:
+                return pd.Series(0.0, index=series.index)
+            return (values - float(parameters["min"])) / value_range
+
+        rank_values = np.asarray(parameters["rank_values"], dtype=float)
+        rank_positions = np.asarray(parameters["rank_positions"], dtype=float)
+        if rank_values.size <= 1:
+            percentile = pd.Series(0.5, index=series.index)
+        else:
+            percentile = pd.Series(
+                np.interp(
+                    values.to_numpy(dtype=float),
+                    rank_values,
+                    rank_positions,
+                    left=0.0,
+                    right=1.0,
+                ),
+                index=series.index,
+            )
+            percentile.loc[values.isna()] = np.nan
+        if transform_type == TransformationType.PERCENTILE_RANK:
+            return percentile
+
+        non_null_count = max(int(parameters.get("non_null_count", 1)), 1)
+        epsilon = min(0.49, 1.0 / (2.0 * non_null_count))
+        return pd.Series(norm.ppf(percentile.clip(epsilon, 1.0 - epsilon)), index=series.index)
+
+    def _apply_numeric_direct_transform(
+        self,
+        series: pd.Series,
+        transform_type: TransformationType,
+        parameters: dict[str, Any],
+    ) -> pd.Series:
+        values = pd.to_numeric(series, errors="coerce")
+        if transform_type == TransformationType.SIGNED_LOG1P:
+            return np.sign(values) * np.log1p(np.abs(values))
+        if transform_type == TransformationType.SQRT:
+            return pd.Series(np.where(values >= 0, np.sqrt(values), np.nan), index=series.index)
+        if transform_type == TransformationType.RECIPROCAL:
+            epsilon = float(parameters.get("epsilon", 1e-12))
+            return pd.Series(
+                np.where(values.abs() > epsilon, 1.0 / values, np.nan),
+                index=series.index,
+            )
+        if transform_type == TransformationType.SQUARE:
+            return values**2
+        if transform_type == TransformationType.POWER:
+            power = float(parameters["power"])
+            with np.errstate(invalid="ignore"):
+                transformed = np.power(values.to_numpy(dtype=float), power)
+            return pd.Series(transformed, index=series.index)
+        if transform_type == TransformationType.ABSOLUTE_VALUE:
+            return values.abs()
+        if transform_type in {TransformationType.CENTER_MEAN, TransformationType.CENTER_MEDIAN}:
+            return values - float(parameters["center"])
+        raise ValueError(f"Unsupported numeric transformation '{transform_type.value}'.")
+
+    def _apply_pair_numeric_transform(
+        self,
+        left_series: pd.Series,
+        right_series: pd.Series,
+        transform_type: TransformationType,
+        parameters: dict[str, Any],
+    ) -> pd.Series:
+        left = pd.to_numeric(left_series, errors="coerce")
+        right = pd.to_numeric(right_series, errors="coerce")
+        epsilon = float(parameters.get("epsilon", 1e-12))
+        if transform_type in {
+            TransformationType.RATIO,
+            TransformationType.SAFE_RATIO,
+            TransformationType.DEBT_SERVICE_RATIO,
+        }:
+            return left.div(right.where(right.abs() > epsilon))
+        if transform_type == TransformationType.MARGIN_RATIO:
+            return (left - right).div(left.where(left.abs() > epsilon).abs())
+        if transform_type == TransformationType.ADD:
+            return left + right
+        if transform_type == TransformationType.SUBTRACT:
+            return left - right
+        if transform_type == TransformationType.PRODUCT:
+            return left * right
+        raise ValueError(f"Unsupported pair transformation '{transform_type.value}'.")
+
+    def _fit_bin_edges(
+        self,
+        *,
+        train_frame: pd.DataFrame,
+        source_feature: str,
+        spec: TransformationSpec,
+        target_column: str | None,
+    ) -> list[float]:
+        if spec.transform_type == TransformationType.MANUAL_BINS and spec.bin_edges:
+            return [float(value) for value in spec.bin_edges]
+
+        values = pd.to_numeric(train_frame[source_feature], errors="coerce")
+        non_null = values.dropna()
+        if non_null.nunique() <= 1:
+            return []
+
+        bin_count = 5 if spec.parameter_value is None else int(spec.parameter_value)
+        bin_count = max(2, min(bin_count, int(non_null.nunique())))
+        if spec.transform_type == TransformationType.EQUAL_WIDTH_BINS:
+            edges = np.linspace(float(non_null.min()), float(non_null.max()), bin_count + 1)[1:-1]
+            return self._dedupe_edges(edges)
+
+        if spec.transform_type == TransformationType.MONOTONIC_BINS and target_column:
+            target = pd.to_numeric(train_frame[target_column], errors="coerce")
+            for candidate_count in range(bin_count, 1, -1):
+                candidate_edges = self._quantile_edges(non_null, candidate_count)
+                if self._bins_are_monotonic(values, target, candidate_edges):
+                    return candidate_edges
+
+        return self._quantile_edges(non_null, bin_count)
+
+    def _quantile_edges(self, non_null: pd.Series, bin_count: int) -> list[float]:
+        _, raw_edges = pd.qcut(
+            non_null,
+            q=bin_count,
+            retbins=True,
+            duplicates="drop",
+        )
+        return self._dedupe_edges(raw_edges[1:-1])
+
+    def _dedupe_edges(self, edges: Any) -> list[float]:
+        return [
+            float(value)
+            for value in pd.Series(edges, dtype="float64")
+            .replace([np.inf, -np.inf], np.nan)
+            .dropna()
+            .drop_duplicates()
+            .sort_values()
+            .tolist()
+        ]
+
+    def _bins_are_monotonic(
+        self,
+        values: pd.Series,
+        target: pd.Series,
+        bin_edges: list[float],
+    ) -> bool:
+        binned = self._apply_binned_feature(values, bin_edges)
+        grouped = (
+            pd.DataFrame({"bin": binned.astype("string"), "target": target})
+            .dropna()
+            .groupby("bin", observed=False)["target"]
+            .mean()
+        )
+        if grouped.shape[0] < 2:
+            return False
+        differences = grouped.diff().dropna()
+        return bool((differences.ge(0).all()) or (differences.le(0).all()))
+
+    def _apply_binned_feature(self, values: pd.Series, bin_edges: list[float]) -> pd.Series:
+        bins = [-np.inf, *[float(edge) for edge in bin_edges], np.inf]
+        return pd.cut(values, bins=bins, include_lowest=True, duplicates="drop").astype(
+            "category"
+        )
+
+    def _fit_encoding_parameters(
+        self,
+        *,
+        context: PipelineContext,
+        train_frame: pd.DataFrame,
+        spec: TransformationSpec,
+    ) -> dict[str, Any]:
+        source_series = train_frame[spec.source_feature]
+        if spec.transform_type == TransformationType.RARE_CATEGORY_COLLAPSE:
+            keys = self._category_keys(source_series)
+            min_share = 0.01 if spec.parameter_value is None else float(spec.parameter_value)
+            shares = keys.value_counts(normalize=True, dropna=False)
+            return {
+                "min_share": min_share,
+                "retained_levels": tuple(shares.loc[shares >= min_share].index.astype(str)),
+            }
+        if spec.transform_type == TransformationType.FREQUENCY_ENCODING:
+            keys = self._category_keys(source_series)
+            shares = keys.value_counts(normalize=True, dropna=False)
+            return {
+                "mapping": {str(key): float(value) for key, value in shares.items()},
+                "default": 0.0,
+            }
+        if spec.transform_type == TransformationType.ORDINAL_ENCODING:
+            keys = self._category_keys(source_series)
+            levels = sorted(str(value) for value in keys.dropna().unique())
+            return {
+                "mapping": {level: float(index) for index, level in enumerate(levels)},
+                "default": -1.0,
+            }
+
+        if not context.target_column or context.target_column not in train_frame.columns:
+            raise ValueError(f"{spec.transform_type.value} requires a modeled target column.")
+        target = pd.to_numeric(train_frame[context.target_column], errors="coerce")
+
+        source_kind = "category"
+        bin_edges: list[float] = []
+        if spec.transform_type in {
+            TransformationType.WOE_ENCODING,
+            TransformationType.BAD_RATE_ENCODING,
+        } and self._is_numeric_feature(source_series):
+            bin_edges = (
+                [float(edge) for edge in spec.bin_edges]
+                if spec.bin_edges
+                else self._fit_bin_edges(
+                    train_frame=train_frame,
+                    source_feature=spec.source_feature,
+                    spec=TransformationSpec(
+                        transform_type=TransformationType.QUANTILE_BINS,
+                        source_feature=spec.source_feature,
+                        parameter_value=spec.parameter_value,
+                    ),
+                    target_column=context.target_column,
+                )
+            )
+            keys = self._binned_keys(pd.to_numeric(source_series, errors="coerce"), bin_edges)
+            source_kind = "numeric_bin"
+        else:
+            keys = self._category_keys(source_series)
+
+        if spec.transform_type == TransformationType.WOE_ENCODING:
+            return self._fit_woe_mapping(keys, target, source_kind=source_kind, bin_edges=bin_edges)
+        if spec.transform_type == TransformationType.BAD_RATE_ENCODING:
+            return self._fit_mean_encoding_mapping(
+                keys,
+                target,
+                source_kind=source_kind,
+                bin_edges=bin_edges,
+                output_name="bad_rate",
+            )
+        if spec.transform_type == TransformationType.TARGET_ENCODING:
+            parameters = self._fit_mean_encoding_mapping(
+                keys,
+                target,
+                source_kind=source_kind,
+                bin_edges=bin_edges,
+                output_name="target_mean",
+            )
+            parameters["smoothing"] = 20.0 if spec.parameter_value is None else float(
+                spec.parameter_value
+            )
+            return parameters
+        raise ValueError(f"Unsupported encoding transformation '{spec.transform_type.value}'.")
+
+    def _fit_woe_mapping(
+        self,
+        keys: pd.Series,
+        target: pd.Series,
+        *,
+        source_kind: str,
+        bin_edges: list[float],
+    ) -> dict[str, Any]:
+        target_non_null = target.dropna()
+        unique_values = set(float(value) for value in target_non_null.unique())
+        if not unique_values.issubset({0.0, 1.0}):
+            raise ValueError("woe_encoding requires a binary 0/1 target.")
+        data = pd.DataFrame({"key": keys.astype(str), "target": target}).dropna()
+        if data.empty:
+            raise ValueError("woe_encoding requires non-missing source and target values.")
+        grouped = data.groupby("key", observed=False)["target"].agg(["sum", "count"])
+        event_total = float(grouped["sum"].sum())
+        nonevent_total = float((grouped["count"] - grouped["sum"]).sum())
+        if event_total <= 0 or nonevent_total <= 0:
+            raise ValueError("woe_encoding requires at least one event and one non-event.")
+        smoothing = 0.5
+        bin_count = max(int(grouped.shape[0]), 1)
+        mapping: dict[str, float] = {}
+        for key, row in grouped.iterrows():
+            events = float(row["sum"])
+            nonevents = float(row["count"] - row["sum"])
+            event_rate = (events + smoothing) / (event_total + smoothing * bin_count)
+            nonevent_rate = (nonevents + smoothing) / (nonevent_total + smoothing * bin_count)
+            mapping[str(key)] = float(np.log(nonevent_rate / event_rate))
+        return {
+            "source_kind": source_kind,
+            "bin_edges": bin_edges,
+            "mapping": mapping,
+            "default": 0.0,
+            "smoothing": smoothing,
+        }
+
+    def _fit_mean_encoding_mapping(
+        self,
+        keys: pd.Series,
+        target: pd.Series,
+        *,
+        source_kind: str,
+        bin_edges: list[float],
+        output_name: str,
+    ) -> dict[str, Any]:
+        data = pd.DataFrame({"key": keys.astype(str), "target": target}).dropna()
+        if data.empty:
+            raise ValueError(f"{output_name} encoding requires usable source and target values.")
+        grouped = data.groupby("key", observed=False)["target"].agg(["sum", "count", "mean"])
+        global_mean = float(data["target"].mean())
+        return {
+            "source_kind": source_kind,
+            "bin_edges": bin_edges,
+            "mapping": {str(key): float(value) for key, value in grouped["mean"].items()},
+            "counts": {str(key): float(value) for key, value in grouped["count"].items()},
+            "sums": {str(key): float(value) for key, value in grouped["sum"].items()},
+            "global_mean": global_mean,
+            "default": global_mean,
+        }
+
+    def _apply_encoding_transform(
+        self,
+        frame: pd.DataFrame,
+        spec: TransformationSpec,
+        parameters: dict[str, Any],
+        *,
+        context: PipelineContext,
+        split_name: str | None,
+    ) -> pd.Series:
+        keys = self._encoding_keys_for_frame(frame, spec, parameters)
+        if spec.transform_type == TransformationType.RARE_CATEGORY_COLLAPSE:
+            retained = set(str(value) for value in parameters["retained_levels"])
+            collapsed = keys.astype(str).where(keys.astype(str).isin(retained), "Other")
+            collapsed = collapsed.where(keys.astype(str).ne("Missing"), "Missing")
+            return collapsed.astype("category")
+
+        mapping = parameters.get("mapping", {})
+        default_value = float(parameters.get("default", 0.0))
+        encoded = keys.astype(str).map(mapping).astype(float).fillna(default_value)
+        if spec.transform_type != TransformationType.TARGET_ENCODING:
+            return encoded
+
+        if (
+            split_name != "train"
+            or not context.target_column
+            or context.target_column not in frame.columns
+        ):
+            return encoded
+
+        counts = keys.astype(str).map(parameters.get("counts", {})).astype(float)
+        sums = keys.astype(str).map(parameters.get("sums", {})).astype(float)
+        target = pd.to_numeric(frame[context.target_column], errors="coerce")
+        smoothing = float(parameters.get("smoothing", 20.0))
+        global_mean = float(parameters.get("global_mean", default_value))
+        denominator = (counts - 1.0 + smoothing).where(counts > 1.0)
+        loo_values = ((sums - target) + smoothing * global_mean).div(denominator)
+        return loo_values.fillna(global_mean)
+
+    def _encoding_keys_for_frame(
+        self,
+        frame: pd.DataFrame,
+        spec: TransformationSpec,
+        parameters: dict[str, Any],
+    ) -> pd.Series:
+        if parameters.get("source_kind") == "numeric_bin":
+            return self._binned_keys(
+                pd.to_numeric(frame[spec.source_feature], errors="coerce"),
+                list(parameters.get("bin_edges", [])),
+            )
+        return self._category_keys(frame[spec.source_feature])
+
+    def _category_keys(self, series: pd.Series) -> pd.Series:
+        return series.astype("string").fillna("Missing").astype(str)
+
+    def _binned_keys(self, values: pd.Series, bin_edges: list[float]) -> pd.Series:
+        return self._apply_binned_feature(values, bin_edges).astype("string").fillna("Missing")
+
+    def _fit_date_parameters(
+        self,
+        *,
+        train_frame: pd.DataFrame,
+        source_feature: str,
+        spec: TransformationSpec,
+        context: PipelineContext,
+    ) -> dict[str, Any]:
+        fiscal_start_month = 1 if spec.parameter_value is None else int(spec.parameter_value)
+        fiscal_start_month = min(max(fiscal_start_month, 1), 12)
+        reference_column = (spec.secondary_feature or "").strip()
+        split_date_column = context.config.split.date_column
+        if (
+            not reference_column
+            and split_date_column
+            and split_date_column != source_feature
+            and split_date_column in train_frame.columns
+        ):
+            reference_column = split_date_column
+        reference_date = None
+        if not reference_column:
+            source_dates = pd.to_datetime(train_frame[source_feature], errors="coerce")
+            reference_date = source_dates.max()
+        return {
+            "fiscal_start_month": fiscal_start_month,
+            "reference_column": reference_column,
+            "reference_date": reference_date,
+        }
+
+    def _apply_date_transform(
+        self,
+        frame: pd.DataFrame,
+        spec: TransformationSpec,
+        parameters: dict[str, Any],
+        *,
+        context: PipelineContext,
+    ) -> pd.Series:
+        del context
+        values = pd.to_datetime(frame[spec.source_feature], errors="coerce")
+        if spec.transform_type == TransformationType.DATE_YEAR:
+            return values.dt.year.astype("Float64")
+        if spec.transform_type == TransformationType.DATE_MONTH:
+            return values.dt.month.astype("Float64")
+        if spec.transform_type == TransformationType.DATE_QUARTER:
+            return values.dt.quarter.astype("Float64")
+        if spec.transform_type == TransformationType.DATE_MONTH_END_FLAG:
+            return values.dt.is_month_end.astype(float)
+        if spec.transform_type == TransformationType.DATE_FISCAL_QUARTER:
+            fiscal_start = int(parameters.get("fiscal_start_month", 1))
+            fiscal_month = ((values.dt.month - fiscal_start) % 12) + 1
+            return (((fiscal_month - 1) // 3) + 1).astype("Float64")
+
+        reference_column = str(parameters.get("reference_column") or "")
+        if reference_column and reference_column in frame.columns:
+            reference_values = pd.to_datetime(frame[reference_column], errors="coerce")
+        else:
+            reference_values = pd.Series(parameters.get("reference_date"), index=frame.index)
+        age_days = (reference_values - values).dt.days.astype("Float64")
+        if spec.transform_type == TransformationType.DATE_AGE_DAYS:
+            return age_days
+        return (age_days / 30.4375).astype("Float64")
+
+    def _apply_missingness_transform(
+        self,
+        frame: pd.DataFrame,
+        transform_type: TransformationType,
+        source_features: list[str],
+    ) -> pd.Series:
+        missing_frame = frame.loc[:, source_features].isna()
+        missing_count = missing_frame.sum(axis=1).astype(float)
+        if transform_type == TransformationType.ROW_MISSING_COUNT:
+            return missing_count
+        if transform_type == TransformationType.ROW_MISSING_SHARE:
+            return missing_count / max(len(source_features), 1)
+        if transform_type == TransformationType.ANY_MISSING_FLAG:
+            return missing_count.gt(0).astype(float)
+        raise ValueError(f"Unsupported missingness transformation '{transform_type.value}'.")
 
     def _resolve_auto_interactions(
         self,
@@ -660,42 +1310,182 @@ class TransformationStep(BasePipelineStep):
         lag_periods: int,
         window_size: int,
     ) -> pd.Series:
-        ordered = frame.copy(deep=True)
+        ordered = frame.copy(deep=False)
         ordered["_transform_value"] = pd.to_numeric(frame[feature_name], errors="coerce")
-        ordered["_original_index"] = frame.index
+        ordered["_transform_row_position"] = np.arange(len(frame), dtype=np.int64)
         ordered = self._sort_temporal_frame(ordered, context)
-        grouped = self._group_temporal_series(ordered, context)
+        split_config = context.config.split
+        group_column = (
+            split_config.entity_column
+            if split_config.data_structure == DataStructure.PANEL
+            and split_config.entity_column
+            and split_config.entity_column in ordered.columns
+            else None
+        )
+        values = ordered["_transform_value"]
+        grouped = (
+            ordered.groupby(group_column, sort=False)["_transform_value"]
+            if group_column
+            else None
+        )
+
         if transform_type == TransformationType.LAG:
-            transformed = grouped.shift(lag_periods)
-        elif transform_type == TransformationType.DIFFERENCE:
-            transformed = grouped.diff(periods=lag_periods)
-        elif transform_type == TransformationType.EWMA:
-            transformed = grouped.shift(1).ewm(
-                span=window_size,
-                adjust=False,
-                min_periods=1,
-            ).mean()
-        elif transform_type == TransformationType.ROLLING_MEAN:
-            transformed = grouped.shift(1).rolling(window_size, min_periods=1).mean()
-        elif transform_type == TransformationType.ROLLING_MEDIAN:
-            transformed = grouped.shift(1).rolling(window_size, min_periods=1).median()
-        elif transform_type == TransformationType.ROLLING_MIN:
-            transformed = grouped.shift(1).rolling(window_size, min_periods=1).min()
-        elif transform_type == TransformationType.ROLLING_MAX:
-            transformed = grouped.shift(1).rolling(window_size, min_periods=1).max()
-        elif transform_type == TransformationType.ROLLING_STD:
-            transformed = grouped.shift(1).rolling(window_size, min_periods=1).std(ddof=0)
-        elif transform_type == TransformationType.PCT_CHANGE:
-            transformed = grouped.pct_change(periods=lag_periods).replace(
-                [np.inf, -np.inf],
-                np.nan,
+            transformed = grouped.shift(lag_periods) if grouped is not None else values.shift(
+                lag_periods
             )
+        elif transform_type == TransformationType.DIFFERENCE:
+            transformed = grouped.diff(periods=lag_periods) if grouped is not None else values.diff(
+                periods=lag_periods
+            )
+        elif transform_type == TransformationType.EWMA:
+            shifted = grouped.shift(1) if grouped is not None else values.shift(1)
+            if group_column:
+                transformed = shifted.groupby(ordered[group_column], sort=False).transform(
+                    lambda series: series.ewm(span=window_size, adjust=False, min_periods=1).mean()
+                )
+            else:
+                transformed = shifted.ewm(span=window_size, adjust=False, min_periods=1).mean()
+        elif transform_type in {
+            TransformationType.ROLLING_MEAN,
+            TransformationType.ROLLING_MEDIAN,
+            TransformationType.ROLLING_MIN,
+            TransformationType.ROLLING_MAX,
+            TransformationType.ROLLING_STD,
+            TransformationType.ROLLING_SUM,
+            TransformationType.ROLLING_RANGE,
+            TransformationType.ROLLING_CV,
+            TransformationType.ROLLING_SLOPE,
+        }:
+            shifted = grouped.shift(1) if grouped is not None else values.shift(1)
+            transformed = self._rolling_temporal_transform(
+                shifted,
+                transform_type,
+                window_size=window_size,
+                group_keys=ordered[group_column] if group_column else None,
+            )
+        elif transform_type == TransformationType.EXPANDING_MEAN:
+            shifted = grouped.shift(1) if grouped is not None else values.shift(1)
+            if group_column:
+                transformed = shifted.groupby(ordered[group_column], sort=False).transform(
+                    lambda series: series.expanding(min_periods=1).mean()
+                )
+            else:
+                transformed = shifted.expanding(min_periods=1).mean()
+        elif transform_type == TransformationType.CUMULATIVE_SUM:
+            shifted = grouped.shift(1) if grouped is not None else values.shift(1)
+            if group_column:
+                transformed = shifted.groupby(ordered[group_column], sort=False).cumsum()
+            else:
+                transformed = shifted.cumsum()
+        elif transform_type == TransformationType.CUMULATIVE_COUNT:
+            if group_column:
+                transformed = ordered.groupby(group_column, sort=False).cumcount().astype(float)
+            else:
+                transformed = pd.Series(np.arange(len(ordered), dtype=float), index=ordered.index)
+        elif transform_type == TransformationType.MONTHS_SINCE_EVENT:
+            transformed = self._months_since_event(
+                ordered,
+                value_column="_transform_value",
+                context=context,
+                group_column=group_column,
+            )
+        elif transform_type == TransformationType.CHANGE_FROM_BASELINE:
+            if group_column:
+                baseline = grouped.transform("first")
+            else:
+                baseline_value = values.dropna().iloc[0] if values.notna().any() else np.nan
+                baseline = pd.Series(baseline_value, index=ordered.index)
+            transformed = values - baseline
+        elif transform_type == TransformationType.PCT_CHANGE:
+            transformed = (
+                grouped.pct_change(periods=lag_periods)
+                if grouped is not None
+                else values.pct_change(periods=lag_periods)
+            )
+            transformed = transformed.replace([np.inf, -np.inf], np.nan)
         else:
             raise ValueError(f"Unsupported temporal transformation '{transform_type.value}'.")
         ordered["_transformed"] = transformed
-        restored = ordered.sort_values("_original_index", kind="mergesort")["_transformed"]
+        restored = ordered.sort_values("_transform_row_position", kind="mergesort")[
+            "_transformed"
+        ]
         restored.index = frame.index
         return restored
+
+    def _rolling_temporal_transform(
+        self,
+        values: pd.Series,
+        transform_type: TransformationType,
+        *,
+        window_size: int,
+        group_keys: pd.Series | None,
+    ) -> pd.Series:
+        if group_keys is not None:
+            rolling = values.groupby(group_keys, sort=False).rolling(window_size, min_periods=1)
+            transformed = self._apply_rolling_operation(rolling, transform_type)
+            return transformed.reset_index(level=0, drop=True)
+        rolling = values.rolling(window_size, min_periods=1)
+        return self._apply_rolling_operation(rolling, transform_type)
+
+    def _apply_rolling_operation(
+        self,
+        rolling: Any,
+        transform_type: TransformationType,
+    ) -> pd.Series:
+        if transform_type == TransformationType.ROLLING_MEAN:
+            return rolling.mean()
+        if transform_type == TransformationType.ROLLING_MEDIAN:
+            return rolling.median()
+        if transform_type == TransformationType.ROLLING_MIN:
+            return rolling.min()
+        if transform_type == TransformationType.ROLLING_MAX:
+            return rolling.max()
+        if transform_type == TransformationType.ROLLING_STD:
+            return rolling.std(ddof=0)
+        if transform_type == TransformationType.ROLLING_SUM:
+            return rolling.sum()
+        if transform_type == TransformationType.ROLLING_RANGE:
+            return rolling.max() - rolling.min()
+        if transform_type == TransformationType.ROLLING_CV:
+            mean_values = rolling.mean()
+            std_values = rolling.std(ddof=0)
+            return std_values.div(mean_values.replace({0: np.nan}))
+        if transform_type == TransformationType.ROLLING_SLOPE:
+            return rolling.apply(self._rolling_slope, raw=True)
+        raise ValueError(f"Unsupported rolling transformation '{transform_type.value}'.")
+
+    @staticmethod
+    def _rolling_slope(values: np.ndarray) -> float:
+        valid_values = pd.Series(values).dropna().to_numpy(dtype=float)
+        if valid_values.size < 2:
+            return np.nan
+        x_values = np.arange(valid_values.size, dtype=float)
+        return float(np.polyfit(x_values, valid_values, 1)[0])
+
+    def _months_since_event(
+        self,
+        frame: pd.DataFrame,
+        *,
+        value_column: str,
+        context: PipelineContext,
+        group_column: str | None,
+    ) -> pd.Series:
+        date_column = context.config.split.date_column
+
+        def calculate(group: pd.DataFrame) -> pd.Series:
+            event_mask = pd.to_numeric(group[value_column], errors="coerce").fillna(0).gt(0)
+            if date_column and date_column in group.columns:
+                dates = pd.to_datetime(group[date_column], errors="coerce")
+                last_event_dates = dates.where(event_mask).ffill()
+                months = (dates - last_event_dates).dt.days / 30.4375
+                return months.fillna(np.nan)
+            event_positions = pd.Series(np.arange(len(group), dtype=float), index=group.index)
+            last_event_position = event_positions.where(event_mask).ffill()
+            return event_positions - last_event_position
+
+        if group_column:
+            return frame.groupby(group_column, sort=False, group_keys=False).apply(calculate)
+        return calculate(frame)
 
     def _sort_temporal_frame(
         self,
@@ -761,75 +1551,7 @@ class TransformationStep(BasePipelineStep):
         }
 
     def _resolve_output_feature_name(self, spec: TransformationSpec) -> str:
-        configured_output = (spec.output_feature or "").strip()
-        if configured_output:
-            return configured_output
-        if spec.transform_type == TransformationType.MANUAL_BINS:
-            return f"{spec.source_feature}_binned"
-        if spec.transform_type == TransformationType.RATIO:
-            return f"{spec.source_feature}_over_{spec.secondary_feature}"
-        if spec.transform_type == TransformationType.INTERACTION:
-            if (spec.categorical_value or "").strip():
-                return (
-                    f"{spec.source_feature}_x_{spec.secondary_feature}_"
-                    f"{self._sanitize_token(spec.categorical_value)}"
-                )
-            return f"{spec.source_feature}_x_{spec.secondary_feature}"
-        if spec.transform_type == TransformationType.YEO_JOHNSON:
-            return f"{spec.source_feature}_yeo_johnson"
-        if spec.transform_type == TransformationType.BOX_COX:
-            return f"{spec.source_feature}_box_cox"
-        if spec.transform_type == TransformationType.NATURAL_SPLINE:
-            spline_df = 4 if spec.parameter_value is None else int(spec.parameter_value)
-            return f"{spec.source_feature}_spline_df_{spline_df}"
-        if spec.transform_type == TransformationType.CAPPED_ZSCORE:
-            return f"{spec.source_feature}_zscore"
-        if spec.transform_type == TransformationType.PIECEWISE_LINEAR:
-            hinge_value = "hinge" if spec.parameter_value is None else str(spec.parameter_value)
-            return f"{spec.source_feature}_piecewise_{self._sanitize_token(hinge_value)}"
-        if spec.transform_type == TransformationType.LAG:
-            return (
-                f"{spec.source_feature}_lag_{1 if spec.lag_periods is None else spec.lag_periods}"
-            )
-        if spec.transform_type == TransformationType.DIFFERENCE:
-            return (
-                f"{spec.source_feature}_diff_{1 if spec.lag_periods is None else spec.lag_periods}"
-            )
-        if spec.transform_type == TransformationType.EWMA:
-            return (
-                f"{spec.source_feature}_ewma_{3 if spec.window_size is None else spec.window_size}"
-            )
-        if spec.transform_type == TransformationType.ROLLING_MEAN:
-            return (
-                f"{spec.source_feature}_rollmean_"
-                f"{3 if spec.window_size is None else spec.window_size}"
-            )
-        if spec.transform_type == TransformationType.ROLLING_MEDIAN:
-            return (
-                f"{spec.source_feature}_rollmedian_"
-                f"{3 if spec.window_size is None else spec.window_size}"
-            )
-        if spec.transform_type == TransformationType.ROLLING_MIN:
-            return (
-                f"{spec.source_feature}_rollmin_"
-                f"{3 if spec.window_size is None else spec.window_size}"
-            )
-        if spec.transform_type == TransformationType.ROLLING_MAX:
-            return (
-                f"{spec.source_feature}_rollmax_"
-                f"{3 if spec.window_size is None else spec.window_size}"
-            )
-        if spec.transform_type == TransformationType.ROLLING_STD:
-            return (
-                f"{spec.source_feature}_rollstd_"
-                f"{3 if spec.window_size is None else spec.window_size}"
-            )
-        if spec.transform_type == TransformationType.PCT_CHANGE:
-            return (
-                f"{spec.source_feature}_pct_change_"
-                f"{1 if spec.lag_periods is None else spec.lag_periods}"
-            )
-        return spec.source_feature
+        return TransformationConfig()._resolve_output_name(spec)
 
     def _numeric_series(self, series: pd.Series, feature_name: str) -> pd.Series:
         numeric_series = pd.to_numeric(series, errors="coerce")
@@ -849,6 +1571,15 @@ class TransformationStep(BasePipelineStep):
                 continue
             if key == "output_features":
                 rendered.append(f"{key}={', '.join(str(item) for item in value)}")
+                continue
+            if isinstance(value, dict):
+                preview = ", ".join(str(item) for item in list(value)[:5])
+                suffix = "" if len(value) <= 5 else "..."
+                rendered.append(f"{key}={len(value)} entries [{preview}{suffix}]")
+                continue
+            if isinstance(value, (list, tuple, set)) and len(value) > 12:
+                preview = ", ".join(str(item) for item in list(value)[:5])
+                rendered.append(f"{key}={len(value)} values [{preview}...]")
                 continue
             if isinstance(value, float):
                 rendered.append(f"{key}={value:.6g}")

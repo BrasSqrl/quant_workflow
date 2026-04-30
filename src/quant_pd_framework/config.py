@@ -184,7 +184,26 @@ class TransformationType(StrEnum):
     YEO_JOHNSON = "yeo_johnson"
     CAPPED_ZSCORE = "capped_zscore"
     PIECEWISE_LINEAR = "piecewise_linear"
+    STANDARD_SCALE = "standard_scale"
+    ROBUST_SCALE = "robust_scale"
+    MIN_MAX_SCALE = "min_max_scale"
+    PERCENTILE_RANK = "percentile_rank"
+    NORMAL_SCORE = "normal_score"
+    SIGNED_LOG1P = "signed_log1p"
+    SQRT = "sqrt"
+    RECIPROCAL = "reciprocal"
+    SQUARE = "square"
+    POWER = "power"
+    ABSOLUTE_VALUE = "absolute_value"
+    CENTER_MEAN = "center_mean"
+    CENTER_MEDIAN = "center_median"
     RATIO = "ratio"
+    SAFE_RATIO = "safe_ratio"
+    MARGIN_RATIO = "margin_ratio"
+    DEBT_SERVICE_RATIO = "debt_service_ratio"
+    ADD = "add"
+    SUBTRACT = "subtract"
+    PRODUCT = "product"
     INTERACTION = "interaction"
     LAG = "lag"
     DIFFERENCE = "difference"
@@ -194,8 +213,36 @@ class TransformationType(StrEnum):
     ROLLING_MIN = "rolling_min"
     ROLLING_MAX = "rolling_max"
     ROLLING_STD = "rolling_std"
+    ROLLING_SUM = "rolling_sum"
+    ROLLING_RANGE = "rolling_range"
+    ROLLING_CV = "rolling_cv"
+    ROLLING_SLOPE = "rolling_slope"
+    EXPANDING_MEAN = "expanding_mean"
+    CUMULATIVE_SUM = "cumulative_sum"
+    CUMULATIVE_COUNT = "cumulative_count"
+    MONTHS_SINCE_EVENT = "months_since_event"
+    CHANGE_FROM_BASELINE = "change_from_baseline"
     PCT_CHANGE = "pct_change"
     MANUAL_BINS = "manual_bins"
+    QUANTILE_BINS = "quantile_bins"
+    EQUAL_WIDTH_BINS = "equal_width_bins"
+    MONOTONIC_BINS = "monotonic_bins"
+    WOE_ENCODING = "woe_encoding"
+    BAD_RATE_ENCODING = "bad_rate_encoding"
+    RARE_CATEGORY_COLLAPSE = "rare_category_collapse"
+    FREQUENCY_ENCODING = "frequency_encoding"
+    ORDINAL_ENCODING = "ordinal_encoding"
+    TARGET_ENCODING = "target_encoding"
+    DATE_YEAR = "date_year"
+    DATE_MONTH = "date_month"
+    DATE_QUARTER = "date_quarter"
+    DATE_MONTH_END_FLAG = "date_month_end_flag"
+    DATE_FISCAL_QUARTER = "date_fiscal_quarter"
+    DATE_AGE_DAYS = "date_age_days"
+    DATE_AGE_MONTHS = "date_age_months"
+    ROW_MISSING_COUNT = "row_missing_count"
+    ROW_MISSING_SHARE = "row_missing_share"
+    ANY_MISSING_FLAG = "any_missing_flag"
 
 
 class FeatureReviewDecisionType(StrEnum):
@@ -1022,6 +1069,12 @@ class TransformationSpec:
             self.transform_type
             in {
                 TransformationType.RATIO,
+                TransformationType.SAFE_RATIO,
+                TransformationType.MARGIN_RATIO,
+                TransformationType.DEBT_SERVICE_RATIO,
+                TransformationType.ADD,
+                TransformationType.SUBTRACT,
+                TransformationType.PRODUCT,
                 TransformationType.INTERACTION,
             }
             and not (self.secondary_feature or "").strip()
@@ -1047,6 +1100,25 @@ class TransformationSpec:
                     "to define the hinge point."
                 )
         if self.transform_type in {
+            TransformationType.QUANTILE_BINS,
+            TransformationType.EQUAL_WIDTH_BINS,
+            TransformationType.MONOTONIC_BINS,
+            TransformationType.WOE_ENCODING,
+            TransformationType.BAD_RATE_ENCODING,
+        }:
+            bin_count = 5 if self.parameter_value is None else int(self.parameter_value)
+            if bin_count < 2:
+                raise ValueError(
+                    f"{self.transform_type.value} transformations require "
+                    "parameter_value >= 2 when provided."
+                )
+        if self.transform_type == TransformationType.RARE_CATEGORY_COLLAPSE:
+            min_share = 0.01 if self.parameter_value is None else float(self.parameter_value)
+            if not 0 <= min_share < 1:
+                raise ValueError("rare_category_collapse parameter_value must be in [0, 1).")
+        if self.transform_type == TransformationType.POWER and self.parameter_value is None:
+            raise ValueError("power transformations require parameter_value.")
+        if self.transform_type in {
             TransformationType.LAG,
             TransformationType.DIFFERENCE,
             TransformationType.PCT_CHANGE,
@@ -1063,17 +1135,30 @@ class TransformationSpec:
             TransformationType.ROLLING_MIN,
             TransformationType.ROLLING_MAX,
             TransformationType.ROLLING_STD,
+            TransformationType.ROLLING_SUM,
+            TransformationType.ROLLING_RANGE,
+            TransformationType.ROLLING_CV,
+            TransformationType.ROLLING_SLOPE,
         }:
             window_size = 3 if self.window_size is None else self.window_size
             if window_size <= 1:
                 raise ValueError(
                     f"{self.transform_type.value} transformations require window_size >= 2."
                 )
-        if self.transform_type == TransformationType.MANUAL_BINS:
+        if self.transform_type in {
+            TransformationType.MANUAL_BINS,
+            TransformationType.WOE_ENCODING,
+            TransformationType.BAD_RATE_ENCODING,
+        }:
             if not self.bin_edges:
-                raise ValueError("manual_bins transformations require at least one bin edge.")
+                if self.transform_type == TransformationType.MANUAL_BINS:
+                    raise ValueError(
+                        "manual_bins transformations require at least one bin edge."
+                    )
             if sorted(self.bin_edges) != list(self.bin_edges):
-                raise ValueError("manual_bins bin_edges must be sorted in ascending order.")
+                raise ValueError(
+                    f"{self.transform_type.value} bin_edges must be sorted in ascending order."
+                )
 
 
 @dataclass(slots=True)
@@ -1109,10 +1194,47 @@ class TransformationConfig:
         configured_output = (transformation.output_feature or "").strip()
         if configured_output:
             return configured_output
-        if transformation.transform_type == TransformationType.MANUAL_BINS:
-            return f"{transformation.source_feature}_binned"
+        source_token = "_".join(
+            part.strip() for part in transformation.source_feature.split(",") if part.strip()
+        )
+        source_token = (
+            source_token.replace(" ", "_").replace("/", "_").replace("\\", "_") or "feature"
+        )
+        binned_outputs = {
+            TransformationType.MANUAL_BINS: "binned",
+            TransformationType.QUANTILE_BINS: "qbin",
+            TransformationType.EQUAL_WIDTH_BINS: "ewbin",
+            TransformationType.MONOTONIC_BINS: "monobin",
+        }
+        if transformation.transform_type in binned_outputs:
+            suffix = binned_outputs[transformation.transform_type]
+            return f"{transformation.source_feature}_{suffix}"
+        if transformation.transform_type == TransformationType.WOE_ENCODING:
+            return f"{transformation.source_feature}_woe"
+        if transformation.transform_type == TransformationType.BAD_RATE_ENCODING:
+            return f"{transformation.source_feature}_bad_rate"
+        if transformation.transform_type == TransformationType.RARE_CATEGORY_COLLAPSE:
+            return f"{transformation.source_feature}_rare_collapsed"
+        if transformation.transform_type == TransformationType.FREQUENCY_ENCODING:
+            return f"{transformation.source_feature}_frequency"
+        if transformation.transform_type == TransformationType.ORDINAL_ENCODING:
+            return f"{transformation.source_feature}_ordinal"
+        if transformation.transform_type == TransformationType.TARGET_ENCODING:
+            return f"{transformation.source_feature}_target_encoded"
         if transformation.transform_type == TransformationType.RATIO:
             return f"{transformation.source_feature}_over_{transformation.secondary_feature}"
+        if transformation.transform_type == TransformationType.SAFE_RATIO:
+            return f"{transformation.source_feature}_safe_over_{transformation.secondary_feature}"
+        if transformation.transform_type == TransformationType.MARGIN_RATIO:
+            return f"{transformation.source_feature}_margin_over_{transformation.secondary_feature}"
+        if transformation.transform_type == TransformationType.DEBT_SERVICE_RATIO:
+            return f"{transformation.source_feature}_dsr_over_{transformation.secondary_feature}"
+        if transformation.transform_type == TransformationType.ADD:
+            return f"{transformation.source_feature}_plus_{transformation.secondary_feature}"
+        if transformation.transform_type == TransformationType.SUBTRACT:
+            return f"{transformation.source_feature}_minus_{transformation.secondary_feature}"
+        if transformation.transform_type == TransformationType.PRODUCT:
+            return f"{transformation.source_feature}_times_{transformation.secondary_feature}"
         if transformation.transform_type == TransformationType.INTERACTION:
             if (transformation.categorical_value or "").strip():
                 category_token = (
@@ -1134,6 +1256,28 @@ class TransformationConfig:
             return f"{transformation.source_feature}_spline_df_{spline_df}"
         if transformation.transform_type == TransformationType.CAPPED_ZSCORE:
             return f"{transformation.source_feature}_zscore"
+        numeric_suffixes = {
+            TransformationType.STANDARD_SCALE: "standard_scaled",
+            TransformationType.ROBUST_SCALE: "robust_scaled",
+            TransformationType.MIN_MAX_SCALE: "minmax_scaled",
+            TransformationType.PERCENTILE_RANK: "percentile_rank",
+            TransformationType.NORMAL_SCORE: "normal_score",
+            TransformationType.SIGNED_LOG1P: "signed_log1p",
+            TransformationType.SQRT: "sqrt",
+            TransformationType.RECIPROCAL: "reciprocal",
+            TransformationType.SQUARE: "squared",
+            TransformationType.POWER: (
+                "power"
+                if transformation.parameter_value is None
+                else f"power_{str(transformation.parameter_value).replace('.', '_')}"
+            ),
+            TransformationType.ABSOLUTE_VALUE: "abs",
+            TransformationType.CENTER_MEAN: "center_mean",
+            TransformationType.CENTER_MEDIAN: "center_median",
+        }
+        if transformation.transform_type in numeric_suffixes:
+            suffix = numeric_suffixes[transformation.transform_type]
+            return f"{transformation.source_feature}_{suffix}"
         if transformation.transform_type == TransformationType.PIECEWISE_LINEAR:
             hinge_point = transformation.parameter_value
             hinge_token = "hinge" if hinge_point is None else str(hinge_point).replace(".", "_")
@@ -1162,9 +1306,49 @@ class TransformationConfig:
         if transformation.transform_type == TransformationType.ROLLING_STD:
             window_size = 3 if transformation.window_size is None else transformation.window_size
             return f"{transformation.source_feature}_rollstd_{window_size}"
+        if transformation.transform_type == TransformationType.ROLLING_SUM:
+            window_size = 3 if transformation.window_size is None else transformation.window_size
+            return f"{transformation.source_feature}_rollsum_{window_size}"
+        if transformation.transform_type == TransformationType.ROLLING_RANGE:
+            window_size = 3 if transformation.window_size is None else transformation.window_size
+            return f"{transformation.source_feature}_rollrange_{window_size}"
+        if transformation.transform_type == TransformationType.ROLLING_CV:
+            window_size = 3 if transformation.window_size is None else transformation.window_size
+            return f"{transformation.source_feature}_rollcv_{window_size}"
+        if transformation.transform_type == TransformationType.ROLLING_SLOPE:
+            window_size = 3 if transformation.window_size is None else transformation.window_size
+            return f"{transformation.source_feature}_rollslope_{window_size}"
+        if transformation.transform_type == TransformationType.EXPANDING_MEAN:
+            return f"{transformation.source_feature}_expanding_mean"
+        if transformation.transform_type == TransformationType.CUMULATIVE_SUM:
+            return f"{transformation.source_feature}_cumulative_sum"
+        if transformation.transform_type == TransformationType.CUMULATIVE_COUNT:
+            return f"{transformation.source_feature}_cumulative_count"
+        if transformation.transform_type == TransformationType.MONTHS_SINCE_EVENT:
+            return f"{transformation.source_feature}_months_since_event"
+        if transformation.transform_type == TransformationType.CHANGE_FROM_BASELINE:
+            return f"{transformation.source_feature}_change_from_baseline"
         if transformation.transform_type == TransformationType.PCT_CHANGE:
             lag_periods = 1 if transformation.lag_periods is None else transformation.lag_periods
             return f"{transformation.source_feature}_pct_change_{lag_periods}"
+        date_suffixes = {
+            TransformationType.DATE_YEAR: "year",
+            TransformationType.DATE_MONTH: "month",
+            TransformationType.DATE_QUARTER: "quarter",
+            TransformationType.DATE_MONTH_END_FLAG: "month_end_flag",
+            TransformationType.DATE_FISCAL_QUARTER: "fiscal_quarter",
+            TransformationType.DATE_AGE_DAYS: "age_days",
+            TransformationType.DATE_AGE_MONTHS: "age_months",
+        }
+        if transformation.transform_type in date_suffixes:
+            return f"{transformation.source_feature}_{date_suffixes[transformation.transform_type]}"
+        missing_suffixes = {
+            TransformationType.ROW_MISSING_COUNT: "missing_count",
+            TransformationType.ROW_MISSING_SHARE: "missing_share",
+            TransformationType.ANY_MISSING_FLAG: "any_missing",
+        }
+        if transformation.transform_type in missing_suffixes:
+            return f"{source_token}_{missing_suffixes[transformation.transform_type]}"
         return transformation.source_feature
 
 

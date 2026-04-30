@@ -124,7 +124,7 @@ The main workspace now includes dedicated sections beyond the column designer.
 | --- | --- | --- | --- |
 | `Feature Dictionary` | `FeatureDictionaryConfig.entries` | `parse_feature_dictionary_frame(...)`, diagnostics feature-dictionary output | `feature_dictionary`, `reports/validation_pack.md` |
 | `Transformations` | `TransformationConfig.transformations` | `parse_transformation_frame(...)`, `TransformationStep` | `governed_transformations`, `interaction_candidates` |
-| `Template Workbook` | none directly; imports/exports editor tables | `build_template_workbook_bytes(...)`, `load_template_workbook(...)`, `streamlit_ui/workspace.py` | `config/configuration_template.xlsx` with instructions, allowed values, examples, required-column notes, comments, and dropdown validation |
+| `Template Workbook` | none directly; imports/exports editor tables | `build_template_workbook_bytes(...)`, `load_template_workbook(...)`, `streamlit_ui/workspace.py` | `config/configuration_template.xlsx` with instructions, allowed values, transform catalog, examples, required-column notes, comments, and dropdown validation |
 
 Implementation note:
 
@@ -133,10 +133,13 @@ Implementation note:
 - The build workspace and result surfaces now render one active section at a
   time instead of rendering every tab body on every rerun.
 
-The transformation editor supports the expanded transformation families as values
-of `TransformationSpec.transform_type`, including `box_cox`,
-`natural_spline`, `piecewise_linear`, `difference`, `ewma`,
-`rolling_median`, `rolling_min`, `rolling_max`, and `rolling_std`.
+The transformation editor supports the expanded transformation catalog as values
+of `TransformationSpec.transform_type`. The catalog includes numeric shape
+changes, scaling/ranking, ratios and arithmetic combinations, interactions,
+panel/time transforms, automatic and manual bins, WoE/bad-rate/target/category
+encodings, date features, and row-level missingness signals. The workbook
+`transform_catalog` sheet is the offline reference for which parameter columns
+matter for each option.
 
 ## 4. Workspace Mode
 

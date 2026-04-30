@@ -833,48 +833,16 @@ def _resolve_transformation_output_name_for_ui(
     window_size: int | None,
     lag_periods: int | None,
 ) -> str:
-    if transform_type == TransformationType.MANUAL_BINS:
-        return f"{source_feature}_binned"
-    if transform_type == TransformationType.RATIO:
-        return f"{source_feature}_over_{secondary_feature}"
-    if transform_type == TransformationType.INTERACTION:
-        if (categorical_value or "").strip():
-            return (
-                f"{source_feature}_x_{secondary_feature}_"
-                f"{_sanitize_transformation_token(categorical_value or '')}"
-            )
-        return f"{source_feature}_x_{secondary_feature}"
-    if transform_type == TransformationType.YEO_JOHNSON:
-        return f"{source_feature}_yeo_johnson"
-    if transform_type == TransformationType.BOX_COX:
-        return f"{source_feature}_box_cox"
-    if transform_type == TransformationType.NATURAL_SPLINE:
-        spline_df = 4 if parameter_value is None else int(parameter_value)
-        return f"{source_feature}_spline_df_{spline_df}"
-    if transform_type == TransformationType.CAPPED_ZSCORE:
-        return f"{source_feature}_zscore"
-    if transform_type == TransformationType.PIECEWISE_LINEAR:
-        hinge_value = "hinge" if parameter_value is None else str(parameter_value)
-        return f"{source_feature}_piecewise_{_sanitize_transformation_token(hinge_value)}"
-    if transform_type == TransformationType.LAG:
-        return f"{source_feature}_lag_{1 if lag_periods is None else lag_periods}"
-    if transform_type == TransformationType.DIFFERENCE:
-        return f"{source_feature}_diff_{1 if lag_periods is None else lag_periods}"
-    if transform_type == TransformationType.EWMA:
-        return f"{source_feature}_ewma_{3 if window_size is None else window_size}"
-    if transform_type == TransformationType.ROLLING_MEAN:
-        return f"{source_feature}_rollmean_{3 if window_size is None else window_size}"
-    if transform_type == TransformationType.ROLLING_MEDIAN:
-        return f"{source_feature}_rollmedian_{3 if window_size is None else window_size}"
-    if transform_type == TransformationType.ROLLING_MIN:
-        return f"{source_feature}_rollmin_{3 if window_size is None else window_size}"
-    if transform_type == TransformationType.ROLLING_MAX:
-        return f"{source_feature}_rollmax_{3 if window_size is None else window_size}"
-    if transform_type == TransformationType.ROLLING_STD:
-        return f"{source_feature}_rollstd_{3 if window_size is None else window_size}"
-    if transform_type == TransformationType.PCT_CHANGE:
-        return f"{source_feature}_pct_change_{1 if lag_periods is None else lag_periods}"
-    return source_feature
+    spec = TransformationSpec(
+        transform_type=transform_type,
+        source_feature=source_feature,
+        secondary_feature=secondary_feature,
+        categorical_value=categorical_value,
+        parameter_value=parameter_value,
+        window_size=window_size,
+        lag_periods=lag_periods,
+    )
+    return TransformationConfig()._resolve_output_name(spec)
 
 
 def _sanitize_transformation_token(value: str) -> str:
@@ -1185,6 +1153,17 @@ def build_workbook_instructions_frame() -> pd.DataFrame:
             "upload_notes": "Use these values in editable sheets to avoid upload parsing errors.",
         },
         {
+            "sheet_name": "transform_catalog",
+            "editable": "reference",
+            "purpose": "Explains each available transformation and its parameter fields.",
+            "what_to_change": "Do not edit unless using it as an offline note sheet.",
+            "do_not_change": "Workbook upload ignores this sheet.",
+            "upload_notes": (
+                "Use this catalog before adding transformation rows so parameters are "
+                "defensible and reproducible."
+            ),
+        },
+        {
             "sheet_name": "examples",
             "editable": "reference",
             "purpose": "Shows realistic example rows for common workflow edits.",
@@ -1267,6 +1246,33 @@ def build_workbook_allowed_values_frame() -> pd.DataFrame:
     return pd.DataFrame(rows, columns=["field", "allowed_value", "meaning", "example"])
 
 
+def build_workbook_transform_catalog_frame() -> pd.DataFrame:
+    """Returns a user-facing catalog for governed transformation setup."""
+
+    rows = [
+        {
+            "category": _transformation_category(transform_type),
+            "transform_type": transform_type.value,
+            "what_it_does": _transformation_meaning(transform_type),
+            "when_to_use": _transformation_use_case(transform_type),
+            "key_parameters": _transformation_parameter_guidance(transform_type),
+            "output_type": _transformation_output_type(transform_type),
+        }
+        for transform_type in TransformationType
+    ]
+    return pd.DataFrame(
+        rows,
+        columns=[
+            "category",
+            "transform_type",
+            "what_it_does",
+            "when_to_use",
+            "key_parameters",
+            "output_type",
+        ],
+    )
+
+
 def build_workbook_examples_frame() -> pd.DataFrame:
     """Returns example workbook rows for common offline edits."""
 
@@ -1325,6 +1331,53 @@ def build_workbook_examples_frame() -> pd.DataFrame:
                 "secondary_feature=delinquency_count, output_feature=util_x_dq"
             ),
             "notes": "Only create interactions with a clear business or statistical rationale.",
+        },
+        {
+            "sheet_name": "transformations",
+            "scenario": "Quantile bins for scorecard",
+            "example": (
+                "enabled=TRUE, transform_type=quantile_bins, source_feature=debt_to_income, "
+                "output_feature=dti_qbin, parameter_value=5"
+            ),
+            "notes": "Creates train-fit equal-frequency bins for continuous scorecard inputs.",
+        },
+        {
+            "sheet_name": "transformations",
+            "scenario": "Weight of evidence encoding",
+            "example": (
+                "enabled=TRUE, transform_type=woe_encoding, source_feature=utilization, "
+                "output_feature=utilization_woe, parameter_value=5"
+            ),
+            "notes": "Requires a binary target and is useful for scorecard logistic regression.",
+        },
+        {
+            "sheet_name": "transformations",
+            "scenario": "Rare category collapse",
+            "example": (
+                "enabled=TRUE, transform_type=rare_category_collapse, source_feature=industry, "
+                "output_feature=industry_grouped, parameter_value=0.01"
+            ),
+            "notes": "Groups sparse levels into Other using train-split frequency.",
+        },
+        {
+            "sheet_name": "transformations",
+            "scenario": "Date age feature",
+            "example": (
+                "enabled=TRUE, transform_type=date_age_months, source_feature=origination_date, "
+                "secondary_feature=as_of_date, output_feature=loan_age_months"
+            ),
+            "notes": "Use secondary_feature when age should be calculated row by row.",
+        },
+        {
+            "sheet_name": "transformations",
+            "scenario": "Row missingness signal",
+            "example": (
+                "enabled=TRUE, transform_type=row_missing_share, "
+                "source_feature=revenue, ebitda, debt, output_feature=financial_missing_share"
+            ),
+            "notes": (
+                "Comma-separated source_feature values are supported for row missingness only."
+            ),
         },
         {
             "sheet_name": "feature_review",
@@ -1390,6 +1443,9 @@ def build_template_workbook_bytes(
         )
         build_workbook_allowed_values_frame().to_excel(
             writer, sheet_name="allowed_values", index=False
+        )
+        build_workbook_transform_catalog_frame().to_excel(
+            writer, sheet_name="transform_catalog", index=False
         )
         build_workbook_examples_frame().to_excel(writer, sheet_name="examples", index=False)
         build_workbook_required_columns_frame().to_excel(
@@ -1491,7 +1547,28 @@ def _transformation_meaning(transform_type: TransformationType) -> str:
         ),
         TransformationType.CAPPED_ZSCORE: "Standardize then cap extreme z-scores.",
         TransformationType.PIECEWISE_LINEAR: "Create a hinge term above a configured cut point.",
+        TransformationType.STANDARD_SCALE: "Subtract the train mean and divide by train std.",
+        TransformationType.ROBUST_SCALE: "Subtract the train median and divide by train IQR.",
+        TransformationType.MIN_MAX_SCALE: "Scale values to the train minimum/maximum range.",
+        TransformationType.PERCENTILE_RANK: "Map values to their train percentile position.",
+        TransformationType.NORMAL_SCORE: "Convert percentile rank to a normal-score value.",
+        TransformationType.SIGNED_LOG1P: "Apply sign(x) * log(1 + abs(x)).",
+        TransformationType.SQRT: "Apply square root to non-negative values.",
+        TransformationType.RECIPROCAL: "Create 1 / x with safe zero handling.",
+        TransformationType.SQUARE: "Square the numeric feature.",
+        TransformationType.POWER: "Raise the numeric feature to parameter_value.",
+        TransformationType.ABSOLUTE_VALUE: "Use the absolute value of the numeric feature.",
+        TransformationType.CENTER_MEAN: "Subtract the train-split mean.",
+        TransformationType.CENTER_MEDIAN: "Subtract the train-split median.",
         TransformationType.RATIO: "Create source_feature divided by secondary_feature.",
+        TransformationType.SAFE_RATIO: "Create a ratio with explicit near-zero protection.",
+        TransformationType.MARGIN_RATIO: "Create (source - secondary) / abs(source).",
+        TransformationType.DEBT_SERVICE_RATIO: (
+            "Create source divided by secondary for coverage ratios."
+        ),
+        TransformationType.ADD: "Add source_feature and secondary_feature.",
+        TransformationType.SUBTRACT: "Subtract secondary_feature from source_feature.",
+        TransformationType.PRODUCT: "Multiply source_feature by secondary_feature.",
         TransformationType.INTERACTION: "Create source_feature multiplied by secondary_feature.",
         TransformationType.LAG: "Create a lagged version of a time-aware feature.",
         TransformationType.DIFFERENCE: "Create current minus lagged value.",
@@ -1501,10 +1578,208 @@ def _transformation_meaning(transform_type: TransformationType) -> str:
         TransformationType.ROLLING_MIN: "Create a rolling minimum over the configured window.",
         TransformationType.ROLLING_MAX: "Create a rolling maximum over the configured window.",
         TransformationType.ROLLING_STD: "Create a rolling standard deviation.",
+        TransformationType.ROLLING_SUM: "Create a rolling sum over prior observations.",
+        TransformationType.ROLLING_RANGE: "Create rolling max minus rolling min.",
+        TransformationType.ROLLING_CV: "Create rolling standard deviation divided by rolling mean.",
+        TransformationType.ROLLING_SLOPE: "Estimate a rolling linear trend slope.",
+        TransformationType.EXPANDING_MEAN: "Create a prior-observation expanding mean.",
+        TransformationType.CUMULATIVE_SUM: "Create a prior-observation cumulative sum.",
+        TransformationType.CUMULATIVE_COUNT: "Count prior observations in time order.",
+        TransformationType.MONTHS_SINCE_EVENT: (
+            "Estimate elapsed months since the source was positive."
+        ),
+        TransformationType.CHANGE_FROM_BASELINE: "Subtract the first observed value in time order.",
         TransformationType.PCT_CHANGE: "Create percent change over the lag period.",
         TransformationType.MANUAL_BINS: "Create ordered categorical bins from numeric edges.",
+        TransformationType.QUANTILE_BINS: "Create train-fit equal-frequency numeric bins.",
+        TransformationType.EQUAL_WIDTH_BINS: "Create train-fit equal-width numeric bins.",
+        TransformationType.MONOTONIC_BINS: (
+            "Create bins whose train target rates are monotonic when possible."
+        ),
+        TransformationType.WOE_ENCODING: "Encode bins/categories using weight of evidence.",
+        TransformationType.BAD_RATE_ENCODING: "Encode bins/categories using train target rate.",
+        TransformationType.RARE_CATEGORY_COLLAPSE: "Group sparse category levels into Other.",
+        TransformationType.FREQUENCY_ENCODING: "Encode categories by train frequency share.",
+        TransformationType.ORDINAL_ENCODING: "Map categories to deterministic integer codes.",
+        TransformationType.TARGET_ENCODING: "Encode categories by smoothed train target mean.",
+        TransformationType.DATE_YEAR: "Extract calendar year from a date.",
+        TransformationType.DATE_MONTH: "Extract calendar month from a date.",
+        TransformationType.DATE_QUARTER: "Extract calendar quarter from a date.",
+        TransformationType.DATE_MONTH_END_FLAG: "Flag whether a date falls on month end.",
+        TransformationType.DATE_FISCAL_QUARTER: (
+            "Extract fiscal quarter using parameter_value start month."
+        ),
+        TransformationType.DATE_AGE_DAYS: "Calculate day age from source date to reference date.",
+        TransformationType.DATE_AGE_MONTHS: (
+            "Calculate month age from source date to reference date."
+        ),
+        TransformationType.ROW_MISSING_COUNT: "Count missing values across listed source fields.",
+        TransformationType.ROW_MISSING_SHARE: (
+            "Calculate missing share across listed source fields."
+        ),
+        TransformationType.ANY_MISSING_FLAG: "Flag whether any listed source field is missing.",
     }
-    return meanings[transform_type]
+    return meanings.get(transform_type, "Supported governed transformation.")
+
+
+def _transformation_category(transform_type: TransformationType) -> str:
+    categories = {
+        TransformationType.WINSORIZE: "Numeric shape",
+        TransformationType.LOG1P: "Numeric shape",
+        TransformationType.BOX_COX: "Numeric shape",
+        TransformationType.NATURAL_SPLINE: "Numeric shape",
+        TransformationType.YEO_JOHNSON: "Numeric shape",
+        TransformationType.CAPPED_ZSCORE: "Numeric shape",
+        TransformationType.PIECEWISE_LINEAR: "Numeric shape",
+        TransformationType.STANDARD_SCALE: "Scaling and rank",
+        TransformationType.ROBUST_SCALE: "Scaling and rank",
+        TransformationType.MIN_MAX_SCALE: "Scaling and rank",
+        TransformationType.PERCENTILE_RANK: "Scaling and rank",
+        TransformationType.NORMAL_SCORE: "Scaling and rank",
+        TransformationType.SIGNED_LOG1P: "Numeric shape",
+        TransformationType.SQRT: "Numeric shape",
+        TransformationType.RECIPROCAL: "Numeric shape",
+        TransformationType.SQUARE: "Numeric shape",
+        TransformationType.POWER: "Numeric shape",
+        TransformationType.ABSOLUTE_VALUE: "Numeric shape",
+        TransformationType.CENTER_MEAN: "Scaling and rank",
+        TransformationType.CENTER_MEDIAN: "Scaling and rank",
+        TransformationType.RATIO: "Combinations",
+        TransformationType.SAFE_RATIO: "Combinations",
+        TransformationType.MARGIN_RATIO: "Combinations",
+        TransformationType.DEBT_SERVICE_RATIO: "Combinations",
+        TransformationType.ADD: "Combinations",
+        TransformationType.SUBTRACT: "Combinations",
+        TransformationType.PRODUCT: "Combinations",
+        TransformationType.INTERACTION: "Combinations",
+        TransformationType.LAG: "Time-aware",
+        TransformationType.DIFFERENCE: "Time-aware",
+        TransformationType.EWMA: "Time-aware",
+        TransformationType.ROLLING_MEAN: "Time-aware",
+        TransformationType.ROLLING_MEDIAN: "Time-aware",
+        TransformationType.ROLLING_MIN: "Time-aware",
+        TransformationType.ROLLING_MAX: "Time-aware",
+        TransformationType.ROLLING_STD: "Time-aware",
+        TransformationType.ROLLING_SUM: "Time-aware",
+        TransformationType.ROLLING_RANGE: "Time-aware",
+        TransformationType.ROLLING_CV: "Time-aware",
+        TransformationType.ROLLING_SLOPE: "Time-aware",
+        TransformationType.EXPANDING_MEAN: "Time-aware",
+        TransformationType.CUMULATIVE_SUM: "Time-aware",
+        TransformationType.CUMULATIVE_COUNT: "Time-aware",
+        TransformationType.MONTHS_SINCE_EVENT: "Time-aware",
+        TransformationType.CHANGE_FROM_BASELINE: "Time-aware",
+        TransformationType.PCT_CHANGE: "Time-aware",
+        TransformationType.MANUAL_BINS: "Binning and encoding",
+        TransformationType.QUANTILE_BINS: "Binning and encoding",
+        TransformationType.EQUAL_WIDTH_BINS: "Binning and encoding",
+        TransformationType.MONOTONIC_BINS: "Binning and encoding",
+        TransformationType.WOE_ENCODING: "Binning and encoding",
+        TransformationType.BAD_RATE_ENCODING: "Binning and encoding",
+        TransformationType.RARE_CATEGORY_COLLAPSE: "Binning and encoding",
+        TransformationType.FREQUENCY_ENCODING: "Binning and encoding",
+        TransformationType.ORDINAL_ENCODING: "Binning and encoding",
+        TransformationType.TARGET_ENCODING: "Binning and encoding",
+        TransformationType.DATE_YEAR: "Date features",
+        TransformationType.DATE_MONTH: "Date features",
+        TransformationType.DATE_QUARTER: "Date features",
+        TransformationType.DATE_MONTH_END_FLAG: "Date features",
+        TransformationType.DATE_FISCAL_QUARTER: "Date features",
+        TransformationType.DATE_AGE_DAYS: "Date features",
+        TransformationType.DATE_AGE_MONTHS: "Date features",
+        TransformationType.ROW_MISSING_COUNT: "Missingness",
+        TransformationType.ROW_MISSING_SHARE: "Missingness",
+        TransformationType.ANY_MISSING_FLAG: "Missingness",
+    }
+    return categories.get(transform_type, "Other")
+
+
+def _transformation_use_case(transform_type: TransformationType) -> str:
+    category = _transformation_category(transform_type)
+    if category == "Numeric shape":
+        return "Use when scale, skew, tails, or nonlinear marginal effects need treatment."
+    if category == "Scaling and rank":
+        return "Use for models sensitive to feature magnitude or heavy-tailed ranks."
+    if category == "Combinations":
+        return "Use when a business ratio, spread, coverage metric, or interaction is expected."
+    if category == "Time-aware":
+        return "Use for panel or time-series data where prior behavior has predictive value."
+    if category == "Binning and encoding":
+        return "Use for scorecards, categorical signal, sparse levels, or nonlinear buckets."
+    if category == "Date features":
+        return "Use to convert governed dates into numeric model inputs."
+    if category == "Missingness":
+        return "Use when missingness patterns contain business or operational signal."
+    return "Use when the transformation has a documented modeling rationale."
+
+
+def _transformation_parameter_guidance(transform_type: TransformationType) -> str:
+    if transform_type == TransformationType.WINSORIZE:
+        return "lower_quantile and upper_quantile; defaults 0.01 and 0.99."
+    if transform_type == TransformationType.NATURAL_SPLINE:
+        return "parameter_value controls degrees of freedom; minimum 3, default 4."
+    if transform_type == TransformationType.CAPPED_ZSCORE:
+        return "parameter_value controls z cap; default 3."
+    if transform_type in {TransformationType.PIECEWISE_LINEAR, TransformationType.POWER}:
+        return "parameter_value is required."
+    if transform_type in {
+        TransformationType.QUANTILE_BINS,
+        TransformationType.EQUAL_WIDTH_BINS,
+        TransformationType.MONOTONIC_BINS,
+        TransformationType.WOE_ENCODING,
+        TransformationType.BAD_RATE_ENCODING,
+    }:
+        return "parameter_value controls bin count; bin_edges can override for WOE/bad-rate."
+    if transform_type == TransformationType.MANUAL_BINS:
+        return "bin_edges is required; provide internal numeric edges only."
+    if transform_type == TransformationType.RARE_CATEGORY_COLLAPSE:
+        return "parameter_value is minimum train share; default 0.01."
+    if transform_type == TransformationType.TARGET_ENCODING:
+        return "parameter_value is smoothing strength; default 20."
+    if transform_type in {
+        TransformationType.RATIO,
+        TransformationType.SAFE_RATIO,
+        TransformationType.MARGIN_RATIO,
+        TransformationType.DEBT_SERVICE_RATIO,
+        TransformationType.ADD,
+        TransformationType.SUBTRACT,
+        TransformationType.PRODUCT,
+        TransformationType.INTERACTION,
+    }:
+        return "secondary_feature is required; categorical_value is optional for interactions."
+    if transform_type in {
+        TransformationType.LAG,
+        TransformationType.DIFFERENCE,
+        TransformationType.PCT_CHANGE,
+    }:
+        return "lag_periods controls the lookback; default 1."
+    if "rolling" in transform_type.value or transform_type == TransformationType.EWMA:
+        return "window_size controls the lookback window; default 3."
+    if transform_type == TransformationType.DATE_FISCAL_QUARTER:
+        return "parameter_value is fiscal year start month; default 1."
+    if transform_type in {TransformationType.DATE_AGE_DAYS, TransformationType.DATE_AGE_MONTHS}:
+        return "secondary_feature can hold row-level reference date; otherwise split date is used."
+    if transform_type in {
+        TransformationType.ROW_MISSING_COUNT,
+        TransformationType.ROW_MISSING_SHARE,
+        TransformationType.ANY_MISSING_FLAG,
+    }:
+        return "source_feature accepts comma-separated column names."
+    return "No additional parameter required beyond source_feature and output_feature."
+
+
+def _transformation_output_type(transform_type: TransformationType) -> str:
+    if transform_type in {
+        TransformationType.MANUAL_BINS,
+        TransformationType.QUANTILE_BINS,
+        TransformationType.EQUAL_WIDTH_BINS,
+        TransformationType.MONOTONIC_BINS,
+        TransformationType.RARE_CATEGORY_COLLAPSE,
+    }:
+        return "categorical"
+    if transform_type == TransformationType.NATURAL_SPLINE:
+        return "multiple numeric columns"
+    return "numeric"
 
 
 def _feature_review_decision_meaning(decision: FeatureReviewDecisionType) -> str:
@@ -1562,15 +1837,21 @@ def _required_column_meaning(sheet_name: str, column: str) -> str:
         ("feature_dictionary", "expected_sign"): "Expected relationship to the target.",
         ("feature_dictionary", "inclusion_rationale"): "Why the feature belongs in development.",
         ("transformations", "transform_type"): "Governed transformation operation.",
-        ("transformations", "source_feature"): "Primary input feature for the transformation.",
-        ("transformations", "secondary_feature"): "Second input for ratio/interaction transforms.",
+        ("transformations", "source_feature"): (
+            "Primary input feature, or comma-separated feature list for row missingness."
+        ),
+        ("transformations", "secondary_feature"): (
+            "Second input for arithmetic/interaction transforms or date-age reference date."
+        ),
         ("transformations", "categorical_value"): (
             "Category value for category-specific transforms."
         ),
         ("transformations", "output_feature"): "Generated feature name.",
         ("transformations", "lower_quantile"): "Lower quantile for winsorization.",
         ("transformations", "upper_quantile"): "Upper quantile for winsorization.",
-        ("transformations", "parameter_value"): "Numeric cut point, cap, or transform parameter.",
+        ("transformations", "parameter_value"): (
+            "Numeric cut point, cap, bin count, smoothing, or transform parameter."
+        ),
         ("transformations", "window_size"): "Rolling or EWMA window.",
         ("transformations", "lag_periods"): "Lag length for time-aware transforms.",
         ("transformations", "bin_edges"): "Comma-separated internal bin edges.",
@@ -1622,7 +1903,13 @@ def _format_template_workbook(workbook: Any) -> None:
     _apply_tab_colors(workbook)
 
 
-_REFERENCE_SHEETS = {"instructions", "allowed_values", "examples", "required_columns"}
+_REFERENCE_SHEETS = {
+    "instructions",
+    "allowed_values",
+    "transform_catalog",
+    "examples",
+    "required_columns",
+}
 
 
 _HEADER_COMMENTS: dict[str, dict[str, str]] = {
@@ -1657,14 +1944,23 @@ _HEADER_COMMENTS: dict[str, dict[str, str]] = {
     },
     "transformations": {
         "enabled": "TRUE applies the transformation; FALSE keeps it as a draft.",
-        "transform_type": "Choose a supported transform from allowed_values.",
-        "source_feature": "Primary input feature.",
-        "secondary_feature": "Required for ratio and interaction transforms.",
-        "categorical_value": "Optional category value for category-specific transforms.",
+        "transform_type": "Choose a supported transform from transform_catalog.",
+        "source_feature": (
+            "Primary input feature. For row missingness transforms, comma-separated "
+            "features are allowed."
+        ),
+        "secondary_feature": (
+            "Required for ratio, arithmetic, and interaction transforms; optional "
+            "reference date for date-age transforms."
+        ),
+        "categorical_value": "Optional category value for category-specific interactions.",
         "output_feature": "Generated output feature name.",
         "lower_quantile": "Winsorization lower quantile, e.g. 0.01.",
         "upper_quantile": "Winsorization upper quantile, e.g. 0.99.",
-        "parameter_value": "Cut point, cap, spline df, or other numeric parameter.",
+        "parameter_value": (
+            "Cut point, cap, spline df, bin count, smoothing, fiscal start month, "
+            "or other numeric parameter."
+        ),
         "window_size": "Window length for rolling or EWMA transforms.",
         "lag_periods": "Lag length for lag, difference, and pct_change.",
         "bin_edges": "Internal numeric bin edges such as 0.2, 0.5, 0.8.",
@@ -1777,7 +2073,28 @@ def _add_dropdown_validation(
     column_letter = get_column_letter_for_index(column_index)
     formula = '"' + ",".join(values) + '"'
     if len(formula) > 255:
-        return
+        helper_sheet_name = "_validation_lists"
+        helper = (
+            workbook[helper_sheet_name]
+            if helper_sheet_name in workbook.sheetnames
+            else workbook.create_sheet(helper_sheet_name)
+        )
+        helper.sheet_state = "hidden"
+        helper_column_index = helper.max_column + 1
+        if (
+            helper.max_column == 1
+            and helper.max_row == 1
+            and helper.cell(row=1, column=1).value is None
+        ):
+            helper_column_index = 1
+        helper_column_letter = get_column_letter_for_index(helper_column_index)
+        helper.cell(row=1, column=helper_column_index).value = f"{sheet_name}.{column_name}"
+        for row_index, value in enumerate(values, start=2):
+            helper.cell(row=row_index, column=helper_column_index).value = value
+        formula = (
+            f"'{helper_sheet_name}'!${helper_column_letter}$2:"
+            f"${helper_column_letter}${len(values) + 1}"
+        )
     validation = validation_class(type="list", formula1=formula, allow_blank=True)
     validation.error = "Choose a supported Quant Studio value."
     validation.errorTitle = "Unsupported value"
@@ -1799,6 +2116,7 @@ def _apply_tab_colors(workbook: Any) -> None:
     tab_colors = {
         "instructions": "1F6EF5",
         "allowed_values": "607089",
+        "transform_catalog": "607089",
         "examples": "607089",
         "required_columns": "607089",
         "schema": "0F8B5F",

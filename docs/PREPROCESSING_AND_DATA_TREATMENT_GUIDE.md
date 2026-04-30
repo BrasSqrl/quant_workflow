@@ -459,25 +459,51 @@ diagnostic dataframe.
 
 Supported transform families:
 
-- `winsorize`
-- `log1p`
-- `box_cox`
-- `natural_spline`
-- `yeo_johnson`
-- `capped_zscore`
-- `piecewise_linear`
-- `ratio`
-- `interaction`
-- `lag`
-- `difference`
-- `ewma`
-- `rolling_mean`
-- `rolling_median`
-- `rolling_min`
-- `rolling_max`
-- `rolling_std`
-- `pct_change`
-- `manual_bins`
+- numeric shape transforms: `winsorize`, `log1p`, `signed_log1p`,
+  `box_cox`, `yeo_johnson`, `sqrt`, `reciprocal`, `square`, `power`,
+  `absolute_value`, `natural_spline`, `capped_zscore`, and
+  `piecewise_linear`
+- scaling and rank transforms: `standard_scale`, `robust_scale`,
+  `min_max_scale`, `percentile_rank`, `normal_score`, `center_mean`, and
+  `center_median`
+- combination transforms: `ratio`, `safe_ratio`, `margin_ratio`,
+  `debt_service_ratio`, `add`, `subtract`, `product`, and `interaction`
+- time-aware transforms: `lag`, `difference`, `pct_change`, `ewma`,
+  `rolling_mean`, `rolling_median`, `rolling_min`, `rolling_max`,
+  `rolling_std`, `rolling_sum`, `rolling_range`, `rolling_cv`,
+  `rolling_slope`, `expanding_mean`, `cumulative_sum`,
+  `cumulative_count`, `months_since_event`, and `change_from_baseline`
+- binning and encoding transforms: `manual_bins`, `quantile_bins`,
+  `equal_width_bins`, `monotonic_bins`, `woe_encoding`,
+  `bad_rate_encoding`, `rare_category_collapse`, `frequency_encoding`,
+  `ordinal_encoding`, and `target_encoding`
+- date and missingness transforms: `date_year`, `date_month`,
+  `date_quarter`, `date_month_end_flag`, `date_fiscal_quarter`,
+  `date_age_days`, `date_age_months`, `row_missing_count`,
+  `row_missing_share`, and `any_missing_flag`
+
+Parameter rules:
+
+- `lower_quantile` and `upper_quantile` control `winsorize`.
+- `parameter_value` controls spline degrees of freedom, z caps, hinge points,
+  powers, bin counts, target-encoding smoothing, rare-category minimum share,
+  and fiscal start month depending on the selected transform.
+- `secondary_feature` is required for two-field ratios, arithmetic transforms,
+  and interactions. It can also supply the row-level reference date for
+  `date_age_days` and `date_age_months`.
+- `window_size` controls EWMA and rolling transforms.
+- `lag_periods` controls lag, difference, and percent-change transforms.
+- `bin_edges` is required for `manual_bins` and can override automatic bins
+  for WoE and bad-rate encodings.
+- `source_feature` accepts comma-separated column names only for
+  `row_missing_count`, `row_missing_share`, and `any_missing_flag`.
+
+Workbook support:
+
+- The Step 1 review workbook includes a `transform_catalog` sheet with each
+  transform's purpose, use case, parameter guidance, and output type.
+- The `transformations.transform_type` dropdown uses a hidden validation list
+  so the full expanded catalog remains selectable in Excel.
 
 ### Audit evidence
 

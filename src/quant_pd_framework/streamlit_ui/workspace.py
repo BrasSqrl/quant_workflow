@@ -11,6 +11,7 @@ import streamlit as st
 from quant_pd_framework.gui_support import (
     SUPPORTED_DTYPES,
     SUPPORTED_MISSING_VALUE_POLICIES,
+    SUPPORTED_TRANSFORMATION_TYPES,
     build_template_workbook_bytes,
     frames_equivalent,
     load_template_workbook,
@@ -178,7 +179,10 @@ def render_builder_workspace(
             hide_index=True,
             column_config={
                 "enabled": st.column_config.CheckboxColumn("Enabled"),
-                "transform_type": st.column_config.TextColumn("Type"),
+                "transform_type": st.column_config.SelectboxColumn(
+                    "Type",
+                    options=SUPPORTED_TRANSFORMATION_TYPES,
+                ),
                 "source_feature": st.column_config.TextColumn("Source feature"),
                 "secondary_feature": st.column_config.TextColumn("Secondary feature"),
                 "categorical_value": st.column_config.TextColumn("Categorical value"),
@@ -210,22 +214,25 @@ def render_builder_workspace(
         with st.expander("Transformation Guidance", expanded=False):
             st.markdown(
                 """
-                - `winsorize` clips a numeric feature using train-fit quantiles.
-                - `log1p` applies a log transform to numeric values greater than `-1`.
-                - `box_cox` applies a train-fit power transform for strictly positive values.
-                - `natural_spline` expands a numeric feature into a train-fit
-                  natural cubic spline basis.
-                - `yeo_johnson` fits a train-based power transform that can
-                  handle zero and negative values.
-                - `capped_zscore` standardizes a numeric feature and clips it
-                  at the configured z-cap.
-                - `piecewise_linear` creates a positive hinge term above the
-                  configured cut point.
-                - `ratio` creates `source / secondary`.
-                - `interaction` creates `source * secondary`.
-                - `lag`, `difference`, `ewma`, and rolling transforms add time-aware features.
-                - `manual_bins` creates an ordered categorical feature using
-                  your internal edges.
+                - **Numeric shape:** `winsorize`, `log1p`, `signed_log1p`, `box_cox`,
+                  `yeo_johnson`, `sqrt`, `reciprocal`, `square`, `power`, and
+                  `piecewise_linear` reshape skew, tails, and nonlinear effects.
+                - **Scaling and rank:** `standard_scale`, `robust_scale`,
+                  `min_max_scale`, `percentile_rank`, `normal_score`,
+                  `center_mean`, and `center_median` normalize magnitude while
+                  fitting parameters on train only.
+                - **Combinations:** `ratio`, `safe_ratio`, `margin_ratio`,
+                  `debt_service_ratio`, `add`, `subtract`, `product`, and
+                  `interaction` combine two fields using the secondary feature.
+                - **Time-aware:** `lag`, `difference`, `pct_change`, `ewma`,
+                  rolling, expanding, cumulative, baseline, and event-distance
+                  transforms respect configured date/entity ordering.
+                - **Binning and encoding:** manual, quantile, equal-width,
+                  monotonic, WOE, bad-rate, rare-category, frequency, ordinal,
+                  and target encodings support scorecards and categorical signal.
+                - **Date and missingness:** date-part, fiscal-quarter, age, row
+                  missing count/share, and any-missing flags document structural
+                  information without editing source data.
                 """
             )
 

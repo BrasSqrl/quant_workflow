@@ -130,6 +130,8 @@ The workbook includes:
 - an `instructions` sheet that explains how each sheet should be used
 - an `allowed_values` sheet for roles, dtypes, missing policies,
   transformation types, manual-review decisions, and boolean fields
+- a `transform_catalog` sheet explaining each transformation, when to use it,
+  required parameters, and expected output type
 - an `examples` sheet with realistic row patterns
 - a `required_columns` sheet that shows which headers must remain compatible
   for upload parsing
