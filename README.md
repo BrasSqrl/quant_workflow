@@ -214,8 +214,6 @@ The repository now includes an explicit engineering rubric and alignment note:
 - [docs/RUBRIC_ALIGNMENT.md](./docs/RUBRIC_ALIGNMENT.md)
 - [docs/UI_UX_STANDARD.md](./docs/UI_UX_STANDARD.md)
 - [docs/UI_ENTERPRISE_REDESIGN.md](./docs/UI_ENTERPRISE_REDESIGN.md)
-- [docs/UI_USABILITY_ROADMAP.md](./docs/UI_USABILITY_ROADMAP.md) records the
-  implemented roadmap for the current in-app guidance and usability surfaces
 
 ## Transparency and Auditability Guides
 
@@ -285,14 +283,14 @@ quant/
       .gitkeep
   docs/
     README.md
+    CHECKPOINT_STAGE_GUIDE.md
     ENGINEERING_RUBRIC.md
     GUI_TO_CODE_TRACEABILITY_GUIDE.md
-    UI_USABILITY_ROADMAP.md
-  METRIC_CATALOG.md
-  MODEL_CATALOG.md
-  PREPROCESSING_AND_DATA_TREATMENT_GUIDE.md
-  CHECKPOINT_STAGE_GUIDE.md
-  RUBRIC_ALIGNMENT.md
+    MACOS_SETUP.md
+    METRIC_CATALOG.md
+    MODEL_CATALOG.md
+    PREPROCESSING_AND_DATA_TREATMENT_GUIDE.md
+    RUBRIC_ALIGNMENT.md
     SAGEMAKER_SETUP.md
     STATISTICAL_TEST_CATALOG.md
     UI_ENTERPRISE_REDESIGN.md
@@ -636,10 +634,15 @@ That standard drives both the live GUI and the exported standalone HTML report. 
 - a light enterprise-fintech palette with stronger visual hierarchy
 - a command-bar header and five large clickable workflow steps
 - a workflow status strip with step-level readiness and next-action guidance
+- Step 1 data review surfaces for data contract, leakage-name flags, schema
+  fingerprint, and transformation preview
 - a two-column Step 2 model-configuration workspace for faster scanning
+- Step 2 model-suitability, configuration-risk, and runtime/output-size
+  planning panels
 - grouped diagnostics instead of one long undifferentiated result page
 - a centralized readiness issue center instead of scattered warnings only
-- a pre-run summary that makes execution scope explicit before the run starts
+- a pre-run summary and resource readiness check that make execution scope,
+  memory, disk, and export tradeoffs explicit before the run starts
 - configuration diffs against active profiles and the last completed run
 - a post-run artifact explorer grouped by evidence purpose
 - reviewer signoff and model-card generation inside the development workflow
@@ -662,6 +665,8 @@ The GUI exposes the following decision areas:
 - execution mode
 - file upload with a configured 50 GB per-file Streamlit limit
 - `Data_Load/` landing-zone file selection for CSV, Excel, and Parquet datasets
+- data contract scorecard, potential leakage flags, schema fingerprint, and
+  lightweight transformation preview in Step 1
 - existing model artifact path
 - existing run config path
 - model type
@@ -696,6 +701,8 @@ The GUI exposes the following decision areas:
   calibration ranking metric
 - reproducibility-manifest controls for tracked package versions and git capture
 - diagnostics and export toggles
+- model suitability, configuration risk, runtime/artifact estimate, and
+  resource readiness review panels
 - Large Data Mode, memory guardrails, dtype optimization, CSV-to-Parquet
   staging, training sample size, full-data scoring chunk size, tabular output
   format, and sampled export policy
@@ -2361,9 +2368,8 @@ If you want to score or retrain on a different dataset, keep the same config and
 
 ## Extension Points
 
-The current project structure is intended to support future work without forcing a rewrite.
-
-Common extension directions:
+The current project structure supports targeted extension without forcing a
+rewrite. Common extension directions include:
 
 - add richer feature engineering
 - add more formal macroeconomic scenario libraries

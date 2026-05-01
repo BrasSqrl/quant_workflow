@@ -136,7 +136,7 @@ def render_workflow_readiness(
         <div class="workflow-stage">
           <div class="workflow-stage__index">3</div>
           <div class="workflow-stage__body">
-            <span class="workflow-stage__kicker">Readiness Check</span>
+            <span class="workflow-stage__kicker">Readiness Check & Run</span>
             <h2>Validate the configured workflow before execution</h2>
             <p>
               This summary uses the same typed configuration build that will be used at run time,

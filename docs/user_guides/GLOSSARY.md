@@ -11,8 +11,16 @@ This glossary defines common terms used in Quant Studio.
 | Guided mode | Compact UI mode that keeps advanced controls on preset defaults. |
 | Advanced mode | UI mode that exposes deeper configuration, governance, explainability, and documentation controls. |
 | Execution mode | The run type: fit a new model, score an existing model, or search feature subsets. |
-| Readiness Check | Step 3 review surface that consolidates validation issues before execution. |
+| Data Contract Scorecard | Step 1 review table that checks target role, date role, identifier role, missingness, duplicates, target distribution, and high-cardinality fields before configuration. |
+| Potential Leakage Flags | Step 1 name-based warning table for fields that may describe default, loss, recovery, collections, or other post-outcome information. |
+| Schema Fingerprint | Step 1 reproducibility table with deterministic hashes for the selected data source shape, column signature, and a small content sample. |
+| Transformation Preview | Step 1 before/after preview for one configured or ad hoc transformation on a capped sample. |
+| Readiness Check & Run | Step 3 surface that consolidates validation issues and starts execution. |
 | Model Type Story Card | Step 2 guidance card that explains the selected model type, best-use cases, avoid conditions, key settings, outputs, and validation questions. |
+| Model Suitability Explainer | Step 2 table that explains whether the selected model, target mode, data structure, sample size, event density, and transformation load look reasonable. |
+| Configuration Risk Score | Step 2 pre-run complexity score that flags settings likely to increase instability, memory use, or review burden. |
+| Runtime / Artifact Size Estimate | Step 2 directional planning panel for expected runtime band and output size based on current data and export settings. |
+| Resource Readiness Check | Step 3 memory, disk, Large Data Mode, checkpoint, and report-visual review shown before execution. |
 | Explain this output | Collapsed explanation panel on selected high-value charts and tables that explains what an output shows, how to read it, good/bad signals, and recommended action. |
 | Binning Theater | Step 4 scorecard review surface for WoE buckets, IV, points, bin quality, and manual-bin override candidates. |
 | Decision Room | Default Step 5 landing view that summarizes recommendation, attention items, top drivers, key artifacts, and next actions for a review meeting. |

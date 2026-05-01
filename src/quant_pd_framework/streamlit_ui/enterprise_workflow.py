@@ -164,7 +164,7 @@ def build_workflow_step_states(
     if preview_config is None:
         readiness_state = WorkflowStepState(
             WorkflowStepId.READINESS_CHECK,
-            "Readiness Check",
+            "Readiness Check & Run",
             WorkflowStatus.NOT_STARTED if not dataframe_loaded else WorkflowStatus.NEEDS_ATTENTION,
             "Readiness not clear",
             "Resolve configuration issues before running.",
@@ -172,7 +172,7 @@ def build_workflow_step_states(
     elif preview_error or has_blocking_findings:
         readiness_state = WorkflowStepState(
             WorkflowStepId.READINESS_CHECK,
-            "Readiness Check",
+            "Readiness Check & Run",
             WorkflowStatus.NEEDS_ATTENTION,
             "Blocking issue found",
             "Open the issue center and fix blocking items.",
@@ -180,7 +180,7 @@ def build_workflow_step_states(
     else:
         readiness_state = WorkflowStepState(
             WorkflowStepId.READINESS_CHECK,
-            "Readiness Check",
+            "Readiness Check & Run",
             WorkflowStatus.READY,
             "Ready with warnings" if has_warnings else "Ready to run",
             "Run the workflow when the preflight summary looks correct.",
@@ -336,6 +336,274 @@ def build_preflight_summary(
         ("Code snapshot", preview_config.artifacts.export_code_snapshot),
     ]
     return cards, pd.DataFrame(rows, columns=["area", "value"])
+
+
+def build_model_suitability_explainer(
+    *,
+    dataframe: pd.DataFrame,
+    preview_config: Any,
+    edited_schema: pd.DataFrame,
+    transformation_frame: pd.DataFrame,
+) -> tuple[list[dict[str, str]], pd.DataFrame]:
+    """Explains why the selected model setup is suitable or needs review."""
+
+    feature_count = _enabled_feature_count(edited_schema)
+    target_column = str(preview_config.target.source_column or "")
+    target_mode = preview_config.target.mode.value
+    model_type = preview_config.model.model_type.value
+    event_text, events_per_feature = _event_density_text(
+        dataframe=dataframe,
+        target_column=target_column,
+        target_mode=target_mode,
+        feature_count=feature_count,
+    )
+    transform_count = _enabled_transformation_count(transformation_frame)
+    rows = [
+        {
+            "area": "Target compatibility",
+            "status": "pass",
+            "explanation": (
+                f"`{model_type}` is valid for `{target_mode}` target mode in the "
+                "resolved configuration."
+            ),
+            "recommended_action": "No action needed.",
+        },
+        {
+            "area": "Data structure",
+            "status": _structure_status(preview_config),
+            "explanation": _structure_explanation(preview_config),
+            "recommended_action": _structure_action(preview_config),
+        },
+        {
+            "area": "Sample and feature volume",
+            "status": _sample_feature_status(len(dataframe), feature_count),
+            "explanation": f"{len(dataframe):,} rows and {feature_count:,} enabled features.",
+            "recommended_action": "Reduce features or use simpler models if warnings appear.",
+        },
+        {
+            "area": "Event density",
+            "status": (
+                "warning"
+                if events_per_feature is not None and events_per_feature < 10
+                else "pass"
+            ),
+            "explanation": event_text,
+            "recommended_action": "For binary models, consider fewer features or more events.",
+        },
+        {
+            "area": "Transformation load",
+            "status": "warning" if transform_count > 25 else "pass",
+            "explanation": f"{transform_count:,} enabled governed transformations.",
+            "recommended_action": (
+                "Keep transformations with clear business or statistical purpose."
+            ),
+        },
+    ]
+    cards = [
+        {"label": "Selected model", "value": model_type.replace("_", " ").title()},
+        {"label": "Target mode", "value": target_mode.title()},
+        {"label": "Data structure", "value": preview_config.split.data_structure.value.title()},
+        {"label": "Enabled features", "value": f"{feature_count:,}"},
+    ]
+    return cards, pd.DataFrame(rows)
+
+
+def build_configuration_risk_score(
+    *,
+    dataframe: pd.DataFrame,
+    preview_config: Any,
+    edited_schema: pd.DataFrame,
+    transformation_frame: pd.DataFrame,
+) -> tuple[list[dict[str, str]], pd.DataFrame]:
+    """Scores configuration complexity risk before execution."""
+
+    rows: list[dict[str, str]] = []
+    score = 0
+    feature_count = _enabled_feature_count(edited_schema)
+    transform_count = _enabled_transformation_count(transformation_frame)
+    categorical_risks = _high_cardinality_risk_count(dataframe)
+    diagnostics_enabled = _enabled_bool_count(preview_config.diagnostics)
+    if feature_count > 50:
+        score += 15
+        rows.append(_risk_row("Feature count", "medium", f"{feature_count:,} enabled features."))
+    if len(dataframe) < max(feature_count * 20, 200):
+        score += 20
+        rows.append(
+            _risk_row(
+                "Rows vs features",
+                "high",
+                "Sample size is small relative to enabled feature count.",
+            )
+        )
+    if transform_count > 25:
+        score += 10
+        rows.append(_risk_row("Transformations", "medium", f"{transform_count:,} enabled rows."))
+    if categorical_risks:
+        score += 15
+        rows.append(
+            _risk_row(
+                "High-cardinality categoricals",
+                "medium",
+                f"{categorical_risks:,} text/category fields may expand memory.",
+            )
+        )
+    if diagnostics_enabled > 12:
+        score += 10
+        rows.append(
+            _risk_row("Diagnostics", "medium", f"{diagnostics_enabled:,} diagnostic toggles on.")
+        )
+    if preview_config.artifacts.include_advanced_visual_analytics:
+        score += 10
+        rows.append(_risk_row("Advanced visuals", "medium", "Advanced Visual Analytics is on."))
+    if preview_config.performance.retain_full_working_data:
+        score += 20
+        rows.append(
+            _risk_row(
+                "Memory retention",
+                "high",
+                "Full diagnostic working dataframe retention is enabled.",
+            )
+        )
+    if not rows:
+        rows.append(
+            {
+                "area": "Overall",
+                "severity": "low",
+                "signal": "No major pre-run complexity risks detected.",
+                "recommended_action": "Proceed after reviewing readiness warnings.",
+            }
+        )
+    score = min(score, 100)
+    band = "Low" if score < 25 else "Moderate" if score < 60 else "High"
+    cards = [
+        {"label": "Risk score", "value": f"{score}/100"},
+        {"label": "Risk band", "value": band},
+        {"label": "Risk items", "value": f"{len(rows):,}"},
+        {"label": "Diagnostics on", "value": f"{diagnostics_enabled:,}"},
+    ]
+    return cards, pd.DataFrame(rows)
+
+
+def build_runtime_artifact_estimate(
+    *,
+    dataframe: pd.DataFrame,
+    preview_config: Any,
+    transformation_frame: pd.DataFrame,
+) -> tuple[list[dict[str, str]], pd.DataFrame]:
+    """Builds rough runtime and artifact-size estimates for user planning."""
+
+    row_count = len(dataframe)
+    column_count = len(dataframe.columns)
+    memory_mb = _dataframe_memory_mb(dataframe)
+    transform_count = _enabled_transformation_count(transformation_frame)
+    diagnostics_enabled = _enabled_bool_count(preview_config.diagnostics)
+    complexity_score = (
+        row_count * max(column_count, 1) / 1_000_000
+        + transform_count * 0.25
+        + diagnostics_enabled * 0.5
+        + _model_complexity_weight(preview_config.model.model_type.value)
+    )
+    runtime_band = (
+        "Fast" if complexity_score < 8 else "Moderate" if complexity_score < 30 else "Long"
+    )
+    report_mb = _estimate_report_size_mb(preview_config, row_count, diagnostics_enabled)
+    table_mb = max(memory_mb * 0.25, 1.0)
+    cards = [
+        {"label": "Runtime estimate", "value": runtime_band},
+        {"label": "Input memory", "value": _format_mb(memory_mb)},
+        {"label": "Report estimate", "value": _format_mb(report_mb)},
+        {"label": "Table estimate", "value": _format_mb(table_mb)},
+    ]
+    rows = [
+        ("Rows x columns", f"{row_count:,} x {column_count:,}"),
+        ("Model complexity", preview_config.model.model_type.value),
+        ("Enabled transformations", f"{transform_count:,}"),
+        ("Enabled diagnostics", f"{diagnostics_enabled:,}"),
+        (
+            "Individual figure files",
+            _yes_no(preview_config.artifacts.export_individual_figure_files),
+        ),
+        (
+            "Enhanced report visuals",
+            _yes_no(preview_config.artifacts.include_enhanced_report_visuals),
+        ),
+        (
+            "Advanced visual analytics",
+            _yes_no(preview_config.artifacts.include_advanced_visual_analytics),
+        ),
+        ("Checkpoint retention", _yes_no(preview_config.artifacts.keep_all_checkpoints)),
+    ]
+    return cards, pd.DataFrame(rows, columns=["driver", "estimate"])
+
+
+def build_resource_readiness_check(
+    *,
+    dataframe: pd.DataFrame,
+    preview_config: Any,
+    large_data_mode: bool,
+) -> tuple[list[dict[str, str]], pd.DataFrame]:
+    """Builds memory, disk, and export readiness checks shown before run."""
+
+    memory_mb = _dataframe_memory_mb(dataframe)
+    multiplier = 2.5 if preview_config.performance.retain_full_working_data else 1.4
+    estimated_peak_mb = memory_mb * multiplier
+    memory_limit_gb = preview_config.performance.memory_limit_gb
+    memory_limit_mb = None if memory_limit_gb is None else float(memory_limit_gb) * 1024
+    disk_mb = _estimate_report_size_mb(
+        preview_config,
+        len(dataframe),
+        _enabled_bool_count(preview_config.diagnostics),
+    ) + max(memory_mb * 0.5, 5.0)
+    rows = [
+        _resource_row(
+            "Memory estimate",
+            (
+                "pass"
+                if memory_limit_mb is None or estimated_peak_mb <= memory_limit_mb
+                else "warning"
+            ),
+            _format_mb(estimated_peak_mb),
+            "Lower diagnostic retention, enable dtype optimization, or use a larger instance.",
+        ),
+        _resource_row(
+            "Large Data Mode",
+            "pass" if large_data_mode or len(dataframe) < 500_000 else "warning",
+            "On" if large_data_mode else "Off",
+            "Use Large Data Mode for multi-GB file-backed runs.",
+        ),
+        _resource_row(
+            "Checkpoint retention",
+            "warning" if preview_config.artifacts.keep_all_checkpoints else "pass",
+            (
+                "Keep all checkpoints on"
+                if preview_config.artifacts.keep_all_checkpoints
+                else "Prune safe checkpoints"
+            ),
+            "Leave off unless debugging requires retained context files.",
+        ),
+        _resource_row(
+            "Report visuals",
+            "warning" if preview_config.artifacts.include_advanced_visual_analytics else "pass",
+            _visual_setting_text(preview_config),
+            "Disable advanced visuals for faster runs or smaller HTML reports.",
+        ),
+        _resource_row(
+            "Disk estimate",
+            "pass" if disk_mb < 5_000 else "warning",
+            _format_mb(disk_mb),
+            "Use sampled exports or disable extra figure files if disk space is constrained.",
+        ),
+    ]
+    cards = [
+        {"label": "Estimated peak memory", "value": _format_mb(estimated_peak_mb)},
+        {"label": "Estimated disk output", "value": _format_mb(disk_mb)},
+        {"label": "Large Data Mode", "value": "On" if large_data_mode else "Off"},
+        {
+            "label": "Checkpoint policy",
+            "value": "Keep all" if preview_config.artifacts.keep_all_checkpoints else "Prune",
+        },
+    ]
+    return cards, pd.DataFrame(rows)
 
 
 def build_config_diff_frame(
@@ -527,6 +795,58 @@ def render_preflight_summary(
         )
 
 
+def render_model_suitability_explainer(
+    *,
+    cards: list[dict[str, str]],
+    details: pd.DataFrame,
+) -> None:
+    """Renders Step 2 model suitability guidance."""
+
+    with st.expander("Model Suitability Explainer", expanded=True):
+        render_metric_strip(cards, compact=True)
+        st.dataframe(prepare_table_for_display(details), width="stretch", hide_index=True)
+
+
+def render_configuration_risk_score(
+    *,
+    cards: list[dict[str, str]],
+    details: pd.DataFrame,
+) -> None:
+    """Renders Step 2 configuration complexity risk guidance."""
+
+    with st.expander("Configuration Risk Score", expanded=False):
+        render_metric_strip(cards, compact=True)
+        st.dataframe(prepare_table_for_display(details), width="stretch", hide_index=True)
+
+
+def render_runtime_artifact_estimate(
+    *,
+    cards: list[dict[str, str]],
+    details: pd.DataFrame,
+) -> None:
+    """Renders Step 2 rough runtime and output-size estimates."""
+
+    with st.expander("Runtime / Artifact Size Estimate", expanded=False):
+        render_metric_strip(cards, compact=True)
+        st.caption(
+            "Estimates are directional planning aids based on current selections, "
+            "not a guaranteed runtime or storage forecast."
+        )
+        st.dataframe(prepare_table_for_display(details), width="stretch", hide_index=True)
+
+
+def render_resource_readiness_check(
+    *,
+    cards: list[dict[str, str]],
+    details: pd.DataFrame,
+) -> None:
+    """Renders Step 3 compute and storage readiness guidance."""
+
+    with st.expander("Resource Readiness Check", expanded=True):
+        render_metric_strip(cards, compact=True)
+        st.dataframe(prepare_table_for_display(details), width="stretch", hide_index=True)
+
+
 def render_guidance_center() -> None:
     """Renders compact in-app guidance without expanding the main workflow."""
 
@@ -537,6 +857,179 @@ def render_guidance_center() -> None:
             key="enterprise_guidance_topic",
         )
         st.markdown(GUIDANCE_TOPICS[selected_topic])
+
+
+def _enabled_feature_count(edited_schema: pd.DataFrame) -> int:
+    if edited_schema.empty or "role" not in edited_schema.columns:
+        return 0
+    enabled = (
+        edited_schema["enabled"].map(_is_enabled_value)
+        if "enabled" in edited_schema.columns
+        else pd.Series(True, index=edited_schema.index)
+    )
+    return int((enabled & edited_schema["role"].astype(str).str.lower().eq("feature")).sum())
+
+
+def _enabled_transformation_count(transformation_frame: pd.DataFrame) -> int:
+    if transformation_frame.empty:
+        return 0
+    if "enabled" not in transformation_frame.columns:
+        return int(len(transformation_frame))
+    return int(transformation_frame["enabled"].map(_is_enabled_value).sum())
+
+
+def _is_enabled_value(value: Any) -> bool:
+    if isinstance(value, str):
+        return value.strip().lower() not in {"", "0", "false", "no", "off"}
+    return bool(value)
+
+
+def _event_density_text(
+    *,
+    dataframe: pd.DataFrame,
+    target_column: str,
+    target_mode: str,
+    feature_count: int,
+) -> tuple[str, float | None]:
+    if target_mode != "binary" or target_column not in dataframe.columns:
+        return "Not applicable for this target mode or target source is unavailable.", None
+    target = pd.to_numeric(dataframe[target_column], errors="coerce").dropna()
+    if target.empty:
+        return "Target has no numeric non-missing values in the current dataframe.", None
+    event_count = float(target.sum())
+    events_per_feature = event_count / max(feature_count, 1)
+    return (
+        f"{event_count:,.0f} positive events; {events_per_feature:.1f} events per feature.",
+        events_per_feature,
+    )
+
+
+def _structure_status(preview_config: Any) -> str:
+    data_structure = preview_config.split.data_structure.value
+    if data_structure == "panel" and not preview_config.split.entity_column:
+        return "warning"
+    if data_structure in {"panel", "time_series"} and not preview_config.split.date_column:
+        return "warning"
+    return "pass"
+
+
+def _structure_explanation(preview_config: Any) -> str:
+    data_structure = preview_config.split.data_structure.value
+    date_column = preview_config.split.date_column or "none"
+    entity_column = preview_config.split.entity_column or "none"
+    return f"Data structure is `{data_structure}`; date=`{date_column}`, entity=`{entity_column}`."
+
+
+def _structure_action(preview_config: Any) -> str:
+    if _structure_status(preview_config) == "pass":
+        return "No action needed."
+    return "Assign date and identifier roles in Column Designer where required."
+
+
+def _sample_feature_status(row_count: int, feature_count: int) -> str:
+    if row_count < max(feature_count * 20, 200):
+        return "warning"
+    return "pass"
+
+
+def _high_cardinality_risk_count(dataframe: pd.DataFrame) -> int:
+    if dataframe.empty:
+        return 0
+    threshold = max(50, int(len(dataframe) * 0.2))
+    columns = dataframe.select_dtypes(include=["object", "string", "category"]).columns
+    return int(sum(dataframe[column].nunique(dropna=True) > threshold for column in columns))
+
+
+def _enabled_bool_count(config_object: Any) -> int:
+    if not is_dataclass(config_object):
+        return 0
+    return sum(
+        1
+        for field in fields(config_object)
+        if isinstance(getattr(config_object, field.name), bool)
+        and getattr(config_object, field.name)
+        and field.name != "enabled"
+    )
+
+
+def _risk_row(area: str, severity: str, signal: str) -> dict[str, str]:
+    return {
+        "area": area,
+        "severity": severity,
+        "signal": signal,
+        "recommended_action": "Review this setting before running the workflow.",
+    }
+
+
+def _dataframe_memory_mb(dataframe: pd.DataFrame) -> float:
+    if dataframe.empty:
+        return 0.0
+    return float(dataframe.memory_usage(deep=True).sum()) / (1024 * 1024)
+
+
+def _model_complexity_weight(model_type: str) -> float:
+    if model_type in {"xgboost", "random_forest", "extra_trees"}:
+        return 12.0
+    if model_type in {
+        "scorecard_logistic_regression",
+        "explainable_boosting_machine",
+        "gam_spline_regression",
+        "gam_spline_logistic",
+    }:
+        return 8.0
+    if "forecast" in model_type or model_type in {"sarimax_forecast"}:
+        return 10.0
+    return 4.0
+
+
+def _estimate_report_size_mb(
+    preview_config: Any,
+    row_count: int,
+    diagnostics_enabled: int,
+) -> float:
+    size = 8.0 + diagnostics_enabled * 1.5 + min(row_count / 50_000, 20)
+    if preview_config.artifacts.include_enhanced_report_visuals:
+        size += 10.0
+    if preview_config.artifacts.include_advanced_visual_analytics:
+        size += 25.0
+    if preview_config.artifacts.export_individual_figure_files:
+        size += 15.0
+    return size
+
+
+def _format_mb(value: float) -> str:
+    if value >= 1024:
+        return f"{value / 1024:.1f} GB"
+    return f"{value:.1f} MB"
+
+
+def _yes_no(value: Any) -> str:
+    return "Yes" if bool(value) else "No"
+
+
+def _resource_row(
+    area: str,
+    status: str,
+    signal: str,
+    recommended_action: str,
+) -> dict[str, str]:
+    return {
+        "area": area,
+        "status": status,
+        "signal": signal,
+        "recommended_action": recommended_action if status != "pass" else "No action needed.",
+    }
+
+
+def _visual_setting_text(preview_config: Any) -> str:
+    settings = []
+    if preview_config.artifacts.include_enhanced_report_visuals:
+        settings.append("enhanced")
+    if preview_config.artifacts.include_advanced_visual_analytics:
+        settings.append("advanced")
+    if preview_config.artifacts.export_individual_figure_files:
+        settings.append("individual files")
+    return ", ".join(settings) if settings else "standard report visuals"
 
 
 def _flatten_config(payload: dict[str, Any], prefix: str = "") -> dict[str, Any]:

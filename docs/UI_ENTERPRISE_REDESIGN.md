@@ -19,6 +19,7 @@ Primary goals:
 - surface next actions and output expectations without adding functionality
 - expose workflow status, issue, preflight, diff, artifact, review, and model-card
   surfaces without changing the underlying modeling engine
+- add high-signal guidance surfaces only when they reduce uncertainty before a run
 - keep the current Python and Streamlit functionality intact
 
 ## Non-Goals
@@ -35,7 +36,8 @@ The UI uses five clickable workflow stages:
 
 1. **Dataset & Schema**
    Data source selection, dataset preview, column designer, feature dictionary,
-   governed transformations, and the review workbook live here.
+   governed transformations, data contract scorecard, leakage flags, schema
+   fingerprint, transformation preview, and the review workbook live here.
 
 2. **Model Configuration**
    Model setup controls live in grouped main-canvas expanders: core setup,
@@ -43,13 +45,16 @@ The UI uses five clickable workflow stages:
    diagnostics/export settings, governance, explainability, and documentation.
    The configuration-profile panel also lives here because it saves and reloads
    the Step 2 setup contract.
+   Model suitability, configuration risk, and runtime/output estimates appear
+   after a valid preview configuration exists.
    On desktop, the groups render in two side-by-side columns so setup/model
    controls and governance/output controls can be scanned without a long single
    vertical stack.
 
-3. **Readiness Check**
+3. **Readiness Check & Run**
    Preview validation, centralized issue center, preflight summary,
-   guardrail findings, execution-plan cards, and the primary run button live here.
+   resource readiness, guardrail findings, execution-plan cards, and the primary
+   run button live here.
 
 4. **Results & Artifacts**
    Completed run diagnostics, tables, charts, downloads, artifact locations, and
@@ -99,7 +104,7 @@ Avoid:
   inspect file-system paths directly.
 - Errors should appear as action-oriented cards, not flat bars when styling can
   improve readability.
-- The run button remains prominent and visually tied to the Readiness Check step.
+- The run button remains prominent and visually tied to the Readiness Check & Run step.
 
 ## Performance-Perception Principles
 

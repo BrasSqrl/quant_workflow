@@ -28,7 +28,7 @@ Every model run starts the same way:
    validation questions for the selected model.
 10. Configure split strategy, model settings, diagnostics, exports, and optional
    challenger or policy settings.
-11. Open Step 3, `Readiness Check`, resolve blocking issues, and run the
+11. Open Step 3, `Readiness Check & Run`, resolve blocking issues, and run the
    workflow.
 12. Review Step 4 outputs and the Step 5 Decision Room / decision summary.
 
@@ -947,8 +947,8 @@ Use `cox_proportional_hazards` when:
 
 ### Watchouts
 
-- The current implementation assumes observed events because censoring
-  indicators are not yet part of the model configuration.
+- The current implementation assumes observed events; censoring indicators are
+  not part of the current model configuration.
 - Do not use it when the target is not a positive duration.
 
 ## 20. AFT Survival Model

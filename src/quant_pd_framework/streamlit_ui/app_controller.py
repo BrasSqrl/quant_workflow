@@ -115,7 +115,19 @@ from quant_pd_framework.streamlit_ui.enterprise_workflow import (
     build_config_diff_frame as ui_build_config_diff_frame,
 )
 from quant_pd_framework.streamlit_ui.enterprise_workflow import (
+    build_configuration_risk_score as ui_build_configuration_risk_score,
+)
+from quant_pd_framework.streamlit_ui.enterprise_workflow import (
+    build_model_suitability_explainer as ui_build_model_suitability_explainer,
+)
+from quant_pd_framework.streamlit_ui.enterprise_workflow import (
     build_preflight_summary as ui_build_preflight_summary,
+)
+from quant_pd_framework.streamlit_ui.enterprise_workflow import (
+    build_resource_readiness_check as ui_build_resource_readiness_check,
+)
+from quant_pd_framework.streamlit_ui.enterprise_workflow import (
+    build_runtime_artifact_estimate as ui_build_runtime_artifact_estimate,
 )
 from quant_pd_framework.streamlit_ui.enterprise_workflow import (
     build_workflow_step_states as ui_build_workflow_step_states,
@@ -124,13 +136,25 @@ from quant_pd_framework.streamlit_ui.enterprise_workflow import (
     collect_readiness_issues as ui_collect_readiness_issues,
 )
 from quant_pd_framework.streamlit_ui.enterprise_workflow import (
+    render_configuration_risk_score as ui_render_configuration_risk_score,
+)
+from quant_pd_framework.streamlit_ui.enterprise_workflow import (
     render_guidance_center as ui_render_guidance_center,
 )
 from quant_pd_framework.streamlit_ui.enterprise_workflow import (
     render_issue_center as ui_render_issue_center,
 )
 from quant_pd_framework.streamlit_ui.enterprise_workflow import (
+    render_model_suitability_explainer as ui_render_model_suitability_explainer,
+)
+from quant_pd_framework.streamlit_ui.enterprise_workflow import (
     render_preflight_summary as ui_render_preflight_summary,
+)
+from quant_pd_framework.streamlit_ui.enterprise_workflow import (
+    render_resource_readiness_check as ui_render_resource_readiness_check,
+)
+from quant_pd_framework.streamlit_ui.enterprise_workflow import (
+    render_runtime_artifact_estimate as ui_render_runtime_artifact_estimate,
 )
 from quant_pd_framework.streamlit_ui.enterprise_workflow import (
     render_workflow_status_strip as ui_render_workflow_status_strip,
@@ -862,7 +886,7 @@ def run_app() -> None:
         [
             "1  Dataset & Schema",
             "2  Model Configuration",
-            "3  Readiness Check",
+            "3  Readiness Check & Run",
             "4  Results & Artifacts",
             "5  Decision Summary",
         ]
@@ -3584,6 +3608,35 @@ def run_app() -> None:
             active_profile=active_profile_payload,
             last_run_snapshot=last_run_snapshot,
         )
+        if preview_config is not None:
+            suitability_cards, suitability_details = ui_build_model_suitability_explainer(
+                dataframe=dataframe,
+                preview_config=preview_config,
+                edited_schema=edited_schema,
+                transformation_frame=transformation_frame,
+            )
+            ui_render_model_suitability_explainer(
+                cards=suitability_cards,
+                details=suitability_details,
+            )
+            risk_cards, risk_details = ui_build_configuration_risk_score(
+                dataframe=dataframe,
+                preview_config=preview_config,
+                edited_schema=edited_schema,
+                transformation_frame=transformation_frame,
+            )
+            ui_render_configuration_risk_score(cards=risk_cards, details=risk_details)
+            estimate_cards, estimate_details = ui_build_runtime_artifact_estimate(
+                dataframe=dataframe,
+                preview_config=preview_config,
+                transformation_frame=transformation_frame,
+            )
+            ui_render_runtime_artifact_estimate(
+                cards=estimate_cards,
+                details=estimate_details,
+            )
+        else:
+            st.info("Resolve the configuration before reviewing Step 2 suitability guidance.")
     run_button_label = (
         "Run Feature Subset Search"
         if execution_mode == ExecutionMode.SEARCH_FEATURE_SUBSETS.value
@@ -3605,6 +3658,15 @@ def run_app() -> None:
                 transformation_frame=transformation_frame,
             )
             ui_render_preflight_summary(cards=preflight_cards, details=preflight_details)
+            resource_cards, resource_details = ui_build_resource_readiness_check(
+                dataframe=dataframe,
+                preview_config=preview_config,
+                large_data_mode=large_data_mode,
+            )
+            ui_render_resource_readiness_check(
+                cards=resource_cards,
+                details=resource_details,
+            )
         ui_render_execution_plan(
             ui_build_execution_plan_cards(
                 preview_config=preview_config,

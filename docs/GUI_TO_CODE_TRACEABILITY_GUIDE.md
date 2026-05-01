@@ -122,8 +122,9 @@ The main workspace now includes dedicated sections beyond the column designer.
 
 | Workspace tab | Config field(s) | Main implementation | Export evidence |
 | --- | --- | --- | --- |
+| `Data Review` | runtime-only dataset/schema review | `build_data_contract_scorecard(...)`, `build_potential_leakage_flags(...)`, `build_schema_fingerprint(...)` | visible pre-run data contract, leakage, and fingerprint tables |
 | `Feature Dictionary` | `FeatureDictionaryConfig.entries` | `parse_feature_dictionary_frame(...)`, diagnostics feature-dictionary output | `feature_dictionary`, `reports/validation_pack.md` |
-| `Transformations` | `TransformationConfig.transformations` | `parse_transformation_frame(...)`, `TransformationStep` | `governed_transformations`, `interaction_candidates` |
+| `Transformations` | `TransformationConfig.transformations` | `parse_transformation_frame(...)`, `TransformationStep`, `build_transformation_preview(...)` | `governed_transformations`, `interaction_candidates`; visible before/after preview for one selected transform |
 | `Template Workbook` | none directly; imports/exports editor tables | `build_template_workbook_bytes(...)`, `load_template_workbook(...)`, `streamlit_ui/workspace.py` | `config/configuration_template.xlsx` with instructions, allowed values, transform catalog, examples, required-column notes, comments, and dropdown validation |
 
 Implementation note:
@@ -209,6 +210,10 @@ Loading behavior:
 | `Readiness Issue Center` | config build errors, guardrail findings, and profile mismatch warnings | `collect_readiness_issues(...)`, `render_issue_center(...)` | visible pre-run issue table |
 | `Run Preflight Summary` | resolved `FrameworkConfig`, editor tables, and dataset shape | `build_preflight_summary(...)`, `render_preflight_summary(...)` | visible pre-run summary |
 | `Configuration Diff Viewer` | current config vs active profile and last completed run | `build_config_diff_frame(...)` | visible diff table |
+| `Model Suitability Explainer` | resolved `FrameworkConfig`, target mode, data structure, event density, feature count | `build_model_suitability_explainer(...)`, `render_model_suitability_explainer(...)` | visible Step 2 suitability table |
+| `Configuration Risk Score` | resolved `FrameworkConfig`, feature count, diagnostics, transformations, categorical cardinality | `build_configuration_risk_score(...)`, `render_configuration_risk_score(...)` | visible Step 2 risk score and drivers |
+| `Runtime / Artifact Size Estimate` | resolved `FrameworkConfig`, dataframe size, diagnostic count, export toggles | `build_runtime_artifact_estimate(...)`, `render_runtime_artifact_estimate(...)` | visible Step 2 directional runtime and output-size estimate |
+| `Resource Readiness Check` | resolved `FrameworkConfig`, dataframe memory, Large Data Mode, checkpoint and visual settings | `build_resource_readiness_check(...)`, `render_resource_readiness_check(...)` | visible Step 3 memory, disk, and execution-resource warnings |
 
 Notes:
 
@@ -216,7 +221,8 @@ Notes:
 - They make the current workflow state, remaining issues, and configuration
   changes more transparent before execution.
 - The workflow status model has five stages: Dataset & Schema, Model
-  Configuration, Readiness Check, Results & Artifacts, and Decision Summary.
+  Configuration, Readiness Check & Run, Results & Artifacts, and Decision
+  Summary.
 
 ## 7. Step 2 Group: Core Setup
 
@@ -251,8 +257,9 @@ Execution-mode meaning:
 
 SAS-equivalent additions such as multinomial logistic, ordinal logistic, GLM
 count/severity models, spline GAM models, mixed effects, decision tree, and
-forecasting adapters are available through `fit_new_model`. They are not yet
-part of `search_feature_subsets`.
+forecasting adapters are available through `fit_new_model`. Feature subset
+search uses the validated model catalog for each target mode and excludes only
+models that do not produce meaningful feature-dependent subset comparisons.
 
 ## 8. Step 2 Group: Split Strategy
 
