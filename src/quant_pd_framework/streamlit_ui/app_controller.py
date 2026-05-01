@@ -396,6 +396,22 @@ def initialize_preset_state() -> GUIBuildInputs:
     return preset_inputs
 
 
+def selectbox_index_from_widget_state(
+    *,
+    key: str,
+    options: list[str],
+    fallback: str,
+) -> int | None:
+    """Resolves a selectbox index without conflicting with existing widget state."""
+
+    if st.session_state.get(key) in options:
+        return None
+    if key in st.session_state:
+        del st.session_state[key]
+    fallback_value = fallback if fallback in options else options[0]
+    return options.index(fallback_value)
+
+
 def default_scenario_editor_frame() -> pd.DataFrame:
     """Builds the blank scenario editor used in the sidebar."""
 
@@ -1120,13 +1136,16 @@ def run_app() -> None:
                 selected_target_mode,
                 allowed_model_types=subset_search_model_filter,
             )
-            if st.session_state.get("model_family") not in available_family_options:
-                st.session_state["model_family"] = default_model_family
+            model_family_index = selectbox_index_from_widget_state(
+                key="model_family",
+                options=available_family_options,
+                fallback=default_model_family,
+            )
             model_family = st.selectbox(
                 "Model family",
                 options=available_family_options,
                 format_func=format_model_family,
-                index=available_family_options.index(st.session_state["model_family"]),
+                index=model_family_index,
                 key="model_family",
                 help=(
                     "Families group related model types and are filtered by target mode "
@@ -1139,18 +1158,21 @@ def run_app() -> None:
                 allowed_model_types=subset_search_model_filter,
             )
             model_type_option_values = [model_type.value for model_type in model_type_options]
-            if st.session_state.get("model_type") not in model_type_option_values:
-                fallback_model_type = (
-                    default_model_type
-                    if default_model_type.value in model_type_option_values
-                    else model_type_options[0]
-                )
-                st.session_state["model_type"] = fallback_model_type.value
+            fallback_model_type = (
+                default_model_type.value
+                if default_model_type.value in model_type_option_values
+                else model_type_option_values[0]
+            )
+            model_type_index = selectbox_index_from_widget_state(
+                key="model_type",
+                options=model_type_option_values,
+                fallback=fallback_model_type,
+            )
             model_type = st.selectbox(
                 "Model type",
                 options=model_type_option_values,
                 format_func=ui_format_model_type,
-                index=model_type_option_values.index(st.session_state["model_type"]),
+                index=model_type_index,
                 key="model_type",
                 help=ui_glossary_help_text(
                     "PD",
