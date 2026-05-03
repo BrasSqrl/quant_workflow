@@ -20,16 +20,23 @@ This glossary defines common terms used in Quant Studio.
 | Model Suitability Explainer | Step 2 table that explains whether the selected model, target mode, data structure, sample size, event density, and transformation load look reasonable. |
 | Configuration Risk Score | Step 2 pre-run complexity score that flags settings likely to increase instability, memory use, or review burden. |
 | Runtime / Artifact Size Estimate | Step 2 directional planning panel for expected runtime band and output size based on current data and export settings. |
-| Resource Readiness Check | Step 3 memory, disk, Large Data Mode, checkpoint, and report-visual review shown before execution. |
+| Resource Planner / Run Cost Estimate | Step 3 memory, disk, Large Data Mode, checkpoint, high-cost-option, and report-visual review shown before execution. |
 | Explain this output | Collapsed explanation panel on selected high-value charts and tables that explains what an output shows, how to read it, good/bad signals, and recommended action. |
 | Binning Theater | Step 4 scorecard review surface for WoE buckets, IV, points, bin quality, and manual-bin override candidates. |
 | Decision Room | Default Step 5 landing view that summarizes recommendation, attention items, top drivers, key artifacts, and next actions for a review meeting. |
 | Glossary hover badge | Small in-app term badge with a hover definition for common modeling and validation terms. |
 | Decision Summary | Step 5 synthesis surface that converts completed-run metrics, issues, feature drivers, and artifacts into a decision-ready scorecard. |
+| Feature lineage map | Step 5 and exported table that maps model terms back to source features, transformations, imputation, selection rationale, importance, and documentation fields. |
+| Model development dossier | Exported Markdown narrative that ties purpose, data, target, feature governance, methodology, validation evidence, limitations, and key artifacts together. |
 | Validation checklist | Step 5 and exported table that summarizes whether major review evidence areas are complete, attention-needed, or not applicable. |
 | Evidence traceability map | Exported question-to-artifact map that tells reviewers which file or table answers each common review question. |
 | Artifact | Any output file or folder written by a run. |
 | Configuration profile | Saved GUI setup that can be loaded in a later session without storing raw source data rows. |
+| Split strategy | Step 2 control that determines how rows are assigned to train, validation, and test splits. |
+| Out-of-time split | Time-based validation or test design where holdout rows come from later calendar periods than training rows. |
+| Date cutoff split | Split strategy where validation and/or test begin at explicit cutoff dates. |
+| Explicit date-window split | Split strategy where train, validation, and test are defined by inclusive start/end date windows. |
+| Custom split column | Split strategy where the input data already contains train, validation/val, or test/oot labels. |
 
 ## Data Terms
 
@@ -103,8 +110,11 @@ This glossary defines common terms used in Quant Studio.
 | `artifact_manifest.json` | Machine-readable index of exported files and folders. |
 | `metadata/run_debug_trace.json` | Step timing, status, shape snapshots, and failure details. |
 | `reports/model_documentation_pack.md` | Model-development documentation summary. |
+| `reports/model_development_dossier.md` | Audit-ready model-development narrative package. |
 | `reports/validation_pack.md` | Validator-facing review summary and evidence index. |
 | `tables/governance/validation_checklist.*` | Exported validation-review checklist in the input-driven tabular format. |
 | `tables/governance/evidence_traceability_map.*` | Exported map from review questions to artifacts and diagnostic tables in the input-driven tabular format. |
+| `tables/governance/feature_lineage_map.*` | Exported model-term to source-feature lineage map in the input-driven tabular format. |
+| `model/feature_lineage_map.csv` | Direct CSV copy of the feature lineage map in the model folder. |
 | `tables/governance/report_payload_audit.*` | Exported record of report charts kept, downsampled, or skipped by HTML payload limits in the input-driven tabular format. |
 | `model_bundle_for_monitoring/` | Handoff bundle for the separate ongoing-monitoring application. |

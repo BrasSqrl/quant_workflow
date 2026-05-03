@@ -53,6 +53,7 @@ from .config import (
     ScorecardConfig,
     ScorecardWorkbenchConfig,
     SplitConfig,
+    SplitStrategy,
     SuitabilityCheckConfig,
     TargetConfig,
     TargetMode,
@@ -159,11 +160,19 @@ class GUIBuildInputs:
     reproducibility: ReproducibilityConfig = field(default_factory=ReproducibilityConfig)
     performance: PerformanceConfig = field(default_factory=PerformanceConfig)
     data_structure: DataStructure = DataStructure.CROSS_SECTIONAL
+    split_strategy: SplitStrategy = SplitStrategy.AUTO
     train_size: float = 0.6
     validation_size: float = 0.2
     test_size: float = 0.2
     random_state: int = 42
     stratify: bool = True
+    train_start_date: str = ""
+    train_end_date: str = ""
+    validation_start_date: str = ""
+    validation_end_date: str = ""
+    test_start_date: str = ""
+    test_end_date: str = ""
+    custom_split_column: str = ""
     execution_mode: ExecutionMode = ExecutionMode.FIT_NEW_MODEL
     existing_model_path: Path | None = None
     existing_config_path: Path | None = None
@@ -371,6 +380,7 @@ def build_framework_config_from_editor(
 
     split_config = SplitConfig(
         data_structure=inputs.data_structure,
+        split_strategy=inputs.split_strategy,
         train_size=inputs.train_size,
         validation_size=inputs.validation_size,
         test_size=inputs.test_size,
@@ -380,6 +390,13 @@ def build_framework_config_from_editor(
         else False,
         date_column=date_column,
         entity_column=entity_column,
+        train_start_date=_clean_text(inputs.train_start_date),
+        train_end_date=_clean_text(inputs.train_end_date),
+        validation_start_date=_clean_text(inputs.validation_start_date),
+        validation_end_date=_clean_text(inputs.validation_end_date),
+        test_start_date=_clean_text(inputs.test_start_date),
+        test_end_date=_clean_text(inputs.test_end_date),
+        custom_split_column=_clean_text(inputs.custom_split_column),
     )
     split_config.validate()
 

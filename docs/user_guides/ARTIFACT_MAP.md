@@ -26,18 +26,21 @@ and summarizes the completed run in Step 5, `Decision Summary`.
 | --- | --- | --- |
 | `START_HERE.md` | First-read orientation for the run folder and audience-specific next steps. | All users |
 | `reports/decision_summary.md` | Decision-ready scorecard with recommendation, key metrics, issues, feature drivers, and evidence links. | Model developer, validator, business reviewer |
+| `reports/model_development_dossier.md` | Audit-ready narrative tying purpose, data, target, feature lineage, model methodology, validation evidence, limitations, and primary artifacts together. | Model developer, validator, auditor |
 | `reports/interactive_report.html` | Standalone formal visual report with grouped diagnostics, companion charts, interpretation badges, and reviewer guidance. | Model developer, validator, business reviewer |
 | `model/quant_model.joblib` | Saved fitted model object. | Developer, future scoring workflow, monitoring handoff |
 | `config/run_config.json` | Effective configuration used for the run. | Developer, auditor, reproducibility review |
 | `metadata/metrics.json` | Model metrics by split. | Developer, validator |
 | `data/predictions/predictions.csv` or `data/predictions/predictions.parquet` | Row-level scores and predicted outputs. Compact by default so it does not duplicate every feature column. | Developer, reviewer, downstream user |
 | `model/feature_importance.csv` | Coefficients, feature importance, or model-specific importance output. | Developer, validator |
+| `model/feature_lineage_map.csv` | Direct CSV copy of the final feature-lineage map for quick review. | Developer, validator, auditor |
 | `metadata/statistical_tests.json` | Machine-readable statistical test results. | Validator, auditor |
 | `reports/model_documentation_pack.md` | Development-facing written summary. | Developer, documentation owner |
 | `reports/validation_pack.md` | Validator-facing summary and evidence index. | Validation and risk teams |
 | `artifact_manifest.json` | Index of exported files and directories. | Auditor, technical reviewer |
 | `tables/governance/validation_checklist.*` | Checklist of completed, attention-needed, and not-applicable validation evidence areas. | Validator, model developer |
 | `tables/governance/evidence_traceability_map.*` | Maps common review questions to the artifact or table that answers them. | Validator, auditor, technical reviewer |
+| `tables/governance/feature_lineage_map.*` | Maps final model terms back to source features, transformations, imputation, variable-selection rationale, importance, and documentation fields. | Validator, auditor, technical reviewer |
 | `tables/governance/report_payload_audit.*` | Records embedded report charts kept, downsampled, or skipped by report-size controls. | Developer, validator, support |
 | `metadata/step_manifest.json` | Ordered pipeline step record. | Technical reviewer |
 | `metadata/run_debug_trace.json` | Run start/completion time, total elapsed runtime, per-step timing, shape snapshots, memory estimates, and failure details. | Developer, support, performance reviewer |
@@ -51,7 +54,7 @@ and summarizes the completed run in Step 5, `Decision Summary`.
 | Directory | Meaning |
 | --- | --- |
 | `reports/` | Human-readable HTML, Markdown, DOCX, and PDF reports. |
-| `model/` | Fitted model object, model summary, and feature importance. |
+| `model/` | Fitted model object, model summary, feature importance, and feature-lineage CSV. |
 | `data/input/` | Input snapshot files when input export is enabled. |
 | `data/predictions/` | Row-level and split-level prediction outputs. |
 | `tables/` | Diagnostic tables grouped into topical subfolders. |
@@ -260,6 +263,7 @@ The most important files are `data/predictions/predictions.*`,
 For a business reviewer:
 
 - `reports/interactive_report.html`
+- `reports/model_development_dossier.md`
 - `reports/model_documentation_pack.md`
 - `reports/validation_pack.md`
 
@@ -269,8 +273,10 @@ For a model validator:
 - `metadata/metrics.json`
 - `metadata/statistical_tests.json`
 - `model/feature_importance.csv`
+- `model/feature_lineage_map.csv`
 - `config/run_config.json`
 - `reports/validation_pack.md`
+- `tables/governance/feature_lineage_map.*`
 - `metadata/reproducibility_manifest.json`
 
 For a technical reviewer:

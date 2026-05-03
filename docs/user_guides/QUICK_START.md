@@ -14,7 +14,9 @@ A successful first run writes a timestamped folder under `artifacts/` with:
 - `START_HERE.md`
 - `reports/interactive_report.html`
 - `reports/decision_summary.md`
+- `reports/model_development_dossier.md`
 - `model/quant_model.joblib`
+- `model/feature_lineage_map.csv`
 - `config/run_config.json`
 - `metadata/metrics.json`
 - `data/predictions/predictions.csv` or `data/predictions/predictions.parquet`
@@ -56,9 +58,9 @@ Quant Studio opens to Step 1 by default.
 | --- | --- |
 | `1 Dataset & Schema` | Load data, preview rows, review the data contract scorecard, check leakage flags and schema fingerprint, define column roles, edit feature dictionary, preview transformations, and exchange the governance workbook. |
 | `2 Model Configuration` | Choose execution mode, preset, model family, split strategy, diagnostics, export profile, governance options, explainability, scenarios, and documentation settings, then review model suitability, configuration risk, and rough runtime/output estimates. |
-| `3 Readiness Check & Run` | Review issues, preflight summary, resource readiness, guardrails, configuration diffs, and run the workflow. |
+| `3 Readiness Check & Run` | Review issues, preflight summary, the resource planner/run cost estimate, guardrails, configuration diffs, and run the workflow. |
 | `4 Results & Artifacts` | Review outputs, charts, tables, artifact locations, reviewer notes, and model-card downloads. |
-| `5 Decision Summary` | Review the recommendation, primary metric scorecard, decision issues, top feature drivers, and supporting evidence index. |
+| `5 Decision Summary` | Review the recommendation, primary metric scorecard, decision issues, top feature drivers, feature lineage, dossier, and supporting evidence index. |
 
 ## First Successful Run
 
@@ -77,7 +79,9 @@ Quant Studio opens to Step 1 by default.
 13. Use `Target mode = binary`.
 14. Use `Data structure = panel`.
 15. Review `Model Suitability Explainer`, `Configuration Risk Score`, and `Runtime / Artifact Size Estimate` after the configuration resolves cleanly.
-16. Keep the default train, validation, and test split for the first run.
+16. Keep `Split strategy = Automatic` and the default train, validation, and
+    test split for the first run. Use `Date cutoff`, `Explicit date windows`,
+    or `Custom split column` when you need a documented out-of-time holdout.
 17. Keep `Enable scorecard workbench` on so WoE bins, scorecard points, and
     reason-code outputs are produced.
 18. Keep individual figure HTML/PNG export off unless separate chart files are needed.
@@ -90,7 +94,7 @@ Quant Studio opens to Step 1 by default.
 24. Leave `Keep all checkpoints` off unless support needs every saved context retained after the run.
 25. Open Step 3, `Readiness Check & Run`.
 26. Resolve blocking readiness issues if any appear.
-27. Review `Resource Readiness Check` for memory, Large Data Mode, checkpoint retention, report-visual, and disk-output warnings.
+27. Review `Resource Planner / Run Cost Estimate` for memory, Large Data Mode, checkpoint retention, high-cost options, report-visual, and disk-output warnings.
 28. Leave `Workflow run style = Run full workflow` for the first run.
 29. Click `Run Quant Model Workflow`.
 30. Watch the `Run Status` panel for elapsed time, current stage, step
@@ -104,7 +108,7 @@ Quant Studio opens to Step 1 by default.
 33. Review the overview, model performance, calibration, scorecard / binning,
     governance, and artifact explorer sections.
 34. Open Step 5, `Decision Summary`.
-35. Review the recommendation, decision issues, primary metrics, feature drivers, validation checklist, evidence index, and traceability map.
+35. Review the recommendation, decision issues, primary metrics, feature drivers, feature lineage, validation checklist, evidence index, traceability map, and dossier.
 
 ## First Real-Data Run
 

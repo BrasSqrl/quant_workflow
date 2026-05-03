@@ -206,7 +206,10 @@ def test_step_three_resource_readiness_surfaces_memory_and_storage_risks() -> No
     )
 
     assert any(card["label"] == "Estimated peak memory" for card in cards)
+    assert any(card["label"] == "High-cost options" for card in cards)
     assert "Memory estimate" in details["area"].tolist()
+    assert "Recommended run profile" in details["area"].tolist()
+    assert "Advanced visual analytics" in details["area"].tolist()
     assert "Checkpoint retention" in details["area"].tolist()
     assert "warning" in details["status"].tolist()
 

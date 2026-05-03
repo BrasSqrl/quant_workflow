@@ -32,6 +32,7 @@ class ExportPathLayout:
     predictions_path: Path
     predictions_parquet_path: Path
     feature_importance_path: Path
+    feature_lineage_path: Path
     backtest_path: Path
     report_path: Path
     interactive_report_path: Path
@@ -43,6 +44,7 @@ class ExportPathLayout:
     step_manifest_path: Path
     decision_summary_path: Path
     documentation_pack_path: Path
+    development_dossier_path: Path
     validation_pack_path: Path
     committee_report_docx_path: Path
     validation_report_docx_path: Path
@@ -96,6 +98,7 @@ def build_export_path_layout(
         predictions_path=data_predictions_dir / artifacts.predictions_file_name,
         predictions_parquet_path=data_predictions_dir / artifacts.predictions_parquet_file_name,
         feature_importance_path=model_dir / artifacts.feature_importance_file_name,
+        feature_lineage_path=model_dir / "feature_lineage_map.csv",
         backtest_path=tables_dir / "backtesting" / artifacts.backtest_file_name,
         report_path=reports_dir / artifacts.report_file_name,
         interactive_report_path=reports_dir / artifacts.interactive_report_file_name,
@@ -107,6 +110,7 @@ def build_export_path_layout(
         step_manifest_path=metadata_dir / artifacts.step_manifest_file_name,
         decision_summary_path=reports_dir / artifacts.decision_summary_file_name,
         documentation_pack_path=reports_dir / artifacts.documentation_pack_file_name,
+        development_dossier_path=reports_dir / artifacts.development_dossier_file_name,
         validation_pack_path=reports_dir / artifacts.validation_pack_file_name,
         committee_report_docx_path=reports_dir / artifacts.committee_report_docx_file_name,
         validation_report_docx_path=reports_dir / artifacts.validation_report_docx_file_name,

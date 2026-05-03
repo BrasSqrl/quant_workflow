@@ -29,6 +29,7 @@ from quant_pd_framework import (
     ScenarioShockOperation,
     ScorecardMonotonicity,
     ScorecardWorkbenchConfig,
+    SplitStrategy,
     TabularOutputFormat,
     TargetMode,
 )
@@ -270,6 +271,14 @@ EXPORT_SURFACE_OPTIONS: list[tuple[str, str]] = [
     ("Per-figure PNG files", "static_image_exports"),
     ("Excel workbook", "export_excel_workbook"),
 ]
+SPLIT_STRATEGY_LABELS = {
+    SplitStrategy.AUTO.value: "Automatic",
+    SplitStrategy.RANDOM.value: "Random",
+    SplitStrategy.CHRONOLOGICAL_PERCENTAGE.value: "Chronological percentage",
+    SplitStrategy.DATE_CUTOFF.value: "Date cutoff",
+    SplitStrategy.EXPLICIT_DATE_WINDOWS.value: "Explicit date windows",
+    SplitStrategy.CUSTOM_COLUMN.value: "Custom split column",
+}
 LARGE_DATA_DIAGNOSTIC_DEFAULTS = {
     "Data quality",
     "Descriptive statistics",
@@ -1211,12 +1220,30 @@ def run_app() -> None:
             )
 
         with left_config_column.expander("Split Strategy", expanded=True):
+            split_strategy = st.selectbox(
+                "Split strategy",
+                options=[strategy.value for strategy in SplitStrategy],
+                format_func=lambda value: SPLIT_STRATEGY_LABELS.get(value, value),
+                index=[strategy.value for strategy in SplitStrategy].index(
+                    preset_inputs.split_strategy.value
+                ),
+                help=(
+                    "Automatic preserves the current behavior: random for cross-sectional "
+                    "data and chronological percentage for time-series or panel data."
+                ),
+            )
             train_size = st.number_input(
                 "Train size",
                 min_value=0.1,
                 max_value=1.0,
                 value=float(preset_inputs.train_size),
                 step=0.05,
+                disabled=split_strategy
+                in {
+                    SplitStrategy.DATE_CUTOFF.value,
+                    SplitStrategy.EXPLICIT_DATE_WINDOWS.value,
+                    SplitStrategy.CUSTOM_COLUMN.value,
+                },
             )
             validation_size = st.number_input(
                 "Validation size",
@@ -1224,6 +1251,12 @@ def run_app() -> None:
                 max_value=0.9,
                 value=float(preset_inputs.validation_size),
                 step=0.05,
+                disabled=split_strategy
+                in {
+                    SplitStrategy.DATE_CUTOFF.value,
+                    SplitStrategy.EXPLICIT_DATE_WINDOWS.value,
+                    SplitStrategy.CUSTOM_COLUMN.value,
+                },
             )
             test_size = st.number_input(
                 "Test size",
@@ -1231,15 +1264,110 @@ def run_app() -> None:
                 max_value=0.9,
                 value=float(preset_inputs.test_size),
                 step=0.05,
+                disabled=split_strategy
+                in {
+                    SplitStrategy.DATE_CUTOFF.value,
+                    SplitStrategy.EXPLICIT_DATE_WINDOWS.value,
+                    SplitStrategy.CUSTOM_COLUMN.value,
+                },
             )
             random_state = st.number_input(
-                "Random state", min_value=0, max_value=100000, value=42, step=1
+                "Random state",
+                min_value=0,
+                max_value=100000,
+                value=42,
+                step=1,
+                disabled=split_strategy != SplitStrategy.RANDOM.value
+                and not (
+                    split_strategy == SplitStrategy.AUTO.value
+                    and data_structure == DataStructure.CROSS_SECTIONAL.value
+                ),
             )
             stratify = st.checkbox(
                 "Stratify cross-sectional split",
                 value=True,
-                disabled=data_structure != DataStructure.CROSS_SECTIONAL.value,
+                disabled=data_structure != DataStructure.CROSS_SECTIONAL.value
+                or split_strategy
+                not in {SplitStrategy.AUTO.value, SplitStrategy.RANDOM.value},
             )
+            train_start_date = ""
+            train_end_date = ""
+            validation_start_date = ""
+            validation_end_date = ""
+            test_start_date = ""
+            test_end_date = ""
+            custom_split_column = ""
+            if split_strategy == SplitStrategy.DATE_CUTOFF.value:
+                st.caption(
+                    "Rows before the first cutoff become train. Validation starts at "
+                    "the validation cutoff. Test starts at the test cutoff."
+                )
+                cutoff_columns = st.columns(2)
+                validation_start_date = cutoff_columns[0].text_input(
+                    "Validation start date",
+                    value=preset_inputs.validation_start_date,
+                    placeholder="YYYY-MM-DD",
+                )
+                test_start_date = cutoff_columns[1].text_input(
+                    "Test start date",
+                    value=preset_inputs.test_start_date,
+                    placeholder="YYYY-MM-DD",
+                )
+            elif split_strategy == SplitStrategy.EXPLICIT_DATE_WINDOWS.value:
+                st.caption(
+                    "Use inclusive date windows. Every row must land in exactly one "
+                    "configured window."
+                )
+                train_window_columns = st.columns(2)
+                train_start_date = train_window_columns[0].text_input(
+                    "Train start date",
+                    value=preset_inputs.train_start_date,
+                    placeholder="YYYY-MM-DD",
+                )
+                train_end_date = train_window_columns[1].text_input(
+                    "Train end date",
+                    value=preset_inputs.train_end_date,
+                    placeholder="YYYY-MM-DD",
+                )
+                validation_window_columns = st.columns(2)
+                validation_start_date = validation_window_columns[0].text_input(
+                    "Validation start date",
+                    value=preset_inputs.validation_start_date,
+                    placeholder="YYYY-MM-DD",
+                )
+                validation_end_date = validation_window_columns[1].text_input(
+                    "Validation end date",
+                    value=preset_inputs.validation_end_date,
+                    placeholder="YYYY-MM-DD",
+                )
+                test_window_columns = st.columns(2)
+                test_start_date = test_window_columns[0].text_input(
+                    "Test start date",
+                    value=preset_inputs.test_start_date,
+                    placeholder="YYYY-MM-DD",
+                )
+                test_end_date = test_window_columns[1].text_input(
+                    "Test end date",
+                    value=preset_inputs.test_end_date,
+                    placeholder="YYYY-MM-DD",
+                )
+            elif split_strategy == SplitStrategy.CUSTOM_COLUMN.value:
+                st.caption(
+                    "Use a data column containing train, validation/val, or test labels. "
+                    "The column is excluded from model features automatically."
+                )
+                split_column_options = ["", *[str(column) for column in dataframe.columns]]
+                custom_split_default = (
+                    preset_inputs.custom_split_column
+                    if preset_inputs.custom_split_column in split_column_options
+                    else ""
+                )
+                custom_split_column = st.selectbox(
+                    "Custom split column",
+                    options=split_column_options,
+                    index=split_column_options.index(custom_split_default),
+                    format_func=lambda value: value or "Select column",
+                )
 
         with left_config_column.expander("Model Settings", expanded=False):
             tree_model_types = {

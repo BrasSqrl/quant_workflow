@@ -35,6 +35,7 @@ from ..export_profiles import (
     regulatory_reports_enabled,
     resolve_html_report_limits,
 )
+from ..feature_lineage import build_feature_lineage_table, summarize_feature_lineage
 from ..gui_support import (
     build_column_editor_frame_from_schema,
     build_feature_dictionary_frame_from_config,
@@ -43,6 +44,7 @@ from ..gui_support import (
     build_template_workbook_bytes,
     build_transformation_frame_from_config,
 )
+from ..model_dossier import build_model_development_dossier
 from ..presentation import (
     apply_advanced_visual_analytics,
     build_interactive_report_html,
@@ -107,6 +109,7 @@ class ArtifactExportStep(BasePipelineStep):
         predictions_path = paths.predictions_path
         predictions_parquet_path = paths.predictions_parquet_path
         feature_importance_path = paths.feature_importance_path
+        feature_lineage_path = paths.feature_lineage_path
         backtest_path = paths.backtest_path
         report_path = paths.report_path
         interactive_report_path = paths.interactive_report_path
@@ -118,6 +121,7 @@ class ArtifactExportStep(BasePipelineStep):
         step_manifest_path = paths.step_manifest_path
         decision_summary_path = paths.decision_summary_path
         documentation_pack_path = paths.documentation_pack_path
+        development_dossier_path = paths.development_dossier_path
         validation_pack_path = paths.validation_pack_path
         committee_report_docx_path = paths.committee_report_docx_path
         validation_report_docx_path = paths.validation_report_docx_path
@@ -184,6 +188,10 @@ class ArtifactExportStep(BasePipelineStep):
         )
         self._publish_tabular_export_policy_table(context)
         context.feature_importance.to_csv(feature_importance_path, index=False)
+        feature_lineage = self._publish_feature_lineage_outputs(
+            context=context,
+            feature_lineage_path=feature_lineage_path,
+        )
         context.backtest_summary.to_csv(backtest_path, index=False)
         report_visualizations = self._build_report_visualizations(context)
         publish_validation_evidence_tables(context)
@@ -222,6 +230,7 @@ class ArtifactExportStep(BasePipelineStep):
                     interactive_report_path=interactive_report_path,
                     decision_summary_path=decision_summary_path,
                     documentation_pack_path=documentation_pack_path,
+                    development_dossier_path=development_dossier_path,
                     validation_pack_path=validation_pack_path,
                     config_path=config_path,
                     tests_path=tests_path,
@@ -232,6 +241,13 @@ class ArtifactExportStep(BasePipelineStep):
         )
         documentation_pack_path.write_text(
             self._build_documentation_pack(context),
+            encoding="utf-8",
+        )
+        development_dossier_path.write_text(
+            build_model_development_dossier(
+                context,
+                feature_lineage=feature_lineage,
+            ),
             encoding="utf-8",
         )
         validation_pack_path.write_text(
@@ -291,6 +307,7 @@ class ArtifactExportStep(BasePipelineStep):
                 if predictions_parquet_path.exists()
                 else None,
                 "feature_importance": str(feature_importance_path),
+                "feature_lineage": str(feature_lineage_path),
                 "backtest": str(backtest_path),
                 "report": str(report_path),
                 "decision_summary": str(decision_summary_path),
@@ -332,6 +349,7 @@ class ArtifactExportStep(BasePipelineStep):
             "interactive_report": str(interactive_report_path),
             "decision_summary": str(decision_summary_path),
             "documentation_pack": str(documentation_pack_path),
+            "development_dossier": str(development_dossier_path),
             "validation_pack": str(validation_pack_path),
             "regulatory_reports": regulatory_report_manifest,
             "reproducibility_manifest": str(reproducibility_manifest_path),
@@ -416,10 +434,12 @@ class ArtifactExportStep(BasePipelineStep):
             if predictions_parquet_path.exists()
             else None,
             "feature_importance": feature_importance_path,
+            "feature_lineage": feature_lineage_path,
             "backtest": backtest_path,
             "report": report_path,
             "decision_summary": decision_summary_path,
             "documentation_pack": documentation_pack_path,
+            "development_dossier": development_dossier_path,
             "validation_pack": validation_pack_path,
             "committee_report_docx": (
                 committee_report_docx_path if committee_report_docx_path.exists() else None
@@ -780,6 +800,19 @@ class ArtifactExportStep(BasePipelineStep):
         if isinstance(export_rows, list) and export_rows:
             context.diagnostics_tables["tabular_export_policy"] = pd.DataFrame(export_rows)
 
+    def _publish_feature_lineage_outputs(
+        self,
+        *,
+        context: PipelineContext,
+        feature_lineage_path: Path,
+    ) -> pd.DataFrame:
+        feature_lineage = build_feature_lineage_table(context)
+        context.diagnostics_tables["feature_lineage_map"] = feature_lineage
+        context.metadata["feature_lineage_summary"] = summarize_feature_lineage(feature_lineage)
+        feature_lineage_path.parent.mkdir(parents=True, exist_ok=True)
+        feature_lineage.to_csv(feature_lineage_path, index=False)
+        return feature_lineage
+
     def _primary_export_path(self, export_metadata: dict[str, Any]) -> Path | None:
         primary_path = export_metadata.get("primary_path")
         if not primary_path:
@@ -902,6 +935,7 @@ class ArtifactExportStep(BasePipelineStep):
                     decision_summary_path=decision_summary_path,
                     documentation_pack_path=None,
                     validation_pack_path=None,
+                    development_dossier_path=None,
                     config_path=config_path,
                     tests_path=tests_path,
                     run_debug_trace_path=run_debug_trace_path,
@@ -1319,9 +1353,16 @@ class ArtifactExportStep(BasePipelineStep):
             "decision_summary.md": "Decision-ready scorecard for model review.",
             "run_report.md": "Markdown summary of run metrics, warnings, and diagnostics.",
             "model_documentation_pack.md": "Development-facing model documentation summary.",
+            "model_development_dossier.md": (
+                "Audit-ready narrative dossier connecting purpose, data, model, "
+                "validation evidence, lineage, and open review items."
+            ),
             "validation_pack.md": "Validator-facing evidence index and review summary.",
             "quant_model.joblib": "Serialized fitted model object.",
             "feature_importance.csv": "Feature-level coefficients or importance values.",
+            "feature_lineage_map.csv": (
+                "Feature-level lineage, transformation, imputation, and documentation map."
+            ),
             "model_summary.txt": "Text model summary from the fitted estimator.",
             "run_config.json": "Resolved configuration used for the run.",
             "configuration_template.xlsx": "Offline review workbook for configuration edits.",
@@ -1379,6 +1420,7 @@ class ArtifactExportStep(BasePipelineStep):
         decision_summary_path: Path,
         documentation_pack_path: Path | None,
         validation_pack_path: Path | None,
+        development_dossier_path: Path | None,
         config_path: Path,
         tests_path: Path,
         run_debug_trace_path: Path,
@@ -1397,6 +1439,7 @@ class ArtifactExportStep(BasePipelineStep):
             "predictions": predictions_path,
             "feature_importance": feature_importance_path,
             "documentation_pack": documentation_pack_path,
+            "development_dossier": development_dossier_path,
             "validation_pack": validation_pack_path,
         }
         artifacts.update({key: path for key, path in optional_paths.items() if path is not None})
@@ -1680,6 +1723,7 @@ class ArtifactExportStep(BasePipelineStep):
     def _build_documentation_pack(self, context: PipelineContext) -> str:
         documentation = context.config.documentation
         feature_dictionary = context.diagnostics_tables.get("feature_dictionary", pd.DataFrame())
+        feature_lineage = context.diagnostics_tables.get("feature_lineage_map", pd.DataFrame())
         variable_selection = context.diagnostics_tables.get("variable_selection", pd.DataFrame())
         calibration_summary = context.diagnostics_tables.get("calibration_summary", pd.DataFrame())
         comparison_table = context.comparison_results
@@ -1738,6 +1782,24 @@ class ArtifactExportStep(BasePipelineStep):
                     "",
                     f"- Documented modeled features: `{documented_count}`",
                     f"- Dictionary rows exported: `{len(feature_dictionary)}`",
+                    "",
+                ]
+            )
+
+        if not feature_lineage.empty:
+            lineage_summary = context.metadata.get("feature_lineage_summary", {})
+            mapped_terms = lineage_summary.get("model_feature_count", len(feature_lineage))
+            lines.extend(
+                [
+                    "### Feature Lineage Coverage",
+                    "",
+                    f"- Model terms mapped: `{mapped_terms}`",
+                    (
+                        "- Source features represented: "
+                        f"`{lineage_summary.get('source_feature_count', 'n/a')}`"
+                    ),
+                    f"- Transformed terms: `{lineage_summary.get('transformed_feature_count', 0)}`",
+                    f"- Imputed terms: `{lineage_summary.get('imputed_feature_count', 0)}`",
                     "",
                 ]
             )
@@ -1828,7 +1890,14 @@ class ArtifactExportStep(BasePipelineStep):
 
         lines.extend(["## Audit Assets", ""])
         lines.append("- `reports/decision_summary.md` provides the decision-ready scorecard.")
+        lines.append(
+            "- `reports/model_development_dossier.md` provides the audit-oriented "
+            "development narrative."
+        )
         lines.append("- `reports/validation_pack.md` provides the validator-facing summary.")
+        lines.append(
+            "- `tables/governance/feature_lineage_map.*` provides the feature lineage map."
+        )
         lines.append(
             "- `reports/committee_report.docx` / `reports/committee_report.pdf` provide "
             "committee-ready distribution assets."
@@ -1852,6 +1921,7 @@ class ArtifactExportStep(BasePipelineStep):
     def _build_validation_pack(self, context: PipelineContext) -> str:
         documentation = context.config.documentation
         feature_dictionary = context.diagnostics_tables.get("feature_dictionary", pd.DataFrame())
+        feature_lineage = context.diagnostics_tables.get("feature_lineage_map", pd.DataFrame())
         assumption_checks = context.diagnostics_tables.get("assumption_checks", pd.DataFrame())
         workflow_guardrails = context.diagnostics_tables.get("workflow_guardrails", pd.DataFrame())
         variable_selection = context.diagnostics_tables.get("variable_selection", pd.DataFrame())
@@ -1915,6 +1985,26 @@ class ArtifactExportStep(BasePipelineStep):
                     "",
                     f"- Documented modeled features: `{documented_count}`",
                     f"- Modeled features in dictionary table: `{len(feature_dictionary)}`",
+                    "",
+                ]
+            )
+
+        if not feature_lineage.empty:
+            lineage_summary = context.metadata.get("feature_lineage_summary", {})
+            mapped_terms = lineage_summary.get("model_feature_count", len(feature_lineage))
+            rows.extend(
+                [
+                    "## Feature Lineage Map",
+                    "",
+                    f"- Model terms mapped: `{mapped_terms}`",
+                    (
+                        "- Source features represented: "
+                        f"`{lineage_summary.get('source_feature_count', 'n/a')}`"
+                    ),
+                    (
+                        "- Terms missing business definitions: "
+                        f"`{lineage_summary.get('undocumented_feature_count', 0)}`"
+                    ),
                     "",
                 ]
             )
@@ -2022,7 +2112,9 @@ class ArtifactExportStep(BasePipelineStep):
                 "- `reports/run_report.md` for the narrative run summary.",
                 "- `reports/decision_summary.md` for the decision-ready scorecard.",
                 "- `reports/model_documentation_pack.md` for development-facing documentation.",
+                "- `reports/model_development_dossier.md` for the audit-oriented model narrative.",
                 "- `reports/validation_pack.md` for validator-oriented review packaging.",
+                "- `tables/governance/feature_lineage_map.*` for feature-level lineage.",
                 (
                     "- `reports/committee_report.docx` / `reports/committee_report.pdf` "
                     "for committee-facing delivery."
@@ -2160,6 +2252,7 @@ class ArtifactExportStep(BasePipelineStep):
             "## Open First",
             "",
             "- `reports/decision_summary.md` for the decision-ready model scorecard.",
+            "- `reports/model_development_dossier.md` for the audit-ready development narrative.",
             "- `reports/interactive_report.html` for the visual diagnostic report.",
             "- `reports/validation_pack.md` for validator-facing evidence.",
             "- `artifact_manifest.json` for the machine-readable artifact index.",
@@ -2167,7 +2260,10 @@ class ArtifactExportStep(BasePipelineStep):
             "## Folder Map",
             "",
             "- `reports/` contains HTML, Markdown, DOCX, and PDF reports.",
-            "- `model/` contains the fitted model object, model summary, and feature importance.",
+            (
+                "- `model/` contains the fitted model object, model summary, feature "
+                "importance, and feature lineage CSV."
+            ),
             "- `data/input/` contains the exported input snapshot when enabled.",
             "- `data/predictions/` contains row-level predictions and split predictions.",
             "- `tables/` contains diagnostic CSV/Parquet tables grouped by review topic.",
@@ -2183,6 +2279,7 @@ class ArtifactExportStep(BasePipelineStep):
             "",
             "- Review results: open `reports/interactive_report.html`.",
             "- Review the model decision: open `reports/decision_summary.md`.",
+            "- Review feature lineage: open `model/feature_lineage_map.csv`.",
             "- Reuse the model: use `model/quant_model.joblib`.",
             "- Rerun outside the GUI: open `code/HOW_TO_RERUN.md`.",
             "- Audit exact values: inspect `tables/` and `metadata/`.",

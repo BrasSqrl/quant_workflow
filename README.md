@@ -674,7 +674,10 @@ The GUI exposes the following decision areas:
 - data structure
 - target output name
 - positive target values
+- split strategy for random, chronological percentage, date cutoff, explicit
+  date-window, or custom split-column assignment
 - split percentages
+- out-of-time validation and test cutoff/window fields
 - random state
 - stratification toggle for cross-sectional data
 - logistic, elastic-net, scorecard, quantile, XGBoost, and Tobit hyperparameters
@@ -702,7 +705,7 @@ The GUI exposes the following decision areas:
 - reproducibility-manifest controls for tracked package versions and git capture
 - diagnostics and export toggles
 - model suitability, configuration risk, runtime/artifact estimate, and
-  resource readiness review panels
+  resource planner/run-cost review panels
 - Large Data Mode, memory guardrails, dtype optimization, CSV-to-Parquet
   staging, training sample size, full-data scoring chunk size, tabular output
   format, and sampled export policy
@@ -1906,8 +1909,9 @@ Important behavior:
   separate files mirror the report visualization set, including enhanced and
   advanced charts if those toggles are on.
 - `validation_checklist`, `evidence_traceability_map`, and
-  `report_payload_audit` are exported under `tables/governance/` to support
-  validation review, artifact routing, and report-size auditability.
+  `feature_lineage_map`, and `report_payload_audit` are exported under
+  `tables/governance/` to support validation review, artifact routing,
+  feature traceability, and report-size auditability.
 - `export_profile` controls how much supporting evidence is packaged:
   `standard` preserves the normal governed bundle, `fast` skips heavier
   distribution assets such as Excel workbooks, regulatory DOCX/PDF reports,
@@ -1926,11 +1930,12 @@ Default artifact layout:
   `relative_path`, and `send_to` fields for each artifact.
 - `reports/`
   Contains `interactive_report.html`, `run_report.md`,
-  `model_documentation_pack.md`, `validation_pack.md`, and optional DOCX/PDF
-  regulatory reports.
+  `model_documentation_pack.md`, `model_development_dossier.md`,
+  `validation_pack.md`, and optional DOCX/PDF regulatory reports.
 - `model/`
   Contains `quant_model.joblib`, `model_summary.txt`, and
-  `feature_importance.csv`.
+  `feature_importance.csv`, plus `feature_lineage_map.csv` for direct
+  feature-level review.
 - `data/input/`
   Contains `input_snapshot.csv` and/or `input_snapshot.parquet` when input
   snapshot export is enabled.
@@ -2216,8 +2221,9 @@ panel models use expanding-window validation to reduce look-ahead leakage risk.
 
 Writes model artifacts, metrics, predictions, tables, figures, tests, workbook exports,
 a markdown report, a standalone interactive HTML report, a development
-documentation pack, a structured validation pack, a reproducibility manifest, a
-configuration workbook, and a rerun-ready code bundle to disk.
+documentation pack, a model development dossier, a structured validation pack,
+a feature-lineage map, a reproducibility manifest, a configuration workbook,
+and a rerun-ready code bundle to disk.
 
 ## Outputs
 
@@ -2238,6 +2244,8 @@ Typical outputs include:
 - variable-selection tables and selected-feature metadata
 - manual feature-review decisions and scorecard override tables
 - model-specific feature importance or coefficient summary
+- feature lineage map connecting model terms to source features, transformations,
+  imputation, selection rationale, and documentation
 - cross-validation fold metrics and stability summaries when enabled
 - challenger comparison results and recommended model metadata
 - lifetime PD curve outputs for discrete-time hazard runs
@@ -2254,6 +2262,7 @@ Typical outputs include:
 - Excel workbook containing major tables
 - human-readable run report
 - documentation pack for development and review
+- model development dossier for audit-oriented narrative review
 - validator-facing validation pack
 - reproducibility manifest with hashes and package versions
 - input source metadata for uploaded, bundled, or `Data_Load/` datasets

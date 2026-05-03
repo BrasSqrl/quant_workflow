@@ -320,6 +320,7 @@ def build_preflight_summary(
         ("Target source", preview_config.target.source_column),
         ("Target output", preview_config.target.output_column),
         ("Split strategy", preview_config.split.data_structure.value),
+        ("Split assignment", preview_config.split.split_strategy.value),
         ("Train/validation/test", _split_text(preview_config)),
         ("Output root", str(preview_config.artifacts.output_root)),
         (
@@ -542,18 +543,33 @@ def build_resource_readiness_check(
     preview_config: Any,
     large_data_mode: bool,
 ) -> tuple[list[dict[str, str]], pd.DataFrame]:
-    """Builds memory, disk, and export readiness checks shown before run."""
+    """Builds memory, disk, and expensive-option planning checks before run."""
 
     memory_mb = _dataframe_memory_mb(dataframe)
-    multiplier = 2.5 if preview_config.performance.retain_full_working_data else 1.4
-    estimated_peak_mb = memory_mb * multiplier
+    source_file_mb = _source_file_size_mb(dataframe)
+    dataframe_multiplier = float(preview_config.performance.memory_estimate_dataframe_multiplier)
+    file_multiplier = float(preview_config.performance.memory_estimate_file_multiplier)
+    working_data_multiplier = dataframe_multiplier
+    if not preview_config.performance.retain_full_working_data:
+        working_data_multiplier = max(1.4, dataframe_multiplier * 0.65)
+    estimated_peak_mb = max(memory_mb * working_data_multiplier, source_file_mb * file_multiplier)
     memory_limit_gb = preview_config.performance.memory_limit_gb
     memory_limit_mb = None if memory_limit_gb is None else float(memory_limit_gb) * 1024
-    disk_mb = _estimate_report_size_mb(
+    report_mb = _estimate_report_size_mb(
         preview_config,
         len(dataframe),
         _enabled_bool_count(preview_config.diagnostics),
-    ) + max(memory_mb * 0.5, 5.0)
+    )
+    table_mb = _estimate_table_output_mb(memory_mb, preview_config)
+    disk_mb = report_mb + table_mb + max(memory_mb * 0.5, 5.0)
+    high_cost_options = _high_cost_option_rows(preview_config)
+    high_cost_count = sum(1 for row in high_cost_options if row["status"] == "warning")
+    recommended_profile = _recommended_resource_profile(
+        estimated_peak_mb=estimated_peak_mb,
+        disk_mb=disk_mb,
+        high_cost_count=high_cost_count,
+        large_data_mode=large_data_mode,
+    )
     rows = [
         _resource_row(
             "Memory estimate",
@@ -563,7 +579,22 @@ def build_resource_readiness_check(
                 else "warning"
             ),
             _format_mb(estimated_peak_mb),
-            "Lower diagnostic retention, enable dtype optimization, or use a larger instance.",
+            (
+                "Lower diagnostic retention, use compact exports, or use a larger instance "
+                "before starting the run."
+            ),
+        ),
+        _resource_row(
+            "Input dataframe memory",
+            "pass",
+            _format_mb(memory_mb),
+            "Use Parquet and dtype optimization if this is materially larger than file size.",
+        ),
+        _resource_row(
+            "Source file size",
+            "pass",
+            _format_mb(source_file_mb) if source_file_mb else "Not available",
+            "Keep the original source metadata available for capacity planning.",
         ),
         _resource_row(
             "Large Data Mode",
@@ -588,19 +619,42 @@ def build_resource_readiness_check(
             "Disable advanced visuals for faster runs or smaller HTML reports.",
         ),
         _resource_row(
+            "Interactive report estimate",
+            "warning" if report_mb > 250 else "pass",
+            _format_mb(report_mb),
+            "Use standard visuals or Fast export profile if report portability matters.",
+        ),
+        _resource_row(
+            "Tabular output estimate",
+            "warning" if table_mb > 2_000 else "pass",
+            _format_mb(table_mb),
+            "Use sampled or metadata-only table exports when full tabular outputs are not needed.",
+        ),
+        _resource_row(
             "Disk estimate",
             "pass" if disk_mb < 5_000 else "warning",
             _format_mb(disk_mb),
             "Use sampled exports or disable extra figure files if disk space is constrained.",
         ),
+        _resource_row(
+            "Recommended run profile",
+            "pass" if recommended_profile == "Standard" else "warning",
+            recommended_profile,
+            "Adjust export and diagnostic settings before running if the profile is not Standard.",
+        ),
     ]
+    rows.extend(high_cost_options)
     cards = [
         {"label": "Estimated peak memory", "value": _format_mb(estimated_peak_mb)},
-        {"label": "Estimated disk output", "value": _format_mb(disk_mb)},
-        {"label": "Large Data Mode", "value": "On" if large_data_mode else "Off"},
         {
-            "label": "Checkpoint policy",
-            "value": "Keep all" if preview_config.artifacts.keep_all_checkpoints else "Prune",
+            "label": "Configured memory limit",
+            "value": _format_mb(memory_limit_mb) if memory_limit_mb is not None else "Not set",
+        },
+        {"label": "Estimated disk output", "value": _format_mb(disk_mb)},
+        {"label": "High-cost options", "value": f"{high_cost_count:,}"},
+        {
+            "label": "Recommended profile",
+            "value": recommended_profile,
         },
     ]
     return cards, pd.DataFrame(rows)
@@ -842,8 +896,12 @@ def render_resource_readiness_check(
 ) -> None:
     """Renders Step 3 compute and storage readiness guidance."""
 
-    with st.expander("Resource Readiness Check", expanded=True):
+    with st.expander("Resource Planner / Run Cost Estimate", expanded=True):
         render_metric_strip(cards, compact=True)
+        st.caption(
+            "Use this before execution to spot memory pressure, storage growth, "
+            "and high-cost diagnostic options."
+        )
         st.dataframe(prepare_table_for_display(details), width="stretch", hide_index=True)
 
 
@@ -917,7 +975,11 @@ def _structure_explanation(preview_config: Any) -> str:
     data_structure = preview_config.split.data_structure.value
     date_column = preview_config.split.date_column or "none"
     entity_column = preview_config.split.entity_column or "none"
-    return f"Data structure is `{data_structure}`; date=`{date_column}`, entity=`{entity_column}`."
+    split_strategy = preview_config.split.split_strategy.value
+    return (
+        f"Data structure is `{data_structure}`; split strategy=`{split_strategy}`; "
+        f"date=`{date_column}`, entity=`{entity_column}`."
+    )
 
 
 def _structure_action(preview_config: Any) -> str:
@@ -995,6 +1057,89 @@ def _estimate_report_size_mb(
     if preview_config.artifacts.export_individual_figure_files:
         size += 15.0
     return size
+
+
+def _estimate_table_output_mb(memory_mb: float, preview_config: Any) -> float:
+    policy = preview_config.artifacts.large_data_export_policy.value
+    if policy == "metadata_only":
+        return 5.0
+    if policy == "sampled":
+        return max(10.0, min(memory_mb * 0.2, 750.0))
+    output_format = preview_config.artifacts.tabular_output_format.value
+    format_multiplier = 0.35 if output_format == "parquet" else 0.8
+    if output_format == "both":
+        format_multiplier = 1.1
+    return max(10.0, memory_mb * format_multiplier)
+
+
+def _source_file_size_mb(dataframe: pd.DataFrame) -> float:
+    metadata = dataframe.attrs.get("quant_studio_input_source", {})
+    if not isinstance(metadata, dict):
+        return 0.0
+    try:
+        return float(metadata.get("size_bytes") or 0) / (1024 * 1024)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _high_cost_option_rows(preview_config: Any) -> list[dict[str, str]]:
+    candidates = [
+        (
+            "Advanced visual analytics",
+            bool(preview_config.artifacts.include_advanced_visual_analytics),
+            "Disable unless the review specifically needs advanced exploratory visuals.",
+        ),
+        (
+            "Individual figure files",
+            bool(preview_config.artifacts.export_individual_figure_files),
+            "Leave off unless separate PNG/HTML chart files are required.",
+        ),
+        (
+            "Cross-validation",
+            bool(getattr(preview_config.cross_validation, "enabled", False)),
+            "Use after the baseline run is stable, especially on large datasets.",
+        ),
+        (
+            "Robustness testing",
+            bool(getattr(preview_config.robustness, "enabled", False)),
+            "Run when validation requires perturbation evidence.",
+        ),
+        (
+            "Scenario testing",
+            bool(getattr(preview_config.scenario_testing, "enabled", False)),
+            "Run only when scenario evidence is in scope.",
+        ),
+        (
+            "Keep all checkpoints",
+            bool(preview_config.artifacts.keep_all_checkpoints),
+            "Leave off unless debugging checkpoint contents.",
+        ),
+    ]
+    return [
+        _resource_row(
+            area,
+            "warning" if enabled else "pass",
+            "On" if enabled else "Off",
+            action,
+        )
+        for area, enabled, action in candidates
+    ]
+
+
+def _recommended_resource_profile(
+    *,
+    estimated_peak_mb: float,
+    disk_mb: float,
+    high_cost_count: int,
+    large_data_mode: bool,
+) -> str:
+    if estimated_peak_mb > 128 * 1024 or disk_mb > 20_000:
+        return "Scale instance or reduce outputs"
+    if estimated_peak_mb > 32 * 1024 or disk_mb > 5_000 or high_cost_count >= 3:
+        return "Large-data cautious"
+    if large_data_mode or high_cost_count:
+        return "Review settings"
+    return "Standard"
 
 
 def _format_mb(value: float) -> str:

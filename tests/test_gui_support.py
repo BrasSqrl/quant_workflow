@@ -16,6 +16,7 @@ from quant_pd_framework import (
     ModelType,
     PresetName,
     ScenarioShockOperation,
+    SplitStrategy,
     TargetMode,
 )
 from quant_pd_framework.gui_support import (
@@ -83,6 +84,7 @@ def test_build_framework_config_from_editor_maps_roles_and_split_fields() -> Non
     assert config.target.positive_values == ["1", "default"]
     assert config.split.date_column == "as_of_date"
     assert config.split.entity_column == "loan_id"
+    assert config.split.split_strategy == SplitStrategy.AUTO
     assert config.split.stratify is False
     assert any(
         spec.name == "portfolio_segment" and spec.create_if_missing
@@ -99,6 +101,33 @@ def test_build_framework_config_from_editor_maps_roles_and_split_fields() -> Non
         and spec.missing_value_fill_value == "retail"
         for spec in config.schema.column_specs
     )
+
+
+def test_build_framework_config_from_editor_maps_explicit_split_strategy_fields() -> None:
+    dataframe = pd.DataFrame(
+        {
+            "as_of_date": pd.date_range("2024-01-01", periods=5, freq="D"),
+            "balance": [10, 20, 30, 40, 50],
+            "default_status": [0, 1, 0, 1, 0],
+        }
+    )
+    editor = build_column_editor_frame(dataframe)
+    editor.loc[editor["name"] == "as_of_date", "role"] = ColumnRole.DATE.value
+    editor.loc[editor["name"] == "default_status", "role"] = ColumnRole.TARGET_SOURCE.value
+
+    config = build_framework_config_from_editor(
+        editor,
+        GUIBuildInputs(
+            split_strategy=SplitStrategy.DATE_CUTOFF,
+            data_structure=DataStructure.TIME_SERIES,
+            validation_start_date="2024-01-03",
+            test_start_date="2024-01-05",
+        ),
+    )
+
+    assert config.split.split_strategy == SplitStrategy.DATE_CUTOFF
+    assert config.split.validation_start_date == "2024-01-03"
+    assert config.split.test_start_date == "2024-01-05"
 
 
 def test_build_framework_config_from_editor_parses_advanced_imputation_columns() -> None:

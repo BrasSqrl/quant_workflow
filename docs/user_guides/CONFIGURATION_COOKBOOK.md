@@ -48,7 +48,35 @@ Key checks:
 - reason-code outputs are reviewed
 - validation pack includes scorecard evidence
 
-## Recipe 3: Existing Model Scoring
+## Recipe 3: Out-Of-Time Validation Or Test Split
+
+Use when validation or test performance must come from specific calendar
+periods instead of random or row-percentage holdouts.
+
+Recommended setup:
+
+- Data structure: `time_series` or `panel`
+- Column Designer: mark the observation/as-of field as `date`
+- Split strategy: `Date cutoff` when train, validation, and test are sequential
+  time blocks
+- Date cutoff example: validation starts `2023-01-01`, test starts
+  `2024-01-01`; rows before validation become train
+- Split strategy: `Explicit date windows` when each split must be restricted to
+  named start/end dates
+- Split strategy: `Custom split column` when the data already contains
+  `train`, `validation` / `val`, or `test` / `oot` labels
+
+Key checks:
+
+- no target, recovery, collection, or post-default fields are available before
+  the prediction date
+- validation and test windows are large enough to contain events
+- the exported `split_summary` date ranges match the intended development
+  policy
+- custom split columns are reviewed as metadata only; Quant Studio excludes the
+  custom split column from model features automatically
+
+## Recipe 4: Existing Model Scoring
 
 Use when the model already exists and must not be rebuilt.
 
@@ -67,7 +95,7 @@ Key checks:
 - labeled scoring runs produce validation metrics
 - exported predictions and report are preserved
 
-## Recipe 4: Feature-Subset Search
+## Recipe 5: Feature-Subset Search
 
 Use before final model development when the candidate feature set is uncertain.
 
@@ -88,7 +116,7 @@ Key checks:
 - review winning coefficients where available
 - run `fit_new_model` after choosing the final features
 
-## Recipe 5: Lifetime PD / CECL
+## Recipe 6: Lifetime PD / CECL
 
 Use for person-period or time-aware lifetime PD development.
 
@@ -111,7 +139,7 @@ Key checks:
 - lifetime PD outputs are reviewed
 - time-aware validation is documented
 
-## Recipe 6: LGD Severity
+## Recipe 7: LGD Severity
 
 Use for continuous loss severity modeling.
 
@@ -131,7 +159,7 @@ Key checks:
 - residual diagnostics are reviewed
 - calibration and segment error are reviewed
 
-## Recipe 7: CCAR Forecasting
+## Recipe 8: CCAR Forecasting
 
 Use for stress or macro-linked forecasting workflows.
 
@@ -154,7 +182,7 @@ Key checks:
 - structural-break and stationarity outputs are reviewed
 - scenario outputs are documented
 
-## Recipe 8: Multiclass Grade Or Stage Model
+## Recipe 9: Multiclass Grade Or Stage Model
 
 Use when the target is a three-or-more-class outcome rather than a binary event
 or continuous value.
@@ -177,7 +205,7 @@ Key checks:
 - class accuracy, macro F1, weighted F1, and log loss are reviewed
 - binary PD diagnostics are not expected for multiclass runs
 
-## Recipe 9: Count Or Severity GLM
+## Recipe 10: Count Or Severity GLM
 
 Use when the target resembles a SAS-style GLM use case.
 
@@ -199,7 +227,7 @@ Key checks:
 - segment-level error is reviewed for material bias
 - model assumptions are documented in the decision summary
 
-## Recipe 10: Smooth Nonlinear Spline Model
+## Recipe 11: Smooth Nonlinear Spline Model
 
 Use when a linear model underfits a smooth relationship but a black-box model is
 hard to justify.
@@ -219,7 +247,7 @@ Key checks:
 - train/test divergence does not indicate overfitting
 - spline settings are documented as model assumptions
 
-## Recipe 11: Mixed Effects Or Forecasting Challenger
+## Recipe 12: Mixed Effects Or Forecasting Challenger
 
 Use when repeated-observation structure or time-series behavior is central to
 the business question.
@@ -241,7 +269,7 @@ Key checks:
 - forecast order, trend, and seasonality assumptions are documented
 - forecasting statistical tests and structural-break diagnostics are reviewed
 
-## Recipe 12: Large Data Run
+## Recipe 13: Large Data Run
 
 Use when data is too large for comfortable browser upload or full in-memory
 diagnostics.
@@ -267,7 +295,7 @@ Key checks:
 - full-data scoring folder is exported
 - sampled exports are clearly documented
 
-## Recipe 13: Memory-Optimized Full-Data Fit
+## Recipe 14: Memory-Optimized Full-Data Fit
 
 Use when the model must be fit on the full train split, but the source file is
 large enough that duplicated pandas dataframes can exhaust RAM.
@@ -295,7 +323,7 @@ Key checks:
 - prediction files contain scores and audit identifiers, not a duplicated full
   feature matrix
 
-## Recipe 14: Fast Iteration Run
+## Recipe 15: Fast Iteration Run
 
 Use when testing setup before creating a full evidence package.
 

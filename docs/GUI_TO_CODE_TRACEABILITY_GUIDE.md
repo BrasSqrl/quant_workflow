@@ -213,7 +213,7 @@ Loading behavior:
 | `Model Suitability Explainer` | resolved `FrameworkConfig`, target mode, data structure, event density, feature count | `build_model_suitability_explainer(...)`, `render_model_suitability_explainer(...)` | visible Step 2 suitability table |
 | `Configuration Risk Score` | resolved `FrameworkConfig`, feature count, diagnostics, transformations, categorical cardinality | `build_configuration_risk_score(...)`, `render_configuration_risk_score(...)` | visible Step 2 risk score and drivers |
 | `Runtime / Artifact Size Estimate` | resolved `FrameworkConfig`, dataframe size, diagnostic count, export toggles | `build_runtime_artifact_estimate(...)`, `render_runtime_artifact_estimate(...)` | visible Step 2 directional runtime and output-size estimate |
-| `Resource Readiness Check` | resolved `FrameworkConfig`, dataframe memory, Large Data Mode, checkpoint and visual settings | `build_resource_readiness_check(...)`, `render_resource_readiness_check(...)` | visible Step 3 memory, disk, and execution-resource warnings |
+| `Resource Planner / Run Cost Estimate` | resolved `FrameworkConfig`, dataframe memory, source file metadata, Large Data Mode, checkpoint, visual, cross-validation, robustness, scenario, and export settings | `build_resource_readiness_check(...)`, `render_resource_readiness_check(...)` | visible Step 3 memory, disk, high-cost-option, and execution-resource warnings |
 
 Notes:
 
@@ -265,14 +265,21 @@ models that do not produce meaningful feature-dependent subset comparisons.
 
 | GUI control | Config field(s) | Main implementation | Export evidence |
 | --- | --- | --- | --- |
+| `Split strategy` | `SplitConfig.split_strategy` | `SplitStep._resolve_strategy(...)` | `config/run_config.json`, `split_assignment`, `split_summary` |
 | `Train size` | `SplitConfig.train_size` | `SplitStep` | `split_summary` |
 | `Validation size` | `SplitConfig.validation_size` | `SplitStep` | `split_summary` |
 | `Test size` | `SplitConfig.test_size` | `SplitStep` | `split_summary` |
 | `Random state` | `SplitConfig.random_state` | `SplitStep`, sampling helpers | `config/run_config.json` |
 | `Stratify cross-sectional split` | `SplitConfig.stratify` | `SplitStep._split_cross_sectional` | `config/run_config.json` |
+| `Validation start date` / `Test start date` | `SplitConfig.validation_start_date`, `SplitConfig.test_start_date` | `SplitStep._split_date_cutoff(...)` | `config/run_config.json`, dated `split_summary` |
+| explicit train/validation/test date window fields | `SplitConfig.*_start_date`, `SplitConfig.*_end_date` | `SplitStep._split_explicit_date_windows(...)` | `config/run_config.json`, dated `split_summary` |
+| `Custom split column` | `SplitConfig.custom_split_column` | `SplitStep._split_custom_column(...)`; `FeatureEngineeringStep` excludes the column from model features | `config/run_config.json`, `split_assignment` |
 
 Date and identifier columns are not collected here. They are derived from the
-column designer role assignments.
+column designer role assignments. `Automatic` preserves the prior behavior:
+random split for cross-sectional data and chronological percentage split for
+time-series or panel data. Date cutoff, explicit date-window, and custom-column
+strategies are intended for true out-of-time validation design.
 
 ## 9. Step 2 Group: Model Settings
 
@@ -644,8 +651,10 @@ Notes:
 | `Decision Room` tab | completed run decision summary payload | `streamlit_ui.decision_room.build_decision_room_payload(...)`, `render_decision_summary(...)` | `reports/decision_summary.md` |
 | `Decision Summary` | completed run snapshot, metrics, diagnostics, warnings, feature importance, and artifact paths | `decision_summary.build_decision_summary(...)`, `render_decision_summary(...)` | `reports/decision_summary.md` |
 | `Download decision summary` | completed run snapshot | `decision_summary.build_decision_summary_markdown(...)` | downloaded Markdown scorecard |
+| `Feature Lineage` tab | `diagnostics_tables["feature_lineage_map"]` | `feature_lineage.build_feature_lineage_table(...)`, `ArtifactExportStep`, `render_decision_summary(...)` | `tables/governance/feature_lineage_map.*`, `model/feature_lineage_map.csv` |
 | `Validation Checklist` tab | `diagnostics_tables["validation_checklist"]` | `validation_evidence.build_validation_checklist(...)`, `render_decision_summary(...)` | `tables/governance/validation_checklist.*` |
 | `Traceability Map` tab | `diagnostics_tables["evidence_traceability_map"]` | `validation_evidence.build_evidence_traceability_map(...)`, `render_decision_summary(...)` | `tables/governance/evidence_traceability_map.*` |
+| `Dossier` tab | `artifacts["development_dossier"]` | `model_dossier.build_model_development_dossier(...)`, `ArtifactExportStep`, `render_decision_summary(...)` | `reports/model_development_dossier.md` |
 
 Notes:
 
@@ -653,7 +662,7 @@ Notes:
   judgment.
 - It synthesizes completed-run evidence into a recommendation, decision level,
   primary metrics, issue table, top feature drivers, validation checklist,
-  evidence index, and traceability map.
+  feature lineage, evidence index, traceability map, and dossier.
 
 ## 22. Authoritative Export Files for Traceability
 
@@ -668,10 +677,13 @@ For an audit review, the most important files are:
 - `reports/run_report.md`
 - `reports/decision_summary.md`
 - `reports/model_documentation_pack.md`
+- `reports/model_development_dossier.md`
 - `reports/validation_pack.md`
+- `model/feature_lineage_map.csv`
 - `metadata/reproducibility_manifest.json`
 - `tables/governance/validation_checklist.*`
 - `tables/governance/evidence_traceability_map.*`
+- `tables/governance/feature_lineage_map.*`
 - `tables/governance/report_payload_audit.*`
 - `config/configuration_template.xlsx`
 - `reports/interactive_report.html`

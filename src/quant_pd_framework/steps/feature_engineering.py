@@ -73,6 +73,8 @@ class FeatureEngineeringStep(BasePipelineStep):
             self._add_hazard_time_features(working, split_config, context)
 
         excluded_columns = {column for column in ignored_columns if column}
+        if split_config.custom_split_column:
+            excluded_columns.add(split_config.custom_split_column)
         excluded_columns.update(identifier_columns)
         excluded_columns.update(column for column in date_columns if column in working.columns)
         feature_columns = [column for column in working.columns if column not in excluded_columns]

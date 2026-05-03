@@ -193,6 +193,7 @@ REPORT_TABLE_SECTION_DIRECTORIES = {
 TABLE_LABELS = {
     "split_metrics": "Split Metric Summary",
     "feature_importance": "Feature Importance Table",
+    "feature_lineage_map": "Feature Lineage Map",
     "backtest_summary": "Backtest Summary Table",
     "model_comparison": "Model Comparison Summary",
     "data_quality_summary": "Run Quality Summary",
@@ -1581,6 +1582,7 @@ def infer_asset_section(asset_key: str, *, kind: str) -> str:
         "reproducibility_manifest",
         "validation_checklist",
         "evidence_traceability_map",
+        "feature_lineage_map",
         "report_payload_audit",
         "performance_hardening_actions",
         "model_numerical_diagnostics",

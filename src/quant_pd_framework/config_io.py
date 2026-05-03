@@ -61,6 +61,7 @@ from .config import (
     ScorecardMonotonicity,
     ScorecardWorkbenchConfig,
     SplitConfig,
+    SplitStrategy,
     StructuralBreakConfig,
     SuitabilityCheckConfig,
     TabularOutputFormat,
@@ -204,6 +205,7 @@ def _build_split_config(payload: dict[str, Any]) -> SplitConfig:
         data_structure=DataStructure(
             payload.get("data_structure", DataStructure.CROSS_SECTIONAL.value)
         ),
+        split_strategy=SplitStrategy(payload.get("split_strategy", SplitStrategy.AUTO.value)),
         train_size=payload.get("train_size", 0.6),
         validation_size=payload.get("validation_size", 0.2),
         test_size=payload.get("test_size", 0.2),
@@ -211,6 +213,13 @@ def _build_split_config(payload: dict[str, Any]) -> SplitConfig:
         stratify=payload.get("stratify", True),
         date_column=payload.get("date_column"),
         entity_column=payload.get("entity_column"),
+        train_start_date=payload.get("train_start_date"),
+        train_end_date=payload.get("train_end_date"),
+        validation_start_date=payload.get("validation_start_date"),
+        validation_end_date=payload.get("validation_end_date"),
+        test_start_date=payload.get("test_start_date"),
+        test_end_date=payload.get("test_end_date"),
+        custom_split_column=payload.get("custom_split_column"),
     )
 
 
@@ -840,6 +849,10 @@ def _build_artifact_config(payload: dict[str, Any]) -> ArtifactConfig:
         documentation_pack_file_name=payload.get(
             "documentation_pack_file_name",
             "model_documentation_pack.md",
+        ),
+        development_dossier_file_name=payload.get(
+            "development_dossier_file_name",
+            "model_development_dossier.md",
         ),
         validation_pack_file_name=payload.get("validation_pack_file_name", "validation_pack.md"),
         committee_report_docx_file_name=payload.get(

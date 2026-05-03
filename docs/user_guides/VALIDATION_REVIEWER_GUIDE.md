@@ -9,6 +9,7 @@ Start with these files:
 
 - `reports/interactive_report.html`
 - `reports/decision_summary.md`
+- `reports/model_development_dossier.md`
 - `reports/validation_pack.md`
 - `reports/model_documentation_pack.md`
 - `config/run_config.json`
@@ -18,11 +19,14 @@ Start with these files:
 - `metadata/reproducibility_manifest.json`
 - `tables/governance/validation_checklist.csv` or `.parquet`
 - `tables/governance/evidence_traceability_map.csv` or `.parquet`
+- `tables/governance/feature_lineage_map.csv` or `.parquet`
 
 Use Step 4, `Results & Artifacts`, for detailed diagnostics in the GUI. Use
 Step 5, `Decision Summary`, for the Decision Room, recommendation, decision
 issues, key metrics, feature drivers, validation checklist, evidence index, and
-traceability map. Use the exported run folder when reviewing offline.
+traceability map. The Feature Lineage and Dossier tabs provide the feature-level
+audit map and a narrative model-development package. Use the exported run folder
+when reviewing offline.
 
 The Decision Room is the default Step 5 landing tab. It is intended for a live
 review meeting: start there for the recommendation, attention items, top
@@ -44,8 +48,9 @@ when a reviewer needs supporting evidence.
 11. Review Step 5 decision summary and supporting evidence links.
 12. Review `validation_checklist` for complete versus attention-needed evidence areas.
 13. Review `evidence_traceability_map` when distributing artifacts to other reviewers.
-14. Review warnings, run debug trace, and diagnostic registry.
-15. Record reviewer notes and exceptions.
+14. Review `feature_lineage_map` for source features, transformations, imputation, selection rationale, and documentation gaps.
+15. Review warnings, run debug trace, and diagnostic registry.
+16. Record reviewer notes and exceptions.
 
 ## Execution Mode Review
 
@@ -75,7 +80,9 @@ Important evidence:
 - `config/run_config.json`
 - `config/configuration_template.xlsx`
 - diagnostic tables for schema, imputation, and transformations
+- `tables/governance/feature_lineage_map.*`
 - `reports/model_documentation_pack.md`
+- `reports/model_development_dossier.md`
 
 ## Memory And Large-Run Review
 
@@ -105,13 +112,18 @@ Step 5 includes two validator-oriented tabs:
 
 - `Validation Checklist` summarizes whether core evidence areas are complete,
   attention-needed, or not applicable.
-- `Traceability Map` maps common review questions to the exported artifact,
-  table, or report that answers the question.
+- `Feature Lineage` maps final model terms back to source features, transformations,
+  imputation policy, variable-selection rationale, and feature documentation.
+- `Traceability Map` maps common review questions to the exported artifact, table,
+  or report that answers the question.
+- `Dossier` renders the exported model-development narrative.
 
 Offline, use:
 
 - `tables/governance/validation_checklist.csv` or `.parquet`
 - `tables/governance/evidence_traceability_map.csv` or `.parquet`
+- `tables/governance/feature_lineage_map.csv` or `.parquet`
+- `reports/model_development_dossier.md`
 
 These files are review aids. They do not approve the model automatically; they
 make it easier to see whether supporting evidence exists and where it lives.

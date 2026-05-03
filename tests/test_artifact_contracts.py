@@ -87,6 +87,10 @@ def test_artifact_manifest_indexes_core_outputs_and_rerun_bundle() -> None:
         assert manifest["core_artifacts"]["decision_summary"] == str(
             context.artifacts["decision_summary"]
         )
+        assert manifest["core_artifacts"]["feature_lineage"] == str(
+            context.artifacts["feature_lineage"]
+        )
+        assert manifest["development_dossier"] == str(context.artifacts["development_dossier"])
         assert manifest["rerun_bundle"]["step_manifest"] == str(context.artifacts["step_manifest"])
         assert manifest["rerun_bundle"]["runner_script"] == str(context.artifacts["runner_script"])
         assert manifest["rerun_bundle"]["rerun_readme"] == str(context.artifacts["rerun_readme"])
@@ -109,11 +113,21 @@ def test_artifact_manifest_indexes_core_outputs_and_rerun_bundle() -> None:
         assert any(tables_dir.rglob("*.csv"))
         assert (tables_dir / "governance" / "validation_checklist.csv").exists()
         assert (tables_dir / "governance" / "evidence_traceability_map.csv").exists()
+        assert (tables_dir / "governance" / "feature_lineage_map.csv").exists()
         assert (tables_dir / "governance" / "report_payload_audit.csv").exists()
         assert any(html_dir.glob("*.html"))
         assert Path(manifest["directories"]["metadata"]).exists()
         assert Path(manifest["directories"]["config"]).exists()
         assert Path(context.artifacts["decision_summary"]).exists()
+        assert Path(context.artifacts["development_dossier"]).exists()
+        assert Path(context.artifacts["feature_lineage"]).exists()
+        feature_lineage = pd.read_csv(context.artifacts["feature_lineage"])
+        assert {
+            "model_feature_name",
+            "source_feature",
+            "lineage_type",
+            "review_guidance",
+        }.issubset(feature_lineage.columns)
         assert (code_snapshot_dir / "src" / "quant_pd_framework" / "run.py").exists()
         assert (code_snapshot_dir / "app" / "streamlit_app.py").exists()
 
@@ -215,6 +229,7 @@ def test_parquet_source_exports_tabular_artifacts_as_parquet() -> None:
         assert not (run_root / "tables" / "governance" / "validation_checklist.csv").exists()
         assert (run_root / "tables" / "governance" / "validation_checklist.parquet").exists()
         assert (run_root / "tables" / "governance" / "evidence_traceability_map.parquet").exists()
+        assert (run_root / "tables" / "governance" / "feature_lineage_map.parquet").exists()
         assert (run_root / "tables" / "governance" / "report_payload_audit.parquet").exists()
         assert manifest["rerun_bundle"]["input_snapshot_csv"] is None
         assert manifest["rerun_bundle"]["input_snapshot_parquet"]
@@ -306,3 +321,6 @@ def test_reference_workflow_bundle_contract_contains_expected_sections() -> None
         assert "## Development Summary" in documentation_pack
         assert "## Decision Summary" in documentation_pack
         assert "## Calibration Review" in documentation_pack
+        dossier = Path(context.artifacts["development_dossier"]).read_text(encoding="utf-8")
+        assert "## 4. Feature Governance And Lineage" in dossier
+        assert "## 10. Primary Artifacts" in dossier

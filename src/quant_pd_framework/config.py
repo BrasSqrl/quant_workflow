@@ -18,6 +18,17 @@ class DataStructure(StrEnum):
     PANEL = "panel"
 
 
+class SplitStrategy(StrEnum):
+    """Supported train/validation/test split assignment strategies."""
+
+    AUTO = "auto"
+    RANDOM = "random"
+    CHRONOLOGICAL_PERCENTAGE = "chronological_percentage"
+    DATE_CUTOFF = "date_cutoff"
+    EXPLICIT_DATE_WINDOWS = "explicit_date_windows"
+    CUSTOM_COLUMN = "custom_column"
+
+
 class ModelType(StrEnum):
     """Supported model families exposed through the framework and GUI."""
 
@@ -417,6 +428,7 @@ class SplitConfig:
     """Defines the train/validation/test partition strategy."""
 
     data_structure: DataStructure = DataStructure.CROSS_SECTIONAL
+    split_strategy: SplitStrategy = SplitStrategy.AUTO
     train_size: float = 0.6
     validation_size: float = 0.2
     test_size: float = 0.2
@@ -424,14 +436,32 @@ class SplitConfig:
     stratify: bool = True
     date_column: str | None = None
     entity_column: str | None = None
+    train_start_date: str | None = None
+    train_end_date: str | None = None
+    validation_start_date: str | None = None
+    validation_end_date: str | None = None
+    test_start_date: str | None = None
+    test_end_date: str | None = None
+    custom_split_column: str | None = None
 
     def validate(self) -> None:
-        total = self.train_size + self.validation_size + self.test_size
-        if abs(total - 1.0) > 1e-9:
-            raise ValueError(
-                "Split sizes must add to 1.0. "
-                f"Received {self.train_size} + {self.validation_size} + {self.test_size} = {total}."
-            )
+        if isinstance(self.split_strategy, str):
+            self.split_strategy = SplitStrategy(self.split_strategy)
+        if isinstance(self.data_structure, str):
+            self.data_structure = DataStructure(self.data_structure)
+        percentage_strategies = {
+            SplitStrategy.AUTO,
+            SplitStrategy.RANDOM,
+            SplitStrategy.CHRONOLOGICAL_PERCENTAGE,
+        }
+        if self.split_strategy in percentage_strategies:
+            total = self.train_size + self.validation_size + self.test_size
+            if abs(total - 1.0) > 1e-9:
+                raise ValueError(
+                    "Split sizes must add to 1.0. "
+                    f"Received {self.train_size} + {self.validation_size} + "
+                    f"{self.test_size} = {total}."
+                )
         for split_name, split_value in {
             "validation_size": self.validation_size,
             "test_size": self.test_size,
@@ -440,6 +470,37 @@ class SplitConfig:
                 raise ValueError(f"{split_name} must be non-negative. Received {split_value}.")
         if self.train_size <= 0:
             raise ValueError(f"train_size must be greater than 0. Received {self.train_size}.")
+        if self.split_strategy in {
+            SplitStrategy.CHRONOLOGICAL_PERCENTAGE,
+            SplitStrategy.DATE_CUTOFF,
+            SplitStrategy.EXPLICIT_DATE_WINDOWS,
+        } and not (self.date_column or "").strip():
+            raise ValueError(
+                f"SplitConfig.date_column is required for {self.split_strategy.value}."
+            )
+        if self.split_strategy == SplitStrategy.DATE_CUTOFF and not (
+            self.validation_start_date or self.test_start_date
+        ):
+            raise ValueError(
+                "date_cutoff split strategy requires validation_start_date or test_start_date."
+            )
+        if (
+            self.split_strategy == SplitStrategy.EXPLICIT_DATE_WINDOWS
+            and not self._has_date_window("train")
+        ):
+            raise ValueError(
+                "explicit_date_windows split strategy requires a train date window."
+            )
+        if self.split_strategy == SplitStrategy.CUSTOM_COLUMN and not (
+            self.custom_split_column or ""
+        ).strip():
+            raise ValueError("custom_column split strategy requires custom_split_column.")
+
+    def _has_date_window(self, split_name: str) -> bool:
+        return bool(
+            getattr(self, f"{split_name}_start_date")
+            or getattr(self, f"{split_name}_end_date")
+        )
 
 
 @dataclass(slots=True)
@@ -1970,6 +2031,7 @@ class ArtifactConfig:
     step_manifest_file_name: str = "step_manifest.json"
     decision_summary_file_name: str = "decision_summary.md"
     documentation_pack_file_name: str = "model_documentation_pack.md"
+    development_dossier_file_name: str = "model_development_dossier.md"
     validation_pack_file_name: str = "validation_pack.md"
     committee_report_docx_file_name: str = "committee_report.docx"
     validation_report_docx_file_name: str = "validation_report.docx"
@@ -2015,6 +2077,7 @@ class ArtifactConfig:
             "config_file_name": self.config_file_name,
             "decision_summary_file_name": self.decision_summary_file_name,
             "documentation_pack_file_name": self.documentation_pack_file_name,
+            "development_dossier_file_name": self.development_dossier_file_name,
             "validation_pack_file_name": self.validation_pack_file_name,
             "committee_report_docx_file_name": self.committee_report_docx_file_name,
             "validation_report_docx_file_name": self.validation_report_docx_file_name,

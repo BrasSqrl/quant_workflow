@@ -416,18 +416,22 @@ def render_decision_summary(snapshot: dict[str, Any]) -> None:
         metric_tab,
         issue_tab,
         feature_tab,
+        lineage_tab,
         validation_tab,
         evidence_tab,
         traceability_tab,
+        dossier_tab,
     ) = st.tabs(
         [
             "Decision Room",
             "Metrics",
             "Issues",
             "Feature Drivers",
+            "Feature Lineage",
             "Validation Checklist",
             "Evidence Index",
             "Traceability Map",
+            "Dossier",
         ]
     )
     with decision_room_tab:
@@ -452,6 +456,20 @@ def render_decision_summary(snapshot: dict[str, Any]) -> None:
             width="stretch",
             hide_index=True,
         )
+    with lineage_tab:
+        lineage = snapshot["diagnostics_tables"].get("feature_lineage_map", pd.DataFrame())
+        if lineage.empty:
+            st.info("Feature lineage was not captured for this run.")
+        else:
+            st.caption(
+                "This map connects final model terms back to source features, transformations, "
+                "imputation policies, selection rationale, and feature documentation."
+            )
+            st.dataframe(
+                prepare_table_for_display(lineage),
+                width="stretch",
+                hide_index=True,
+            )
     with validation_tab:
         render_output_explainer("validation_checklist")
         st.dataframe(
@@ -472,6 +490,19 @@ def render_decision_summary(snapshot: dict[str, Any]) -> None:
             width="stretch",
             hide_index=True,
         )
+    with dossier_tab:
+        dossier_path = snapshot.get("artifacts", {}).get("development_dossier", "")
+        if dossier_path and Path(dossier_path).exists():
+            dossier_text = read_text_artifact(dossier_path)
+            st.markdown(dossier_text)
+            render_download_button(
+                "Download model development dossier",
+                dossier_text,
+                file_name=f"{snapshot.get('run_id', 'run')}_model_development_dossier.md",
+                mime="text/markdown",
+            )
+        else:
+            st.info("The model development dossier was not exported for this run.")
 
 
 def _render_decision_room(snapshot: dict[str, Any], summary: dict[str, Any]) -> None:
