@@ -130,13 +130,18 @@ make it easier to see whether supporting evidence exists and where it lives.
 
 The Step 5 Export card also includes `Download LLM Package`. Use this only as a
 drafting aid for a model methodology or technical model document. The package
-contains curated evidence, a prompt template, a default methodology outline, a
-source citation map, and a `document_template/` folder where a group-specific
-table of contents can be dropped before sending the package to an LLM. It
-excludes raw row-level input data, row-level predictions, serialized model
-binaries, monitoring handoff bundles, and full code snapshots by default. Any
-LLM-generated document still requires qualified human review and should not be
-treated as model approval or validation sign-off.
+contains curated evidence, section-level evidence maps, approved claims,
+documentation gaps, regulatory crosswalks, prompt variants, citation rules,
+tone profiles, model-type writing guidance, feature/metric/chart interpretation
+briefs, a target document schema, evidence-strength policy, completion rules,
+controlled vocabulary, draft-validation rules, quality rubric, redaction policy,
+lightweight draft validator script, a human review checklist, and a
+`document_template/` folder where a group-specific table of contents can be
+dropped before sending the package to an LLM. It excludes raw row-level input
+data, row-level predictions, serialized model binaries, monitoring handoff
+bundles, and full code snapshots by default. Any LLM-generated document still
+requires qualified human review and should not be treated as model approval or
+validation sign-off.
 
 ## In-App Interpretation Aids
 

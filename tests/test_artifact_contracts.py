@@ -171,6 +171,38 @@ def test_llm_documentation_package_exports_evidence_without_row_level_data() -> 
         assert "llm_documentation_package/model_document_context.json" in names
         assert "llm_documentation_package/model_document_context.md" in names
         assert "llm_documentation_package/prompt_generate_model_methodology.md" in names
+        assert "llm_documentation_package/document_section_evidence_map.json" in names
+        assert "llm_documentation_package/document_section_evidence_map.csv" in names
+        assert "llm_documentation_package/approved_claims.json" in names
+        assert "llm_documentation_package/target_document_schema.json" in names
+        assert "llm_documentation_package/evidence_strength_policy.json" in names
+        assert "llm_documentation_package/document_completion_rules.json" in names
+        assert "llm_documentation_package/controlled_vocabulary.json" in names
+        assert "llm_documentation_package/draft_validation_rules.json" in names
+        assert "llm_documentation_package/template_binding.json" in names
+        assert "llm_documentation_package/llm_redaction_policy.json" in names
+        assert "llm_documentation_package/document_quality_rubric.md" in names
+        assert "llm_documentation_package/citation_coverage_validator.md" in names
+        assert "llm_documentation_package/unsupported_claim_detector.md" in names
+        assert "llm_documentation_package/regulatory_language_guardrails.md" in names
+        assert "llm_documentation_package/tools/validate_llm_draft.py" in names
+        assert "llm_documentation_package/documentation_gaps.md" in names
+        assert "llm_documentation_package/regulatory_documentation_crosswalk.csv" in names
+        assert "llm_documentation_package/model_type_writing_guide.md" in names
+        assert "llm_documentation_package/citation_rules.md" in names
+        assert "llm_documentation_package/human_review_checklist.md" in names
+        assert "llm_documentation_package/feature_dictionary_narrative.md" in names
+        assert "llm_documentation_package/metrics_interpretation_brief.md" in names
+        assert "llm_documentation_package/chart_interpretation_brief.md" in names
+        assert "llm_documentation_package/prompts/prompt_full_methodology.md" in names
+        assert "llm_documentation_package/prompts/prompt_regulatory_gap_review.md" in names
+        assert "llm_documentation_package/prompts/prompt_1_create_document_plan.md" in names
+        assert "llm_documentation_package/prompts/prompt_2_draft_from_approved_plan.md" in names
+        assert (
+            "llm_documentation_package/prompts/prompt_3_validate_draft_against_evidence.md"
+            in names
+        )
+        assert "llm_documentation_package/tone_profiles/tone_regulatory_formal.md" in names
         assert (
             "llm_documentation_package/document_template/DROP_TABLE_OF_CONTENTS_HERE.md"
             in names

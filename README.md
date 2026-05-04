@@ -800,12 +800,15 @@ The GUI now includes several development-focused enterprise UX surfaces:
   override candidates without refitting the model live.
 - Step 5 `Download LLM Package` creates an on-demand `.zip` of curated
   non-row-level evidence for LLM-assisted model methodology drafting. The
-  package includes prompt guidance, a default regulatory-style outline, a
-  table-of-contents drop zone for institution-specific templates, a source
-  citation map, an evidence checklist, generated-run code, run configuration,
-  and selected run evidence. Raw input snapshots, row-level predictions,
-  serialized model binaries, monitoring bundles, and full code snapshots are
-  excluded by default.
+  package includes section-level evidence maps, approved evidence-backed
+  claims, target document schema, evidence-strength policy, completion rules,
+  controlled vocabulary, draft-validation rules, documentation gaps,
+  regulatory crosswalks, model-type writing guidance, two-pass prompt variants,
+  citation rules, tone profiles, interpretation briefs, a quality rubric, a
+  redaction policy, a human review checklist, generated-run code, run
+  configuration, and selected run evidence. Raw input snapshots, row-level
+  predictions, serialized model binaries, monitoring bundles, and full code
+  snapshots are excluded by default.
 
 ### Diagnostic Studio Layout
 
@@ -2236,7 +2239,173 @@ and a rerun-ready code bundle to disk.
 
 Step 5 also offers an on-demand LLM documentation package download. This is not
 written as part of every run; it is created when the user clicks `Download LLM
-Package` in the Step 5 Export card.
+Package` in the Step 5 Export card. The package is optimized for LLM drafting
+through evidence maps, approved claims, documentation gaps, regulatory
+crosswalks, target document schema, evidence-strength policy, document
+completion rules, controlled vocabulary, draft-validation rules, two-pass
+prompts, citation rules, interpretation briefs, redaction controls, a document
+quality rubric, a lightweight draft validator script, and human review
+checklists.
+
+### Starting An LLM Documentation Review
+
+After downloading and extracting the Step 5 `Download LLM Package` zip, use
+this three-prompt sequence. The first prompt intentionally asks for a document
+plan, not a full draft, so a reviewer can confirm evidence coverage before the
+LLM writes the technical document.
+
+#### Prompt 1: Create The Documentation Plan
+
+```text
+You are assisting with a regulated model-risk technical documentation review.
+Use only the files in the uploaded Quant Studio LLM documentation package.
+
+First, do not draft the model methodology document. Review the package and
+produce a controlled documentation plan.
+
+Read these files first:
+- README_LLM_PACKAGE.md
+- llm_evidence_manifest.json
+- source_citation_map.csv
+- target_document_schema.json
+- template_binding.json
+- document_section_evidence_map.csv
+- approved_claims.json
+- documentation_gaps.md
+- evidence_strength_policy.json
+- document_completion_rules.json
+- controlled_vocabulary.json
+- regulatory_language_guardrails.md
+
+For each required document section, return:
+- the section heading to use
+- the writing objective
+- the evidence files and fields that support the section
+- approved claims that can be used
+- missing evidence or documentation gaps
+- high-risk claims that require human review
+- whether the section is ready to draft, partially ready, or blocked
+
+Rules:
+- Cite package evidence for every factual statement using this style:
+  [source: package/path > field_or_section]
+- Do not invent results, thresholds, owners, approvals, limitations, or
+  regulatory conclusions.
+- Do not state that the model is approved, validated, compliant, or
+  production-ready unless explicit approval evidence exists in the package.
+- If evidence is missing, write `Evidence not found in package`.
+- Preserve all warnings, failed checks, documentation gaps, and limitations.
+- Treat your output as a draft planning aid that requires qualified human review.
+
+Deliver only:
+1. A section-by-section documentation plan.
+2. A list of missing or weak evidence.
+3. A list of questions for the model owner or validation reviewer.
+4. A recommendation on whether to proceed to drafting the full methodology
+   document.
+```
+
+#### Prompt 2: Draft From The Approved Plan
+
+Use this only after a qualified reviewer has reviewed the plan from Prompt 1.
+
+```text
+You are assisting with a regulated model-risk technical documentation draft.
+Use only the files in the uploaded Quant Studio LLM documentation package and
+the reviewed documentation plan from the prior step.
+
+Draft the full model methodology / technical model document.
+
+Required sources:
+- the reviewed documentation plan
+- target_document_schema.json
+- template_binding.json
+- default_model_methodology_outline.md, unless a custom table of contents was
+  provided in document_template/
+- approved_claims.json
+- document_section_evidence_map.csv
+- model_document_context.json
+- metrics_interpretation_brief.md
+- feature_dictionary_narrative.md
+- chart_interpretation_brief.md
+- documentation_gaps.md
+- evidence_strength_policy.json
+- controlled_vocabulary.json
+- regulatory_language_guardrails.md
+- source_citation_map.csv
+
+Rules:
+- Use approved_claims.json as the primary claim library.
+- Follow target_document_schema.json for required sections.
+- Use the custom table of contents if one was supplied; otherwise use
+  default_model_methodology_outline.md.
+- Cite every factual claim using this style:
+  [source: package/path > field_or_section]
+- Preserve unresolved documentation gaps, warnings, failed checks, and
+  limitations.
+- Do not invent missing evidence.
+- Do not claim approval, validation sign-off, compliance, or production
+  readiness unless explicit package evidence supports that statement.
+- Use conservative model-risk language from controlled_vocabulary.json and
+  regulatory_language_guardrails.md.
+
+Deliver:
+1. A complete Markdown model methodology / technical model document.
+2. A documentation gaps section.
+3. A limitations and assumptions section.
+4. A citation appendix mapping major sections to package evidence.
+5. A short list of items requiring human review before the document can be used.
+```
+
+#### Prompt 3: Validate The Draft Against Evidence
+
+Use this after the LLM has produced the draft.
+
+```text
+You are acting as a model validation and documentation quality reviewer.
+Use only the uploaded Quant Studio LLM documentation package and the draft model
+methodology document.
+
+Review the draft against:
+- document_completion_rules.json
+- draft_validation_rules.json
+- document_quality_rubric.md
+- citation_coverage_validator.md
+- unsupported_claim_detector.md
+- evidence_strength_policy.json
+- controlled_vocabulary.json
+- regulatory_language_guardrails.md
+- source_citation_map.csv
+- documentation_gaps.md
+- approved_claims.json
+
+Perform these checks:
+- Identify factual claims without citations.
+- Identify citations that do not map to package evidence.
+- Identify unsupported claims, especially approval, validation, compliance, or
+  production-readiness claims.
+- Identify quantitative values that should be verified against source evidence.
+- Confirm that warnings, failed checks, limitations, and documentation gaps were
+  preserved.
+- Score the draft using document_quality_rubric.md.
+- Identify sections that are complete, partially supported, missing evidence, or
+  blocked.
+
+Rules:
+- Do not rewrite the full document.
+- Do not approve the model or the document.
+- If evidence is missing, write `Evidence not found in package`.
+- Treat this as a human-review aid, not a final validation sign-off.
+
+Deliver:
+1. Citation coverage findings.
+2. Unsupported or high-risk claim findings.
+3. Missing evidence and documentation-gap findings.
+4. Rubric score by category.
+5. Required revisions before human review.
+6. A final status of `ready_for_human_review`, `needs_revision`, or
+   `blocked_by_missing_evidence`.
+```
 
 ## Outputs
 
@@ -2285,7 +2454,9 @@ Typical outputs include:
 - generated Python launcher for non-GUI reruns
 - local code snapshot containing the package, GUI, examples, tests, and project metadata
 - on-demand LLM documentation package for drafting a model methodology document
-  from curated evidence without sending raw row-level data by default
+  from curated evidence without sending raw row-level data by default; the
+  package includes schema, citation, evidence-strength, vocabulary, validation,
+  redaction, and quality-rubric controls to constrain downstream LLM drafting
 
 ## Saved Run Bundles And Code Export
 

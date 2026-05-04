@@ -51,10 +51,15 @@ and summarizes the completed run in Step 5, `Decision Summary`.
 
 Step 5 also has an on-demand `Download LLM Package` button in the Export card.
 That download creates a `.zip` for LLM-assisted model methodology drafting. It
-includes LLM-readable context files, a regulatory-guidance evidence map, a
-prompt template, a default model methodology outline, a table-of-contents drop
-zone for institution-specific templates, a source citation map, an evidence
-checklist, diagnostic table previews, generated-run code, run configuration,
+includes LLM-readable context files, section-level evidence maps,
+evidence-backed approved claims, a documentation gap register, a detailed
+regulatory crosswalk, model-type writing guidance, prompt variants, tone
+profiles, citation rules, feature/metric/chart interpretation briefs, a target
+document schema, evidence-strength policy, completion rules, controlled
+vocabulary, draft-validation rules, document quality rubric, redaction policy,
+lightweight draft validator script, a human review checklist, a default model
+methodology outline, a table-of-contents drop zone for institution-specific
+templates, diagnostic table previews, generated-run code, run configuration,
 and selected non-row-level evidence from the completed run. It intentionally
 excludes raw input snapshots, row-level predictions, serialized model binaries,
 monitoring handoff bundles, and full code snapshots by default.
