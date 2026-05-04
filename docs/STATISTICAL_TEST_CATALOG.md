@@ -39,14 +39,16 @@ configured, emitted, disabled, and skipped diagnostic/test surfaces.
 | DFBETAs / DFFITS | `model_dfbetas_summary`, `model_dffits_summary` | Observation-level influence review | `_add_specification_framework_extensions` |
 | Kolmogorov-Smirnov style separation statistic (KS) | split metric `ks_statistic` | Binary discrimination strength | `EvaluationStep._ks_statistic` |
 | Kolmogorov-Smirnov distribution shift test | `distribution_shift_tests` | Train-vs-scored feature-distribution drift review | `_add_distribution_framework_outputs` |
-| D’Agostino-Pearson normality test | `distribution_tests` | Numeric feature shape review | `_add_distribution_framework_outputs` |
+| D'Agostino-Pearson normality test | `distribution_tests` | Numeric feature shape review | `_add_distribution_framework_outputs` |
 | Hosmer-Lemeshow statistic | `calibration_summary` | Binary calibration goodness-of-fit by bins | `DiagnosticsStep._hosmer_lemeshow_statistic` |
 | Calibration slope and intercept | `calibration_summary` | Over/under-confidence review | `DiagnosticsStep._calibration_slope_intercept` |
 | Expected / Maximum Calibration Error (ECE / MCE) | `calibration_summary` | Bin-level calibration gap review | `DiagnosticsStep._calibration_error_metrics` |
 | Variance Inflation Factor (VIF) | `vif` | Numeric multicollinearity screening | `DiagnosticsStep._add_vif_outputs` |
 | Weight of Evidence / Information Value (WoE / IV) | `woe_iv_summary`, `woe_iv_detail` | Binary predictor strength and scorecard analysis | `DiagnosticsStep._add_woe_iv_outputs` |
 | Population Stability Index (PSI) | `psi` | Development vs scored-population drift | `DiagnosticsStep._add_psi_outputs`, `_compute_population_stability_index` |
+| Residual bias and residual RMSE checks | `residual_diagnostics` | Continuous-model residual direction and error-size review | `_add_residual_framework_outputs` |
 | Breusch-Pagan | `residual_diagnostics` | Heteroskedasticity review on scored residuals | `_add_residual_framework_outputs` |
+| Residual lag-1 autocorrelation | `residual_diagnostics`, `time_series_extension_tests` | Serial-dependence review | `_add_residual_framework_outputs`, `_add_time_series_framework_outputs` |
 | Durbin-Watson | `forecasting_statistical_tests` | Residual autocorrelation review | `DiagnosticsStep._add_forecasting_test_outputs` |
 | Ljung-Box | `forecasting_statistical_tests` | Residual serial-correlation review | `DiagnosticsStep._add_forecasting_test_outputs` |
 | ARCH LM | `forecasting_statistical_tests` | Conditional heteroskedasticity review | `DiagnosticsStep._add_forecasting_test_outputs` |

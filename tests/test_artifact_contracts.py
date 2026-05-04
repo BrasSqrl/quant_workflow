@@ -171,6 +171,7 @@ def test_llm_documentation_package_exports_evidence_without_row_level_data() -> 
         assert "llm_documentation_package/model_document_context.json" in names
         assert "llm_documentation_package/model_document_context.md" in names
         assert "llm_documentation_package/prompt_generate_model_methodology.md" in names
+        assert "llm_documentation_package/THREE_PROMPTS_FOR_LLM_USE.txt" in names
         assert "llm_documentation_package/document_section_evidence_map.json" in names
         assert "llm_documentation_package/document_section_evidence_map.csv" in names
         assert "llm_documentation_package/approved_claims.json" in names

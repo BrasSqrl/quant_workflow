@@ -51,10 +51,11 @@ Aligned:
 
 ## Testing
 
-Aligned with one explicit change:
+Aligned:
 
 - the highest-value behavioral tests remain in place
-- low-value generated-output clutter from prior test runs is being removed from the repository
+- low-value generated-output clutter from test runs is excluded from source
+  control and generated in isolated temporary workspaces
 - the suite covers training, rerun bundles, model variants, GUI config
   translation, existing-model scoring, cross-validation, large-data controls,
   configuration profiles, enterprise workflow surfaces, and Streamlit result
@@ -69,7 +70,7 @@ Aligned:
 - examples exist for both training and existing-model scoring workflows
 - dedicated catalogs document statistical tests, model families, metrics,
   preprocessing/data treatment, GUI-to-code traceability, SageMaker setup, and
-  the logistic-regression walkthrough
+  model-type/reference workflow walkthroughs
 
 ## Operational Hygiene
 

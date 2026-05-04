@@ -190,6 +190,16 @@ def build_llm_documentation_package_from_payload(
         _write_text(
             archive,
             added_arcnames,
+            f"{PACKAGE_ROOT}/THREE_PROMPTS_FOR_LLM_USE.txt",
+            _build_three_prompt_text(),
+            included,
+            evidence_area="llm_prompt",
+            source="generated",
+            llm_use="Copy/paste prompt sequence for controlled LLM documentation drafting.",
+        )
+        _write_text(
+            archive,
+            added_arcnames,
             f"{PACKAGE_ROOT}/default_model_methodology_outline.md",
             _build_default_outline(),
             included,
@@ -1016,6 +1026,174 @@ Deliverable:
 - A complete Markdown model methodology document.
 - A short list of unresolved documentation gaps.
 - A citation appendix mapping major sections to package source files.
+"""
+
+
+def _build_three_prompt_text() -> str:
+    return """Quant Studio LLM Documentation Package Prompt Sequence
+======================================================
+
+Use these prompts in order after downloading and extracting the Step 5
+Download LLM Package zip.
+
+Prompt 1: Create The Documentation Plan
+---------------------------------------
+
+You are assisting with a regulated model-risk technical documentation review.
+Use only the files in the uploaded Quant Studio LLM documentation package.
+
+First, do not draft the model methodology document. Review the package and
+produce a controlled documentation plan.
+
+Read these files first:
+- README_LLM_PACKAGE.md
+- llm_evidence_manifest.json
+- source_citation_map.csv
+- target_document_schema.json
+- template_binding.json
+- document_section_evidence_map.csv
+- approved_claims.json
+- documentation_gaps.md
+- evidence_strength_policy.json
+- document_completion_rules.json
+- controlled_vocabulary.json
+- regulatory_language_guardrails.md
+
+For each required document section, return:
+- the section heading to use
+- the writing objective
+- the evidence files and fields that support the section
+- approved claims that can be used
+- missing evidence or documentation gaps
+- high-risk claims that require human review
+- whether the section is ready to draft, partially ready, or blocked
+
+Rules:
+- Cite package evidence for every factual statement using this style:
+  [source: package/path > field_or_section]
+- Do not invent results, thresholds, owners, approvals, limitations, or
+  regulatory conclusions.
+- Do not state that the model is approved, validated, compliant, or
+  production-ready unless explicit approval evidence exists in the package.
+- If evidence is missing, write `Evidence not found in package`.
+- Preserve all warnings, failed checks, documentation gaps, and limitations.
+- Treat your output as a draft planning aid that requires qualified human review.
+
+Deliver only:
+1. A section-by-section documentation plan.
+2. A list of missing or weak evidence.
+3. A list of questions for the model owner or validation reviewer.
+4. A recommendation on whether to proceed to drafting the full methodology
+   document.
+
+Prompt 2: Draft From The Approved Plan
+--------------------------------------
+
+Use this only after a qualified reviewer has reviewed the plan from Prompt 1.
+
+You are assisting with a regulated model-risk technical documentation draft.
+Use only the files in the uploaded Quant Studio LLM documentation package and
+the reviewed documentation plan from the prior step.
+
+Draft the full model methodology / technical model document.
+
+Required sources:
+- the reviewed documentation plan
+- target_document_schema.json
+- template_binding.json
+- default_model_methodology_outline.md, unless a custom table of contents was
+  provided in document_template/
+- approved_claims.json
+- document_section_evidence_map.csv
+- model_document_context.json
+- metrics_interpretation_brief.md
+- feature_dictionary_narrative.md
+- chart_interpretation_brief.md
+- documentation_gaps.md
+- evidence_strength_policy.json
+- controlled_vocabulary.json
+- regulatory_language_guardrails.md
+- source_citation_map.csv
+
+Rules:
+- Use approved_claims.json as the primary claim library.
+- Follow target_document_schema.json for required sections.
+- Use the custom table of contents if one was supplied; otherwise use
+  default_model_methodology_outline.md.
+- Cite every factual claim using this style:
+  [source: package/path > field_or_section]
+- When chart image files are present in source_artifacts/figures/, insert only
+  the most relevant high-value visuals into the draft using Markdown image
+  syntax. Use this form:
+  ![Descriptive chart title](source_artifacts/figures/path/to/chart.png)
+- For every inserted chart, include a short caption explaining what the chart
+  shows, why it matters, and the package source citation.
+- Do not embed every available chart. Prefer charts that support key
+  model-development, validation, calibration, stability, explainability, or
+  limitation conclusions.
+- Preserve unresolved documentation gaps, warnings, failed checks, and
+  limitations.
+- Do not invent missing evidence.
+- Do not claim approval, validation sign-off, compliance, or production
+  readiness unless explicit package evidence supports that statement.
+- Use conservative model-risk language from controlled_vocabulary.json and
+  regulatory_language_guardrails.md.
+
+Deliver:
+1. A complete Markdown model methodology / technical model document.
+2. A documentation gaps section.
+3. A limitations and assumptions section.
+4. A citation appendix mapping major sections to package evidence.
+5. A short list of items requiring human review before the document can be used.
+
+Prompt 3: Validate The Draft Against Evidence
+---------------------------------------------
+
+Use this after the LLM has produced the draft.
+
+You are acting as a model validation and documentation quality reviewer.
+Use only the uploaded Quant Studio LLM documentation package and the draft model
+methodology document.
+
+Review the draft against:
+- document_completion_rules.json
+- draft_validation_rules.json
+- document_quality_rubric.md
+- citation_coverage_validator.md
+- unsupported_claim_detector.md
+- evidence_strength_policy.json
+- controlled_vocabulary.json
+- regulatory_language_guardrails.md
+- source_citation_map.csv
+- documentation_gaps.md
+- approved_claims.json
+
+Perform these checks:
+- Identify factual claims without citations.
+- Identify citations that do not map to package evidence.
+- Identify unsupported claims, especially approval, validation, compliance, or
+  production-readiness claims.
+- Identify quantitative values that should be verified against source evidence.
+- Confirm that warnings, failed checks, limitations, and documentation gaps were
+  preserved.
+- Score the draft using document_quality_rubric.md.
+- Identify sections that are complete, partially supported, missing evidence, or
+  blocked.
+
+Rules:
+- Do not rewrite the full document.
+- Do not approve the model or the document.
+- If evidence is missing, write `Evidence not found in package`.
+- Treat this as a human-review aid, not a final validation sign-off.
+
+Deliver:
+1. Citation coverage findings.
+2. Unsupported or high-risk claim findings.
+3. Missing evidence and documentation-gap findings.
+4. Rubric score by category.
+5. Required revisions before human review.
+6. A final status of `ready_for_human_review`, `needs_revision`, or
+   `blocked_by_missing_evidence`.
 """
 
 
@@ -2414,7 +2592,10 @@ def _write_prompt_variants(
             "Draft the methodology document only after the document plan has been "
             "reviewed. Use `approved_claims.json` as the primary claim library, follow "
             "`target_document_schema.json`, use controlled vocabulary, and cite every "
-            "factual claim. Preserve all unresolved gaps.\n"
+            "factual claim. Preserve all unresolved gaps. When chart image files are "
+            "present in `source_artifacts/figures/`, insert only the most relevant "
+            "high-value visuals using Markdown image syntax, add a concise caption, "
+            "and cite the chart source. Do not embed every available chart.\n"
         ),
         "prompt_3_validate_draft_against_evidence.md": (
             "# Prompt 3: Validate Draft Against Evidence\n\n"

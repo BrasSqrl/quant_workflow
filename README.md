@@ -91,12 +91,23 @@ The framework now supports:
 - elastic-net logistic regression
 - scorecard logistic regression
 - probit regression
+- GEE logistic regression
+- multinomial and ordinal logistic regression
 - linear regression
+- ridge, lasso, and elastic-net regression
 - beta regression
+- fractional logit
+- zero-one inflated beta
 - two-stage LGD model
+- Poisson, negative-binomial, gamma, and Tweedie GLMs
+- spline GAM-style binary and continuous models
+- mixed-effects regression
 - panel regression
 - quantile regression
 - Tobit regression
+- Cox proportional hazards and AFT survival-style models
+- SARIMAX, exponential smoothing, and unobserved-components forecasting
+- decision tree, random forest, extra trees, and EBM-style models
 - XGBoost
 
 The framework can also reuse a previously exported `model/quant_model.joblib`
@@ -105,6 +116,7 @@ artifact so new data can be scored and validated without refitting the model.
 For targets, the framework supports:
 
 - binary mode for PD-style modeling
+- multiclass mode for unordered classes, ordered grades, stages, or ratings
 - continuous mode for LGD, regression, censored-regression, and forecasting workflows
 
 The framework also includes development-focused workflow features:
@@ -2245,7 +2257,8 @@ crosswalks, target document schema, evidence-strength policy, document
 completion rules, controlled vocabulary, draft-validation rules, two-pass
 prompts, citation rules, interpretation briefs, redaction controls, a document
 quality rubric, a lightweight draft validator script, and human review
-checklists.
+checklists. It also includes `THREE_PROMPTS_FOR_LLM_USE.txt`, a copy/paste
+plain-text prompt sequence for planning, drafting, and validating the LLM output.
 
 ### Starting An LLM Documentation Review
 
@@ -2341,6 +2354,15 @@ Rules:
   default_model_methodology_outline.md.
 - Cite every factual claim using this style:
   [source: package/path > field_or_section]
+- When chart image files are present in `source_artifacts/figures/`, insert only
+  the most relevant high-value visuals into the draft using Markdown image
+  syntax. Use this form:
+  `![Descriptive chart title](source_artifacts/figures/path/to/chart.png)`
+- For every inserted chart, include a short caption explaining what the chart
+  shows, why it matters, and the package source citation.
+- Do not embed every available chart. Prefer charts that support key
+  model-development, validation, calibration, stability, explainability, or
+  limitation conclusions.
 - Preserve unresolved documentation gaps, warnings, failed checks, and
   limitations.
 - Do not invent missing evidence.
@@ -2750,8 +2772,6 @@ This project is licensed for noncommercial use only.
 Commercial use requires explicit written permission.
 See the LICENSE file for details.
 
-
-
 ## Current Status
 
 The current implementation includes:
@@ -2761,10 +2781,13 @@ The current implementation includes:
 - configurable schema and dtype handling
 - cross-sectional, time-series, and panel split modes
 - fresh-model, existing-model, and feature-subset-search execution modes
-- binary and continuous target modes
+- binary, multiclass, and continuous target modes
 - workflow presets for PD, CECL, LGD, and CCAR development
 - logistic, discrete-time hazard, elastic-net logistic, scorecard logistic,
-  probit, linear, beta, two-stage LGD, panel, quantile, Tobit, and XGBoost
+  probit, GEE logistic, multinomial logistic, ordinal logistic, linear,
+  regularized linear, beta, fractional-logit, zero-one inflated beta,
+  two-stage LGD, count/severity GLM, spline GAM-style, mixed-effects, panel,
+  quantile, Tobit, survival-style, forecasting, tree/EBM-style, and XGBoost
   model options
 - challenger comparison mode, feature policy checks, explainability outputs,
   calibration workflow, variable selection, scorecard development support,

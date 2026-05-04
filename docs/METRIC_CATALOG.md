@@ -65,7 +65,23 @@ These are calculated in `EvaluationStep._score_continuous_split(...)`.
 | `mean_actual` | Average realized target | context-specific | Descriptive |
 | `mean_predicted` | Average prediction | context-specific | Descriptive |
 
-## 3. Calibration Metrics
+## 3. Split-Level Multiclass Metrics
+
+These are calculated in `EvaluationStep._score_multiclass_split(...)`.
+
+| Metric | Meaning | Better direction | Notes |
+| --- | --- | --- | --- |
+| `class_count` | Number of target classes observed across actual and predicted labels | context-specific | Confirms class coverage in the split |
+| `accuracy` | Share of records assigned to the correct class | higher | Can hide poor minority-class performance |
+| `macro_f1` | Unweighted average F1 across classes | higher | Useful when each class matters equally |
+| `weighted_f1` | Class-frequency-weighted average F1 | higher | Useful for imbalanced multiclass targets |
+| `log_loss` | Multiclass probability loss | lower | Requires class probability outputs |
+
+Multiclass runs intentionally skip binary-only diagnostics such as ROC/AUC, KS,
+calibration curves, lift/gain, and threshold sweeps unless a future workflow
+explicitly defines a one-vs-rest event target.
+
+## 4. Calibration Metrics
 
 These are calculated inside `DiagnosticsStep._add_calibration_outputs(...)`.
 
@@ -92,7 +108,7 @@ It then records:
 - `recommended_calibration_score_column`
 - `calibration_ranking_metric`
 
-## 4. Threshold Metrics
+## 5. Threshold Metrics
 
 Threshold analysis is produced in `DiagnosticsStep._add_threshold_outputs(...)`.
 
@@ -114,7 +130,7 @@ Primary output:
 - table `threshold_analysis`
 - figure `threshold_analysis`
 
-## 5. Rank-Order and Backtest Metrics
+## 6. Rank-Order and Backtest Metrics
 
 ### Quantile backtest
 
@@ -152,7 +168,7 @@ Key outputs:
 These are appropriate for binary ranking review and early-bucket capture
 analysis.
 
-## 6. Curve Outputs
+## 7. Curve Outputs
 
 The framework exports both tables and figures for common diagnostic curves.
 
@@ -195,7 +211,7 @@ charts, scenario waterfalls, and feature-importance lollipop charts. These
 views reuse existing diagnostics, predictions, and metrics; they do not create
 new fitted models or change statistical test outputs.
 
-## 7. Explainability Metrics
+## 8. Explainability Metrics
 
 These live in `DiagnosticsStep._add_explainability_outputs(...)`.
 
@@ -302,7 +318,7 @@ Produced by `_build_effect_calibration_table(...)`.
 bucket so reviewers can see whether a feature's learned response is also
 calibrated across its range.
 
-## 8. Governance and Policy Metrics
+## 9. Governance and Policy Metrics
 
 Feature policy checks live in `DiagnosticsStep._add_feature_policy_outputs(...)`.
 
@@ -322,7 +338,7 @@ Potential policy types include:
 - `max_vif`
 - `minimum_information_value`
 
-## 9. Distribution, Dependency, and Outlier Outputs
+## 10. Distribution, Dependency, and Outlier Outputs
 
 Quant Studio includes several framework-level diagnostics that are not single
 model-performance metrics but are still exported as first-class review tables.
@@ -346,7 +362,7 @@ These are useful when a reviewer is asking:
 - whether the numeric design is redundant or clustered
 - whether a small set of observations is dominating the fit
 
-## 10. Time-Series, Econometric, and Structural-Break Outputs
+## 11. Time-Series, Econometric, and Structural-Break Outputs
 
 Time-aware workflows can now export:
 
@@ -373,7 +389,7 @@ Newer rows inside those exports include:
 - `cusum`
 - `cusum_squares`
 
-## 11. Comparison-Significance Outputs
+## 12. Comparison-Significance Outputs
 
 Challenger runs can now export:
 
@@ -385,7 +401,7 @@ Typical rows include:
 - `mcnemar_threshold_difference`
 - `diebold_mariano`
 
-## 12. Segment and Scenario Metrics
+## 13. Segment and Scenario Metrics
 
 ### Segment metrics
 
@@ -412,7 +428,7 @@ Typical fields:
 These are not classical model metrics, but they are important development
 artifacts for stress-style documentation.
 
-## 13. Where Metrics Are Exported
+## 14. Where Metrics Are Exported
 
 The same metric family often appears in more than one place:
 
@@ -424,7 +440,7 @@ The same metric family often appears in more than one place:
 | `tables/*.csv` | individual diagnostic tables |
 | `reports/run_report.md` | run narrative summary |
 
-## 14. Workflow Guardrails And Governance Readiness
+## 15. Workflow Guardrails And Governance Readiness
 
 Workflow guardrail outputs live in `workflow_guardrails.py` and are exported by
 `DiagnosticsStep._add_workflow_guardrail_outputs(...)`.
@@ -444,7 +460,7 @@ Primary output:
 
 - `workflow_guardrails`
 
-## 15. Credit-Risk Development Diagnostics
+## 16. Credit-Risk Development Diagnostics
 
 These are calculated in `DiagnosticsStep._add_credit_risk_outputs(...)`.
 
@@ -465,7 +481,7 @@ column, such as delinquency bucket, rating grade, or stage. Leaving the GUI
 control set to `(none)` skips the migration matrix so continuous score fields are
 not accidentally treated as states.
 
-## 15. Numerical Stability And Estimation Health
+## 17. Numerical Stability And Estimation Health
 
 These outputs are assembled from normalized warning capture in the model
 adapters and exported through `DiagnosticsStep._add_model_artifact_outputs(...)`.
@@ -492,7 +508,7 @@ They show whether the underlying estimator reached its iteration cap, returned
 finite standard errors, emitted runtime warnings, or required numerical
 normalization.
 
-## 16. Regulator-Ready Report Exports
+## 18. Regulator-Ready Report Exports
 
 Regulator-ready report generation is assembled in `reporting.py` and exported
 by `ArtifactExportStep`.
@@ -510,7 +526,7 @@ results. The current report exports include a cover page, a report map, and
 explicit numerical-stability content alongside the existing development and
 validation sections.
 
-## 17. Robustness And Stability Metrics
+## 19. Robustness And Stability Metrics
 
 These are calculated in `DiagnosticsStep._add_robustness_outputs(...)`.
 
@@ -548,7 +564,7 @@ Primary figures:
 - `robustness_metric_summary_chart`
 - `robustness_feature_stability`
 
-## 18. Cross-Validation Diagnostics
+## 20. Cross-Validation Diagnostics
 
 These are calculated in `CrossValidationStep` after the standard diagnostics
 finish. They fit temporary fold-level models and do not replace the final model
@@ -587,7 +603,7 @@ Primary figures:
 - `cross_validation_metric_summary_chart`
 - `cross_validation_feature_stability`
 
-## 19. Scorecard Workbench Outputs
+## 21. Scorecard Workbench Outputs
 
 These are calculated in `DiagnosticsStep._add_scorecard_workbench_outputs(...)`
 for `scorecard_logistic_regression` runs.

@@ -81,12 +81,23 @@ forecast-development workflows, including:
 - elastic-net logistic regression
 - scorecard logistic regression
 - probit regression
+- GEE logistic regression
+- multinomial and ordinal logistic regression
 - linear regression
+- ridge, lasso, and elastic-net regression
 - beta regression
+- fractional logit
+- zero-one inflated beta
 - two-stage LGD models
+- Poisson, negative-binomial, gamma, and Tweedie GLMs
+- spline GAM-style binary and continuous models
+- mixed-effects regression
 - panel regression
 - quantile regression
 - Tobit regression
+- Cox proportional hazards and AFT survival-style models
+- SARIMAX, exponential smoothing, and unobserved-components forecasting
+- decision tree, random forest, extra trees, and EBM-style models
 - XGBoost
 
 The platform can also load a previously exported `quant_model.joblib` artifact
@@ -144,7 +155,10 @@ Each run can produce a structured output package that includes:
 - diagnostic registry tables that explain which validation surfaces were
   emitted, disabled, or skipped
 - fast, standard, and audit export profile support
-- versioned monitoring handoff bundles for the separate monitoring application
+- on-demand LLM documentation packages with controlled prompt sequences,
+  evidence maps, approved claims, documentation-gap handling, citation rules,
+  redaction controls, and quality-review rubrics
+- on-demand monitoring handoff bundles for the separate monitoring application
 - machine-readable artifact manifests that index the full output package
 - Excel templates and governance workbooks for offline review
 
