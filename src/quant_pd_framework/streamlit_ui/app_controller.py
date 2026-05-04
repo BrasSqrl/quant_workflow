@@ -267,8 +267,6 @@ DIAGNOSTIC_SUITE_OPTIONS: list[tuple[str, str]] = [
 ]
 
 EXPORT_SURFACE_OPTIONS: list[tuple[str, str]] = [
-    ("Per-figure HTML files", "interactive_visualizations"),
-    ("Per-figure PNG files", "static_image_exports"),
     ("Excel workbook", "export_excel_workbook"),
 ]
 SPLIT_STRATEGY_LABELS = {
@@ -2076,18 +2074,7 @@ def run_app() -> None:
                 options=default_segment_options,
                 index=0,
             )
-            export_individual_figure_files = st.toggle(
-                "Export individual figure HTML and PNG files",
-                value=(
-                    False
-                    if large_data_mode
-                    else preset_inputs.artifacts.export_individual_figure_files
-                ),
-                help=(
-                    "When off, Quant Studio still exports the full interactive report but skips "
-                    "the per-figure HTML and PNG files to reduce runtime and artifact volume."
-                ),
-            )
+            export_individual_figure_files = False
             keep_all_checkpoints = st.toggle(
                 "Keep all checkpoints",
                 value=preset_inputs.artifacts.keep_all_checkpoints,
@@ -2215,11 +2202,10 @@ def run_app() -> None:
                 options=[label for label, _ in EXPORT_SURFACE_OPTIONS],
                 default=default_export_surfaces,
             )
-            if not export_individual_figure_files:
-                st.caption(
-                    "Per-figure HTML and PNG exports are disabled. The full interactive report "
-                    "will still be written."
-                )
+            st.caption(
+                "Individual chart HTML/PNG files are generated on demand from Step 5 with "
+                "`Download Individual Images` so normal runs do not wait on chart-file export."
+            )
             default_top_n_features = (
                 min(preset_inputs.diagnostics.top_n_features, 10)
                 if large_data_mode
@@ -2566,14 +2552,8 @@ def run_app() -> None:
                 residual_analysis="residual_analysis" in enabled_diagnostic_flags,
                 quantile_analysis="quantile_analysis" in enabled_diagnostic_flags,
                 qq_analysis="qq_analysis" in enabled_diagnostic_flags,
-                interactive_visualizations=(
-                    export_individual_figure_files
-                    and "interactive_visualizations" in enabled_export_flags
-                ),
-                static_image_exports=(
-                    export_individual_figure_files
-                    and "static_image_exports" in enabled_export_flags
-                ),
+                interactive_visualizations=True,
+                static_image_exports=True,
                 export_excel_workbook="export_excel_workbook" in enabled_export_flags,
                 top_n_features=top_n_features,
                 top_n_categories=top_n_categories,

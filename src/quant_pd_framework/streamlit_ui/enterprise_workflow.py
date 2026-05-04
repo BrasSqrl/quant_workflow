@@ -331,7 +331,7 @@ def build_preflight_summary(
             "Advanced visual analytics",
             preview_config.artifacts.include_advanced_visual_analytics,
         ),
-        ("Individual figure files", preview_config.artifacts.export_individual_figure_files),
+        ("Individual chart package", "On-demand in Step 5"),
         ("Keep all checkpoints", preview_config.artifacts.keep_all_checkpoints),
         ("Input snapshot", preview_config.artifacts.export_input_snapshot),
         ("Code snapshot", preview_config.artifacts.export_code_snapshot),
@@ -520,10 +520,7 @@ def build_runtime_artifact_estimate(
         ("Model complexity", preview_config.model.model_type.value),
         ("Enabled transformations", f"{transform_count:,}"),
         ("Enabled diagnostics", f"{diagnostics_enabled:,}"),
-        (
-            "Individual figure files",
-            _yes_no(preview_config.artifacts.export_individual_figure_files),
-        ),
+        ("Individual chart files", "On-demand from Step 5"),
         (
             "Enhanced report visuals",
             _yes_no(preview_config.artifacts.include_enhanced_report_visuals),
@@ -1054,8 +1051,6 @@ def _estimate_report_size_mb(
         size += 10.0
     if preview_config.artifacts.include_advanced_visual_analytics:
         size += 25.0
-    if preview_config.artifacts.export_individual_figure_files:
-        size += 15.0
     return size
 
 
@@ -1088,11 +1083,6 @@ def _high_cost_option_rows(preview_config: Any) -> list[dict[str, str]]:
             "Advanced visual analytics",
             bool(preview_config.artifacts.include_advanced_visual_analytics),
             "Disable unless the review specifically needs advanced exploratory visuals.",
-        ),
-        (
-            "Individual figure files",
-            bool(preview_config.artifacts.export_individual_figure_files),
-            "Leave off unless separate PNG/HTML chart files are required.",
         ),
         (
             "Cross-validation",
@@ -1172,8 +1162,6 @@ def _visual_setting_text(preview_config: Any) -> str:
         settings.append("enhanced")
     if preview_config.artifacts.include_advanced_visual_analytics:
         settings.append("advanced")
-    if preview_config.artifacts.export_individual_figure_files:
-        settings.append("individual files")
     return ", ".join(settings) if settings else "standard report visuals"
 
 

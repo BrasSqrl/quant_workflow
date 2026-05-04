@@ -143,17 +143,17 @@ environments separate.
 The exported `reports/interactive_report.html` uses dynamic Plotly charts. Static SVG
 fallback charts are no longer embedded in the report because they substantially
 increase report-build time. On Linux, Kaleido v1 still requires Chrome if you
-enable optional per-figure PNG exports.
+enable optional on-demand PNG exports.
 
 If downloaded reports show chart fallback messages instead of charts, open the
 report in Chrome or serve it from a local HTTP server. If you specifically need
-optional PNG figure exports, rerun:
+the Step 5 `Download Individual Images` package to include PNG files, rerun:
 
 ```bash
 bash scripts/bootstrap_sagemaker.sh
 ```
 
-Then rerun the Quant Studio workflow with individual figure export enabled.
+Then rerun the Quant Studio workflow and use Step 5 `Download Individual Images`.
 
 If your SageMaker environment blocks Chrome downloads and you want to skip the
 attempt explicitly, use:

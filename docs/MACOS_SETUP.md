@@ -210,10 +210,10 @@ PORT=8502 bash scripts/run_macos_streamlit.sh
 
 ### Static PNG export does not work
 
-The app works without static PNG export. Keep `Export individual figure HTML and
-PNG files` off unless separate files are required. If PNG export is required,
-Chrome may be needed by Plotly/Kaleido; install Chrome normally or follow the
-error message from Plotly.
+The app works without static PNG export. Separate chart files are generated from
+Step 5 with `Download Individual Images` only when needed. If PNG export is
+required, Chrome may be needed by Plotly/Kaleido; install Chrome normally or
+follow the error message from Plotly.
 
 ## Updating Later
 

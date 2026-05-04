@@ -17,7 +17,6 @@ from typing import Any
 
 import joblib
 import pandas as pd
-import plotly.io as pio
 
 from ..base import BasePipelineStep
 from ..config import ExecutionMode, LargeDataExportPolicy, TabularOutputFormat
@@ -36,6 +35,7 @@ from ..export_profiles import (
     resolve_html_report_limits,
 )
 from ..feature_lineage import build_feature_lineage_table, summarize_feature_lineage
+from ..figure_exports import export_figure_files_to_directory
 from ..gui_support import (
     build_column_editor_frame_from_schema,
     build_feature_dictionary_frame_from_config,
@@ -97,11 +97,6 @@ class ArtifactExportStep(BasePipelineStep):
         png_dir = paths.png_dir
         metadata_dir = paths.metadata_dir
         self._ensure_layout_directories(paths)
-        if self._html_figure_exports_enabled(context):
-            html_dir.mkdir(parents=True, exist_ok=True)
-        if self._png_figure_exports_enabled(context):
-            png_dir.mkdir(parents=True, exist_ok=True)
-
         model_path = paths.model_path
         metrics_path = paths.metrics_path
         input_snapshot_path = paths.input_snapshot_path
@@ -2242,7 +2237,10 @@ class ArtifactExportStep(BasePipelineStep):
             "- `checkpoints/` contains the stage manifest and retained checkpoint contexts.",
             "- `workbooks/` contains the optional analysis workbook.",
             "- `code/` contains rerun instructions, generated Python launcher, and code snapshot.",
-            "- `figures/` contains optional individual chart HTML/PNG exports.",
+            (
+                "- Individual chart HTML/PNG files are generated on demand from "
+                "Step 5 `Download Individual Images` in the GUI."
+            ),
             "- Step 5 `Download OM Package` creates the monitoring-app handoff bundle on demand.",
             "",
             "## Common Tasks",
@@ -2411,20 +2409,17 @@ class ArtifactExportStep(BasePipelineStep):
         if not context.config.artifacts.export_individual_figure_files:
             return manifest
         export_visualizations = context.visualizations if visualizations is None else visualizations
-        for figure_name, figure in export_visualizations.items():
-            safe_name = self._sanitize_name(figure_name)
-            manifest["figures"][figure_name] = {}
-            if html_enabled:
-                html_path = html_dir / f"{safe_name}.html"
-                figure.write_html(html_path, include_plotlyjs=True, full_html=True)
-                manifest["figures"][figure_name]["html"] = str(html_path)
-            if png_enabled:
-                png_path = png_dir / f"{safe_name}.png"
-                try:
-                    pio.write_image(figure, png_path)
-                    manifest["figures"][figure_name]["png"] = str(png_path)
-                except Exception as exc:
-                    context.warn(f"Could not export PNG for {figure_name}: {exc}")
+        export_manifest = export_figure_files_to_directory(
+            export_visualizations,
+            html_dir=html_dir,
+            png_dir=png_dir,
+            include_html=html_enabled,
+            include_png=png_enabled,
+            warning_callback=context.warn,
+        )
+        manifest["figures"] = export_manifest.get("figures", {})
+        manifest["support_files"] = export_manifest.get("support_files", [])
+        manifest["warnings"] = export_manifest.get("warnings", [])
         return manifest
 
     def _html_figure_exports_enabled(self, context: PipelineContext) -> bool:

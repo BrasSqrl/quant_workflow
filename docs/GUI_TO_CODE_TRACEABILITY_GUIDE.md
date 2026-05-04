@@ -361,14 +361,14 @@ These controls only matter when `ExecutionConfig.mode` is
 | `CSV-to-Parquet chunk rows` | `PerformanceConfig.csv_conversion_chunk_rows` | chunked conversion helper |
 | `Large-data training sample rows` | `PerformanceConfig.large_data_training_sample_rows` | sample-fit row cap for file-backed runs |
 | `Full-data scoring chunk rows` | `PerformanceConfig.large_data_score_chunk_rows` | chunk size for `LargeDataFullScoringStep` |
-| `Export individual figure HTML and PNG files` | `ArtifactConfig.export_individual_figure_files`; default `False` | `ArtifactExportStep._export_visualizations`; mirrors the report-grade visualization set when enabled |
-| `Include enhanced report visuals` | `ArtifactConfig.include_enhanced_report_visuals`; default `True` | `presentation.enhance_report_visualizations`, live Results & Artifacts view, `reports/interactive_report.html`, optional individual figure exports |
-| `Advanced Visual Analytics` | `ArtifactConfig.include_advanced_visual_analytics`; default `False` | `presentation.apply_advanced_visual_analytics`, live Results & Artifacts view, `reports/interactive_report.html`, optional individual figure exports |
+| Step 5 `Download Individual Images` | completed run visualizations | `figure_exports.build_individual_figure_zip(...)`, `results._render_individual_images_download(...)` | on-demand chart zip with `png/`, `html/`, shared `html/plotly.min.js`, and `figure_manifest.json` |
+| `Include enhanced report visuals` | `ArtifactConfig.include_enhanced_report_visuals`; default `True` | `presentation.enhance_report_visualizations`, live Results & Artifacts view, `reports/interactive_report.html`, Step 5 individual chart package |
+| `Advanced Visual Analytics` | `ArtifactConfig.include_advanced_visual_analytics`; default `False` | `presentation.apply_advanced_visual_analytics`, live Results & Artifacts view, `reports/interactive_report.html`, Step 5 individual chart package |
 | `Max points per report chart` | `PerformanceConfig.html_max_points_per_figure` | `report_payload.optimize_report_visualizations`, `ArtifactExportStep._build_report_visualizations`, `tables/governance/report_payload_audit.*` |
 | `Max MB per report chart` | `PerformanceConfig.html_max_figure_payload_mb` | `report_payload.optimize_report_visualizations`, `ArtifactExportStep._build_report_visualizations`, `tables/governance/report_payload_audit.*` |
 | `Max total report chart MB` | `PerformanceConfig.html_max_total_figure_payload_mb` | `report_payload.optimize_report_visualizations`, `ArtifactExportStep._build_report_visualizations`, `tables/governance/report_payload_audit.*` |
 | `Diagnostic suites` | `DiagnosticConfig.*` booleans | `DiagnosticsStep.run(...)` |
-| `Export surfaces` | `DiagnosticConfig.interactive_visualizations`, `static_image_exports`, `export_excel_workbook` | `ArtifactExportStep` |
+| `Export surfaces` | `DiagnosticConfig.export_excel_workbook` | `ArtifactExportStep` |
 | `Top features for analysis` | `DiagnosticConfig.top_n_features` | diagnostics feature ranking |
 | `Top categories per chart` | `DiagnosticConfig.top_n_categories` | segment/effect chart limits |
 | `Max rows rendered in plots` | `DiagnosticConfig.max_plot_rows` | sampling helpers |
@@ -651,7 +651,7 @@ Notes:
 | `Decision Room` tab | completed run decision summary payload | `streamlit_ui.decision_room.build_decision_room_payload(...)`, `render_decision_summary(...)` | `reports/decision_summary.md` |
 | `Decision Summary` | completed run snapshot, metrics, diagnostics, warnings, feature importance, and artifact paths | `decision_summary.build_decision_summary(...)`, `render_decision_summary(...)` | `reports/decision_summary.md` |
 | `Download decision summary` | completed run snapshot | `decision_summary.build_decision_summary_markdown(...)` | downloaded Markdown scorecard |
-| `Download LLM Package` | completed run snapshot and exported artifact paths | `llm_documentation_package.build_llm_documentation_package_from_payload(...)`, `render_decision_summary(...)` | downloaded `.zip` containing LLM-readable context, section evidence map, approved claims, documentation gaps, regulatory crosswalk, target document schema, evidence-strength policy, completion rules, controlled vocabulary, draft-validation rules, quality rubric, redaction policy, validator script, prompt variants, citation rules, tone profiles, interpretation briefs, human review checklist, table-of-contents drop zone, and selected non-row-level run evidence |
+| `Download LLM Package` | completed run snapshot, exported artifact paths, and generated chart assets | `llm_documentation_package.build_llm_documentation_package_from_payload(...)`, `figure_exports.build_figure_export_assets(...)`, `render_decision_summary(...)` | downloaded `.zip` containing LLM-readable context, section evidence map, approved claims, documentation gaps, regulatory crosswalk, target document schema, evidence-strength policy, completion rules, controlled vocabulary, draft-validation rules, quality rubric, redaction policy, validator script, prompt variants, citation rules, tone profiles, interpretation briefs, human review checklist, table-of-contents drop zone, selected non-row-level run evidence, and individual chart PNG/HTML assets |
 | `Download OM Package` | completed `fit_new_model` snapshot and exported artifact paths | `monitoring_package.build_monitoring_package_from_payload(...)`, `render_decision_summary(...)` | downloaded `.zip` containing `model_bundle_for_monitoring` with model, config, generated runner, monitoring metadata, artifact manifest, and available CSV input/prediction assets |
 | `Feature Lineage` tab | `diagnostics_tables["feature_lineage_map"]` | `feature_lineage.build_feature_lineage_table(...)`, `ArtifactExportStep`, `render_decision_summary(...)` | `tables/governance/feature_lineage_map.*`, `model/feature_lineage_map.csv` |
 | `Validation Checklist` tab | `diagnostics_tables["validation_checklist"]` | `validation_evidence.build_validation_checklist(...)`, `render_decision_summary(...)` | `tables/governance/validation_checklist.*` |
@@ -667,7 +667,10 @@ Notes:
   feature lineage, evidence index, traceability map, and dossier.
 - The LLM package is an on-demand Step 5 download. It does not rerun the model
   and does not include raw input snapshots, row-level predictions, serialized
-  model binaries, monitoring bundles, or full code snapshots by default.
+  model binaries, monitoring bundles, or full code snapshots by default. It
+  does include the same generated chart assets as `Download Individual Images`.
+- The individual chart package is an on-demand Step 5 download. It uses shared
+  Plotly JavaScript for HTML files and batch PNG rendering when available.
 - The OM package is also an on-demand Step 5 download. It replaces the prior
   automatic `model_bundle_for_monitoring/` folder export so new model fits do
   not spend time copying or converting monitoring handoff files unless the user

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from dataclasses import asdict
 from html import escape
 from pathlib import Path
@@ -18,7 +19,12 @@ from quant_pd_framework.decision_summary import (
     build_decision_summary,
     build_decision_summary_markdown,
 )
+from quant_pd_framework.figure_exports import (
+    build_figure_export_assets,
+    build_individual_figure_zip,
+)
 from quant_pd_framework.llm_documentation_package import (
+    PACKAGE_ROOT,
     build_llm_documentation_context_payload,
     build_llm_documentation_package_from_payload,
 )
@@ -39,6 +45,7 @@ from quant_pd_framework.presentation import (
     report_chart_guidance,
     summarize_run_kpis,
 )
+from quant_pd_framework.report_payload import optimize_report_visualizations
 from quant_pd_framework.streamlit_ui.data import sample_frame
 from quant_pd_framework.streamlit_ui.decision_room import build_decision_room_payload
 from quant_pd_framework.streamlit_ui.enterprise_workflow import (
@@ -78,15 +85,38 @@ SUITABILITY_DISPLAY_COLUMNS = [
 
 
 @st.cache_data(show_spinner=False)
+def _build_cached_individual_figure_package(
+    run_id: str,
+    visualization_signature: tuple[tuple[str, str], ...],
+    _visualizations: dict[str, Any],
+) -> bytes:
+    """Builds individual chart files only when the user requests the package."""
+
+    _ = (run_id, visualization_signature)
+    return build_individual_figure_zip(_visualizations)
+
+
+@st.cache_data(show_spinner=False)
 def _build_cached_llm_documentation_package(
     run_id: str,
     artifact_signature: tuple[str, int],
+    visualization_signature: tuple[tuple[str, str], ...],
     payload: dict[str, Any],
+    _visualizations: dict[str, Any],
 ) -> bytes:
     """Builds the LLM package once per completed-run artifact signature."""
 
-    _ = (run_id, artifact_signature)
-    return build_llm_documentation_package_from_payload(payload)
+    _ = (run_id, artifact_signature, visualization_signature)
+    chart_assets = build_figure_export_assets(
+        _visualizations,
+        root_dir=f"{PACKAGE_ROOT}/source_artifacts/figures",
+        include_html=True,
+        include_png=True,
+    ).assets
+    return build_llm_documentation_package_from_payload(
+        payload,
+        generated_chart_assets=chart_assets,
+    )
 
 
 @st.cache_data(show_spinner=False)
@@ -405,6 +435,7 @@ def render_subset_search_results(snapshot: dict[str, Any]) -> None:
 def render_decision_summary(snapshot: dict[str, Any]) -> None:
     """Renders the fifth workflow step: a decision-ready run scorecard."""
 
+    snapshot = with_report_enhancement_visualizations(snapshot)
     summary = build_decision_summary(snapshot)
     st.markdown(
         """
@@ -442,6 +473,7 @@ def render_decision_summary(snapshot: dict[str, Any]) -> None:
             file_name=f"{snapshot.get('run_id', 'run')}_decision_summary.md",
             mime="text/markdown",
         )
+        _render_individual_images_download(snapshot)
         _render_llm_package_download(snapshot)
         _render_monitoring_package_download(snapshot)
 
@@ -539,32 +571,118 @@ def render_decision_summary(snapshot: dict[str, Any]) -> None:
             st.info("The model development dossier was not exported for this run.")
 
 
+def _render_individual_images_download(snapshot: dict[str, Any]) -> None:
+    raw_visualizations = dict(snapshot.get("visualizations") or {})
+    if not raw_visualizations:
+        st.download_button(
+            "Download Individual Images",
+            data=b"",
+            file_name=f"{snapshot.get('run_id', 'run')}_individual_images.zip",
+            mime="application/zip",
+            width="stretch",
+            disabled=True,
+            help="No chart visualizations are available for this completed run.",
+        )
+        return
+
+    def build_package() -> bytes:
+        visualizations = _download_visualizations(snapshot)
+        return _build_cached_individual_figure_package(
+            str(snapshot.get("run_id", "run")),
+            _visualization_signature(visualizations),
+            visualizations,
+        )
+
+    _render_lazy_zip_download(
+        snapshot=snapshot,
+        label="Download Individual Images",
+        state_suffix="individual_images_package",
+        file_name=f"{snapshot.get('run_id', 'run')}_individual_images.zip",
+        help_text=(
+            "Prepares a zip of standalone chart PNG and HTML files. Generation happens "
+            "only when requested so model runs do not wait on individual image export."
+        ),
+        build_package=build_package,
+        ready_label="Save Individual Images ZIP",
+        caption=(
+            "Includes PNG files plus lightweight HTML charts that share one Plotly "
+            "JavaScript file."
+        ),
+    )
+
+
 def _render_llm_package_download(snapshot: dict[str, Any]) -> None:
     artifacts = snapshot.get("artifacts", {})
     signature = _artifact_signature(artifacts)
-    try:
+
+    def build_package() -> bytes:
         payload = build_llm_documentation_context_payload(snapshot)
-        package_bytes = _build_cached_llm_documentation_package(
+        visualizations = _download_visualizations(snapshot)
+        return _build_cached_llm_documentation_package(
             str(snapshot.get("run_id", "run")),
             signature,
+            _visualization_signature(visualizations),
             payload,
+            visualizations,
         )
-    except Exception as exc:  # pragma: no cover - defensive UI fallback.
-        st.warning(f"LLM package could not be prepared: {exc}")
-        return
-    st.download_button(
-        "Download LLM Package",
-        data=package_bytes,
+
+    _render_lazy_zip_download(
+        snapshot=snapshot,
+        label="Download LLM Package",
+        state_suffix="llm_documentation_package",
         file_name=f"{snapshot.get('run_id', 'run')}_llm_documentation_package.zip",
-        mime="application/zip",
-        width="stretch",
-        help=(
-            "Downloads an LLM-readable evidence package for drafting a model "
-            "methodology document. Raw row-level data, row-level predictions, and "
-            "model binaries are excluded by default."
+        help_text=(
+            "Prepares an LLM-readable evidence package for drafting a model methodology "
+            "document. Raw row-level data, row-level predictions, and model binaries are "
+            "excluded by default."
+        ),
+        build_package=build_package,
+        ready_label="Save LLM Package ZIP",
+        caption=(
+            "Includes prompt, outline, citation map, evidence checklist, TOC drop zone, "
+            "and the same individual chart assets generated by Download Individual Images."
         ),
     )
-    st.caption("Includes prompt, outline, citation map, evidence checklist, and TOC drop zone.")
+
+
+def _render_lazy_zip_download(
+    *,
+    snapshot: dict[str, Any],
+    label: str,
+    state_suffix: str,
+    file_name: str,
+    help_text: str,
+    build_package: Any,
+    ready_label: str,
+    caption: str,
+) -> None:
+    run_id = str(snapshot.get("run_id", "run"))
+    state_key = f"{run_id}_{state_suffix}_bytes"
+    error_key = f"{run_id}_{state_suffix}_error"
+    if st.button(label, key=f"{state_key}_prepare", width="stretch", help=help_text):
+        st.session_state.pop(error_key, None)
+        try:
+            with st.spinner(f"Preparing {label.lower()}..."):
+                st.session_state[state_key] = build_package()
+        except Exception as exc:  # pragma: no cover - defensive UI fallback.
+            st.session_state.pop(state_key, None)
+            st.session_state[error_key] = str(exc)
+
+    package_bytes = st.session_state.get(state_key)
+    if package_bytes:
+        st.download_button(
+            ready_label,
+            data=package_bytes,
+            file_name=file_name,
+            mime="application/zip",
+            width="stretch",
+            help=help_text,
+        )
+        st.caption(caption)
+    elif st.session_state.get(error_key):
+        st.warning(f"{label} could not be prepared: {st.session_state[error_key]}")
+    else:
+        st.caption("Click to prepare the zip package on demand.")
 
 
 def _render_monitoring_package_download(snapshot: dict[str, Any]) -> None:
@@ -582,31 +700,31 @@ def _render_monitoring_package_download(snapshot: dict[str, Any]) -> None:
 
     artifacts = snapshot.get("artifacts", {})
     signature = _monitoring_artifact_signature(artifacts)
-    try:
+
+    def build_package() -> bytes:
         payload = build_monitoring_package_payload(snapshot)
-        package_bytes = _build_cached_monitoring_package(
+        return _build_cached_monitoring_package(
             str(snapshot.get("run_id", "run")),
             signature,
             payload,
         )
-    except Exception as exc:  # pragma: no cover - defensive UI fallback.
-        st.warning(f"OM package could not be prepared: {exc}")
-        return
-    st.download_button(
-        "Download OM Package",
-        data=package_bytes,
+
+    _render_lazy_zip_download(
+        snapshot=snapshot,
+        label="Download OM Package",
+        state_suffix="om_package",
         file_name=f"{snapshot.get('run_id', 'run')}_om_package.zip",
-        mime="application/zip",
-        width="stretch",
-        help=(
+        help_text=(
             "Downloads a model bundle for the separate ongoing-monitoring app. "
             "The bundle is created on demand so normal model runs do not spend "
             "time copying or converting monitoring files."
         ),
-    )
-    st.caption(
-        "Includes model, config, generated runner, manifest, metadata, and "
-        "available CSV inputs/scores."
+        build_package=build_package,
+        ready_label="Save OM Package ZIP",
+        caption=(
+            "Includes model, config, generated runner, manifest, metadata, and "
+            "available CSV inputs/scores."
+        ),
     )
 
 
@@ -624,6 +742,47 @@ def _artifact_signature(artifacts: dict[str, Any]) -> tuple[str, int]:
         except OSError:
             return str(path), 0
     return str(signature_path), 0
+
+
+def _visualization_signature(visualizations: Mapping[str, Any]) -> tuple[tuple[str, str], ...]:
+    rows: list[tuple[str, str]] = []
+    for name, figure in sorted(visualizations.items(), key=lambda item: str(item[0])):
+        figure_type = type(figure).__name__
+        trace_count = "0"
+        try:
+            trace_count = str(len(getattr(figure, "data", []) or []))
+        except TypeError:
+            trace_count = "0"
+        rows.append((str(name), f"{figure_type}:{trace_count}"))
+    return tuple(rows)
+
+
+def _download_visualizations(snapshot: dict[str, Any]) -> dict[str, Any]:
+    visualizations = dict(snapshot.get("visualizations") or {})
+    if not visualizations:
+        return {}
+    limits = _download_visualization_limits(snapshot)
+    optimized, _audit = optimize_report_visualizations(
+        visualizations,
+        max_points_per_figure=limits["max_points_per_figure"],
+        max_figure_payload_mb=limits["max_figure_payload_mb"],
+        max_total_figure_payload_mb=limits["max_total_figure_payload_mb"],
+    )
+    return optimized
+
+
+def _download_visualization_limits(snapshot: dict[str, Any]) -> dict[str, float | int]:
+    config_payload = snapshot.get("config")
+    if not isinstance(config_payload, dict):
+        config_payload = {}
+    performance = dict(config_payload.get("performance", {}) or {})
+    return {
+        "max_points_per_figure": int(performance.get("html_max_points_per_figure", 7500)),
+        "max_figure_payload_mb": float(performance.get("html_max_figure_payload_mb", 3.0)),
+        "max_total_figure_payload_mb": float(
+            performance.get("html_max_total_figure_payload_mb", 60.0)
+        ),
+    }
 
 
 def _monitoring_artifact_signature(artifacts: dict[str, Any]) -> tuple[tuple[str, str, int], ...]:

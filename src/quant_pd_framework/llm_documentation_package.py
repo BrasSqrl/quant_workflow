@@ -14,6 +14,7 @@ from zipfile import ZIP_DEFLATED, ZipFile
 import pandas as pd
 
 from quant_pd_framework.decision_summary import build_decision_summary
+from quant_pd_framework.figure_exports import FigureExportAsset
 
 PACKAGE_ROOT = "llm_documentation_package"
 PACKAGE_VERSION = "1.2"
@@ -131,6 +132,7 @@ def build_llm_documentation_package_from_payload(
     *,
     max_included_file_bytes: int = DEFAULT_MAX_INCLUDED_FILE_BYTES,
     max_chart_files: int = DEFAULT_MAX_CHART_FILES,
+    generated_chart_assets: tuple[FigureExportAsset, ...] = (),
 ) -> bytes:
     """Builds a zipped LLM documentation package from a JSON-safe payload."""
 
@@ -474,6 +476,14 @@ def build_llm_documentation_package_from_payload(
             max_included_file_bytes=max_included_file_bytes,
             max_chart_files=max_chart_files,
         )
+        _include_generated_chart_assets(
+            archive=archive,
+            added_arcnames=added_arcnames,
+            generated_chart_assets=generated_chart_assets,
+            included=included,
+            skipped=skipped,
+            max_included_file_bytes=max_included_file_bytes,
+        )
         _write_text(
             archive,
             added_arcnames,
@@ -630,6 +640,69 @@ def _include_run_artifacts(
             skipped=skipped,
             max_included_file_bytes=max_included_file_bytes,
         )
+
+
+def _include_generated_chart_assets(
+    *,
+    archive: ZipFile,
+    added_arcnames: set[str],
+    generated_chart_assets: tuple[FigureExportAsset, ...],
+    included: list[dict[str, Any]],
+    skipped: list[dict[str, Any]],
+    max_included_file_bytes: int,
+) -> None:
+    for asset in generated_chart_assets:
+        if not asset.arcname.startswith(f"{PACKAGE_ROOT}/"):
+            skipped.append(
+                _skip_record(
+                    key="generated_figures",
+                    original_path=Path(asset.arcname),
+                    reason="generated chart asset was outside the LLM package namespace",
+                    size_bytes=asset.size_bytes,
+                )
+            )
+            continue
+        if asset.arcname in added_arcnames:
+            continue
+        if asset.size_bytes > max_included_file_bytes:
+            skipped.append(
+                _skip_record(
+                    key="generated_figures",
+                    original_path=Path(asset.arcname),
+                    reason=(
+                        "generated chart asset exceeds package file-size cap "
+                        f"({max_included_file_bytes} bytes)"
+                    ),
+                    size_bytes=asset.size_bytes,
+                )
+            )
+            continue
+        archive.writestr(asset.arcname, asset.data)
+        added_arcnames.add(asset.arcname)
+        included.append(
+            {
+                "package_path": asset.arcname,
+                "original_path": "generated_from_completed_run_visualizations",
+                "artifact_key": "generated_figures",
+                "evidence_area": "visual_evidence",
+                "source": "generated_chart_export",
+                "size_bytes": asset.size_bytes,
+                "llm_use": _generated_chart_llm_use(asset),
+            }
+        )
+
+
+def _generated_chart_llm_use(asset: FigureExportAsset) -> str:
+    if asset.file_format == "png":
+        return (
+            "Chart image generated from the completed run for selective insertion "
+            "into LLM-drafted model documentation."
+        )
+    if asset.file_format == "html":
+        return "Interactive chart file generated from the completed run for visual review."
+    if asset.file_format == "json":
+        return "Manifest listing generated individual chart files and export warnings."
+    return "Supporting file for generated chart evidence."
 
 
 def _include_table_directory(

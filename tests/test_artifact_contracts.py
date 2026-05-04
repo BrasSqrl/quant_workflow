@@ -11,6 +11,7 @@ from typing import Any
 from zipfile import ZipFile
 
 import pandas as pd
+import plotly.graph_objects as go
 
 from quant_pd_framework import (
     ArtifactConfig,
@@ -26,7 +27,16 @@ from quant_pd_framework import (
     TargetMode,
 )
 from quant_pd_framework.decision_summary import build_decision_summary_snapshot_from_context
-from quant_pd_framework.llm_documentation_package import build_llm_documentation_package
+from quant_pd_framework.figure_exports import (
+    build_figure_export_assets,
+    build_individual_figure_zip,
+)
+from quant_pd_framework.llm_documentation_package import (
+    PACKAGE_ROOT,
+    build_llm_documentation_context_payload,
+    build_llm_documentation_package,
+    build_llm_documentation_package_from_payload,
+)
 from quant_pd_framework.reference_workflows import get_reference_workflow_definition
 from quant_pd_framework.steps.export import ArtifactExportStep
 from quant_pd_framework.steps.ingestion import INPUT_SOURCE_METADATA_ATTR
@@ -224,6 +234,65 @@ def test_llm_documentation_package_exports_evidence_without_row_level_data() -> 
             "serialized model binaries are excluded" in row["reason"]
             for row in manifest["skipped_files"]
         )
+
+
+def test_llm_package_can_include_generated_chart_assets() -> None:
+    dataframe = build_binary_dataframe(row_count=180)
+
+    with temporary_artifact_root("pytest_llm_generated_chart_assets") as artifact_root:
+        config = _build_artifact_contract_config(artifact_root)
+        context = QuantModelOrchestrator(config=config).run(dataframe)
+        snapshot = build_decision_summary_snapshot_from_context(context)
+        payload = build_llm_documentation_context_payload(snapshot)
+        chart_assets = build_figure_export_assets(
+            {
+                "validation_curve": go.Figure(
+                    data=[go.Scatter(x=[0.1, 0.5, 0.9], y=[0.08, 0.48, 0.86])]
+                )
+            },
+            root_dir=f"{PACKAGE_ROOT}/source_artifacts/figures",
+            include_html=True,
+            include_png=False,
+        ).assets
+
+        package_bytes = build_llm_documentation_package_from_payload(
+            payload,
+            generated_chart_assets=chart_assets,
+        )
+
+        with ZipFile(BytesIO(package_bytes)) as archive:
+            names = set(archive.namelist())
+            citation_map = archive.read(
+                "llm_documentation_package/source_citation_map.csv"
+            ).decode("utf-8")
+
+        assert (
+            "llm_documentation_package/source_artifacts/figures/html/validation_curve.html"
+            in names
+        )
+        assert "llm_documentation_package/source_artifacts/figures/html/plotly.min.js" in names
+        assert "llm_documentation_package/source_artifacts/figures/figure_manifest.json" in names
+        assert "generated_figures" in citation_map
+
+
+def test_individual_figure_zip_uses_shared_plotly_javascript() -> None:
+    package_bytes = build_individual_figure_zip(
+        {
+            "roc_curve": go.Figure(
+                data=[go.Scatter(x=[0.0, 0.5, 1.0], y=[0.0, 0.75, 1.0])]
+            )
+        },
+        include_html=True,
+        include_png=False,
+    )
+
+    with ZipFile(BytesIO(package_bytes)) as archive:
+        names = set(archive.namelist())
+        chart_html = archive.read("individual_images/html/roc_curve.html").decode("utf-8")
+
+    assert "individual_images/html/plotly.min.js" in names
+    assert "individual_images/figure_manifest.json" in names
+    assert 'src="plotly.min.js"' in chart_html
 
 
 def test_artifact_manifest_can_skip_individual_figure_exports() -> None:

@@ -34,7 +34,7 @@ and input-driven tabular outputs.
    Parquet artifacts; CSV, Excel, bundled-sample, and unknown inputs export CSV
    artifacts.
 8. Use sampled export policy if full CSV artifacts would be too large.
-9. Keep individual figure HTML/PNG export off unless required.
+9. Generate individual chart HTML/PNG files only from Step 5 if required.
 10. Keep `Advanced Visual Analytics` off unless the added report visuals are
     specifically needed.
 11. Keep report-size controls at conservative defaults unless a reviewer needs
@@ -92,7 +92,7 @@ audit need to change them:
 - `Compact prediction exports`: on
 - `Retain full diagnostic working dataframe`: off
 - `Keep all checkpoints`: off
-- individual figure HTML/PNG export: off
+- individual chart HTML/PNG package: on-demand from Step 5 only
 - Excel workbook export: off unless specifically requested
 - report-size controls: leave defaults on unless the HTML report must embed
   denser charts
@@ -153,7 +153,7 @@ For faster large-data runs:
 - export profile: `fast` while iterating
 - tabular output: input-driven from the Step 1 file type
 - large tabular export policy: full, sampled, or metadata-only
-- individual figure files: off
+- individual chart package: generate from Step 5 only if needed
 - Advanced Visual Analytics: off
 - lower `Max points per report chart` or `Max total report chart MB` if the
   standalone HTML report is too large

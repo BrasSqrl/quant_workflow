@@ -49,7 +49,7 @@ fixes.
 | Cannot find outputs | Artifact root changed or run did not finish | Check Step 4 output locations, Step 5 evidence links, and `artifacts/` timestamped folders. |
 | `reports/interactive_report.html` opens blank | Browser security or incomplete downloaded file | Open in Chrome or Edge, confirm file size, and try serving from a local HTTP server if needed. |
 | Charts show loading message | Browser blocks local dynamic chart rendering | Use Chrome or serve the file from a local HTTP server. Static chart fallbacks are no longer embedded because they slow report generation. |
-| Separate figure files are missing | Individual figure export is off by default | Turn on `Export individual figure HTML and PNG files` before running. |
+| Separate chart PNG/HTML files are missing | They are now generated on demand | Open Step 5 and click `Download Individual Images`. |
 | Advanced Visual Analytics charts are missing | The optional advanced layer is off by default | Turn on `Advanced Visual Analytics` in Step 2, then rerun the workflow. |
 | Interactive report is very large | Too many embedded chart points or advanced visuals | Lower Step 2 report-size controls and review `tables/governance/report_payload_audit.*`. |
 | Some report charts are missing or less dense | Report-size controls skipped or downsampled embedded charts | Review `report_payload_audit`; full diagnostic tables remain exported separately. |
@@ -80,7 +80,7 @@ fixes.
 | --- | --- | --- |
 | Machine freezes or swaps heavily | Pandas load exceeds available RAM | Stop run if possible, use Parquet, Large Data Mode, governed sample, and larger compute. |
 | Full CSV export is too large | Export policy writes full tables for a non-Parquet input | Use sampled or metadata-only policy, or use a Parquet Step 1 input when Parquet artifacts are required. |
-| Run takes too long | Expensive diagnostics, advanced visuals, figure export, subset search, or dense HTML chart payloads | Use fast export profile, keep Advanced Visual Analytics and individual figure files off, reduce diagnostic scope, lower report-size controls, or use governed sample. |
+| Run takes too long | Expensive diagnostics, advanced visuals, subset search, or dense HTML chart payloads | Use fast export profile, keep Advanced Visual Analytics off while tuning, reduce diagnostic scope, lower report-size controls, or use governed sample. Generate individual chart files only from Step 5 after the run. |
 
 ## What To Capture When Asking For Help
 

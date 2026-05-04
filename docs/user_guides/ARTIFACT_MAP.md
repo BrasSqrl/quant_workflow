@@ -60,9 +60,15 @@ vocabulary, draft-validation rules, document quality rubric, redaction policy,
 lightweight draft validator script, a human review checklist, a default model
 methodology outline, a table-of-contents drop zone for institution-specific
 templates, diagnostic table previews, generated-run code, run configuration,
-and selected non-row-level evidence from the completed run. It intentionally
+selected non-row-level evidence from the completed run, and the same chart
+PNG/HTML assets produced by `Download Individual Images`. It intentionally
 excludes raw input snapshots, row-level predictions, serialized model binaries,
 monitoring handoff bundles, and full code snapshots by default.
+
+Step 5 also has an on-demand `Download Individual Images` button. That download
+creates a separate chart zip after the run instead of adding PNG/HTML rendering
+time to the model workflow. The zip contains `png/`, `html/`, one shared
+`html/plotly.min.js`, and `figure_manifest.json`.
 
 Step 5 also has an on-demand `Download OM Package` button for completed
 `fit_new_model` runs. That download creates the `model_bundle_for_monitoring`
@@ -84,7 +90,7 @@ and Parquet-to-CSV conversion during the main workflow.
 | `checkpoints/` | Disk-backed stage manifest and, when retained, context checkpoints used by full and step-by-step workflow execution. |
 | `workbooks/` | Optional Excel analysis workbook. |
 | `code/code_snapshot/` | Copy of relevant source, examples, tests, and project metadata when code snapshot export is enabled. |
-| `figures/` or equivalent figure folders | Separate chart HTML/PNG files when individual figure export is enabled. |
+| `figures/` or equivalent figure folders | Separate chart HTML/PNG files for legacy code-driven runs. GUI users should use Step 5 `Download Individual Images` to generate these files on demand. |
 | `data/sample_development/` | Large Data Mode sample-development evidence. |
 | `data/full_data_scoring/` | Large Data Mode full-file scoring outputs. |
 | `metadata/large_data/` | Large Data Mode metadata, progress, and scoring summaries. |
@@ -151,14 +157,16 @@ Diagnostic tables are grouped by review topic:
 | `standard` | Normal default. Balanced evidence package. |
 | `audit` | Full review path when maximum supporting evidence is desired. |
 
-Individual figure HTML/PNG export is off by default. Turn it on only when
-separate chart files are needed outside the full report.
+Individual chart HTML/PNG export is on demand in the GUI. Use Step 5
+`Download Individual Images` only when separate chart files are needed outside
+the full report. The generated zip includes PNG files plus lightweight HTML
+files that share one `plotly.min.js` file.
 
-The full `reports/interactive_report.html` still includes its grouped charts when
-individual figure export is off. The separate figure files are only duplicate
-distribution assets. If `Include enhanced report visuals` or `Advanced Visual
-Analytics` are enabled, the optional separate figure files mirror those same
-report-grade charts.
+The full `reports/interactive_report.html` still includes grouped charts. The
+separate chart zip is a duplicate distribution asset and is intentionally not
+created during the model run. If `Include enhanced report visuals` or
+`Advanced Visual Analytics` are enabled, the on-demand chart package mirrors
+those same report-grade charts.
 
 The Step 2 `Diagnostics & Exports` report-size controls protect the embedded
 chart payload in `reports/interactive_report.html`:

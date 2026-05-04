@@ -353,7 +353,7 @@ def render_download_button(label: str, payload: Any, file_name: str, mime: str) 
         data = json.dumps(payload, indent=2)
     else:
         data = payload
-    st.download_button(label, data=data, file_name=file_name, mime=mime)
+    st.download_button(label, data=data, file_name=file_name, mime=mime, width="stretch")
 
 
 def prepare_table_for_display(table: pd.DataFrame) -> pd.DataFrame:

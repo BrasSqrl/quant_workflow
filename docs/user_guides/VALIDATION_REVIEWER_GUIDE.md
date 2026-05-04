@@ -135,9 +135,10 @@ documentation gaps, regulatory crosswalks, prompt variants, citation rules,
 tone profiles, model-type writing guidance, feature/metric/chart interpretation
 briefs, a target document schema, evidence-strength policy, completion rules,
 controlled vocabulary, draft-validation rules, quality rubric, redaction policy,
-lightweight draft validator script, a human review checklist, and a
-`document_template/` folder where a group-specific table of contents can be
-dropped before sending the package to an LLM. It excludes raw row-level input
+lightweight draft validator script, a human review checklist, the same chart
+assets produced by `Download Individual Images`, and a `document_template/`
+folder where a group-specific table of contents can be dropped before sending
+the package to an LLM. It excludes raw row-level input
 data, row-level predictions, serialized model binaries, monitoring handoff
 bundles, and full code snapshots by default. Any LLM-generated document still
 requires qualified human review and should not be treated as model approval or

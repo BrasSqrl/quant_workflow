@@ -391,7 +391,7 @@ def build_preview_configuration(
                     "include_advanced_visual_analytics",
                     preset_inputs.artifacts.include_advanced_visual_analytics,
                 ),
-                export_individual_figure_files=values["export_individual_figure_files"],
+                export_individual_figure_files=False,
                 keep_all_checkpoints=values.get(
                     "keep_all_checkpoints",
                     preset_inputs.artifacts.keep_all_checkpoints,

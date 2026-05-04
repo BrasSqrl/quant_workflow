@@ -283,7 +283,7 @@ Recommended setup:
 - Use governed sample fitting
 - Use chunked full-data scoring
 - Use Parquet or sampled tabular exports
-- Keep individual figure export off unless required
+- Generate individual chart files from Step 5 only if required
 - Leave `Keep all checkpoints` off unless support needs post-run context files
 - Keep `Advanced Visual Analytics` off unless the added exploratory report
   visuals are worth the extra rendering time
@@ -310,7 +310,8 @@ Recommended setup:
 - Let tabular outputs follow the Step 1 file type; use Parquet input when
   Parquet artifact outputs are required
 - Keep Excel workbook export off unless specifically needed
-- Keep individual figure files and Advanced Visual Analytics off while tuning
+- Generate individual chart files from Step 5 only after tuning runs
+- Keep Advanced Visual Analytics off while tuning
 - Leave `Keep all checkpoints` off to prune large context files during the run
 - Review high-cardinality categorical warnings before fitting
 
@@ -330,7 +331,7 @@ Use when testing setup before creating a full evidence package.
 Recommended setup:
 
 - Export profile: `fast`
-- Individual figure files: off
+- Individual chart files: on-demand from Step 5 only
 - Advanced Visual Analytics: off
 - Large optional diagnostics: off unless needed
 - Use a smaller feature set or governed sample when appropriate

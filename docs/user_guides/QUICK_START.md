@@ -84,7 +84,9 @@ Quant Studio opens to Step 1 by default.
     or `Custom split column` when you need a documented out-of-time holdout.
 17. Keep `Enable scorecard workbench` on so WoE bins, scorecard points, and
     reason-code outputs are produced.
-18. Keep individual figure HTML/PNG export off unless separate chart files are needed.
+18. Use Step 5 `Download Individual Images` after the run if separate chart
+    PNG/HTML files are needed. They are generated on demand instead of during
+    model execution.
 19. Keep `Include enhanced report visuals` on for a polished first report, or turn it off for faster iteration runs.
 20. Leave `Advanced Visual Analytics` off for the first run unless you want the
     extra exploratory chart section.
@@ -109,13 +111,15 @@ Quant Studio opens to Step 1 by default.
     governance, and artifact explorer sections.
 34. Open Step 5, `Decision Summary`.
 35. Review the recommendation, decision issues, primary metrics, feature drivers, feature lineage, validation checklist, evidence index, traceability map, and dossier.
-36. If you need an LLM-assisted model methodology draft, use Step 5 `Export` ->
+36. If separate chart files are needed, use Step 5 `Export` ->
+    `Download Individual Images`.
+37. If you need an LLM-assisted model methodology draft, use Step 5 `Export` ->
     `Download LLM Package`. The zip includes curated non-row-level evidence,
     section evidence maps, approved claims, documentation gaps, schema and
     evidence-strength controls, completion rules, controlled vocabulary,
     draft-validation rules, prompt variants, citation rules, interpretation
-    briefs, a quality rubric, a review checklist, and a table-of-contents drop
-    zone for your group-specific document template.
+    briefs, individual chart assets, a quality rubric, a review checklist, and
+    a table-of-contents drop zone for your group-specific document template.
 
 ## First Real-Data Run
 
