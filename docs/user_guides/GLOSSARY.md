@@ -26,6 +26,7 @@ This glossary defines common terms used in Quant Studio.
 | Decision Room | Default Step 5 landing view that summarizes recommendation, attention items, top drivers, key artifacts, and next actions for a review meeting. |
 | Glossary hover badge | Small in-app term badge with a hover definition for common modeling and validation terms. |
 | Decision Summary | Step 5 synthesis surface that converts completed-run metrics, issues, feature drivers, and artifacts into a decision-ready scorecard. |
+| LLM documentation package | Step 5 on-demand zip download with curated non-row-level evidence, prompt guidance, default outline, table-of-contents drop zone, citation map, and checklist for LLM-assisted model methodology drafting. |
 | Feature lineage map | Step 5 and exported table that maps model terms back to source features, transformations, imputation, selection rationale, importance, and documentation fields. |
 | Model development dossier | Exported Markdown narrative that ties purpose, data, target, feature governance, methodology, validation evidence, limitations, and key artifacts together. |
 | Validation checklist | Step 5 and exported table that summarizes whether major review evidence areas are complete, attention-needed, or not applicable. |
@@ -117,4 +118,4 @@ This glossary defines common terms used in Quant Studio.
 | `tables/governance/feature_lineage_map.*` | Exported model-term to source-feature lineage map in the input-driven tabular format. |
 | `model/feature_lineage_map.csv` | Direct CSV copy of the feature lineage map in the model folder. |
 | `tables/governance/report_payload_audit.*` | Exported record of report charts kept, downsampled, or skipped by HTML payload limits in the input-driven tabular format. |
-| `model_bundle_for_monitoring/` | Handoff bundle for the separate ongoing-monitoring application. |
+| `Download OM Package` | Step 5 on-demand zip download that creates the `model_bundle_for_monitoring` handoff bundle for the separate ongoing-monitoring application. |

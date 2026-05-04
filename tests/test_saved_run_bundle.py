@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import json
+from io import BytesIO
 from pathlib import Path
+from zipfile import ZipFile
 
 from quant_pd_framework import (
     ArtifactConfig,
@@ -18,6 +20,11 @@ from quant_pd_framework import (
     TargetConfig,
     build_sample_pd_dataframe,
     load_framework_config,
+)
+from quant_pd_framework.decision_summary import build_decision_summary_snapshot_from_context
+from quant_pd_framework.monitoring_package import (
+    build_monitoring_package_from_payload,
+    build_monitoring_package_payload,
 )
 from quant_pd_framework.run import main as run_cli_main
 from tests.support import build_common_schema, temporary_artifact_root
@@ -90,35 +97,45 @@ def test_saved_run_bundle_exports_rerun_assets() -> None:
         assert (bundle_root / "code" / "code_snapshot" / "app" / "streamlit_app.py").exists()
 
 
-def test_saved_run_bundle_exports_model_bundle_for_monitoring() -> None:
+def test_saved_run_bundle_does_not_auto_export_model_bundle_for_monitoring() -> None:
     dataframe = build_sample_pd_dataframe(row_count=140, random_state=21)
     with temporary_artifact_root("pytest_monitoring_bundle") as artifact_root:
         config = build_bundle_test_config(artifact_root)
 
         context = QuantModelOrchestrator(config=config).run(dataframe)
         bundle_root = context.artifacts["output_root"]
-        monitoring_bundle_dir = context.artifacts["monitoring_bundle_dir"]
-        monitoring_metadata_path = context.artifacts["monitoring_metadata"]
 
         assert bundle_root is not None
-        assert monitoring_bundle_dir is not None
-        assert monitoring_metadata_path is not None
-        assert monitoring_bundle_dir == bundle_root / "model_bundle_for_monitoring"
+        assert context.artifacts["monitoring_bundle_dir"] is None
+        assert context.artifacts["monitoring_metadata"] is None
+        assert not (bundle_root / "model_bundle_for_monitoring").exists()
 
-        expected_bundle_paths = [
-            monitoring_bundle_dir / "quant_model.joblib",
-            monitoring_bundle_dir / "run_config.json",
-            monitoring_bundle_dir / "generated_run.py",
-            monitoring_bundle_dir / "monitoring_metadata.json",
-            monitoring_bundle_dir / "artifact_manifest.json",
-            monitoring_bundle_dir / "input_snapshot.csv",
-            monitoring_bundle_dir / "predictions.csv",
-            monitoring_bundle_dir / "code_snapshot",
-        ]
-        for expected_path in expected_bundle_paths:
-            assert expected_path.exists()
+        manifest = json.loads(Path(context.artifacts["manifest"]).read_text(encoding="utf-8"))
+        assert "monitoring_bundle" not in manifest
 
-        monitoring_metadata = json.loads(Path(monitoring_metadata_path).read_text(encoding="utf-8"))
+        snapshot = build_decision_summary_snapshot_from_context(context)
+        package_payload = build_monitoring_package_payload(snapshot)
+        package_bytes = build_monitoring_package_from_payload(package_payload)
+
+        with ZipFile(BytesIO(package_bytes)) as archive:
+            names = set(archive.namelist())
+            monitoring_metadata = json.loads(
+                archive.read("model_bundle_for_monitoring/monitoring_metadata.json").decode(
+                    "utf-8"
+                )
+            )
+
+        expected_bundle_paths = {
+            "model_bundle_for_monitoring/quant_model.joblib",
+            "model_bundle_for_monitoring/run_config.json",
+            "model_bundle_for_monitoring/generated_run.py",
+            "model_bundle_for_monitoring/monitoring_metadata.json",
+            "model_bundle_for_monitoring/artifact_manifest.json",
+            "model_bundle_for_monitoring/input_snapshot.csv",
+            "model_bundle_for_monitoring/predictions.csv",
+        }
+        assert expected_bundle_paths.issubset(names)
+        assert any(name.startswith("model_bundle_for_monitoring/code_snapshot/") for name in names)
         assert monitoring_metadata["bundle_version"] == "1.0"
         assert monitoring_metadata["created_by_run_id"] == context.run_id
         assert monitoring_metadata["score_column"] == "predicted_probability"
@@ -130,9 +147,11 @@ def test_saved_run_bundle_exports_model_bundle_for_monitoring() -> None:
             "monitoring_metadata.json"
         )
         assert monitoring_metadata["missing_optional_artifacts"] == []
+        assert monitoring_metadata["missing_required_artifacts"] == []
+        assert monitoring_metadata["creation_policy"] == "on_demand_step_5_download"
 
 
-def test_saved_run_bundle_monitoring_bundle_respects_optional_export_settings() -> None:
+def test_on_demand_monitoring_package_respects_optional_export_settings() -> None:
     dataframe = build_sample_pd_dataframe(row_count=140, random_state=25)
     with temporary_artifact_root("pytest_monitoring_bundle_optional") as artifact_root:
         config = build_bundle_test_config(artifact_root)
@@ -143,15 +162,22 @@ def test_saved_run_bundle_monitoring_bundle_respects_optional_export_settings() 
         )
 
         context = QuantModelOrchestrator(config=config).run(dataframe)
-        monitoring_bundle_dir = context.artifacts["monitoring_bundle_dir"]
-        monitoring_metadata_path = context.artifacts["monitoring_metadata"]
+        snapshot = build_decision_summary_snapshot_from_context(context)
+        package_payload = build_monitoring_package_payload(snapshot)
+        package_bytes = build_monitoring_package_from_payload(package_payload)
 
-        assert monitoring_bundle_dir is not None
-        assert monitoring_metadata_path is not None
-        assert not (monitoring_bundle_dir / "input_snapshot.csv").exists()
-        assert not (monitoring_bundle_dir / "code_snapshot").exists()
+        with ZipFile(BytesIO(package_bytes)) as archive:
+            names = set(archive.namelist())
+            monitoring_metadata = json.loads(
+                archive.read("model_bundle_for_monitoring/monitoring_metadata.json").decode(
+                    "utf-8"
+                )
+        )
 
-        monitoring_metadata = json.loads(Path(monitoring_metadata_path).read_text(encoding="utf-8"))
+        assert "model_bundle_for_monitoring/input_snapshot.csv" not in names
+        assert not any(
+            name.startswith("model_bundle_for_monitoring/code_snapshot/") for name in names
+        )
         assert sorted(monitoring_metadata["missing_optional_artifacts"]) == [
             "code_snapshot",
             "input_snapshot.csv",

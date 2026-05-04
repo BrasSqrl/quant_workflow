@@ -798,6 +798,14 @@ The GUI now includes several development-focused enterprise UX surfaces:
 - `Binning Theater` appears for scorecard runs in the Scorecard / Binning
   Workbench and helps users review WoE buckets, IV, points, and manual-bin
   override candidates without refitting the model live.
+- Step 5 `Download LLM Package` creates an on-demand `.zip` of curated
+  non-row-level evidence for LLM-assisted model methodology drafting. The
+  package includes prompt guidance, a default regulatory-style outline, a
+  table-of-contents drop zone for institution-specific templates, a source
+  citation map, an evidence checklist, generated-run code, run configuration,
+  and selected run evidence. Raw input snapshots, row-level predictions,
+  serialized model binaries, monitoring bundles, and full code snapshots are
+  excluded by default.
 
 ### Diagnostic Studio Layout
 
@@ -1959,11 +1967,12 @@ Default artifact layout:
   Contains `generated_run.py`, `HOW_TO_RERUN.md`, and `code_snapshot/`.
 - No `json/` folder is created. JSON artifacts are split between `config/`
   and `metadata/` by purpose.
-- `model_bundle_for_monitoring/`
-  A versioned handoff bundle for the separate monitoring application. It
-  includes the approved model artifact, resolved run config, generated runner,
-  monitoring metadata, predictions, artifact manifest, and optional snapshot
-  assets when those exports were enabled.
+- Step 5 `Download OM Package`
+  Creates the versioned `model_bundle_for_monitoring` zip for the separate
+  monitoring application on demand. It includes the approved model artifact,
+  resolved run config, generated runner, monitoring metadata, predictions,
+  artifact manifest, and optional snapshot assets when those exports were
+  enabled. The bundle is no longer written automatically during every model fit.
 
 ## Pipeline Step Reference
 
@@ -2225,6 +2234,10 @@ documentation pack, a model development dossier, a structured validation pack,
 a feature-lineage map, a reproducibility manifest, a configuration workbook,
 and a rerun-ready code bundle to disk.
 
+Step 5 also offers an on-demand LLM documentation package download. This is not
+written as part of every run; it is created when the user clicks `Download LLM
+Package` in the Step 5 Export card.
+
 ## Outputs
 
 Each run writes a timestamped artifact directory under `artifacts/`.
@@ -2271,6 +2284,8 @@ Typical outputs include:
 - ordered step manifest for the exact pipeline stack used
 - generated Python launcher for non-GUI reruns
 - local code snapshot containing the package, GUI, examples, tests, and project metadata
+- on-demand LLM documentation package for drafting a model methodology document
+  from curated evidence without sending raw row-level data by default
 
 ## Saved Run Bundles And Code Export
 
@@ -2320,12 +2335,11 @@ process outside Streamlit.
   A short runbook describing the rerun path and the main editable files.
 - `code/code_snapshot/`
   A copy of the framework source, GUI, tests, examples, README, and `pyproject.toml`.
-- `model_bundle_for_monitoring/`
-  A monitoring-ready handoff bundle containing `quant_model.joblib`,
-  `run_config.json`, `generated_run.py`, `monitoring_metadata.json`,
-  `artifact_manifest.json`, predictions in the selected primary tabular format,
-  and optional input snapshot and `code_snapshot/` assets when those exports
-  were enabled for the run.
+- Step 5 `Download OM Package`
+  A monitoring-ready zip containing `quant_model.joblib`, `run_config.json`,
+  `generated_run.py`, `monitoring_metadata.json`, `artifact_manifest.json`,
+  predictions converted to `predictions.csv`, and optional `input_snapshot.csv`
+  and `code_snapshot/` assets when those exports were enabled for the run.
 
 ### Why The Code Snapshot Exists
 

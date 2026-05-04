@@ -61,6 +61,8 @@ def test_decision_summary_flags_suitability_failures() -> None:
                         "check_name": "events_per_feature",
                         "subject": "train_target",
                         "interpretation": "Too few target events per feature.",
+                        "observed_value": 4.2,
+                        "threshold": 10.0,
                     }
                 ]
             )
@@ -75,6 +77,7 @@ def test_decision_summary_flags_suitability_failures() -> None:
     assert summary["level"] == "revise"
     assert "Revise before relying on model" in markdown
     assert "Too few target events" in markdown
+    assert "current setting requires at least 10" in markdown
 
 
 def test_decision_summary_treats_subset_search_as_review_input() -> None:

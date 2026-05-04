@@ -53,7 +53,7 @@ fixes.
 | Advanced Visual Analytics charts are missing | The optional advanced layer is off by default | Turn on `Advanced Visual Analytics` in Step 2, then rerun the workflow. |
 | Interactive report is very large | Too many embedded chart points or advanced visuals | Lower Step 2 report-size controls and review `tables/governance/report_payload_audit.*`. |
 | Some report charts are missing or less dense | Report-size controls skipped or downsampled embedded charts | Review `report_payload_audit`; full diagnostic tables remain exported separately. |
-| Missing `model_bundle_for_monitoring/` | Mode was not `fit_new_model` or export did not complete | This bundle is created for new fitted models only. |
+| Missing `model_bundle_for_monitoring/` | The bundle is no longer auto-exported during model fit | Open Step 5 after a completed `fit_new_model` run and click `Download OM Package`. |
 
 ## SageMaker Problems
 

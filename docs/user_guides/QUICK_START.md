@@ -109,6 +109,10 @@ Quant Studio opens to Step 1 by default.
     governance, and artifact explorer sections.
 34. Open Step 5, `Decision Summary`.
 35. Review the recommendation, decision issues, primary metrics, feature drivers, feature lineage, validation checklist, evidence index, traceability map, and dossier.
+36. If you need an LLM-assisted model methodology draft, use Step 5 `Export` ->
+    `Download LLM Package`. The zip includes curated non-row-level evidence,
+    prompt guidance, a default outline, citation map, evidence checklist, and a
+    table-of-contents drop zone for your group-specific document template.
 
 ## First Real-Data Run
 

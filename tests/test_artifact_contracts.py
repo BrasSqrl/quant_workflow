@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import json
 import re
+from io import BytesIO
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
+from zipfile import ZipFile
 
 import pandas as pd
 
@@ -23,6 +25,8 @@ from quant_pd_framework import (
     TargetConfig,
     TargetMode,
 )
+from quant_pd_framework.decision_summary import build_decision_summary_snapshot_from_context
+from quant_pd_framework.llm_documentation_package import build_llm_documentation_package
 from quant_pd_framework.reference_workflows import get_reference_workflow_definition
 from quant_pd_framework.steps.export import ArtifactExportStep
 from quant_pd_framework.steps.ingestion import INPUT_SOURCE_METADATA_ATTR
@@ -144,6 +148,49 @@ def test_run_artifact_folder_uses_readable_datetime_name() -> None:
             context.run_id,
         )
         assert Path(context.artifacts["output_root"]).name == context.run_id
+
+
+def test_llm_documentation_package_exports_evidence_without_row_level_data() -> None:
+    dataframe = build_binary_dataframe(row_count=180)
+
+    with temporary_artifact_root("pytest_llm_documentation_package") as artifact_root:
+        config = _build_artifact_contract_config(artifact_root)
+        context = QuantModelOrchestrator(config=config).run(dataframe)
+        snapshot = build_decision_summary_snapshot_from_context(context)
+
+        package_bytes = build_llm_documentation_package(snapshot)
+
+        with ZipFile(BytesIO(package_bytes)) as archive:
+            names = set(archive.namelist())
+            manifest = json.loads(
+                archive.read(
+                    "llm_documentation_package/llm_evidence_manifest.json"
+                ).decode("utf-8")
+            )
+
+        assert "llm_documentation_package/model_document_context.json" in names
+        assert "llm_documentation_package/model_document_context.md" in names
+        assert "llm_documentation_package/prompt_generate_model_methodology.md" in names
+        assert (
+            "llm_documentation_package/document_template/DROP_TABLE_OF_CONTENTS_HERE.md"
+            in names
+        )
+        assert "llm_documentation_package/default_model_methodology_outline.md" in names
+        assert "llm_documentation_package/source_citation_map.csv" in names
+        assert "llm_documentation_package/source_artifacts/config/run_config.json" in names
+        assert "llm_documentation_package/source_artifacts/code/generated_run.py" in names
+        assert "llm_documentation_package/source_artifacts/reports/decision_summary.md" in names
+        assert not any(name.endswith("quant_model.joblib") for name in names)
+        assert not any("/data/input/" in name for name in names)
+        assert not any("/data/predictions/" in name for name in names)
+        assert any(
+            "row-level input or prediction data is excluded" in row["reason"]
+            for row in manifest["skipped_files"]
+        )
+        assert any(
+            "serialized model binaries are excluded" in row["reason"]
+            for row in manifest["skipped_files"]
+        )
 
 
 def test_artifact_manifest_can_skip_individual_figure_exports() -> None:

@@ -392,32 +392,6 @@ class ArtifactExportStep(BasePipelineStep):
             manifest["rerun_bundle"]["code_snapshot"] = str(code_snapshot_dir)
             self._write_manifest(manifest_path, manifest, output_root=output_root)
 
-        monitoring_bundle: dict[str, Any] | None = None
-        if context.config.execution.mode == ExecutionMode.FIT_NEW_MODEL:
-            monitoring_bundle = self._export_monitoring_bundle(
-                context=context,
-                output_root=output_root,
-                model_path=model_path,
-                config_path=config_path,
-                runner_script_path=runner_script_path,
-                manifest_path=manifest_path,
-                input_snapshot_path=self._primary_export_path(input_snapshot_exports),
-                predictions_path=self._primary_export_path(prediction_exports),
-                code_snapshot_dir=code_snapshot_dir
-                if self._code_snapshot_enabled(context)
-                else None,
-            )
-            manifest["monitoring_bundle"] = {
-                "directory": str(monitoring_bundle["bundle_dir"]),
-                "metadata": str(monitoring_bundle["metadata_path"]),
-                "bundle_version": monitoring_bundle["metadata"]["bundle_version"],
-            }
-            self._write_manifest(manifest_path, manifest, output_root=output_root)
-            self._refresh_monitoring_bundle_manifest_copy(
-                bundle_dir=monitoring_bundle["bundle_dir"],
-                manifest_path=manifest_path,
-            )
-
         context.artifacts = {
             "output_root": output_root,
             "start_here": start_here_path,
@@ -481,12 +455,8 @@ class ArtifactExportStep(BasePipelineStep):
             "code_snapshot_dir": code_snapshot_dir
             if self._code_snapshot_enabled(context)
             else None,
-            "monitoring_bundle_dir": (
-                monitoring_bundle["bundle_dir"] if monitoring_bundle is not None else None
-            ),
-            "monitoring_metadata": (
-                monitoring_bundle["metadata_path"] if monitoring_bundle is not None else None
-            ),
+            "monitoring_bundle_dir": None,
+            "monitoring_metadata": None,
         }
         return context
 
@@ -2273,7 +2243,7 @@ class ArtifactExportStep(BasePipelineStep):
             "- `workbooks/` contains the optional analysis workbook.",
             "- `code/` contains rerun instructions, generated Python launcher, and code snapshot.",
             "- `figures/` contains optional individual chart HTML/PNG exports.",
-            "- `model_bundle_for_monitoring/` is the handoff bundle for the monitoring app.",
+            "- Step 5 `Download OM Package` creates the monitoring-app handoff bundle on demand.",
             "",
             "## Common Tasks",
             "",
@@ -2284,7 +2254,7 @@ class ArtifactExportStep(BasePipelineStep):
             "- Rerun outside the GUI: open `code/HOW_TO_RERUN.md`.",
             "- Audit exact values: inspect `tables/` and `metadata/`.",
             "- Review staged execution: inspect `checkpoints/checkpoint_manifest.json`.",
-            "- Send to monitoring: use `model_bundle_for_monitoring/`.",
+            "- Send to monitoring: use Step 5 `Download OM Package`.",
             "",
             "## Key Paths",
             "",

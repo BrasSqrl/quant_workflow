@@ -651,6 +651,8 @@ Notes:
 | `Decision Room` tab | completed run decision summary payload | `streamlit_ui.decision_room.build_decision_room_payload(...)`, `render_decision_summary(...)` | `reports/decision_summary.md` |
 | `Decision Summary` | completed run snapshot, metrics, diagnostics, warnings, feature importance, and artifact paths | `decision_summary.build_decision_summary(...)`, `render_decision_summary(...)` | `reports/decision_summary.md` |
 | `Download decision summary` | completed run snapshot | `decision_summary.build_decision_summary_markdown(...)` | downloaded Markdown scorecard |
+| `Download LLM Package` | completed run snapshot and exported artifact paths | `llm_documentation_package.build_llm_documentation_package_from_payload(...)`, `render_decision_summary(...)` | downloaded `.zip` containing LLM-readable context, prompt, default outline, table-of-contents drop zone, citation map, evidence checklist, and selected non-row-level run evidence |
+| `Download OM Package` | completed `fit_new_model` snapshot and exported artifact paths | `monitoring_package.build_monitoring_package_from_payload(...)`, `render_decision_summary(...)` | downloaded `.zip` containing `model_bundle_for_monitoring` with model, config, generated runner, monitoring metadata, artifact manifest, and available CSV input/prediction assets |
 | `Feature Lineage` tab | `diagnostics_tables["feature_lineage_map"]` | `feature_lineage.build_feature_lineage_table(...)`, `ArtifactExportStep`, `render_decision_summary(...)` | `tables/governance/feature_lineage_map.*`, `model/feature_lineage_map.csv` |
 | `Validation Checklist` tab | `diagnostics_tables["validation_checklist"]` | `validation_evidence.build_validation_checklist(...)`, `render_decision_summary(...)` | `tables/governance/validation_checklist.*` |
 | `Traceability Map` tab | `diagnostics_tables["evidence_traceability_map"]` | `validation_evidence.build_evidence_traceability_map(...)`, `render_decision_summary(...)` | `tables/governance/evidence_traceability_map.*` |
@@ -663,6 +665,13 @@ Notes:
 - It synthesizes completed-run evidence into a recommendation, decision level,
   primary metrics, issue table, top feature drivers, validation checklist,
   feature lineage, evidence index, traceability map, and dossier.
+- The LLM package is an on-demand Step 5 download. It does not rerun the model
+  and does not include raw input snapshots, row-level predictions, serialized
+  model binaries, monitoring bundles, or full code snapshots by default.
+- The OM package is also an on-demand Step 5 download. It replaces the prior
+  automatic `model_bundle_for_monitoring/` folder export so new model fits do
+  not spend time copying or converting monitoring handoff files unless the user
+  explicitly requests the package.
 
 ## 22. Authoritative Export Files for Traceability
 

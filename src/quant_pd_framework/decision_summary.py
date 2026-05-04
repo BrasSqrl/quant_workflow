@@ -304,12 +304,7 @@ def _build_issue_frame(
                         "severity": str(row.get("status_label", row.get(status_column, ""))),
                         "source": "Suitability checks",
                         "subject": str(row.get("subject", row.get("check_name", ""))),
-                        "message": str(
-                            row.get(
-                                "interpretation",
-                                row.get("recommended_action", "Review suitability check."),
-                            )
-                        ),
+                        "message": _assumption_issue_message(row),
                     }
                 )
     workflow_guardrails = diagnostics_tables.get("workflow_guardrails")
@@ -362,6 +357,70 @@ def _build_issue_frame(
             }
         )
     return pd.DataFrame(rows)
+
+
+def _assumption_issue_message(row: pd.Series) -> str:
+    message = str(
+        row.get(
+            "interpretation",
+            row.get("recommended_action", "Review suitability check."),
+        )
+    )
+    if "current setting" in message.lower() or "configured threshold" in message.lower():
+        return message
+    context = _assumption_requirement_context(row)
+    if not context:
+        return message
+    return f"{message.rstrip('.')} ({context})."
+
+
+def _assumption_requirement_context(row: pd.Series) -> str:
+    observed_value = row.get("observed_value")
+    threshold = row.get("threshold")
+    if not _has_value(observed_value) or not _has_value(threshold):
+        return ""
+    observed = _compact_value(observed_value)
+    required = _compact_value(threshold)
+    check_name = str(row.get("check_name", "")).lower()
+    if check_name == "events_per_feature":
+        return (
+            f"observed {observed}; current setting requires at least "
+            f"{required} events per feature"
+        )
+    if check_name == "non_null_target_rows":
+        return (
+            f"observed {observed}; current setting requires at least "
+            f"{required} non-null target rows"
+        )
+    if check_name == "positive_class_rate":
+        return f"observed {observed}; current setting requires a rate in {required}"
+    if check_name == "dominant_category_share":
+        return f"observed {observed}; current setting maximum is {required}"
+    if check_name == "positive_loss_observations":
+        return (
+            f"observed {observed}; current setting requires at least "
+            f"{required} positive-loss observations"
+        )
+    if check_name == "duplicate_entity_date_pairs":
+        return f"observed {observed}; current setting requires {required}"
+    if check_name == "bounded_target_unit_interval":
+        return f"observed {observed}; selected model requires {required}"
+    return f"observed {observed}; configured threshold is {required}"
+
+
+def _has_value(value: Any) -> bool:
+    if value is None:
+        return False
+    try:
+        return not bool(pd.isna(value))
+    except (TypeError, ValueError):
+        return True
+
+
+def _compact_value(value: Any) -> str:
+    if isinstance(value, float):
+        return f"{value:.4g}"
+    return str(value)
 
 
 def _issue_counts(issue_frame: pd.DataFrame) -> dict[str, int]:

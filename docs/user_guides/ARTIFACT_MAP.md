@@ -49,6 +49,22 @@ and summarizes the completed run in Step 5, `Decision Summary`.
 | `code/generated_run.py` | Python rerun script for running without the GUI. | Developer |
 | `code/HOW_TO_RERUN.md` | Plain-English rerun instructions. | Developer, reviewer |
 
+Step 5 also has an on-demand `Download LLM Package` button in the Export card.
+That download creates a `.zip` for LLM-assisted model methodology drafting. It
+includes LLM-readable context files, a regulatory-guidance evidence map, a
+prompt template, a default model methodology outline, a table-of-contents drop
+zone for institution-specific templates, a source citation map, an evidence
+checklist, diagnostic table previews, generated-run code, run configuration,
+and selected non-row-level evidence from the completed run. It intentionally
+excludes raw input snapshots, row-level predictions, serialized model binaries,
+monitoring handoff bundles, and full code snapshots by default.
+
+Step 5 also has an on-demand `Download OM Package` button for completed
+`fit_new_model` runs. That download creates the `model_bundle_for_monitoring`
+zip for the separate ongoing-monitoring application. The bundle is no longer
+written automatically during every model fit, which avoids extra file copying
+and Parquet-to-CSV conversion during the main workflow.
+
 ## Important Directories
 
 | Directory | Meaning |
@@ -64,7 +80,6 @@ and summarizes the completed run in Step 5, `Decision Summary`.
 | `workbooks/` | Optional Excel analysis workbook. |
 | `code/code_snapshot/` | Copy of relevant source, examples, tests, and project metadata when code snapshot export is enabled. |
 | `figures/` or equivalent figure folders | Separate chart HTML/PNG files when individual figure export is enabled. |
-| `model_bundle_for_monitoring/` | Handoff bundle for the separate monitoring application, created for new fitted models. |
 | `data/sample_development/` | Large Data Mode sample-development evidence. |
 | `data/full_data_scoring/` | Large Data Mode full-file scoring outputs. |
 | `metadata/large_data/` | Large Data Mode metadata, progress, and scoring summaries. |
@@ -296,4 +311,4 @@ For future scoring:
 
 For the separate monitoring application:
 
-- `model_bundle_for_monitoring/`
+- Step 5 `Download OM Package`

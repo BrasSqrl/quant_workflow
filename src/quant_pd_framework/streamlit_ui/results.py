@@ -18,6 +18,14 @@ from quant_pd_framework.decision_summary import (
     build_decision_summary,
     build_decision_summary_markdown,
 )
+from quant_pd_framework.llm_documentation_package import (
+    build_llm_documentation_context_payload,
+    build_llm_documentation_package_from_payload,
+)
+from quant_pd_framework.monitoring_package import (
+    build_monitoring_package_from_payload,
+    build_monitoring_package_payload,
+)
 from quant_pd_framework.presentation import (
     SECTION_SPECS,
     apply_advanced_visual_analytics,
@@ -67,6 +75,30 @@ SUITABILITY_DISPLAY_COLUMNS = [
     "recommended_action",
     "details",
 ]
+
+
+@st.cache_data(show_spinner=False)
+def _build_cached_llm_documentation_package(
+    run_id: str,
+    artifact_signature: tuple[str, int],
+    payload: dict[str, Any],
+) -> bytes:
+    """Builds the LLM package once per completed-run artifact signature."""
+
+    _ = (run_id, artifact_signature)
+    return build_llm_documentation_package_from_payload(payload)
+
+
+@st.cache_data(show_spinner=False)
+def _build_cached_monitoring_package(
+    run_id: str,
+    artifact_signature: tuple[tuple[str, str, int], ...],
+    payload: dict[str, Any],
+) -> bytes:
+    """Builds the ongoing-monitoring package only when the user requests it."""
+
+    _ = (run_id, artifact_signature)
+    return build_monitoring_package_from_payload(payload)
 
 
 def format_memory_bytes(value: Any) -> str:
@@ -410,6 +442,8 @@ def render_decision_summary(snapshot: dict[str, Any]) -> None:
             file_name=f"{snapshot.get('run_id', 'run')}_decision_summary.md",
             mime="text/markdown",
         )
+        _render_llm_package_download(snapshot)
+        _render_monitoring_package_download(snapshot)
 
     (
         decision_room_tab,
@@ -503,6 +537,118 @@ def render_decision_summary(snapshot: dict[str, Any]) -> None:
             )
         else:
             st.info("The model development dossier was not exported for this run.")
+
+
+def _render_llm_package_download(snapshot: dict[str, Any]) -> None:
+    artifacts = snapshot.get("artifacts", {})
+    signature = _artifact_signature(artifacts)
+    try:
+        payload = build_llm_documentation_context_payload(snapshot)
+        package_bytes = _build_cached_llm_documentation_package(
+            str(snapshot.get("run_id", "run")),
+            signature,
+            payload,
+        )
+    except Exception as exc:  # pragma: no cover - defensive UI fallback.
+        st.warning(f"LLM package could not be prepared: {exc}")
+        return
+    st.download_button(
+        "Download LLM Package",
+        data=package_bytes,
+        file_name=f"{snapshot.get('run_id', 'run')}_llm_documentation_package.zip",
+        mime="application/zip",
+        width="stretch",
+        help=(
+            "Downloads an LLM-readable evidence package for drafting a model "
+            "methodology document. Raw row-level data, row-level predictions, and "
+            "model binaries are excluded by default."
+        ),
+    )
+    st.caption("Includes prompt, outline, citation map, evidence checklist, and TOC drop zone.")
+
+
+def _render_monitoring_package_download(snapshot: dict[str, Any]) -> None:
+    if snapshot.get("execution_mode") != ExecutionMode.FIT_NEW_MODEL.value:
+        st.download_button(
+            "Download OM Package",
+            data=b"",
+            file_name=f"{snapshot.get('run_id', 'run')}_om_package.zip",
+            mime="application/zip",
+            width="stretch",
+            disabled=True,
+            help="Available only for completed new-model-fit runs.",
+        )
+        return
+
+    artifacts = snapshot.get("artifacts", {})
+    signature = _monitoring_artifact_signature(artifacts)
+    try:
+        payload = build_monitoring_package_payload(snapshot)
+        package_bytes = _build_cached_monitoring_package(
+            str(snapshot.get("run_id", "run")),
+            signature,
+            payload,
+        )
+    except Exception as exc:  # pragma: no cover - defensive UI fallback.
+        st.warning(f"OM package could not be prepared: {exc}")
+        return
+    st.download_button(
+        "Download OM Package",
+        data=package_bytes,
+        file_name=f"{snapshot.get('run_id', 'run')}_om_package.zip",
+        mime="application/zip",
+        width="stretch",
+        help=(
+            "Downloads a model bundle for the separate ongoing-monitoring app. "
+            "The bundle is created on demand so normal model runs do not spend "
+            "time copying or converting monitoring files."
+        ),
+    )
+    st.caption(
+        "Includes model, config, generated runner, manifest, metadata, and "
+        "available CSV inputs/scores."
+    )
+
+
+def _artifact_signature(artifacts: dict[str, Any]) -> tuple[str, int]:
+    signature_path = (
+        artifacts.get("manifest")
+        or artifacts.get("artifact_manifest")
+        or artifacts.get("output_root")
+        or ""
+    )
+    path = Path(str(signature_path)) if signature_path else Path()
+    if signature_path and path.exists():
+        try:
+            return str(path), int(path.stat().st_mtime_ns)
+        except OSError:
+            return str(path), 0
+    return str(signature_path), 0
+
+
+def _monitoring_artifact_signature(artifacts: dict[str, Any]) -> tuple[tuple[str, str, int], ...]:
+    signature_keys = [
+        "model",
+        "config",
+        "runner_script",
+        "manifest",
+        "artifact_manifest",
+        "input_snapshot",
+        "predictions",
+        "code_snapshot_dir",
+    ]
+    rows: list[tuple[str, str, int]] = []
+    for key in signature_keys:
+        value = artifacts.get(key)
+        path = Path(str(value)) if value else Path()
+        timestamp = 0
+        if value and path.exists():
+            try:
+                timestamp = int(path.stat().st_mtime_ns)
+            except OSError:
+                timestamp = 0
+        rows.append((key, str(value or ""), timestamp))
+    return tuple(rows)
 
 
 def _render_decision_room(snapshot: dict[str, Any], summary: dict[str, Any]) -> None:

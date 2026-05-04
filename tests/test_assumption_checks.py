@@ -17,5 +17,6 @@ def test_assumption_check_rows_include_plain_language_audit_fields() -> None:
     assert row["status_label"] == "Fail"
     assert row["check_label"] == "Events per feature"
     assert "fewer target events per feature" in row["interpretation"]
+    assert "current setting requires at least 10" in row["interpretation"]
     assert "overfitting" in row["why_it_matters"]
     assert "Reduce selected features" in row["recommended_action"]

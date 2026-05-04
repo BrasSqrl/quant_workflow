@@ -466,10 +466,31 @@ class AssumptionCheckStep(BasePipelineStep):
             "observed_value": observed_value,
             "threshold": threshold,
             "details": details,
-            "interpretation": self._interpretation(check_name, status),
+            "interpretation": self._interpretation_with_requirement(
+                check_name=check_name,
+                status=status,
+                observed_value=observed_value,
+                threshold=threshold,
+            ),
             "why_it_matters": self._why_it_matters(check_name),
             "recommended_action": self._recommended_action(check_name),
         }
+
+    def _interpretation_with_requirement(
+        self,
+        *,
+        check_name: str,
+        status: str,
+        observed_value: Any,
+        threshold: Any,
+    ) -> str:
+        interpretation = self._interpretation(check_name, status)
+        if status not in {"fail", "warn"}:
+            return interpretation
+        context = self._requirement_context(check_name, observed_value, threshold)
+        if not context:
+            return interpretation
+        return f"{interpretation.rstrip('.')} ({context})."
 
     def _interpretation(self, check_name: str, status: str) -> str:
         explanation = CHECK_EXPLANATIONS.get(check_name, {})
@@ -495,6 +516,41 @@ class AssumptionCheckStep(BasePipelineStep):
             "action",
             "Review the observed value, threshold, source data, and model configuration.",
         )
+
+    def _requirement_context(
+        self,
+        check_name: str,
+        observed_value: Any,
+        threshold: Any,
+    ) -> str:
+        observed = self._format_value(observed_value)
+        required = self._format_value(threshold)
+        if observed == "" or required == "":
+            return ""
+        if check_name == "events_per_feature":
+            return (
+                f"observed {observed}; current setting requires at least "
+                f"{required} events per feature"
+            )
+        if check_name == "non_null_target_rows":
+            return (
+                f"observed {observed}; current setting requires at least "
+                f"{required} non-null target rows"
+            )
+        if check_name == "positive_class_rate":
+            return f"observed {observed}; current setting requires a rate in {required}"
+        if check_name == "dominant_category_share":
+            return f"observed {observed}; current setting maximum is {required}"
+        if check_name == "positive_loss_observations":
+            return (
+                f"observed {observed}; current setting requires at least "
+                f"{required} positive-loss observations"
+            )
+        if check_name == "duplicate_entity_date_pairs":
+            return f"observed {observed}; current setting requires {required}"
+        if check_name == "bounded_target_unit_interval":
+            return f"observed {observed}; selected model requires {required}"
+        return f"observed {observed}; configured threshold is {required}"
 
     def _failure_warning_message(self, failures: pd.DataFrame) -> str:
         details = []

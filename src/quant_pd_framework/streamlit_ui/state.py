@@ -197,6 +197,7 @@ def build_run_snapshot(context, config_dict: dict[str, Any]) -> dict[str, Any]:
         "score_column": score_column,
         "prediction_column": str(context.metadata.get("prediction_column", "predicted_class")),
         "date_column": context.config.split.date_column,
+        "entity_column": context.config.split.entity_column,
         "default_segment_column": context.config.diagnostics.default_segment_column,
         "include_enhanced_report_visuals": bool(
             context.config.artifacts.include_enhanced_report_visuals

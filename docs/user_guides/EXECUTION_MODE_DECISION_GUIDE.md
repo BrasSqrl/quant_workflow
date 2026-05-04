@@ -38,7 +38,7 @@ Typical outputs:
 - `reports/interactive_report.html`
 - `reports/model_documentation_pack.md`
 - `reports/validation_pack.md`
-- `model_bundle_for_monitoring/`
+- Step 5 `Download OM Package` for the separate ongoing-monitoring application
 
 Do not use this mode if the approved model already exists and must not be
 rebuilt.
