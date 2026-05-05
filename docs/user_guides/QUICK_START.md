@@ -118,9 +118,12 @@ Quant Studio opens to Step 1 by default.
     section evidence maps, approved claims, documentation gaps, schema and
     evidence-strength controls, citable-evidence and do-not-cite indexes,
     completion rules, controlled vocabulary, draft-validation rules, operator
-    prompt variants, citation rules, interpretation briefs, individual chart
-    assets, a model facts digest, a quality rubric, a review checklist, and a
-    table-of-contents drop zone for your group-specific document template.
+    prompt variants, citation rules, interpretation briefs, DOCX build
+    instructions, a model document style guide, a DOCX quality checklist, a
+    figure placement manifest, section evidence folders, capped HTML and
+    document-ready PNG chart evidence, a package build profile, a model facts
+    digest, a quality rubric, a review checklist, and a table-of-contents drop
+    zone for your group-specific document template.
 
 ## First Real-Data Run
 

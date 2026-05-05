@@ -12,7 +12,7 @@ from html import escape
 from io import BytesIO
 from pathlib import Path
 from typing import Any
-from zipfile import ZIP_DEFLATED, ZipFile
+from zipfile import ZIP_DEFLATED, ZIP_STORED, ZipFile
 
 import plotly.io as pio
 from plotly.offline import get_plotlyjs
@@ -43,6 +43,8 @@ def build_individual_figure_zip(
     root_dir: str = "individual_images",
     include_html: bool = True,
     include_png: bool = True,
+    max_figures: int | None = None,
+    png_figure_limit: int | None = None,
 ) -> bytes:
     """Builds a portable zip of individual chart HTML and PNG files."""
 
@@ -51,9 +53,11 @@ def build_individual_figure_zip(
         root_dir=root_dir,
         include_html=include_html,
         include_png=include_png,
+        max_figures=max_figures,
+        png_figure_limit=png_figure_limit,
     )
     output = BytesIO()
-    with ZipFile(output, mode="w", compression=ZIP_DEFLATED) as archive:
+    with ZipFile(output, mode="w", compression=ZIP_DEFLATED, compresslevel=3) as archive:
         write_figure_assets_to_archive(archive, result.assets)
     return output.getvalue()
 
@@ -64,6 +68,8 @@ def build_figure_export_assets(
     root_dir: str,
     include_html: bool = True,
     include_png: bool = True,
+    max_figures: int | None = None,
+    png_figure_limit: int | None = None,
 ) -> FigureExportResult:
     """Renders figures once into reusable archive assets.
 
@@ -73,12 +79,22 @@ def build_figure_export_assets(
     """
 
     normalized_root = _clean_root(root_dir)
-    named_figures = _named_figures(visualizations)
+    available_figures = _named_figures(visualizations)
+    named_figures = _limit_named_figures(available_figures, max_figures)
+    png_figures = (
+        _limit_named_figures(named_figures, png_figure_limit)
+        if png_figure_limit is not None
+        else named_figures
+    )
     generated_at_utc = datetime.now(UTC).isoformat()
     assets: list[FigureExportAsset] = []
     manifest: dict[str, Any] = {
         "generated_at_utc": generated_at_utc,
+        "available_figure_count": len(available_figures),
         "figure_count": len(named_figures),
+        "skipped_figure_count": max(len(available_figures) - len(named_figures), 0),
+        "max_figures": max_figures,
+        "png_figure_limit": png_figure_limit,
         "html_enabled": include_html,
         "png_enabled": include_png,
         "html_runtime_note": (
@@ -92,6 +108,11 @@ def build_figure_export_assets(
             else "PNG chart export was not requested."
         ),
         "figures": {},
+        "selected_figures": [figure_name for figure_name, _safe_name, _figure in named_figures],
+        "skipped_figures": [
+            figure_name
+            for figure_name, _safe_name, _figure in available_figures[len(named_figures) :]
+        ],
         "support_files": [],
         "warnings": [],
     }
@@ -130,8 +151,8 @@ def build_figure_export_assets(
             manifest["figures"].setdefault(figure_name, {})["html"] = html_arcname
             manifest["figures"][figure_name]["safe_name"] = safe_name
 
-    if include_png and named_figures:
-        png_records, warnings = _render_png_assets(named_figures, normalized_root)
+    if include_png and png_figures:
+        png_records, warnings = _render_png_assets(png_figures, normalized_root)
         assets.extend(png_records)
         manifest["warnings"].extend(warnings)
         for asset in png_records:
@@ -158,7 +179,7 @@ def write_figure_assets_to_archive(
     """Writes pre-rendered chart assets to an open zip archive."""
 
     for asset in assets:
-        archive.writestr(asset.arcname, asset.data)
+        archive.writestr(asset.arcname, asset.data, compress_type=_compress_type_for_asset(asset))
 
 
 def export_figure_files_to_directory(
@@ -321,6 +342,21 @@ def _named_figures(visualizations: Mapping[str, Any]) -> list[tuple[str, str, An
             safe_name = f"{safe_name}_{count + 1}"
         named.append((figure_name, safe_name, figure))
     return named
+
+
+def _limit_named_figures(
+    named_figures: list[tuple[str, str, Any]],
+    max_figures: int | None,
+) -> list[tuple[str, str, Any]]:
+    if max_figures is None:
+        return named_figures
+    return named_figures[: max(int(max_figures), 0)]
+
+
+def _compress_type_for_asset(asset: FigureExportAsset) -> int:
+    if asset.file_format == "png":
+        return ZIP_STORED
+    return ZIP_DEFLATED
 
 
 def _sanitize_name(value: str) -> str:

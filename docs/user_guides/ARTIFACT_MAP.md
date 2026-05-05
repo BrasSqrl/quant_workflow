@@ -61,8 +61,12 @@ draft-validation rules, document quality rubric, redaction policy, lightweight
 draft validator script, a human review checklist, a default model methodology
 outline, a table-of-contents drop zone for institution-specific templates,
 diagnostic table previews, generated-run code, run configuration, selected
-non-row-level evidence from the completed run, and the same chart PNG/HTML
-assets produced by `Download Individual Images`. It intentionally
+non-row-level evidence from the completed run, DOCX build instructions, a model
+document style guide, a DOCX quality checklist, a figure placement manifest,
+section-specific evidence folders, a package build profile, capped lightweight
+HTML chart assets, and a small document-ready PNG subset. If `Download
+Individual Images` has already been prepared in the same UI session, the LLM
+package reuses eligible chart files instead of rendering them again. It intentionally
 excludes raw input snapshots, row-level predictions, serialized model binaries,
 monitoring handoff bundles, and full code snapshots by default.
 

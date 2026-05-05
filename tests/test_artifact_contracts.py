@@ -192,6 +192,10 @@ def test_llm_documentation_package_exports_evidence_without_row_level_data() -> 
         assert "llm_documentation_package/MODEL_FACTS_DIGEST.md" in names
         assert "llm_documentation_package/EVIDENCE_INDEX.csv" in names
         assert "llm_documentation_package/DO_NOT_CITE.md" in names
+        assert "llm_documentation_package/DOCX_BUILD_INSTRUCTIONS.md" in names
+        assert "llm_documentation_package/MODEL_DOCUMENT_STYLE_GUIDE.md" in names
+        assert "llm_documentation_package/DOCX_QUALITY_CHECKLIST.md" in names
+        assert "llm_documentation_package/figure_placement_manifest.csv" in names
         assert (
             "llm_documentation_package/operator_instructions/"
             "prompt_generate_model_methodology.md"
@@ -202,8 +206,14 @@ def test_llm_documentation_package_exports_evidence_without_row_level_data() -> 
             "THREE_PROMPTS_FOR_LLM_USE.txt"
             in names
         )
+        assert (
+            "llm_documentation_package/operator_instructions/prompts/"
+            "prompt_create_docx_methodology.md"
+            in names
+        )
         assert "llm_documentation_package/document_section_evidence_map.json" in names
         assert "llm_documentation_package/document_section_evidence_map.csv" in names
+        assert any("/document_sections/" in name for name in names)
         assert "llm_documentation_package/approved_claims.json" in names
         assert "llm_documentation_package/target_document_schema.json" in names
         assert "llm_documentation_package/evidence_strength_policy.json" in names
@@ -262,8 +272,12 @@ def test_llm_documentation_package_exports_evidence_without_row_level_data() -> 
         assert "llm_documentation_package/source_artifacts/reports/decision_summary.md" in names
         assert "operator_instructions" not in citation_map_text
         assert "operator_instructions" in evidence_index_text
+        assert "DOCX_BUILD_INSTRUCTIONS.md" in evidence_index_text
+        assert "figure_placement_manifest" in evidence_index_text
         assert "cite_as_evidence" in evidence_index_text
         assert "operator_instructions" in do_not_cite_text
+        assert "DOCX_BUILD_INSTRUCTIONS.md" in do_not_cite_text
+        assert "figure_placement_manifest.csv" in do_not_cite_text
         assert not any(name.endswith("quant_model.joblib") for name in names)
         assert not any("/data/input/" in name for name in names)
         assert not any("/data/predictions/" in name for name in names)
@@ -299,6 +313,7 @@ def test_llm_package_can_include_generated_chart_assets() -> None:
         package_bytes = build_llm_documentation_package_from_payload(
             payload,
             generated_chart_assets=chart_assets,
+            build_profile=[{"stage": "test_prepare_chart_assets", "elapsed_seconds": 0.01}],
         )
 
         with ZipFile(BytesIO(package_bytes)) as archive:
@@ -306,6 +321,9 @@ def test_llm_package_can_include_generated_chart_assets() -> None:
             citation_map = archive.read(
                 "llm_documentation_package/source_citation_map.csv"
             ).decode("utf-8")
+            evidence_index = archive.read("llm_documentation_package/EVIDENCE_INDEX.csv").decode(
+                "utf-8"
+            )
 
         assert (
             "llm_documentation_package/source_artifacts/figures/html/validation_curve.html"
@@ -313,7 +331,37 @@ def test_llm_package_can_include_generated_chart_assets() -> None:
         )
         assert "llm_documentation_package/source_artifacts/figures/html/plotly.min.js" in names
         assert "llm_documentation_package/source_artifacts/figures/figure_manifest.json" in names
+        assert "llm_documentation_package/llm_package_build_profile.json" in names
+        assert "llm_documentation_package/figure_placement_manifest.csv" in names
+        assert not any(name.endswith(".png") for name in names)
         assert "generated_figures" in citation_map
+        assert "llm_package_build_profile" in evidence_index
+
+
+def test_figure_export_assets_can_cap_chart_count_without_png_rendering() -> None:
+    result = build_figure_export_assets(
+        {
+            f"chart_{index}": go.Figure(data=[go.Scatter(x=[0, 1], y=[index, index + 1])])
+            for index in range(4)
+        },
+        root_dir="individual_images",
+        include_html=True,
+        include_png=False,
+        max_figures=2,
+    )
+
+    html_assets = [
+        asset
+        for asset in result.assets
+        if asset.file_format == "html" and asset.arcname.endswith(".html")
+    ]
+    png_assets = [asset for asset in result.assets if asset.file_format == "png"]
+
+    assert len(html_assets) == 2
+    assert not png_assets
+    assert result.manifest["available_figure_count"] == 4
+    assert result.manifest["figure_count"] == 2
+    assert result.manifest["skipped_figure_count"] == 2
 
 
 def test_individual_figure_zip_uses_shared_plotly_javascript() -> None:

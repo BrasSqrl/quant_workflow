@@ -8,8 +8,9 @@ from collections.abc import Mapping
 from datetime import UTC, datetime
 from io import BytesIO, StringIO
 from pathlib import Path
+from time import perf_counter
 from typing import Any
-from zipfile import ZIP_DEFLATED, ZipFile
+from zipfile import ZIP_DEFLATED, ZIP_STORED, ZipFile
 
 import pandas as pd
 
@@ -17,7 +18,7 @@ from quant_pd_framework.decision_summary import build_decision_summary
 from quant_pd_framework.figure_exports import FigureExportAsset
 
 PACKAGE_ROOT = "llm_documentation_package"
-PACKAGE_VERSION = "1.3"
+PACKAGE_VERSION = "1.5"
 OPERATOR_INSTRUCTIONS_DIR = f"{PACKAGE_ROOT}/operator_instructions"
 DEFAULT_MAX_INCLUDED_FILE_BYTES = 25 * 1024 * 1024
 DEFAULT_MAX_TABLE_PREVIEW_ROWS = 250
@@ -45,6 +46,20 @@ HEAVY_DIRECTORY_ARTIFACT_KEYS = {
 HEAVY_REPORT_NAMES = {"interactive_report.html"}
 LLM_TEXT_SUFFIXES = {".csv", ".json", ".md", ".txt", ".html"}
 LLM_IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".svg"}
+DOCUMENT_FIGURE_PRIORITY_PATTERNS = (
+    ("roc", "auc"),
+    ("ks",),
+    ("calibration",),
+    ("threshold",),
+    ("lift", "gain"),
+    ("feature_importance", "driver", "importance"),
+    ("partial_dependence", "pdp"),
+    ("scorecard", "woe", "bin"),
+    ("actual_vs_predicted", "residual"),
+    ("psi", "stability"),
+    ("backtest",),
+    ("quantile",),
+)
 
 
 def build_llm_documentation_package(
@@ -134,9 +149,12 @@ def build_llm_documentation_package_from_payload(
     max_included_file_bytes: int = DEFAULT_MAX_INCLUDED_FILE_BYTES,
     max_chart_files: int = DEFAULT_MAX_CHART_FILES,
     generated_chart_assets: tuple[FigureExportAsset, ...] = (),
+    build_profile: list[dict[str, Any]] | None = None,
 ) -> bytes:
     """Builds a zipped LLM documentation package from a JSON-safe payload."""
 
+    package_started = perf_counter()
+    profile_rows = list(build_profile or [])
     output = BytesIO()
     included: list[dict[str, Any]] = []
     skipped: list[dict[str, Any]] = []
@@ -144,7 +162,7 @@ def build_llm_documentation_package_from_payload(
     artifacts = _mapping(payload.get("artifacts"))
     run_root = _resolve_run_root(artifacts)
 
-    with ZipFile(output, mode="w", compression=ZIP_DEFLATED) as archive:
+    with ZipFile(output, mode="w", compression=ZIP_DEFLATED, compresslevel=3) as archive:
         _write_text(
             archive,
             added_arcnames,
@@ -222,11 +240,54 @@ def build_llm_documentation_package_from_payload(
         _write_text(
             archive,
             added_arcnames,
+            f"{OPERATOR_INSTRUCTIONS_DIR}/prompts/prompt_create_docx_methodology.md",
+            _build_docx_prompt_template(),
+            included,
+            evidence_area="llm_prompt",
+            source="generated",
+            llm_use=(
+                "DOCX-specific operator prompt for controlled LLM document generation. "
+                "Do not cite as model evidence."
+            ),
+        )
+        _write_text(
+            archive,
+            added_arcnames,
             f"{PACKAGE_ROOT}/default_model_methodology_outline.md",
             _build_default_outline(),
             included,
             evidence_area="document_outline",
             source="generated",
+        )
+        _write_text(
+            archive,
+            added_arcnames,
+            f"{PACKAGE_ROOT}/DOCX_BUILD_INSTRUCTIONS.md",
+            _build_docx_build_instructions(),
+            included,
+            evidence_area="docx_authoring_control",
+            source="generated",
+            llm_use="DOCX authoring instructions for LLM or code-enabled document generation.",
+        )
+        _write_text(
+            archive,
+            added_arcnames,
+            f"{PACKAGE_ROOT}/MODEL_DOCUMENT_STYLE_GUIDE.md",
+            _build_model_document_style_guide(),
+            included,
+            evidence_area="docx_authoring_control",
+            source="generated",
+            llm_use="Formatting and style guide for model methodology DOCX output.",
+        )
+        _write_text(
+            archive,
+            added_arcnames,
+            f"{PACKAGE_ROOT}/DOCX_QUALITY_CHECKLIST.md",
+            _build_docx_quality_checklist(),
+            included,
+            evidence_area="docx_authoring_control",
+            source="generated",
+            llm_use="Final DOCX quality checklist for human review and LLM self-checking.",
         )
         section_map = _build_section_evidence_map(payload)
         _write_json(
@@ -247,6 +308,12 @@ def build_llm_documentation_package_from_payload(
             evidence_area="section_evidence_map",
             source="generated",
             llm_use="Maps methodology document sections to exact package evidence sources.",
+        )
+        _write_section_evidence_folders(
+            archive=archive,
+            added_arcnames=added_arcnames,
+            section_map=section_map,
+            included=included,
         )
         regulatory_crosswalk = _build_regulatory_crosswalk(payload)
         _write_json(
@@ -504,6 +571,29 @@ def build_llm_documentation_package_from_payload(
             skipped=skipped,
             max_included_file_bytes=max_included_file_bytes,
         )
+        figure_placement_rows = _build_figure_placement_manifest(included)
+        _write_csv(
+            archive,
+            added_arcnames,
+            f"{PACKAGE_ROOT}/figure_placement_manifest.csv",
+            figure_placement_rows,
+            included,
+            evidence_area="figure_placement_manifest",
+            source="generated",
+            llm_use=(
+                "DOCX figure placement plan. Use chart file paths as visual evidence, "
+                "but cite the underlying chart/table evidence named in this manifest."
+            ),
+        )
+        _write_json(
+            archive,
+            added_arcnames,
+            f"{PACKAGE_ROOT}/figure_placement_manifest.json",
+            figure_placement_rows,
+            included,
+            evidence_area="figure_placement_manifest",
+            source="generated",
+        )
         _write_text(
             archive,
             added_arcnames,
@@ -513,6 +603,27 @@ def build_llm_documentation_package_from_payload(
             evidence_area="chart_interpretation_brief",
             source="generated",
             llm_use="Chart inventory and interpretation guardrails for document drafting.",
+        )
+        profile_rows.append(
+            {
+                "stage": "assemble_llm_package",
+                "elapsed_seconds": round(perf_counter() - package_started, 3),
+                "included_file_count_before_profile": len(included),
+                "skipped_file_count_before_profile": len(skipped),
+                "note": (
+                    "Package assembly timing excludes the final bytes returned to the "
+                    "Streamlit download widget."
+                ),
+            }
+        )
+        _write_json(
+            archive,
+            added_arcnames,
+            f"{PACKAGE_ROOT}/llm_package_build_profile.json",
+            profile_rows,
+            included,
+            evidence_area="package_build_profile",
+            source="generated",
         )
         checklist_rows = _build_evidence_checklist(included, skipped)
         _write_csv(
@@ -729,7 +840,11 @@ def _include_generated_chart_assets(
                 )
             )
             continue
-        archive.writestr(asset.arcname, asset.data)
+        archive.writestr(
+            asset.arcname,
+            asset.data,
+            compress_type=_compress_type_for_generated_asset(asset),
+        )
         added_arcnames.add(asset.arcname)
         included.append(
             {
@@ -755,6 +870,12 @@ def _generated_chart_llm_use(asset: FigureExportAsset) -> str:
     if asset.file_format == "json":
         return "Manifest listing generated individual chart files and export warnings."
     return "Supporting file for generated chart evidence."
+
+
+def _compress_type_for_generated_asset(asset: FigureExportAsset) -> int:
+    if asset.file_format == "png":
+        return ZIP_STORED
+    return ZIP_DEFLATED
 
 
 def _include_table_directory(
@@ -935,7 +1056,7 @@ def _include_parquet_table_as_csv(
         )
         return
     try:
-        frame = pd.read_parquet(path)
+        frame, original_rows, original_columns = _read_parquet_table_preview(path)
     except Exception as exc:  # pragma: no cover - defensive against parquet engine issues.
         skipped.append(
             _skip_record(
@@ -945,7 +1066,7 @@ def _include_parquet_table_as_csv(
             )
         )
         return
-    if _looks_row_level_table(path.stem, frame):
+    if _looks_row_level_table(path.stem, frame, total_rows=original_rows):
         skipped.append(
             _skip_record(
                 key="tables_dir",
@@ -969,9 +1090,54 @@ def _include_parquet_table_as_csv(
             "evidence_area": "diagnostic_tables",
             "source": "converted_parquet_table",
             "size_bytes": len(csv_text.encode("utf-8")),
-            "llm_use": "Converted diagnostic table for LLM-readable evidence review.",
+            "llm_use": (
+                "Converted diagnostic table preview for LLM-readable evidence review. "
+                f"Included {frame.shape[0]:,} of {original_rows:,} rows and "
+                f"{frame.shape[1]:,} of {original_columns:,} columns."
+            ),
         }
     )
+
+
+def _read_parquet_table_preview(path: Path) -> tuple[pd.DataFrame, int, int]:
+    """Reads only the LLM preview window from a Parquet table when possible."""
+
+    try:
+        import pyarrow.parquet as pq
+    except ImportError:  # pragma: no cover - pyarrow is expected with parquet support.
+        frame = pd.read_parquet(path)
+        original_rows, original_columns = frame.shape
+        return (
+            frame.iloc[
+                :DEFAULT_MAX_TABLE_PREVIEW_ROWS,
+                :DEFAULT_MAX_TABLE_PREVIEW_COLUMNS,
+            ].copy(),
+            int(original_rows),
+            int(original_columns),
+        )
+
+    parquet_file = pq.ParquetFile(path)
+    metadata = parquet_file.metadata
+    original_rows = int(metadata.num_rows) if metadata is not None else 0
+    column_names = list(parquet_file.schema_arrow.names)
+    selected_columns = column_names[:DEFAULT_MAX_TABLE_PREVIEW_COLUMNS]
+    frames: list[pd.DataFrame] = []
+    remaining_rows = DEFAULT_MAX_TABLE_PREVIEW_ROWS
+    for row_group_index in range(parquet_file.num_row_groups):
+        if remaining_rows <= 0:
+            break
+        table = parquet_file.read_row_group(row_group_index, columns=selected_columns)
+        if table.num_rows == 0:
+            continue
+        row_group_frame = table.to_pandas()
+        frames.append(row_group_frame.head(remaining_rows))
+        remaining_rows -= min(len(row_group_frame), remaining_rows)
+
+    if frames:
+        preview = pd.concat(frames, ignore_index=True)
+    else:
+        preview = pd.DataFrame(columns=selected_columns)
+    return preview, original_rows, len(column_names)
 
 
 def _write_diagnostic_table_previews(
@@ -1167,16 +1333,20 @@ Recommended use:
 
 1. Review `README_LLM_PACKAGE.md`, `EVIDENCE_INDEX.csv`, `DO_NOT_CITE.md`,
    `MODEL_FACTS_DIGEST.md`, and `source_citation_map.csv`.
-2. Review `document_section_evidence_map.csv`, `approved_claims.json`,
+2. Review `DOCX_BUILD_INSTRUCTIONS.md`, `MODEL_DOCUMENT_STYLE_GUIDE.md`,
+   `DOCX_QUALITY_CHECKLIST.md`, `figure_placement_manifest.csv`,
+   `document_section_evidence_map.csv`, `approved_claims.json`,
    `target_document_schema.json`, `documentation_gaps.md`,
    `evidence_strength_policy.json`, `document_completion_rules.json`,
    and `citation_rules.md`.
-3. Add your institution-specific table of contents to `document_template/` if needed.
-4. Use the controlled prompt sequence in `operator_instructions/` when you want
+3. Review `llm_package_build_profile.json` if package preparation took longer
+   than expected.
+4. Add your institution-specific table of contents to `document_template/` if needed.
+5. Use the controlled prompt sequence in `operator_instructions/` when you want
    a plan, draft, and validation sequence.
-5. Require the LLM to cite source files for factual claims.
-6. Run or follow `tools/validate_llm_draft.py` after drafting.
-7. Have model-development, validation, and governance reviewers verify the draft.
+6. Require the LLM to cite source files for factual claims.
+7. Run or follow `tools/validate_llm_draft.py` after drafting.
+8. Have model-development, validation, and governance reviewers verify the draft.
 
 Citation boundary:
 
@@ -1192,6 +1362,10 @@ Privacy posture:
 - Row-level prediction output is excluded by default.
 - Serialized model binaries are excluded by default.
 - Full code snapshots and monitoring handoff folders are excluded by default.
+- Generated chart evidence is capped. HTML files support review, and a small
+  document-ready PNG subset is included for DOCX figure insertion. Use the
+  separate Step 5 `Download Individual Images` action when every standalone PNG
+  chart file is required.
 """
 
 
@@ -1226,12 +1400,213 @@ Instructions:
 9. Follow `target_document_schema.json`, `evidence_strength_policy.json`,
    `document_completion_rules.json`, `controlled_vocabulary.json`, and
    `regulatory_language_guardrails.md`.
+10. If your environment supports file generation, follow
+    `DOCX_BUILD_INSTRUCTIONS.md` and create `model_methodology.docx`. If not,
+    create Markdown with image placeholders from `figure_placement_manifest.csv`.
 
 Deliverable:
 
-- A complete Markdown model methodology document.
+- A complete DOCX model methodology document when possible, otherwise a
+  Markdown fallback with explicit figure placeholders.
 - A short list of unresolved documentation gaps.
 - A citation appendix mapping major sections to package source files.
+"""
+
+
+def _build_docx_prompt_template() -> str:
+    return """# Prompt: Create DOCX Model Methodology Document
+
+You are creating a model methodology / technical model document for regulated
+model-risk review. Use only the files in the current extracted LLM documentation
+package directory.
+
+Primary deliverable:
+
+- If your environment supports Word document generation, create
+  `model_methodology.docx`.
+- If your environment cannot generate `.docx`, create
+  `model_methodology.md` and include explicit image placeholders that a reviewer
+  can insert into Word.
+
+Required files to read first:
+
+- `README_LLM_PACKAGE.md`
+- `DOCX_BUILD_INSTRUCTIONS.md`
+- `MODEL_DOCUMENT_STYLE_GUIDE.md`
+- `DOCX_QUALITY_CHECKLIST.md`
+- `figure_placement_manifest.csv`
+- `EVIDENCE_INDEX.csv`
+- `DO_NOT_CITE.md`
+- `source_citation_map.csv`
+- `document_section_evidence_map.csv`
+- `target_document_schema.json`
+- `approved_claims.json`
+- `documentation_gaps.md`
+- `MODEL_FACTS_DIGEST.md`
+
+DOCX rules:
+
+1. Use Word heading styles for all sections.
+2. Use numbered sections aligned to the supplied table of contents or default
+   outline.
+3. Convert important CSV/JSON summaries into clean Word tables, not pasted raw
+   text dumps.
+4. Insert only figures marked `insert_or_appendix = body` in
+   `figure_placement_manifest.csv` into the main body.
+5. Put secondary figures marked `appendix` in an appendix or omit them if they do
+   not support a specific claim.
+6. Every figure must have a title, caption, figure number, and package citation.
+7. Every factual claim must cite a file marked `cite_as_evidence=true` in
+   `EVIDENCE_INDEX.csv`.
+8. Do not cite `operator_instructions/`, `document_template/`, `tools/`,
+   prompts, rubrics, validators, style guides, or files listed in
+   `DO_NOT_CITE.md` as model evidence.
+9. Preserve warnings, failed checks, limitations, and documentation gaps.
+10. Do not state that the model is approved, validated, compliant, or
+    production-ready unless explicit package evidence supports that statement.
+
+Output requirements:
+
+- Create `model_methodology.docx` when possible.
+- Include a short `DOCX_BUILD_NOTES.md` explaining which images and evidence
+  sources were used.
+- If `.docx` cannot be created, provide Markdown with image placeholders using
+  the exact package paths from `figure_placement_manifest.csv`.
+"""
+
+
+def _build_docx_build_instructions() -> str:
+    return """# DOCX Build Instructions
+
+Use this file when asking an LLM or code-enabled assistant to create a Word
+document from this package.
+
+## Required Output
+
+- Preferred file: `model_methodology.docx`
+- Fallback file: `model_methodology.md` with image placeholders and captions
+- Supporting note: `DOCX_BUILD_NOTES.md`
+
+## Document Structure
+
+1. Use the institution-specific table of contents in `document_template/` if one
+   was supplied.
+2. If no custom table of contents exists, use
+   `default_model_methodology_outline.md`.
+3. Use the section-by-section evidence folders in `document_sections/` to keep
+   each section tied to approved package evidence.
+4. Use `target_document_schema.json` for required sections, minimum evidence,
+   and missing-evidence behavior.
+
+## Figure Use
+
+- Use `figure_placement_manifest.csv` as the authority for which visuals belong
+  in the main document versus the appendix.
+- Prefer PNG files from `source_artifacts/figures/png/` for DOCX insertion.
+- HTML chart files are review aids and should not be embedded directly in Word.
+- Do not insert every chart. Insert only visuals that support a specific
+  methodology, performance, calibration, stability, explainability, or
+  limitation claim.
+- Every inserted figure must include:
+  - figure number
+  - descriptive title
+  - one- to three-sentence caption
+  - package citation
+  - short explanation of why the visual matters
+
+## Tables
+
+- Convert high-value CSV/JSON evidence into readable Word tables.
+- Keep long evidence inventories in appendices.
+- Do not paste raw JSON blocks into the main body unless the document section is
+  explicitly technical/reproducibility-focused.
+
+## Citation Controls
+
+- Cite every factual claim using package paths and fields.
+- Use `EVIDENCE_INDEX.csv` and `source_citation_map.csv` to confirm whether a
+  source is citable.
+- Do not cite prompts, validators, style guides, checklists, or files listed in
+  `DO_NOT_CITE.md` as model-run evidence.
+- If evidence is absent, write `Evidence not found in package`.
+
+## Fallback When DOCX Is Not Supported
+
+If the LLM environment cannot create `.docx`, produce Markdown with this image
+placeholder pattern:
+
+```markdown
+![Figure 1: Calibration Curve](source_artifacts/figures/png/calibration_curve.png)
+
+Figure 1. Calibration Curve. Caption text. [source: package/path > field_or_section]
+```
+"""
+
+
+def _build_model_document_style_guide() -> str:
+    return """# Model Document Style Guide
+
+## Tone
+
+- Use formal model-risk documentation language.
+- Prefer precise, evidence-backed statements over promotional language.
+- Use `supports`, `indicates`, or `is consistent with` rather than `proves`.
+- Do not imply approval, validation sign-off, compliance, or production readiness
+  unless explicit package evidence supports it.
+
+## Layout
+
+- Use numbered headings.
+- Keep paragraphs short: usually three to six sentences.
+- Use tables for metrics, split summaries, top feature drivers, documentation
+  gaps, and validation findings.
+- Use figures sparingly in the main body and move supporting visuals to the
+  appendix.
+- Avoid long raw artifact dumps in the body.
+
+## Figure Formatting
+
+- Figure title: bold, descriptive, and tied to the model evidence.
+- Caption: explain what the chart shows, why it matters, and the source.
+- Use one large figure per page when possible.
+- Standard body figure width: 6.5 inches.
+- Appendix figure width: 7.0 inches.
+
+## Table Formatting
+
+- Use short table titles.
+- Include only fields needed for the document claim.
+- Round numeric values consistently where the source does not require exact
+  precision.
+- Keep full inventories in appendices.
+
+## Required Evidence Language
+
+- Carry forward warnings, failed checks, and limitations.
+- Use `Evidence not found in package` for missing facts.
+- Label LLM-created language as draft material requiring human review.
+"""
+
+
+def _build_docx_quality_checklist() -> str:
+    return """# DOCX Quality Checklist
+
+Before treating an LLM-generated Word document as ready for human review, verify:
+
+- Every factual claim has a package citation.
+- Every citation maps to a citable source in `EVIDENCE_INDEX.csv` or
+  `source_citation_map.csv`.
+- No prompt, style, validator, checklist, or `DO_NOT_CITE.md` file is cited as
+  model evidence.
+- Every inserted figure appears in `figure_placement_manifest.csv`.
+- Every inserted figure has a title, figure number, caption, and citation.
+- Every table has a title and clear source reference.
+- Warnings, failed checks, limitations, and documentation gaps are preserved.
+- No raw row-level input data or row-level predictions are included.
+- The document does not claim approval, validation sign-off, compliance, or
+  production readiness unless explicit evidence supports that statement.
+- The document includes a final unresolved-items section.
+- A qualified model-development or validation reviewer has reviewed the draft.
 """
 
 
@@ -1255,11 +1630,14 @@ produce a controlled documentation plan.
 
 Read these files first:
 - README_LLM_PACKAGE.md
+- DOCX_BUILD_INSTRUCTIONS.md
+- MODEL_DOCUMENT_STYLE_GUIDE.md
 - EVIDENCE_INDEX.csv
 - DO_NOT_CITE.md
 - MODEL_FACTS_DIGEST.md
 - llm_evidence_manifest.json
 - source_citation_map.csv
+- figure_placement_manifest.csv
 - target_document_schema.json
 - template_binding.json
 - document_section_evidence_map.csv
@@ -1314,10 +1692,17 @@ Use only files marked cite_as_evidence=true in EVIDENCE_INDEX.csv for factual
 claims. Do not cite operator_instructions/, document_template/, tools/, prompt
 files, rubrics, validators, or files listed in DO_NOT_CITE.md as model evidence.
 
-Draft the full model methodology / technical model document.
+Draft the full model methodology / technical model document. If your
+environment supports Word file generation, create `model_methodology.docx`.
+If your environment cannot create `.docx`, create Markdown with explicit image
+placeholders using paths from `figure_placement_manifest.csv`.
 
 Required sources:
 - the reviewed documentation plan
+- DOCX_BUILD_INSTRUCTIONS.md
+- MODEL_DOCUMENT_STYLE_GUIDE.md
+- DOCX_QUALITY_CHECKLIST.md
+- figure_placement_manifest.csv
 - EVIDENCE_INDEX.csv
 - DO_NOT_CITE.md
 - MODEL_FACTS_DIGEST.md
@@ -1345,10 +1730,10 @@ Rules:
   default_model_methodology_outline.md.
 - Cite every factual claim using this style:
   [source: package/path > field_or_section]
-- When chart image files are present in source_artifacts/figures/, insert only
-  the most relevant high-value visuals into the draft using Markdown image
-  syntax. Use this form:
-  ![Descriptive chart title](source_artifacts/figures/path/to/chart.png)
+- When chart image files are present in source_artifacts/figures/png/, insert
+  only the body-priority visuals identified in figure_placement_manifest.csv.
+  If creating Markdown fallback output, use this form:
+  ![Descriptive chart title](source_artifacts/figures/png/chart.png)
 - For every inserted chart, include a short caption explaining what the chart
   shows, why it matters, and the package source citation.
 - Do not embed every available chart. Prefer charts that support key
@@ -1363,11 +1748,14 @@ Rules:
   regulatory_language_guardrails.md.
 
 Deliver:
-1. A complete Markdown model methodology / technical model document.
+1. A complete `model_methodology.docx` file when possible, otherwise a Markdown
+   fallback with figure placeholders.
 2. A documentation gaps section.
 3. A limitations and assumptions section.
 4. A citation appendix mapping major sections to package evidence.
 5. A short list of items requiring human review before the document can be used.
+6. `DOCX_BUILD_NOTES.md` summarizing inserted figures, omitted figures, and any
+   formatting limitations.
 
 Prompt 3: Validate The Draft Against Evidence
 ---------------------------------------------
@@ -1387,6 +1775,7 @@ Review the draft against:
 - document_completion_rules.json
 - draft_validation_rules.json
 - document_quality_rubric.md
+- DOCX_QUALITY_CHECKLIST.md
 - citation_coverage_validator.md
 - unsupported_claim_detector.md
 - evidence_strength_policy.json
@@ -1404,6 +1793,9 @@ Perform these checks:
 - Identify quantitative values that should be verified against source evidence.
 - Confirm that warnings, failed checks, limitations, and documentation gaps were
   preserved.
+- Confirm every inserted figure has a title, caption, citation, and appears in
+  figure_placement_manifest.csv.
+- Confirm the DOCX or Markdown fallback follows MODEL_DOCUMENT_STYLE_GUIDE.md.
 - Score the draft using document_quality_rubric.md.
 - Identify sections that are complete, partially supported, missing evidence, or
   blocked.
@@ -1647,6 +2039,88 @@ def _section_row(
         "source_fields": fields,
         "evidence_status": _source_status(payload, sources),
         "citation_instruction": instruction,
+    }
+
+
+def _write_section_evidence_folders(
+    *,
+    archive: ZipFile,
+    added_arcnames: set[str],
+    section_map: list[dict[str, Any]],
+    included: list[dict[str, Any]],
+) -> None:
+    for index, row in enumerate(section_map, start=1):
+        section_name = str(row.get("document_section", f"Section {index}"))
+        folder = f"{PACKAGE_ROOT}/document_sections/{index:02d}_{_safe_name(section_name)}"
+        _write_text(
+            archive,
+            added_arcnames,
+            f"{folder}/SECTION_BRIEF.md",
+            _build_section_brief_markdown(index=index, row=row),
+            included,
+            evidence_area="section_evidence_map",
+            source="generated",
+            llm_use=(
+                "Section-specific drafting brief that maps document content to citable "
+                "package evidence."
+            ),
+        )
+        _write_csv(
+            archive,
+            added_arcnames,
+            f"{folder}/section_evidence.csv",
+            [_section_evidence_csv_row(row)],
+            included,
+            evidence_area="section_evidence_map",
+            source="generated",
+            llm_use="Section-specific source map for DOCX methodology drafting.",
+        )
+
+
+def _build_section_brief_markdown(*, index: int, row: Mapping[str, Any]) -> str:
+    section_name = str(row.get("document_section", f"Section {index}"))
+    sources = row.get("primary_sources", [])
+    fields = row.get("source_fields", [])
+    lines = [
+        f"# {index:02d}. {section_name}",
+        "",
+        f"Objective: {row.get('writing_objective', '')}",
+        "",
+        f"Evidence status: `{row.get('evidence_status', '')}`",
+        "",
+        "## Primary Sources",
+        "",
+    ]
+    lines.extend(f"- `{source}`" for source in sources if source)
+    lines.extend(["", "## Source Fields", ""])
+    lines.extend(f"- `{field}`" for field in fields if field)
+    lines.extend(
+        [
+            "",
+            "## Writing Instruction",
+            "",
+            str(row.get("citation_instruction", "")),
+            "",
+            "## DOCX Guidance",
+            "",
+            "- Use this brief to draft the corresponding Word section.",
+            "- Use citable source files for factual claims.",
+            "- Move missing or weak evidence into the open-items section.",
+            "- Do not cite this brief as the only evidence for a factual claim when an "
+            "underlying source file is available.",
+        ]
+    )
+    return "\n".join(lines).strip() + "\n"
+
+
+def _section_evidence_csv_row(row: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        "document_section": row.get("document_section", ""),
+        "writing_objective": row.get("writing_objective", ""),
+        "primary_sources": "; ".join(str(source) for source in row.get("primary_sources", [])),
+        "source_fields": "; ".join(str(field) for field in row.get("source_fields", [])),
+        "evidence_status": row.get("evidence_status", ""),
+        "citation_instruction": row.get("citation_instruction", ""),
     }
 
 
@@ -1970,7 +2444,11 @@ def _build_target_document_schema(
     return {
         "schema_version": "1.0",
         "package_version": PACKAGE_VERSION,
-        "intended_output": "Model methodology / technical model document in Markdown.",
+        "intended_output": (
+            "Model methodology / technical model document in DOCX when the LLM "
+            "environment supports file generation; Markdown with figure placeholders "
+            "is the fallback."
+        ),
         "run_context": {
             "run_id": run.get("run_id", ""),
             "model_type": run.get("model_type", ""),
@@ -1981,6 +2459,7 @@ def _build_target_document_schema(
             "Use the supplied table of contents when present; otherwise use the default outline.",
             "Every factual claim must cite package evidence using the required citation style.",
             "Use approved_claims.json as the primary claim library.",
+            "Use figure_placement_manifest.csv for any DOCX or Markdown figure insertion.",
             "Disclose documentation_gaps.md items instead of filling gaps with assumptions.",
             "Do not state the model is approved, validated, compliant, or production-ready "
             "unless explicit package evidence supports that status.",
@@ -2027,11 +2506,13 @@ def _build_evidence_strength_policy() -> dict[str, Any]:
                     "metrics_interpretation_brief.md",
                     "feature_dictionary_narrative.md",
                     "chart_interpretation_brief.md",
+                    "figure_placement_manifest.csv",
                 ],
                 "allowed_claims": [
                     "plain-English interpretations of structured run facts",
                     "section-to-evidence mapping",
                     "drafting guidance",
+                    "DOCX figure placement guidance",
                 ],
             },
             {
@@ -2098,6 +2579,8 @@ def _build_document_completion_rules() -> dict[str, Any]:
             "explicit evidence.",
             "The draft ignores a high-severity decision issue, warning, or documentation gap.",
             "The draft includes raw row-level input data or row-level predictions.",
+            "The DOCX includes a figure without a title, caption, citation, or "
+            "figure_placement_manifest.csv entry.",
         ],
         "required_artifact_checks": [
             {
@@ -2118,6 +2601,10 @@ def _build_document_completion_rules() -> dict[str, Any]:
             {
                 "file": "human_review_checklist.md",
                 "rule": "Human review must be completed before relying on the document.",
+            },
+            {
+                "file": "figure_placement_manifest.csv",
+                "rule": "Inserted DOCX figures should be selected from the placement manifest.",
             },
         ],
         "completion_status_values": [
@@ -2181,6 +2668,7 @@ def _build_draft_validation_rules() -> dict[str, Any]:
             "paragraphs naming model type, target, split design, features, or data source",
             "paragraphs interpreting performance, calibration, stability, or suitability",
             "paragraphs describing warnings, limitations, approvals, or governance status",
+            "figure captions and table captions",
         ],
         "unsupported_claim_indicators": [
             "approved",
@@ -2199,6 +2687,13 @@ def _build_draft_validation_rules() -> dict[str, Any]:
             "uncited quantitative fact list",
             "unresolved documentation gaps",
             "human reviewer sign-off checklist",
+        ],
+        "docx_specific_checks": [
+            "Every inserted figure appears in figure_placement_manifest.csv.",
+            "Every inserted figure has a title, caption, and package citation.",
+            "The main body does not contain appendix-only figures unless a reviewer "
+            "requested them.",
+            "The document uses section headings from the supplied template or default outline.",
         ],
     }
 
@@ -2250,6 +2745,7 @@ def _build_llm_redaction_policy() -> dict[str, Any]:
             "feature lineage",
             "generated run script",
             "narrative reports",
+            "capped aggregate chart images for DOCX insertion",
         ],
         "conditional_items": [
             {
@@ -2782,8 +3278,11 @@ def _write_prompt_variants(
     prompts = {
         "prompt_full_methodology.md": (
             "# Prompt: Full Model Methodology\n\n"
-            "Draft a complete model methodology document using the custom table of "
-            "contents if supplied. Use `document_section_evidence_map.csv`, "
+            "Draft a complete model methodology document. Create "
+            "`model_methodology.docx` if your environment supports Word file "
+            "generation; otherwise create a Markdown fallback. Use the custom table of "
+            "contents if supplied. Use `DOCX_BUILD_INSTRUCTIONS.md`, "
+            "`figure_placement_manifest.csv`, `document_section_evidence_map.csv`, "
             "`approved_claims.json`, `documentation_gaps.md`, and `citation_rules.md`. "
             "Every factual claim must cite package evidence.\n"
         ),
@@ -2829,10 +3328,10 @@ def _write_prompt_variants(
             "`approved_claims.json` as the primary claim library, follow "
             "`target_document_schema.json`, use controlled vocabulary, and cite every "
             "factual claim. Do not cite files listed in `DO_NOT_CITE.md`. "
-            "Preserve all unresolved gaps. When chart image files are "
-            "present in `source_artifacts/figures/`, insert only the most relevant "
-            "high-value visuals using Markdown image syntax, add a concise caption, "
-            "and cite the chart source. Do not embed every available chart.\n"
+            "Preserve all unresolved gaps. If creating DOCX output, follow "
+            "`DOCX_BUILD_INSTRUCTIONS.md` and insert only body-priority PNGs listed "
+            "in `figure_placement_manifest.csv`. If DOCX is not supported, use "
+            "Markdown image placeholders with captions and citations.\n"
         ),
         "prompt_3_validate_draft_against_evidence.md": (
             "# Prompt 3: Validate Draft Against Evidence\n\n"
@@ -2874,6 +3373,8 @@ The LLM must follow these rules:
 8. If a source does not exist, write `Evidence not found in package`.
 9. Do not cite prompts, templates, validators, rubrics, or operator instructions as evidence.
 10. Do not infer approvals, owners, thresholds, or limitations that are not present.
+11. Every DOCX figure caption must cite the chart path and the companion evidence
+    used to interpret the chart.
 
 Preferred source order:
 
@@ -2939,6 +3440,10 @@ Before using an LLM-generated methodology document, a qualified reviewer should 
 - The document does not reference raw data that was excluded from the package.
 - The citation appendix maps major claims back to package sources.
 - Institution-specific table-of-contents requirements were followed.
+- DOCX figures, if present, appear in `figure_placement_manifest.csv` and have
+  captions, source citations, and section relevance.
+- The document follows `MODEL_DOCUMENT_STYLE_GUIDE.md` and was checked against
+  `DOCX_QUALITY_CHECKLIST.md`.
 """
 
 
@@ -3026,6 +3531,187 @@ def _build_metrics_interpretation_brief(payload: Mapping[str, Any]) -> str:
     return "\n".join(lines).strip() + "\n"
 
 
+def _build_figure_placement_manifest(included: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    grouped: dict[str, dict[str, str]] = {}
+    for record in included:
+        package_path = str(record.get("package_path", ""))
+        if (
+            record.get("source") != "generated_chart_export"
+            or "/source_artifacts/figures/" not in package_path
+        ):
+            continue
+        path = Path(package_path)
+        suffix = path.suffix.lower().lstrip(".")
+        if suffix not in {"png", "html"}:
+            continue
+        stem = path.stem
+        grouped.setdefault(stem, {})[suffix] = package_path
+
+    if not grouped:
+        return [
+            {
+                "figure_rank": "",
+                "figure_name": "no_generated_chart_assets",
+                "image_path": "",
+                "html_review_path": "",
+                "file_format": "",
+                "recommended_section": "Appendices And Source Evidence Index",
+                "caption": "No generated chart assets were included in this package.",
+                "why_include": "No chart insertion is available for the DOCX draft.",
+                "source_chart": "",
+                "citation_source": "",
+                "priority": "",
+                "width_inches": "",
+                "insert_or_appendix": "not_available",
+                "docx_instruction": "Do not invent figures. Draft from available tables and text.",
+            }
+        ]
+
+    rows: list[dict[str, Any]] = []
+    ordered_names = sorted(grouped, key=lambda name: (_document_figure_priority(name), name))
+    for position, figure_name in enumerate(ordered_names, start=1):
+        assets = grouped[figure_name]
+        metadata = _document_figure_metadata(figure_name)
+        preferred_path = assets.get("png") or assets.get("html", "")
+        preferred_format = "png" if assets.get("png") else "html"
+        body_priority = bool(assets.get("png")) and position <= 8
+        rows.append(
+            {
+                "figure_rank": position,
+                "figure_name": figure_name,
+                "image_path": preferred_path,
+                "html_review_path": assets.get("html", ""),
+                "file_format": preferred_format,
+                "recommended_section": metadata["recommended_section"],
+                "caption": metadata["caption"],
+                "why_include": metadata["why_include"],
+                "source_chart": preferred_path,
+                "citation_source": preferred_path,
+                "priority": metadata["priority"],
+                "width_inches": "6.5" if body_priority else "7.0",
+                "insert_or_appendix": "body" if body_priority else "appendix",
+                "docx_instruction": (
+                    "Insert the PNG in the main body with a figure number and caption."
+                    if body_priority
+                    else (
+                        "Use as appendix support or omit unless it directly supports a "
+                        "document claim."
+                    )
+                ),
+            }
+        )
+    return rows
+
+
+def _document_figure_priority(name: str) -> int:
+    normalized = name.lower().replace("-", "_").replace(" ", "_")
+    for priority, patterns in enumerate(DOCUMENT_FIGURE_PRIORITY_PATTERNS):
+        if any(pattern in normalized for pattern in patterns):
+            return priority
+    return len(DOCUMENT_FIGURE_PRIORITY_PATTERNS)
+
+
+def _document_figure_metadata(name: str) -> dict[str, str | int]:
+    normalized = name.lower().replace("-", "_").replace(" ", "_")
+    title = name.replace("_", " ").title()
+    if "roc" in normalized or "auc" in normalized:
+        return {
+            "recommended_section": "Performance, Calibration, Stability, And Statistical Testing",
+            "caption": (
+                f"{title} summarizes ranking performance. Use it with metric tables to "
+                "support discrimination discussion."
+            ),
+            "why_include": "High-value performance evidence for binary model discrimination.",
+            "priority": 1,
+        }
+    if "ks" in normalized:
+        return {
+            "recommended_section": "Performance, Calibration, Stability, And Statistical Testing",
+            "caption": (
+                f"{title} summarizes event/non-event separation. Use it with KS table "
+                "evidence and threshold discussion."
+            ),
+            "why_include": "Common credit-risk validation evidence for score separation.",
+            "priority": 2,
+        }
+    if "calibration" in normalized:
+        return {
+            "recommended_section": "Performance, Calibration, Stability, And Statistical Testing",
+            "caption": (
+                f"{title} compares predicted risk to observed outcomes. Use it to discuss "
+                "probability alignment and calibration limitations."
+            ),
+            "why_include": "Key evidence for probability model reliability.",
+            "priority": 3,
+        }
+    if "threshold" in normalized or "lift" in normalized or "gain" in normalized:
+        return {
+            "recommended_section": "Performance, Calibration, Stability, And Statistical Testing",
+            "caption": (
+                f"{title} shows decision-threshold or ranking tradeoffs. Use it only with "
+                "the selected threshold policy and companion metrics."
+            ),
+            "why_include": "Useful for decision cutoff, lift, gain, and operating-point review.",
+            "priority": 4,
+        }
+    if any(token in normalized for token in ("feature_importance", "driver", "importance")):
+        return {
+            "recommended_section": "Features, Transformations, Imputation, And Lineage",
+            "caption": (
+                f"{title} summarizes the strongest model drivers. Use it with feature "
+                "lineage evidence and avoid unsupported causal interpretations."
+            ),
+            "why_include": "Supports feature-driver and explainability discussion.",
+            "priority": 5,
+        }
+    if "partial_dependence" in normalized or "pdp" in normalized:
+        return {
+            "recommended_section": "Assumptions, Limitations, And Open Review Items",
+            "caption": (
+                f"{title} shows modeled response sensitivity. Use it as directional "
+                "explainability evidence, not as causal proof."
+            ),
+            "why_include": "Helpful for explainability and sensitivity discussion.",
+            "priority": 6,
+        }
+    if any(token in normalized for token in ("scorecard", "woe", "bin")):
+        return {
+            "recommended_section": "Features, Transformations, Imputation, And Lineage",
+            "caption": (
+                f"{title} summarizes binning or scorecard behavior. Use it with WoE/IV "
+                "tables and scorecard lineage."
+            ),
+            "why_include": "Useful for scorecard transparency and binning review.",
+            "priority": 7,
+        }
+    if "actual_vs_predicted" in normalized or "residual" in normalized:
+        return {
+            "recommended_section": "Performance, Calibration, Stability, And Statistical Testing",
+            "caption": (
+                f"{title} summarizes prediction error patterns. Use it with residual "
+                "diagnostics and limitations."
+            ),
+            "why_include": "Useful for continuous model fit and residual review.",
+            "priority": 8,
+        }
+    if "psi" in normalized or "stability" in normalized:
+        return {
+            "recommended_section": "Performance, Calibration, Stability, And Statistical Testing",
+            "caption": (
+                f"{title} summarizes stability evidence. Use it to discuss population or "
+                "feature shift where supported by companion tables."
+            ),
+            "why_include": "Supports stability and drift discussion.",
+            "priority": 9,
+        }
+    return {
+        "recommended_section": "Appendices And Source Evidence Index",
+        "caption": f"{title} is supporting visual evidence from the completed run.",
+        "why_include": "Supporting visual evidence; include only if tied to a specific claim.",
+        "priority": 99,
+    }
+
+
 def _build_chart_interpretation_brief(
     included: list[dict[str, Any]],
     skipped: list[dict[str, Any]],
@@ -3046,6 +3732,8 @@ def _build_chart_interpretation_brief(
         "# Chart Interpretation Brief",
         "",
         "Use this brief to discuss charts without hallucinating visual conclusions.",
+        "Use `figure_placement_manifest.csv` to decide which PNG files should be "
+        "inserted into a DOCX methodology document.",
         "",
     ]
     if chart_rows:
@@ -3056,7 +3744,7 @@ def _build_chart_interpretation_brief(
             )
     else:
         lines.append(
-            "No individual chart files were included. Use narrative chart descriptions, "
+            "No standalone chart files were included. Use narrative chart descriptions, "
             "diagnostic tables, and the interactive report reference if present."
         )
     if skipped_charts:
@@ -3351,6 +4039,16 @@ def _build_evidence_checklist(
             "Useful for visual evidence discussion.",
         ),
         (
+            "Figure placement manifest",
+            "figure_placement_manifest",
+            "Required when generating DOCX output with inserted charts.",
+        ),
+        (
+            "DOCX build instructions",
+            "docx_build_instructions",
+            "Required when asking an LLM to generate Word-ready output.",
+        ),
+        (
             "Human review checklist",
             "human_review_checklist",
             "Required before using an LLM-generated document.",
@@ -3532,8 +4230,13 @@ def _classify_included_record(record: Mapping[str, Any]) -> dict[str, Any]:
         for token in (
             "readme_llm_package",
             "llm_evidence_manifest",
+            "llm_package_build_profile",
             "evidence_index",
             "do_not_cite",
+            "docx_build_instructions",
+            "docx_quality_checklist",
+            "model_document_style_guide",
+            "figure_placement_manifest",
             "citation_rules",
             "evidence_strength_policy",
             "document_completion_rules",
@@ -3830,7 +4533,12 @@ def _looks_row_level_path(path: Path) -> bool:
     return any(token in path_text for token in row_level_tokens)
 
 
-def _looks_row_level_table(name: str, table: pd.DataFrame) -> bool:
+def _looks_row_level_table(
+    name: str,
+    table: pd.DataFrame,
+    *,
+    total_rows: int | None = None,
+) -> bool:
     name_lower = name.lower()
     if any(token in name_lower for token in ("prediction", "input_snapshot", "row_level")):
         return True
@@ -3843,7 +4551,8 @@ def _looks_row_level_table(name: str, table: pd.DataFrame) -> bool:
         "residual",
     }
     identifier_like = {"loan_id", "account_id", "customer_id", "entity_id", "split"}
-    return bool(score_columns & columns) and bool(identifier_like & columns) and len(table) > 500
+    row_count = int(total_rows) if total_rows is not None else len(table)
+    return bool(score_columns & columns) and bool(identifier_like & columns) and row_count > 500
 
 
 def _evidence_area_for_path(path: Path, key: str) -> str:
