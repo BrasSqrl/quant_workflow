@@ -177,11 +177,31 @@ def test_llm_documentation_package_exports_evidence_without_row_level_data() -> 
                     "llm_documentation_package/llm_evidence_manifest.json"
                 ).decode("utf-8")
             )
+            citation_map_text = archive.read(
+                "llm_documentation_package/source_citation_map.csv"
+            ).decode("utf-8")
+            evidence_index_text = archive.read(
+                "llm_documentation_package/EVIDENCE_INDEX.csv"
+            ).decode("utf-8")
+            do_not_cite_text = archive.read(
+                "llm_documentation_package/DO_NOT_CITE.md"
+            ).decode("utf-8")
 
         assert "llm_documentation_package/model_document_context.json" in names
         assert "llm_documentation_package/model_document_context.md" in names
-        assert "llm_documentation_package/prompt_generate_model_methodology.md" in names
-        assert "llm_documentation_package/THREE_PROMPTS_FOR_LLM_USE.txt" in names
+        assert "llm_documentation_package/MODEL_FACTS_DIGEST.md" in names
+        assert "llm_documentation_package/EVIDENCE_INDEX.csv" in names
+        assert "llm_documentation_package/DO_NOT_CITE.md" in names
+        assert (
+            "llm_documentation_package/operator_instructions/"
+            "prompt_generate_model_methodology.md"
+            in names
+        )
+        assert (
+            "llm_documentation_package/operator_instructions/"
+            "THREE_PROMPTS_FOR_LLM_USE.txt"
+            in names
+        )
         assert "llm_documentation_package/document_section_evidence_map.json" in names
         assert "llm_documentation_package/document_section_evidence_map.csv" in names
         assert "llm_documentation_package/approved_claims.json" in names
@@ -205,12 +225,29 @@ def test_llm_documentation_package_exports_evidence_without_row_level_data() -> 
         assert "llm_documentation_package/feature_dictionary_narrative.md" in names
         assert "llm_documentation_package/metrics_interpretation_brief.md" in names
         assert "llm_documentation_package/chart_interpretation_brief.md" in names
-        assert "llm_documentation_package/prompts/prompt_full_methodology.md" in names
-        assert "llm_documentation_package/prompts/prompt_regulatory_gap_review.md" in names
-        assert "llm_documentation_package/prompts/prompt_1_create_document_plan.md" in names
-        assert "llm_documentation_package/prompts/prompt_2_draft_from_approved_plan.md" in names
         assert (
-            "llm_documentation_package/prompts/prompt_3_validate_draft_against_evidence.md"
+            "llm_documentation_package/operator_instructions/prompts/"
+            "prompt_full_methodology.md"
+            in names
+        )
+        assert (
+            "llm_documentation_package/operator_instructions/prompts/"
+            "prompt_regulatory_gap_review.md"
+            in names
+        )
+        assert (
+            "llm_documentation_package/operator_instructions/prompts/"
+            "prompt_1_create_document_plan.md"
+            in names
+        )
+        assert (
+            "llm_documentation_package/operator_instructions/prompts/"
+            "prompt_2_draft_from_approved_plan.md"
+            in names
+        )
+        assert (
+            "llm_documentation_package/operator_instructions/prompts/"
+            "prompt_3_validate_draft_against_evidence.md"
             in names
         )
         assert "llm_documentation_package/tone_profiles/tone_regulatory_formal.md" in names
@@ -223,6 +260,10 @@ def test_llm_documentation_package_exports_evidence_without_row_level_data() -> 
         assert "llm_documentation_package/source_artifacts/config/run_config.json" in names
         assert "llm_documentation_package/source_artifacts/code/generated_run.py" in names
         assert "llm_documentation_package/source_artifacts/reports/decision_summary.md" in names
+        assert "operator_instructions" not in citation_map_text
+        assert "operator_instructions" in evidence_index_text
+        assert "cite_as_evidence" in evidence_index_text
+        assert "operator_instructions" in do_not_cite_text
         assert not any(name.endswith("quant_model.joblib") for name in names)
         assert not any("/data/input/" in name for name in names)
         assert not any("/data/predictions/" in name for name in names)

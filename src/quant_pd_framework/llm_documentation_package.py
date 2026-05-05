@@ -17,7 +17,8 @@ from quant_pd_framework.decision_summary import build_decision_summary
 from quant_pd_framework.figure_exports import FigureExportAsset
 
 PACKAGE_ROOT = "llm_documentation_package"
-PACKAGE_VERSION = "1.2"
+PACKAGE_VERSION = "1.3"
+OPERATOR_INSTRUCTIONS_DIR = f"{PACKAGE_ROOT}/operator_instructions"
 DEFAULT_MAX_INCLUDED_FILE_BYTES = 25 * 1024 * 1024
 DEFAULT_MAX_TABLE_PREVIEW_ROWS = 250
 DEFAULT_MAX_TABLE_PREVIEW_COLUMNS = 80
@@ -171,6 +172,19 @@ def build_llm_documentation_package_from_payload(
             evidence_area="llm_context",
             source="generated",
         )
+        _write_text(
+            archive,
+            added_arcnames,
+            f"{PACKAGE_ROOT}/MODEL_FACTS_DIGEST.md",
+            _build_model_facts_digest(payload),
+            included,
+            evidence_area="model_facts_digest",
+            source="generated",
+            llm_use=(
+                "High-confidence run facts for LLM drafting. Cite underlying evidence "
+                "files when making final document claims."
+            ),
+        )
         _write_json(
             archive,
             added_arcnames,
@@ -183,21 +197,27 @@ def build_llm_documentation_package_from_payload(
         _write_text(
             archive,
             added_arcnames,
-            f"{PACKAGE_ROOT}/prompt_generate_model_methodology.md",
+            f"{OPERATOR_INSTRUCTIONS_DIR}/prompt_generate_model_methodology.md",
             _build_prompt_template(),
             included,
             evidence_area="llm_prompt",
             source="generated",
+            llm_use=(
+                "Operator prompt for controlled LLM drafting. Do not cite as model evidence."
+            ),
         )
         _write_text(
             archive,
             added_arcnames,
-            f"{PACKAGE_ROOT}/THREE_PROMPTS_FOR_LLM_USE.txt",
+            f"{OPERATOR_INSTRUCTIONS_DIR}/THREE_PROMPTS_FOR_LLM_USE.txt",
             _build_three_prompt_text(),
             included,
             evidence_area="llm_prompt",
             source="generated",
-            llm_use="Copy/paste prompt sequence for controlled LLM documentation drafting.",
+            llm_use=(
+                "Copy/paste prompt sequence for controlled LLM documentation drafting. "
+                "Do not cite as model evidence."
+            ),
         )
         _write_text(
             archive,
@@ -513,11 +533,38 @@ def build_llm_documentation_package_from_payload(
             evidence_area="evidence_checklist",
             source="generated",
         )
+        evidence_index_rows = _build_evidence_index(included, skipped)
+        _write_csv(
+            archive,
+            added_arcnames,
+            f"{PACKAGE_ROOT}/EVIDENCE_INDEX.csv",
+            evidence_index_rows,
+            included,
+            evidence_area="evidence_index",
+            source="generated",
+            llm_use=(
+                "Authoritative file classification index. Only rows with "
+                "cite_as_evidence=true should support factual document claims."
+            ),
+        )
+        _write_text(
+            archive,
+            added_arcnames,
+            f"{PACKAGE_ROOT}/DO_NOT_CITE.md",
+            _build_do_not_cite_markdown(evidence_index_rows),
+            included,
+            evidence_area="citation_boundary",
+            source="generated",
+            llm_use=(
+                "Explicit list of package files that guide workflow but must not "
+                "be cited as model evidence."
+            ),
+        )
         _write_csv(
             archive,
             added_arcnames,
             f"{PACKAGE_ROOT}/source_citation_map.csv",
-            included,
+            _citable_records(included),
             included,
             evidence_area="citation_map",
             source="generated",
@@ -541,6 +588,11 @@ def build_llm_documentation_package_from_payload(
                 ),
                 "included_files": included,
                 "skipped_files": skipped,
+                "file_classification_policy": (
+                    "Use EVIDENCE_INDEX.csv as the authoritative citation boundary. "
+                    "Only files marked cite_as_evidence=true should support factual "
+                    "model-document claims."
+                ),
             },
             included,
             evidence_area="manifest",
@@ -1035,6 +1087,74 @@ def _build_context_markdown(payload: Mapping[str, Any]) -> str:
     return "\n".join(lines).strip() + "\n"
 
 
+def _build_model_facts_digest(payload: Mapping[str, Any]) -> str:
+    run = _mapping(payload.get("run"))
+    decision = _mapping(payload.get("decision_summary"))
+    feature_importance = _mapping(payload.get("feature_importance")).get("records", [])
+    table_inventory = payload.get("diagnostic_table_inventory", [])
+    warnings = payload.get("warnings", [])
+    metrics = decision.get("metrics", [])
+    issues = decision.get("issues", [])
+
+    lines = [
+        "# Model Facts Digest",
+        "",
+        (
+            "This digest summarizes high-confidence facts from the completed Quant Studio "
+            "run. Use it as orientation, but cite the underlying files listed in "
+            "`EVIDENCE_INDEX.csv` and `source_citation_map.csv` for final document claims."
+        ),
+        "",
+        "## Run Identity",
+        "",
+        f"- Run ID: `{run.get('run_id', 'n/a')}`",
+        f"- Execution mode: `{run.get('execution_mode', 'n/a')}`",
+        f"- Model type: `{run.get('model_type', 'n/a')}`",
+        f"- Target mode: `{run.get('target_mode', 'n/a')}`",
+        f"- Target column: `{run.get('target_column', 'n/a')}`",
+        f"- Labels available: `{run.get('labels_available', False)}`",
+        f"- Input shape: `{_json_safe(run.get('input_shape', {}))}`",
+        "",
+        "## Decision Summary",
+        "",
+        f"- Recommendation: `{decision.get('recommendation', 'n/a')}`",
+        f"- Decision level: `{decision.get('level', 'n/a')}`",
+        "",
+        "## Rationale",
+        "",
+    ]
+    lines.extend(f"- {item}" for item in decision.get("rationale", []) or ["Not available."])
+    lines.extend(["", "## Key Metric Rows", ""])
+    lines.extend(_markdown_table(list(metrics)[:20] if isinstance(metrics, list) else []))
+    lines.extend(["", "## Decision Issues", ""])
+    lines.extend(_markdown_table(list(issues)[:25] if isinstance(issues, list) else []))
+    lines.extend(["", "## Top Feature Drivers", ""])
+    lines.extend(
+        _markdown_table(
+            list(feature_importance)[:20] if isinstance(feature_importance, list) else []
+        )
+    )
+    lines.extend(["", "## Diagnostic Table Inventory", ""])
+    table_inventory_rows = list(table_inventory)[:80] if isinstance(table_inventory, list) else []
+    lines.extend(_markdown_table(table_inventory_rows))
+    lines.extend(["", "## Captured Warnings", ""])
+    lines.extend(f"- {warning}" for warning in warnings or ["No run warnings were captured."])
+    lines.extend(
+        [
+            "",
+            "## Use Rules",
+            "",
+            "- Do not cite operator prompt files as model evidence.",
+            "- Do not treat this digest as approval or validation sign-off.",
+            (
+                "- If a claim is not supported by a citable evidence file, mark it "
+                "as missing evidence."
+            ),
+        ]
+    )
+    return "\n".join(lines).strip() + "\n"
+
+
 def _build_readme() -> str:
     return """# LLM Documentation Package
 
@@ -1045,17 +1165,26 @@ not certify compliance.
 
 Recommended use:
 
-1. Review `llm_evidence_manifest.json` and `source_citation_map.csv`.
+1. Review `README_LLM_PACKAGE.md`, `EVIDENCE_INDEX.csv`, `DO_NOT_CITE.md`,
+   `MODEL_FACTS_DIGEST.md`, and `source_citation_map.csv`.
 2. Review `document_section_evidence_map.csv`, `approved_claims.json`,
    `target_document_schema.json`, `documentation_gaps.md`,
    `evidence_strength_policy.json`, `document_completion_rules.json`,
    and `citation_rules.md`.
 3. Add your institution-specific table of contents to `document_template/` if needed.
-4. Use the two-pass prompts in `prompts/` when you want a controlled plan,
-   draft, and validation sequence.
+4. Use the controlled prompt sequence in `operator_instructions/` when you want
+   a plan, draft, and validation sequence.
 5. Require the LLM to cite source files for factual claims.
 6. Run or follow `tools/validate_llm_draft.py` after drafting.
 7. Have model-development, validation, and governance reviewers verify the draft.
+
+Citation boundary:
+
+- Files marked `cite_as_evidence = true` in `EVIDENCE_INDEX.csv` are available
+  as factual evidence.
+- Files in `operator_instructions/`, `document_template/`, `tools/`, prompt
+  files, rubrics, validators, and package-control files guide behavior only.
+- Do not cite files listed in `DO_NOT_CITE.md` as model evidence.
 
 Privacy posture:
 
@@ -1071,26 +1200,30 @@ def _build_prompt_template() -> str:
 
 You are drafting a model methodology / technical model document for a regulated
 financial-services model-risk review. Use only the evidence in this package.
+Do not cite files in `operator_instructions/`, `document_template/`, `tools/`,
+or files listed in `DO_NOT_CITE.md` as model evidence.
 
 Instructions:
 
-1. If `document_template/DROP_TABLE_OF_CONTENTS_HERE.md` has been replaced with a
+1. Review `EVIDENCE_INDEX.csv` and use only files marked `cite_as_evidence = true`
+   for factual claims.
+2. If `document_template/DROP_TABLE_OF_CONTENTS_HERE.md` has been replaced with a
    custom table of contents, follow that structure exactly.
-2. If no custom table of contents is supplied, use
+3. If no custom table of contents is supplied, use
    `default_model_methodology_outline.md`.
-3. Cite the source package file for every factual claim. Prefer citations from
+4. Cite the source package file for every factual claim. Prefer citations from
    `source_citation_map.csv`, `approved_claims.json`,
    `document_section_evidence_map.csv`, `model_document_context.json`,
    `reports/model_development_dossier.md`, `config/run_config.json`,
    `metadata/reproducibility_manifest.json`, and governance tables.
-4. Do not invent results, thresholds, approvals, owners, or limitations.
-5. If evidence is missing, write `Evidence not found in package` and identify the
+5. Do not invent results, thresholds, approvals, owners, or limitations.
+6. If evidence is missing, write `Evidence not found in package` and identify the
    missing source.
-6. Use `documentation_gaps.md` to preserve missing evidence and open review items.
-7. Treat the output as a draft requiring qualified human review. Do not state that
+7. Use `documentation_gaps.md` to preserve missing evidence and open review items.
+8. Treat the output as a draft requiring qualified human review. Do not state that
    the model is approved, valid, or compliant unless explicit approval evidence is
    present in the package.
-8. Follow `target_document_schema.json`, `evidence_strength_policy.json`,
+9. Follow `target_document_schema.json`, `evidence_strength_policy.json`,
    `document_completion_rules.json`, `controlled_vocabulary.json`, and
    `regulatory_language_guardrails.md`.
 
@@ -1113,13 +1246,18 @@ Prompt 1: Create The Documentation Plan
 ---------------------------------------
 
 You are assisting with a regulated model-risk technical documentation review.
-Use only the files in the uploaded Quant Studio LLM documentation package.
+Use only the files in the current extracted LLM documentation package directory.
+Do not cite or rely on files in operator_instructions/ as model evidence. Those
+files are workflow instructions only.
 
 First, do not draft the model methodology document. Review the package and
 produce a controlled documentation plan.
 
 Read these files first:
 - README_LLM_PACKAGE.md
+- EVIDENCE_INDEX.csv
+- DO_NOT_CITE.md
+- MODEL_FACTS_DIGEST.md
 - llm_evidence_manifest.json
 - source_citation_map.csv
 - target_document_schema.json
@@ -1135,13 +1273,16 @@ Read these files first:
 For each required document section, return:
 - the section heading to use
 - the writing objective
-- the evidence files and fields that support the section
+- the citable evidence files and fields that support the section
 - approved claims that can be used
 - missing evidence or documentation gaps
 - high-risk claims that require human review
 - whether the section is ready to draft, partially ready, or blocked
 
 Rules:
+- Use only files marked cite_as_evidence=true in EVIDENCE_INDEX.csv for factual
+  claims.
+- Do not cite files listed in DO_NOT_CITE.md.
 - Cite package evidence for every factual statement using this style:
   [source: package/path > field_or_section]
 - Do not invent results, thresholds, owners, approvals, limitations, or
@@ -1153,10 +1294,12 @@ Rules:
 - Treat your output as a draft planning aid that requires qualified human review.
 
 Deliver only:
-1. A section-by-section documentation plan.
+1. A table with these columns: section, objective, citable_evidence,
+   approved_claims, missing_evidence, human_review_needed, draft_status.
 2. A list of missing or weak evidence.
-3. A list of questions for the model owner or validation reviewer.
-4. A recommendation on whether to proceed to drafting the full methodology
+3. A list of files that must not be cited.
+4. A list of questions for the model owner or validation reviewer.
+5. A recommendation on whether to proceed to drafting the full methodology
    document.
 
 Prompt 2: Draft From The Approved Plan
@@ -1165,13 +1308,19 @@ Prompt 2: Draft From The Approved Plan
 Use this only after a qualified reviewer has reviewed the plan from Prompt 1.
 
 You are assisting with a regulated model-risk technical documentation draft.
-Use only the files in the uploaded Quant Studio LLM documentation package and
-the reviewed documentation plan from the prior step.
+Use only the files in the current extracted LLM documentation package directory
+and the reviewed documentation plan from the prior step.
+Use only files marked cite_as_evidence=true in EVIDENCE_INDEX.csv for factual
+claims. Do not cite operator_instructions/, document_template/, tools/, prompt
+files, rubrics, validators, or files listed in DO_NOT_CITE.md as model evidence.
 
 Draft the full model methodology / technical model document.
 
 Required sources:
 - the reviewed documentation plan
+- EVIDENCE_INDEX.csv
+- DO_NOT_CITE.md
+- MODEL_FACTS_DIGEST.md
 - target_document_schema.json
 - template_binding.json
 - default_model_methodology_outline.md, unless a custom table of contents was
@@ -1189,6 +1338,7 @@ Required sources:
 - source_citation_map.csv
 
 Rules:
+- Draft only from the reviewed documentation plan and citable evidence files.
 - Use approved_claims.json as the primary claim library.
 - Follow target_document_schema.json for required sections.
 - Use the custom table of contents if one was supplied; otherwise use
@@ -1225,10 +1375,15 @@ Prompt 3: Validate The Draft Against Evidence
 Use this after the LLM has produced the draft.
 
 You are acting as a model validation and documentation quality reviewer.
-Use only the uploaded Quant Studio LLM documentation package and the draft model
-methodology document.
+Use only the current extracted LLM documentation package directory and the draft
+model methodology document.
+Do not treat operator_instructions/, document_template/, tools/, prompt files,
+rubrics, validators, or files listed in DO_NOT_CITE.md as factual model
+evidence.
 
 Review the draft against:
+- EVIDENCE_INDEX.csv
+- DO_NOT_CITE.md
 - document_completion_rules.json
 - draft_validation_rules.json
 - document_quality_rubric.md
@@ -1893,7 +2048,12 @@ def _build_evidence_strength_policy() -> dict[str, Any]:
             },
             {
                 "level": "prompt_or_template",
-                "sources": ["prompts/*.md", "tone_profiles/*.md", "document_template/*.md"],
+                "sources": [
+                    "operator_instructions/*.txt",
+                    "operator_instructions/prompts/*.md",
+                    "tone_profiles/*.md",
+                    "document_template/*.md",
+                ],
                 "allowed_claims": ["formatting and writing instructions only"],
             },
         ],
@@ -2201,10 +2361,10 @@ Required checks:
   feature, target definition, split design, warning, or recommendation must cite
   a package source.
 - Every citation must follow `[source: package/path > field_or_section]`.
-- Every cited package path should appear in `source_citation_map.csv` or be one
-  of the generated control files listed in `llm_evidence_manifest.json`.
-- Claims sourced only to prompts, tone profiles, or templates are not factual
-  evidence.
+- Every cited package path should appear in `source_citation_map.csv` and be
+  marked `cite_as_evidence = true` in `EVIDENCE_INDEX.csv`.
+- Claims sourced only to prompts, tone profiles, templates, validators, rubrics,
+  or files listed in `DO_NOT_CITE.md` are not factual evidence.
 - Missing citations must be marked as `Evidence not found in package` before
   human review.
 
@@ -2654,18 +2814,22 @@ def _write_prompt_variants(
         "prompt_1_create_document_plan.md": (
             "# Prompt 1: Create Controlled Document Plan\n\n"
             "Do not draft the methodology document yet. First, read "
+            "`EVIDENCE_INDEX.csv`, `DO_NOT_CITE.md`, `MODEL_FACTS_DIGEST.md`, "
             "`target_document_schema.json`, `template_binding.json`, "
             "`document_section_evidence_map.csv`, `documentation_gaps.md`, and "
             "`evidence_strength_policy.json`. Produce a section-by-section drafting "
-            "plan showing required evidence, missing evidence, approved claims to use, "
-            "and sections that require human review.\n"
+            "plan with columns for section, objective, citable evidence, approved "
+            "claims, missing evidence, human review needed, and draft status. "
+            "Do not cite instruction, template, validator, or prompt files as evidence.\n"
         ),
         "prompt_2_draft_from_approved_plan.md": (
             "# Prompt 2: Draft From Approved Plan\n\n"
             "Draft the methodology document only after the document plan has been "
-            "reviewed. Use `approved_claims.json` as the primary claim library, follow "
+            "reviewed. Use `EVIDENCE_INDEX.csv` to identify citable evidence, use "
+            "`approved_claims.json` as the primary claim library, follow "
             "`target_document_schema.json`, use controlled vocabulary, and cite every "
-            "factual claim. Preserve all unresolved gaps. When chart image files are "
+            "factual claim. Do not cite files listed in `DO_NOT_CITE.md`. "
+            "Preserve all unresolved gaps. When chart image files are "
             "present in `source_artifacts/figures/`, insert only the most relevant "
             "high-value visuals using Markdown image syntax, add a concise caption, "
             "and cite the chart source. Do not embed every available chart.\n"
@@ -2683,12 +2847,15 @@ def _write_prompt_variants(
         _write_text(
             archive,
             added_arcnames,
-            f"{PACKAGE_ROOT}/prompts/{file_name}",
+            f"{OPERATOR_INSTRUCTIONS_DIR}/prompts/{file_name}",
             text,
             included,
             evidence_area="prompt_variant",
             source="generated",
-            llm_use="Task-specific prompt for LLM-assisted model-document drafting.",
+            llm_use=(
+                "Task-specific prompt for LLM-assisted model-document drafting. "
+                "Do not cite as model evidence."
+            ),
         )
 
 
@@ -2699,11 +2866,14 @@ The LLM must follow these rules:
 
 1. Every factual statement must cite a package source.
 2. Use this citation style: `[source: package/path > field_or_section]`.
-3. Prefer structured sources before narrative sources when both exist.
-4. Never cite raw row-level data because it is excluded by default.
-5. If a source does not exist, write `Evidence not found in package`.
-6. Do not cite the prompt as evidence.
-7. Do not infer approvals, owners, thresholds, or limitations that are not present.
+3. Use `EVIDENCE_INDEX.csv` as the authoritative citation boundary.
+4. Cite only files marked `cite_as_evidence = true`.
+5. Never cite files listed in `DO_NOT_CITE.md`.
+6. Prefer structured sources before narrative sources when both exist.
+7. Never cite raw row-level data because it is excluded by default.
+8. If a source does not exist, write `Evidence not found in package`.
+9. Do not cite prompts, templates, validators, rubrics, or operator instructions as evidence.
+10. Do not infer approvals, owners, thresholds, or limitations that are not present.
 
 Preferred source order:
 
@@ -3229,6 +3399,174 @@ def _build_evidence_checklist(
         }
     )
     return rows
+
+
+def _build_evidence_index(
+    included: list[dict[str, Any]],
+    skipped: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for record in included:
+        classification = _classify_included_record(record)
+        rows.append(
+            {
+                "package_path": record.get("package_path", ""),
+                "status": "included",
+                "category": classification["category"],
+                "cite_as_evidence": classification["cite_as_evidence"],
+                "citation_boundary": classification["citation_boundary"],
+                "evidence_area": record.get("evidence_area", ""),
+                "source": record.get("source", ""),
+                "artifact_key": record.get("artifact_key", ""),
+                "size_bytes": record.get("size_bytes", 0),
+                "llm_use": record.get("llm_use", ""),
+                "do_not_cite_reason": classification["do_not_cite_reason"],
+            }
+        )
+    for record in skipped:
+        rows.append(
+            {
+                "package_path": "",
+                "status": "skipped",
+                "category": "do_not_cite",
+                "cite_as_evidence": False,
+                "citation_boundary": "not_available",
+                "evidence_area": "",
+                "source": "",
+                "artifact_key": record.get("artifact_key", ""),
+                "size_bytes": record.get("size_bytes", 0),
+                "llm_use": "",
+                "original_path": record.get("original_path", ""),
+                "do_not_cite_reason": record.get("reason", "Skipped file is not available."),
+            }
+        )
+    return rows
+
+
+def _build_do_not_cite_markdown(evidence_index_rows: list[dict[str, Any]]) -> str:
+    do_not_cite_rows = [
+        row
+        for row in evidence_index_rows
+        if not _truthy(row.get("cite_as_evidence")) and row.get("status") == "included"
+    ]
+    lines = [
+        "# Do Not Cite As Model Evidence",
+        "",
+        (
+            "The files below are useful workflow controls, prompts, templates, "
+            "validators, or support files. They should guide LLM behavior, but they "
+            "must not be cited as factual evidence about the model run."
+        ),
+        "",
+        "Use `EVIDENCE_INDEX.csv` and `source_citation_map.csv` to identify citable evidence.",
+        "",
+    ]
+    if not do_not_cite_rows:
+        lines.append("No included files were classified as non-citable.")
+        return "\n".join(lines).strip() + "\n"
+    lines.extend(["| Package Path | Category | Reason |", "| --- | --- | --- |"])
+    for row in do_not_cite_rows:
+        lines.append(
+            "| "
+            f"`{row.get('package_path', '')}` | "
+            f"{row.get('category', '')} | "
+            f"{row.get('do_not_cite_reason', '')} |"
+        )
+    return "\n".join(lines).strip() + "\n"
+
+
+def _citable_records(included: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [
+        record
+        for record in included
+        if _classify_included_record(record)["cite_as_evidence"]
+    ]
+
+
+def _classify_included_record(record: Mapping[str, Any]) -> dict[str, Any]:
+    package_path = str(record.get("package_path", ""))
+    path_lower = package_path.lower()
+    evidence_area = str(record.get("evidence_area", "")).lower()
+    source = str(record.get("source", "")).lower()
+
+    category = "evidence"
+    cite_as_evidence = True
+    reason = ""
+
+    if "/source_artifacts/figures/" in path_lower:
+        if path_lower.endswith(("plotly.min.js", "figure_manifest.json")):
+            category = "do_not_cite"
+            cite_as_evidence = False
+            reason = "Chart support file or manifest, not model evidence."
+        else:
+            category = "supporting_chart"
+            cite_as_evidence = True
+    elif "/operator_instructions/" in path_lower or "prompt" in path_lower:
+        category = "instruction"
+        cite_as_evidence = False
+        reason = "Operator prompt/instruction file, not model-run evidence."
+    elif "/document_template/" in path_lower or path_lower.endswith(
+        (
+            "default_model_methodology_outline.md",
+            "target_document_schema.json",
+            "template_binding.json",
+        )
+    ):
+        category = "template"
+        cite_as_evidence = False
+        reason = "Document structure or template control, not model-run evidence."
+    elif "/tools/" in path_lower or any(
+        token in path_lower
+        for token in (
+            "validator",
+            "unsupported_claim_detector",
+            "document_quality_rubric",
+            "draft_validation_rules",
+        )
+    ):
+        category = "validator"
+        cite_as_evidence = False
+        reason = "Draft-validation aid, not model-run evidence."
+    elif any(
+        token in path_lower
+        for token in (
+            "readme_llm_package",
+            "llm_evidence_manifest",
+            "evidence_index",
+            "do_not_cite",
+            "citation_rules",
+            "evidence_strength_policy",
+            "document_completion_rules",
+            "controlled_vocabulary",
+            "regulatory_language_guardrails",
+            "llm_redaction_policy",
+            "human_review_checklist",
+        )
+    ):
+        category = "instruction"
+        cite_as_evidence = False
+        reason = "Package control or use-policy file, not factual model evidence."
+    elif evidence_area in {"orientation", "citation_map", "evidence_checklist"}:
+        category = "do_not_cite"
+        cite_as_evidence = False
+        reason = "Package navigation/control file, not underlying model evidence."
+    elif source in {"generated_chart_export"} and path_lower.endswith(".json"):
+        category = "do_not_cite"
+        cite_as_evidence = False
+        reason = "Generated chart manifest, not model evidence."
+
+    return {
+        "category": category,
+        "cite_as_evidence": bool(cite_as_evidence),
+        "citation_boundary": "citable" if cite_as_evidence else "do_not_cite",
+        "do_not_cite_reason": reason,
+    }
+
+
+def _truthy(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    return str(value).strip().lower() in {"true", "1", "yes", "y"}
 
 
 def _build_checklist_markdown(rows: list[dict[str, str]]) -> str:

@@ -116,10 +116,11 @@ Quant Studio opens to Step 1 by default.
 37. If you need an LLM-assisted model methodology draft, use Step 5 `Export` ->
     `Download LLM Package`. The zip includes curated non-row-level evidence,
     section evidence maps, approved claims, documentation gaps, schema and
-    evidence-strength controls, completion rules, controlled vocabulary,
-    draft-validation rules, prompt variants, citation rules, interpretation
-    briefs, individual chart assets, a quality rubric, a review checklist, and
-    a table-of-contents drop zone for your group-specific document template.
+    evidence-strength controls, citable-evidence and do-not-cite indexes,
+    completion rules, controlled vocabulary, draft-validation rules, operator
+    prompt variants, citation rules, interpretation briefs, individual chart
+    assets, a model facts digest, a quality rubric, a review checklist, and a
+    table-of-contents drop zone for your group-specific document template.
 
 ## First Real-Data Run
 

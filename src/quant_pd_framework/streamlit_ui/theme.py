@@ -561,6 +561,8 @@ def inject_styles() -> None:
             font-weight: 800;
             border: 1px solid #d8e4fb;
             box-shadow: 0 10px 26px rgba(31, 67, 131, 0.06);
+            min-height: 3.15rem;
+            width: 100%;
           }
           .stButton > button[kind="primary"] {
             background: linear-gradient(135deg, var(--qs-blue) 0%, var(--qs-blue-2) 100%);

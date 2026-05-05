@@ -51,17 +51,18 @@ and summarizes the completed run in Step 5, `Decision Summary`.
 
 Step 5 also has an on-demand `Download LLM Package` button in the Export card.
 That download creates a `.zip` for LLM-assisted model methodology drafting. It
-includes LLM-readable context files, section-level evidence maps,
-evidence-backed approved claims, a documentation gap register, a detailed
-regulatory crosswalk, model-type writing guidance, prompt variants, tone
-profiles, citation rules, feature/metric/chart interpretation briefs, a target
-document schema, evidence-strength policy, completion rules, controlled
-vocabulary, draft-validation rules, document quality rubric, redaction policy,
-lightweight draft validator script, a human review checklist, a default model
-methodology outline, a table-of-contents drop zone for institution-specific
-templates, diagnostic table previews, generated-run code, run configuration,
-selected non-row-level evidence from the completed run, and the same chart
-PNG/HTML assets produced by `Download Individual Images`. It intentionally
+includes LLM-readable context files, a model facts digest, section-level
+evidence maps, evidence-backed approved claims, a documentation gap register, a
+detailed regulatory crosswalk, model-type writing guidance, operator prompt
+variants, citable-evidence and do-not-cite indexes, tone profiles, citation
+rules, feature/metric/chart interpretation briefs, a target document schema,
+evidence-strength policy, completion rules, controlled vocabulary,
+draft-validation rules, document quality rubric, redaction policy, lightweight
+draft validator script, a human review checklist, a default model methodology
+outline, a table-of-contents drop zone for institution-specific templates,
+diagnostic table previews, generated-run code, run configuration, selected
+non-row-level evidence from the completed run, and the same chart PNG/HTML
+assets produced by `Download Individual Images`. It intentionally
 excludes raw input snapshots, row-level predictions, serialized model binaries,
 monitoring handoff bundles, and full code snapshots by default.
 

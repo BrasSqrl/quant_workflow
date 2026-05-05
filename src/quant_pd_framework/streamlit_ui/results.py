@@ -467,12 +467,7 @@ def render_decision_summary(snapshot: dict[str, Any]) -> None:
             st.markdown(f"- {item}")
     with download_column:
         st.markdown("### Export")
-        render_download_button(
-            "Download decision summary",
-            build_decision_summary_markdown(snapshot),
-            file_name=f"{snapshot.get('run_id', 'run')}_decision_summary.md",
-            mime="text/markdown",
-        )
+        _render_decision_summary_download(snapshot)
         _render_individual_images_download(snapshot)
         _render_llm_package_download(snapshot)
         _render_monitoring_package_download(snapshot)
@@ -569,6 +564,19 @@ def render_decision_summary(snapshot: dict[str, Any]) -> None:
             )
         else:
             st.info("The model development dossier was not exported for this run.")
+
+
+def _render_decision_summary_download(snapshot: dict[str, Any]) -> None:
+    st.download_button(
+        "Download decision summary",
+        data=build_decision_summary_markdown(snapshot),
+        file_name=f"{snapshot.get('run_id', 'run')}_decision_summary.md",
+        mime="text/markdown",
+        width="stretch",
+        key=f"{snapshot.get('run_id', 'run')}_decision_summary_download",
+        help="Downloads the Markdown decision summary for the completed run.",
+    )
+    st.caption("Downloads the Markdown decision summary immediately.")
 
 
 def _render_individual_images_download(snapshot: dict[str, Any]) -> None:
