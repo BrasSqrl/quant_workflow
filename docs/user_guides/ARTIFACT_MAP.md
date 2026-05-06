@@ -58,13 +58,17 @@ variants, citable-evidence and do-not-cite indexes, tone profiles, citation
 rules, feature/metric/chart interpretation briefs, a target document schema,
 evidence-strength policy, completion rules, controlled vocabulary,
 draft-validation rules, document quality rubric, redaction policy, lightweight
-draft validator script, a human review checklist, a default model methodology
-outline, a table-of-contents drop zone for institution-specific templates,
-diagnostic table previews, generated-run code, run configuration, selected
-non-row-level evidence from the completed run, DOCX build instructions, a model
-document style guide, a DOCX quality checklist, a figure placement manifest,
-section-specific evidence folders, a package build profile, capped lightweight
-HTML chart assets, and a small document-ready PNG subset. If `Download
+draft validator script, deterministic DOCX helper scripts, a human review
+checklist, a default model methodology outline, a table-of-contents drop zone
+for institution-specific templates, diagnostic table previews, generated-run
+code, run configuration, selected non-row-level evidence from the completed run,
+DOCX build instructions, a model document style guide, a DOCX quality checklist,
+figure and table placement manifests, section-specific evidence folders, a
+package build profile, capped lightweight HTML chart assets, and a small
+document-ready PNG subset. The downloaded folder is organized into numbered
+folders from `00_START_HERE` through `09_generated_outputs` so users can
+separate evidence, prompts, controls, visual assets, tools, and generated
+outputs. If `Download
 Individual Images` has already been prepared in the same UI session, the LLM
 package reuses eligible chart files instead of rendering them again. It intentionally
 excludes raw input snapshots, row-level predictions, serialized model binaries,

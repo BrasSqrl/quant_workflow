@@ -18,8 +18,21 @@ from quant_pd_framework.decision_summary import build_decision_summary
 from quant_pd_framework.figure_exports import FigureExportAsset
 
 PACKAGE_ROOT = "llm_documentation_package"
-PACKAGE_VERSION = "1.5"
-OPERATOR_INSTRUCTIONS_DIR = f"{PACKAGE_ROOT}/operator_instructions"
+PACKAGE_VERSION = "1.6"
+START_HERE_DIR = f"{PACKAGE_ROOT}/00_START_HERE"
+DOCUMENT_TEMPLATE_DIR = f"{PACKAGE_ROOT}/01_document_template"
+DOCUMENT_PLANNING_DIR = f"{PACKAGE_ROOT}/02_document_planning"
+DOCX_WORKFLOW_DIR = f"{PACKAGE_ROOT}/03_docx_workflow"
+EVIDENCE_DIR = f"{PACKAGE_ROOT}/04_evidence"
+VISUAL_ASSETS_DIR = f"{PACKAGE_ROOT}/05_visual_assets"
+VALIDATION_CONTROLS_DIR = f"{PACKAGE_ROOT}/06_validation_controls"
+OPERATOR_INSTRUCTIONS_DIR = f"{PACKAGE_ROOT}/07_operator_prompts"
+TOOLS_DIR = f"{PACKAGE_ROOT}/08_tools"
+GENERATED_OUTPUTS_DIR = f"{PACKAGE_ROOT}/09_generated_outputs"
+SOURCE_ARTIFACTS_DIR = f"{EVIDENCE_DIR}/source_artifacts"
+CONVERTED_TABLES_DIR = f"{EVIDENCE_DIR}/converted_tables"
+TABLE_PREVIEWS_DIR = f"{EVIDENCE_DIR}/table_previews"
+FIGURE_ASSETS_ROOT = f"{VISUAL_ASSETS_DIR}/figures"
 DEFAULT_MAX_INCLUDED_FILE_BYTES = 25 * 1024 * 1024
 DEFAULT_MAX_TABLE_PREVIEW_ROWS = 250
 DEFAULT_MAX_TABLE_PREVIEW_COLUMNS = 80
@@ -172,10 +185,28 @@ def build_llm_documentation_package_from_payload(
             evidence_area="orientation",
             source="generated",
         )
+        _write_text(
+            archive,
+            added_arcnames,
+            f"{PACKAGE_ROOT}/START_HERE.md",
+            _build_start_here(),
+            included,
+            evidence_area="orientation",
+            source="generated",
+        )
+        _write_text(
+            archive,
+            added_arcnames,
+            f"{START_HERE_DIR}/PACKAGE_MAP.md",
+            _build_package_map(),
+            included,
+            evidence_area="orientation",
+            source="generated",
+        )
         _write_json(
             archive,
             added_arcnames,
-            f"{PACKAGE_ROOT}/model_document_context.json",
+            f"{EVIDENCE_DIR}/context/model_document_context.json",
             payload,
             included,
             evidence_area="llm_context",
@@ -184,7 +215,7 @@ def build_llm_documentation_package_from_payload(
         _write_text(
             archive,
             added_arcnames,
-            f"{PACKAGE_ROOT}/model_document_context.md",
+            f"{EVIDENCE_DIR}/context/model_document_context.md",
             _build_context_markdown(payload),
             included,
             evidence_area="llm_context",
@@ -193,7 +224,7 @@ def build_llm_documentation_package_from_payload(
         _write_text(
             archive,
             added_arcnames,
-            f"{PACKAGE_ROOT}/MODEL_FACTS_DIGEST.md",
+            f"{START_HERE_DIR}/MODEL_FACTS_DIGEST.md",
             _build_model_facts_digest(payload),
             included,
             evidence_area="model_facts_digest",
@@ -206,7 +237,7 @@ def build_llm_documentation_package_from_payload(
         _write_json(
             archive,
             added_arcnames,
-            f"{PACKAGE_ROOT}/sr_11_7_evidence_mapping.json",
+            f"{EVIDENCE_DIR}/regulatory/sr_11_7_evidence_mapping.json",
             _build_guidance_mapping(),
             included,
             evidence_area="regulatory_mapping",
@@ -253,7 +284,7 @@ def build_llm_documentation_package_from_payload(
         _write_text(
             archive,
             added_arcnames,
-            f"{PACKAGE_ROOT}/default_model_methodology_outline.md",
+            f"{DOCUMENT_PLANNING_DIR}/default_model_methodology_outline.md",
             _build_default_outline(),
             included,
             evidence_area="document_outline",
@@ -262,7 +293,7 @@ def build_llm_documentation_package_from_payload(
         _write_text(
             archive,
             added_arcnames,
-            f"{PACKAGE_ROOT}/DOCX_BUILD_INSTRUCTIONS.md",
+            f"{DOCX_WORKFLOW_DIR}/DOCX_BUILD_INSTRUCTIONS.md",
             _build_docx_build_instructions(),
             included,
             evidence_area="docx_authoring_control",
@@ -272,7 +303,7 @@ def build_llm_documentation_package_from_payload(
         _write_text(
             archive,
             added_arcnames,
-            f"{PACKAGE_ROOT}/MODEL_DOCUMENT_STYLE_GUIDE.md",
+            f"{DOCX_WORKFLOW_DIR}/MODEL_DOCUMENT_STYLE_GUIDE.md",
             _build_model_document_style_guide(),
             included,
             evidence_area="docx_authoring_control",
@@ -282,18 +313,65 @@ def build_llm_documentation_package_from_payload(
         _write_text(
             archive,
             added_arcnames,
-            f"{PACKAGE_ROOT}/DOCX_QUALITY_CHECKLIST.md",
+            f"{DOCX_WORKFLOW_DIR}/DOCX_QUALITY_CHECKLIST.md",
             _build_docx_quality_checklist(),
             included,
             evidence_area="docx_authoring_control",
             source="generated",
             llm_use="Final DOCX quality checklist for human review and LLM self-checking.",
         )
+        _write_json(
+            archive,
+            added_arcnames,
+            f"{DOCX_WORKFLOW_DIR}/resolved_toc_binding.schema.json",
+            _build_resolved_toc_binding_schema(),
+            included,
+            evidence_area="docx_authoring_control",
+            source="generated",
+        )
+        _write_text(
+            archive,
+            added_arcnames,
+            f"{DOCX_WORKFLOW_DIR}/resolved_toc_binding_instructions.md",
+            _build_resolved_toc_binding_instructions(),
+            included,
+            evidence_area="docx_authoring_control",
+            source="generated",
+            llm_use="Instructions for mapping a custom TOC to Quant Studio evidence.",
+        )
+        _write_json(
+            archive,
+            added_arcnames,
+            f"{DOCX_WORKFLOW_DIR}/methodology_doc_spec.schema.json",
+            _build_methodology_doc_spec_schema(),
+            included,
+            evidence_area="docx_authoring_control",
+            source="generated",
+        )
+        _write_json(
+            archive,
+            added_arcnames,
+            f"{DOCX_WORKFLOW_DIR}/methodology_doc_spec_example.json",
+            _build_methodology_doc_spec_example(),
+            included,
+            evidence_area="docx_authoring_control",
+            source="generated",
+        )
+        _write_text(
+            archive,
+            added_arcnames,
+            f"{GENERATED_OUTPUTS_DIR}/README_GENERATED_OUTPUTS.md",
+            _build_generated_outputs_readme(),
+            included,
+            evidence_area="docx_authoring_control",
+            source="generated",
+            llm_use="Output workspace instructions for generated TOC bindings, specs, and DOCX.",
+        )
         section_map = _build_section_evidence_map(payload)
         _write_json(
             archive,
             added_arcnames,
-            f"{PACKAGE_ROOT}/document_section_evidence_map.json",
+            f"{DOCUMENT_PLANNING_DIR}/document_section_evidence_map.json",
             section_map,
             included,
             evidence_area="section_evidence_map",
@@ -302,7 +380,7 @@ def build_llm_documentation_package_from_payload(
         _write_csv(
             archive,
             added_arcnames,
-            f"{PACKAGE_ROOT}/document_section_evidence_map.csv",
+            f"{DOCUMENT_PLANNING_DIR}/document_section_evidence_map.csv",
             section_map,
             included,
             evidence_area="section_evidence_map",
@@ -319,7 +397,7 @@ def build_llm_documentation_package_from_payload(
         _write_json(
             archive,
             added_arcnames,
-            f"{PACKAGE_ROOT}/regulatory_documentation_crosswalk.json",
+            f"{EVIDENCE_DIR}/regulatory/regulatory_documentation_crosswalk.json",
             regulatory_crosswalk,
             included,
             evidence_area="regulatory_crosswalk",
@@ -328,7 +406,7 @@ def build_llm_documentation_package_from_payload(
         _write_csv(
             archive,
             added_arcnames,
-            f"{PACKAGE_ROOT}/regulatory_documentation_crosswalk.csv",
+            f"{EVIDENCE_DIR}/regulatory/regulatory_documentation_crosswalk.csv",
             regulatory_crosswalk,
             included,
             evidence_area="regulatory_crosswalk",
@@ -339,7 +417,7 @@ def build_llm_documentation_package_from_payload(
         _write_json(
             archive,
             added_arcnames,
-            f"{PACKAGE_ROOT}/approved_claims.json",
+            f"{EVIDENCE_DIR}/claims/approved_claims.json",
             approved_claims,
             included,
             evidence_area="approved_claims",
@@ -348,7 +426,7 @@ def build_llm_documentation_package_from_payload(
         _write_csv(
             archive,
             added_arcnames,
-            f"{PACKAGE_ROOT}/approved_claims.csv",
+            f"{EVIDENCE_DIR}/claims/approved_claims.csv",
             approved_claims,
             included,
             evidence_area="approved_claims",
@@ -359,7 +437,7 @@ def build_llm_documentation_package_from_payload(
         _write_json(
             archive,
             added_arcnames,
-            f"{PACKAGE_ROOT}/target_document_schema.json",
+            f"{DOCUMENT_PLANNING_DIR}/target_document_schema.json",
             target_document_schema,
             included,
             evidence_area="document_control",
@@ -368,7 +446,7 @@ def build_llm_documentation_package_from_payload(
         _write_json(
             archive,
             added_arcnames,
-            f"{PACKAGE_ROOT}/evidence_strength_policy.json",
+            f"{VALIDATION_CONTROLS_DIR}/evidence_strength_policy.json",
             _build_evidence_strength_policy(),
             included,
             evidence_area="document_control",
@@ -377,7 +455,7 @@ def build_llm_documentation_package_from_payload(
         _write_json(
             archive,
             added_arcnames,
-            f"{PACKAGE_ROOT}/document_completion_rules.json",
+            f"{VALIDATION_CONTROLS_DIR}/document_completion_rules.json",
             _build_document_completion_rules(),
             included,
             evidence_area="document_control",
@@ -386,7 +464,7 @@ def build_llm_documentation_package_from_payload(
         _write_json(
             archive,
             added_arcnames,
-            f"{PACKAGE_ROOT}/controlled_vocabulary.json",
+            f"{VALIDATION_CONTROLS_DIR}/controlled_vocabulary.json",
             _build_controlled_vocabulary(),
             included,
             evidence_area="document_control",
@@ -395,7 +473,7 @@ def build_llm_documentation_package_from_payload(
         _write_json(
             archive,
             added_arcnames,
-            f"{PACKAGE_ROOT}/draft_validation_rules.json",
+            f"{VALIDATION_CONTROLS_DIR}/draft_validation_rules.json",
             _build_draft_validation_rules(),
             included,
             evidence_area="document_control",
@@ -404,7 +482,7 @@ def build_llm_documentation_package_from_payload(
         _write_json(
             archive,
             added_arcnames,
-            f"{PACKAGE_ROOT}/template_binding.json",
+            f"{DOCUMENT_PLANNING_DIR}/template_binding.json",
             _build_template_binding(section_map),
             included,
             evidence_area="document_control",
@@ -413,7 +491,7 @@ def build_llm_documentation_package_from_payload(
         _write_json(
             archive,
             added_arcnames,
-            f"{PACKAGE_ROOT}/llm_redaction_policy.json",
+            f"{VALIDATION_CONTROLS_DIR}/llm_redaction_policy.json",
             _build_llm_redaction_policy(),
             included,
             evidence_area="document_control",
@@ -422,7 +500,7 @@ def build_llm_documentation_package_from_payload(
         _write_json(
             archive,
             added_arcnames,
-            f"{PACKAGE_ROOT}/document_quality_rubric.json",
+            f"{VALIDATION_CONTROLS_DIR}/document_quality_rubric.json",
             _build_document_quality_rubric(),
             included,
             evidence_area="document_quality",
@@ -431,7 +509,7 @@ def build_llm_documentation_package_from_payload(
         _write_text(
             archive,
             added_arcnames,
-            f"{PACKAGE_ROOT}/document_quality_rubric.md",
+            f"{VALIDATION_CONTROLS_DIR}/document_quality_rubric.md",
             _build_document_quality_rubric_markdown(),
             included,
             evidence_area="document_quality",
@@ -441,7 +519,7 @@ def build_llm_documentation_package_from_payload(
         _write_text(
             archive,
             added_arcnames,
-            f"{PACKAGE_ROOT}/citation_coverage_validator.md",
+            f"{VALIDATION_CONTROLS_DIR}/citation_coverage_validator.md",
             _build_citation_coverage_validator(),
             included,
             evidence_area="draft_validation",
@@ -451,7 +529,7 @@ def build_llm_documentation_package_from_payload(
         _write_text(
             archive,
             added_arcnames,
-            f"{PACKAGE_ROOT}/unsupported_claim_detector.md",
+            f"{VALIDATION_CONTROLS_DIR}/unsupported_claim_detector.md",
             _build_unsupported_claim_detector(),
             included,
             evidence_area="draft_validation",
@@ -461,7 +539,7 @@ def build_llm_documentation_package_from_payload(
         _write_text(
             archive,
             added_arcnames,
-            f"{PACKAGE_ROOT}/regulatory_language_guardrails.md",
+            f"{VALIDATION_CONTROLS_DIR}/regulatory_language_guardrails.md",
             _build_regulatory_language_guardrails(),
             included,
             evidence_area="draft_validation",
@@ -471,18 +549,51 @@ def build_llm_documentation_package_from_payload(
         _write_text(
             archive,
             added_arcnames,
-            f"{PACKAGE_ROOT}/tools/validate_llm_draft.py",
+            f"{TOOLS_DIR}/validate_llm_draft.py",
             _build_llm_draft_validator_script(),
             included,
             evidence_area="draft_validation",
             source="generated",
             llm_use="Standalone no-dependency draft citation and unsupported-claim checker.",
         )
+        _write_text(
+            archive,
+            added_arcnames,
+            f"{TOOLS_DIR}/validate_docx_spec.py",
+            _build_docx_spec_validator_script(),
+            included,
+            evidence_area="draft_validation",
+            source="generated",
+            llm_use="Validates the structured methodology document spec before DOCX build.",
+        )
+        _write_text(
+            archive,
+            added_arcnames,
+            f"{TOOLS_DIR}/build_docx_from_spec.py",
+            _build_docx_builder_script(),
+            included,
+            evidence_area="docx_authoring_control",
+            source="generated",
+            llm_use=(
+                "Builds model_methodology.docx deterministically from "
+                "methodology_doc_spec.json."
+            ),
+        )
+        _write_text(
+            archive,
+            added_arcnames,
+            f"{TOOLS_DIR}/validate_docx_output.py",
+            _build_docx_output_validator_script(),
+            included,
+            evidence_area="draft_validation",
+            source="generated",
+            llm_use="Checks that the generated DOCX exists and contains expected document parts.",
+        )
         documentation_gaps = _build_documentation_gaps(payload)
         _write_csv(
             archive,
             added_arcnames,
-            f"{PACKAGE_ROOT}/documentation_gaps.csv",
+            f"{EVIDENCE_DIR}/gaps/documentation_gaps.csv",
             documentation_gaps,
             included,
             evidence_area="documentation_gaps",
@@ -492,7 +603,7 @@ def build_llm_documentation_package_from_payload(
         _write_text(
             archive,
             added_arcnames,
-            f"{PACKAGE_ROOT}/documentation_gaps.md",
+            f"{EVIDENCE_DIR}/gaps/documentation_gaps.md",
             _build_documentation_gaps_markdown(documentation_gaps),
             included,
             evidence_area="documentation_gaps",
@@ -502,7 +613,7 @@ def build_llm_documentation_package_from_payload(
         _write_text(
             archive,
             added_arcnames,
-            f"{PACKAGE_ROOT}/model_type_writing_guide.md",
+            f"{EVIDENCE_DIR}/methodology/model_type_writing_guide.md",
             _build_model_type_writing_guide(payload),
             included,
             evidence_area="model_type_writing_guide",
@@ -513,7 +624,7 @@ def build_llm_documentation_package_from_payload(
         _write_text(
             archive,
             added_arcnames,
-            f"{PACKAGE_ROOT}/citation_rules.md",
+            f"{VALIDATION_CONTROLS_DIR}/citation_rules.md",
             _build_citation_rules(),
             included,
             evidence_area="citation_rules",
@@ -524,7 +635,7 @@ def build_llm_documentation_package_from_payload(
         _write_text(
             archive,
             added_arcnames,
-            f"{PACKAGE_ROOT}/human_review_checklist.md",
+            f"{VALIDATION_CONTROLS_DIR}/human_review_checklist.md",
             _build_human_review_checklist(),
             included,
             evidence_area="human_review_checklist",
@@ -534,7 +645,7 @@ def build_llm_documentation_package_from_payload(
         _write_text(
             archive,
             added_arcnames,
-            f"{PACKAGE_ROOT}/feature_dictionary_narrative.md",
+            f"{EVIDENCE_DIR}/interpretation_briefs/feature_dictionary_narrative.md",
             _build_feature_dictionary_narrative(payload),
             included,
             evidence_area="feature_dictionary_narrative",
@@ -544,7 +655,7 @@ def build_llm_documentation_package_from_payload(
         _write_text(
             archive,
             added_arcnames,
-            f"{PACKAGE_ROOT}/metrics_interpretation_brief.md",
+            f"{EVIDENCE_DIR}/interpretation_briefs/metrics_interpretation_brief.md",
             _build_metrics_interpretation_brief(payload),
             included,
             evidence_area="metrics_interpretation_brief",
@@ -575,7 +686,7 @@ def build_llm_documentation_package_from_payload(
         _write_csv(
             archive,
             added_arcnames,
-            f"{PACKAGE_ROOT}/figure_placement_manifest.csv",
+            f"{VISUAL_ASSETS_DIR}/figure_placement_manifest.csv",
             figure_placement_rows,
             included,
             evidence_area="figure_placement_manifest",
@@ -588,7 +699,7 @@ def build_llm_documentation_package_from_payload(
         _write_json(
             archive,
             added_arcnames,
-            f"{PACKAGE_ROOT}/figure_placement_manifest.json",
+            f"{VISUAL_ASSETS_DIR}/figure_placement_manifest.json",
             figure_placement_rows,
             included,
             evidence_area="figure_placement_manifest",
@@ -597,7 +708,37 @@ def build_llm_documentation_package_from_payload(
         _write_text(
             archive,
             added_arcnames,
-            f"{PACKAGE_ROOT}/chart_interpretation_brief.md",
+            f"{VISUAL_ASSETS_DIR}/FIGURE_CONTACT_SHEET.md",
+            _build_figure_contact_sheet(figure_placement_rows),
+            included,
+            evidence_area="figure_placement_manifest",
+            source="generated",
+            llm_use="Human and LLM-readable visual index for document figure selection.",
+        )
+        table_placement_rows = _build_table_placement_manifest(included)
+        _write_csv(
+            archive,
+            added_arcnames,
+            f"{DOCX_WORKFLOW_DIR}/table_placement_manifest.csv",
+            table_placement_rows,
+            included,
+            evidence_area="table_placement_manifest",
+            source="generated",
+            llm_use="DOCX table placement plan for controlled methodology drafting.",
+        )
+        _write_json(
+            archive,
+            added_arcnames,
+            f"{DOCX_WORKFLOW_DIR}/table_placement_manifest.json",
+            table_placement_rows,
+            included,
+            evidence_area="table_placement_manifest",
+            source="generated",
+        )
+        _write_text(
+            archive,
+            added_arcnames,
+            f"{EVIDENCE_DIR}/interpretation_briefs/chart_interpretation_brief.md",
             _build_chart_interpretation_brief(included, skipped),
             included,
             evidence_area="chart_interpretation_brief",
@@ -619,7 +760,7 @@ def build_llm_documentation_package_from_payload(
         _write_json(
             archive,
             added_arcnames,
-            f"{PACKAGE_ROOT}/llm_package_build_profile.json",
+            f"{START_HERE_DIR}/llm_package_build_profile.json",
             profile_rows,
             included,
             evidence_area="package_build_profile",
@@ -629,7 +770,7 @@ def build_llm_documentation_package_from_payload(
         _write_csv(
             archive,
             added_arcnames,
-            f"{PACKAGE_ROOT}/llm_evidence_checklist.csv",
+            f"{START_HERE_DIR}/llm_evidence_checklist.csv",
             checklist_rows,
             included,
             evidence_area="evidence_checklist",
@@ -638,7 +779,7 @@ def build_llm_documentation_package_from_payload(
         _write_text(
             archive,
             added_arcnames,
-            f"{PACKAGE_ROOT}/llm_evidence_checklist.md",
+            f"{START_HERE_DIR}/llm_evidence_checklist.md",
             _build_checklist_markdown(checklist_rows),
             included,
             evidence_area="evidence_checklist",
@@ -1077,7 +1218,7 @@ def _include_parquet_table_as_csv(
         return
     csv_text = frame.to_csv(index=False)
     relative = _relative_source_path(path, run_root).with_suffix(".csv")
-    arcname = f"{PACKAGE_ROOT}/source_artifacts_converted/{_posix(relative)}"
+    arcname = f"{CONVERTED_TABLES_DIR}/{_posix(relative)}"
     if arcname in added_arcnames:
         return
     archive.writestr(arcname, csv_text)
@@ -1155,7 +1296,7 @@ def _write_diagnostic_table_previews(
         _write_csv(
             archive,
             added_arcnames,
-            f"{PACKAGE_ROOT}/structured_table_previews/{safe_name}.csv",
+            f"{TABLE_PREVIEWS_DIR}/{safe_name}.csv",
             rows,
             included,
             evidence_area="diagnostic_table_preview",
@@ -1172,21 +1313,21 @@ def _write_template_files(
     included: list[dict[str, Any]],
 ) -> None:
     template_files = {
-        f"{PACKAGE_ROOT}/document_template/DROP_TABLE_OF_CONTENTS_HERE.md": (
+        f"{DOCUMENT_TEMPLATE_DIR}/DROP_TABLE_OF_CONTENTS_HERE.md": (
             "# Drop Your Table Of Contents Here\n\n"
             "Replace this file with your institution's model technical document table "
             "of contents before sending the package to an LLM. The prompt instructs the "
             "LLM to fill that structure using only package evidence.\n"
         ),
-        f"{PACKAGE_ROOT}/document_template/table_of_contents_instructions.md": (
+        f"{DOCUMENT_TEMPLATE_DIR}/table_of_contents_instructions.md": (
             "# Table Of Contents Instructions\n\n"
             "Use this folder for a group-specific model document structure. If a custom "
             "table of contents is present, instruct the LLM to preserve the section order, "
             "headings, and terminology while filling each section from the evidence package. "
             "If no custom table of contents is supplied, use "
-            "`default_model_methodology_outline.md`.\n"
+            "`02_document_planning/default_model_methodology_outline.md`.\n"
         ),
-        f"{PACKAGE_ROOT}/document_template/example_table_of_contents.md": (
+        f"{DOCUMENT_TEMPLATE_DIR}/example_table_of_contents.md": (
             "# Example Model Technical Document Table Of Contents\n\n"
             "1. Executive Summary\n"
             "2. Model Purpose, Scope, And Intended Use\n"
@@ -1321,6 +1462,57 @@ def _build_model_facts_digest(payload: Mapping[str, Any]) -> str:
     return "\n".join(lines).strip() + "\n"
 
 
+def _build_start_here() -> str:
+    return f"""# Start Here
+
+This package is organized to support LLM-assisted model methodology drafting
+while keeping evidence, prompts, controls, visuals, and generated outputs
+separate.
+
+Recommended workflow:
+
+1. Read `README_LLM_PACKAGE.md`.
+2. Review `{START_HERE_DIR}/PACKAGE_MAP.md` to understand the folder layout.
+3. Drop your institution-specific table of contents into `{DOCUMENT_TEMPLATE_DIR}/`.
+4. Ask the LLM to create `{GENERATED_OUTPUTS_DIR}/resolved_toc_binding.json`.
+5. Ask the LLM to create `{GENERATED_OUTPUTS_DIR}/methodology_doc_spec.json`.
+6. Run `{TOOLS_DIR}/validate_docx_spec.py`.
+7. Run `{TOOLS_DIR}/build_docx_from_spec.py`.
+8. Run `{TOOLS_DIR}/validate_docx_output.py`.
+
+Do not ask the LLM to place images and tables free-form. The recommended path
+is: custom TOC -> resolved TOC binding -> document spec -> deterministic DOCX
+builder -> validation.
+"""
+
+
+def _build_package_map() -> str:
+    return f"""# Package Map
+
+| Folder | Purpose |
+| --- | --- |
+| `{START_HERE_DIR}/` | Package map, model facts digest, evidence checklist, and build profile. |
+| `{DOCUMENT_TEMPLATE_DIR}/` | Place your custom table of contents here. |
+| `{DOCUMENT_PLANNING_DIR}/` | Section maps, template binding, schemas, and section briefs. |
+| `{DOCX_WORKFLOW_DIR}/` | DOCX instructions, style guide, specs, tables, and checklist. |
+| `{EVIDENCE_DIR}/` | Citable facts, context, claims, tables, and source artifacts. |
+| `{VISUAL_ASSETS_DIR}/` | Figure placement manifest, chart assets, and document-ready PNG subset. |
+| `{VALIDATION_CONTROLS_DIR}/` | Citation rules, validation rules, rubrics, and review controls. |
+| `{OPERATOR_INSTRUCTIONS_DIR}/` | Copy/paste prompts and tone profiles. Do not cite. |
+| `{TOOLS_DIR}/` | Helper scripts for validation and deterministic DOCX creation. |
+| `{GENERATED_OUTPUTS_DIR}/` | Workspace for TOC bindings, document specs, DOCX, and notes. |
+
+Root-level files:
+
+- `START_HERE.md`: shortest workflow orientation.
+- `README_LLM_PACKAGE.md`: detailed package instructions.
+- `EVIDENCE_INDEX.csv`: authoritative citation boundary.
+- `DO_NOT_CITE.md`: files that must not support factual model claims.
+- `source_citation_map.csv`: citable source index.
+- `llm_evidence_manifest.json`: complete included/skipped file manifest.
+"""
+
+
 def _build_readme() -> str:
     return """# LLM Documentation Package
 
@@ -1333,26 +1525,33 @@ Recommended use:
 
 1. Review `README_LLM_PACKAGE.md`, `EVIDENCE_INDEX.csv`, `DO_NOT_CITE.md`,
    `MODEL_FACTS_DIGEST.md`, and `source_citation_map.csv`.
-2. Review `DOCX_BUILD_INSTRUCTIONS.md`, `MODEL_DOCUMENT_STYLE_GUIDE.md`,
-   `DOCX_QUALITY_CHECKLIST.md`, `figure_placement_manifest.csv`,
-   `document_section_evidence_map.csv`, `approved_claims.json`,
-   `target_document_schema.json`, `documentation_gaps.md`,
-   `evidence_strength_policy.json`, `document_completion_rules.json`,
-   and `citation_rules.md`.
-3. Review `llm_package_build_profile.json` if package preparation took longer
-   than expected.
-4. Add your institution-specific table of contents to `document_template/` if needed.
-5. Use the controlled prompt sequence in `operator_instructions/` when you want
+2. Review the organized folders in `00_START_HERE/PACKAGE_MAP.md`.
+3. Review `03_docx_workflow/DOCX_BUILD_INSTRUCTIONS.md`,
+   `03_docx_workflow/MODEL_DOCUMENT_STYLE_GUIDE.md`,
+   `03_docx_workflow/DOCX_QUALITY_CHECKLIST.md`,
+   `05_visual_assets/figure_placement_manifest.csv`,
+   `03_docx_workflow/table_placement_manifest.csv`,
+   `02_document_planning/document_section_evidence_map.csv`,
+   `04_evidence/claims/approved_claims.json`,
+   `02_document_planning/target_document_schema.json`,
+   `04_evidence/gaps/documentation_gaps.md`,
+   `06_validation_controls/evidence_strength_policy.json`,
+   `06_validation_controls/document_completion_rules.json`,
+   and `06_validation_controls/citation_rules.md`.
+4. Review `00_START_HERE/llm_package_build_profile.json` if package preparation
+   took longer than expected.
+5. Add your institution-specific table of contents to `01_document_template/` if needed.
+6. Use the controlled prompt sequence in `07_operator_prompts/` when you want
    a plan, draft, and validation sequence.
-6. Require the LLM to cite source files for factual claims.
-7. Run or follow `tools/validate_llm_draft.py` after drafting.
-8. Have model-development, validation, and governance reviewers verify the draft.
+7. Require the LLM to cite source files for factual claims.
+8. Run or follow `08_tools/validate_llm_draft.py` after drafting.
+9. Have model-development, validation, and governance reviewers verify the draft.
 
 Citation boundary:
 
 - Files marked `cite_as_evidence = true` in `EVIDENCE_INDEX.csv` are available
   as factual evidence.
-- Files in `operator_instructions/`, `document_template/`, `tools/`, prompt
+- Files in `07_operator_prompts/`, `01_document_template/`, `08_tools/`, prompt
   files, rubrics, validators, and package-control files guide behavior only.
 - Do not cite files listed in `DO_NOT_CITE.md` as model evidence.
 
@@ -1374,35 +1573,39 @@ def _build_prompt_template() -> str:
 
 You are drafting a model methodology / technical model document for a regulated
 financial-services model-risk review. Use only the evidence in this package.
-Do not cite files in `operator_instructions/`, `document_template/`, `tools/`,
+Do not cite files in `07_operator_prompts/`, `01_document_template/`, `08_tools/`,
 or files listed in `DO_NOT_CITE.md` as model evidence.
 
 Instructions:
 
 1. Review `EVIDENCE_INDEX.csv` and use only files marked `cite_as_evidence = true`
    for factual claims.
-2. If `document_template/DROP_TABLE_OF_CONTENTS_HERE.md` has been replaced with a
+2. If `01_document_template/DROP_TABLE_OF_CONTENTS_HERE.md` has been replaced with a
    custom table of contents, follow that structure exactly.
 3. If no custom table of contents is supplied, use
-   `default_model_methodology_outline.md`.
+   `02_document_planning/default_model_methodology_outline.md`.
 4. Cite the source package file for every factual claim. Prefer citations from
-   `source_citation_map.csv`, `approved_claims.json`,
-   `document_section_evidence_map.csv`, `model_document_context.json`,
+   `source_citation_map.csv`, `04_evidence/claims/approved_claims.json`,
+   `02_document_planning/document_section_evidence_map.csv`,
+   `04_evidence/context/model_document_context.json`,
    `reports/model_development_dossier.md`, `config/run_config.json`,
    `metadata/reproducibility_manifest.json`, and governance tables.
 5. Do not invent results, thresholds, approvals, owners, or limitations.
 6. If evidence is missing, write `Evidence not found in package` and identify the
    missing source.
-7. Use `documentation_gaps.md` to preserve missing evidence and open review items.
+7. Use `04_evidence/gaps/documentation_gaps.md` to preserve missing evidence and open review items.
 8. Treat the output as a draft requiring qualified human review. Do not state that
    the model is approved, valid, or compliant unless explicit approval evidence is
    present in the package.
-9. Follow `target_document_schema.json`, `evidence_strength_policy.json`,
-   `document_completion_rules.json`, `controlled_vocabulary.json`, and
-   `regulatory_language_guardrails.md`.
+9. Follow `02_document_planning/target_document_schema.json`,
+   `06_validation_controls/evidence_strength_policy.json`,
+   `06_validation_controls/document_completion_rules.json`,
+   `06_validation_controls/controlled_vocabulary.json`, and
+   `06_validation_controls/regulatory_language_guardrails.md`.
 10. If your environment supports file generation, follow
-    `DOCX_BUILD_INSTRUCTIONS.md` and create `model_methodology.docx`. If not,
-    create Markdown with image placeholders from `figure_placement_manifest.csv`.
+    `03_docx_workflow/DOCX_BUILD_INSTRUCTIONS.md` and create
+    `09_generated_outputs/model_methodology.docx`. If not, create Markdown with
+    image placeholders from `05_visual_assets/figure_placement_manifest.csv`.
 
 Deliverable:
 
@@ -1431,18 +1634,20 @@ Primary deliverable:
 Required files to read first:
 
 - `README_LLM_PACKAGE.md`
-- `DOCX_BUILD_INSTRUCTIONS.md`
-- `MODEL_DOCUMENT_STYLE_GUIDE.md`
-- `DOCX_QUALITY_CHECKLIST.md`
-- `figure_placement_manifest.csv`
+- `00_START_HERE/PACKAGE_MAP.md`
+- `03_docx_workflow/DOCX_BUILD_INSTRUCTIONS.md`
+- `03_docx_workflow/MODEL_DOCUMENT_STYLE_GUIDE.md`
+- `03_docx_workflow/DOCX_QUALITY_CHECKLIST.md`
+- `05_visual_assets/figure_placement_manifest.csv`
+- `03_docx_workflow/table_placement_manifest.csv`
 - `EVIDENCE_INDEX.csv`
 - `DO_NOT_CITE.md`
 - `source_citation_map.csv`
-- `document_section_evidence_map.csv`
-- `target_document_schema.json`
-- `approved_claims.json`
-- `documentation_gaps.md`
-- `MODEL_FACTS_DIGEST.md`
+- `02_document_planning/document_section_evidence_map.csv`
+- `02_document_planning/target_document_schema.json`
+- `04_evidence/claims/approved_claims.json`
+- `04_evidence/gaps/documentation_gaps.md`
+- `00_START_HERE/MODEL_FACTS_DIGEST.md`
 
 DOCX rules:
 
@@ -1452,13 +1657,13 @@ DOCX rules:
 3. Convert important CSV/JSON summaries into clean Word tables, not pasted raw
    text dumps.
 4. Insert only figures marked `insert_or_appendix = body` in
-   `figure_placement_manifest.csv` into the main body.
+   `05_visual_assets/figure_placement_manifest.csv` into the main body.
 5. Put secondary figures marked `appendix` in an appendix or omit them if they do
    not support a specific claim.
 6. Every figure must have a title, caption, figure number, and package citation.
 7. Every factual claim must cite a file marked `cite_as_evidence=true` in
    `EVIDENCE_INDEX.csv`.
-8. Do not cite `operator_instructions/`, `document_template/`, `tools/`,
+8. Do not cite `07_operator_prompts/`, `01_document_template/`, `08_tools/`,
    prompts, rubrics, validators, style guides, or files listed in
    `DO_NOT_CITE.md` as model evidence.
 9. Preserve warnings, failed checks, limitations, and documentation gaps.
@@ -1468,10 +1673,10 @@ DOCX rules:
 Output requirements:
 
 - Create `model_methodology.docx` when possible.
-- Include a short `DOCX_BUILD_NOTES.md` explaining which images and evidence
-  sources were used.
+- Include a short `09_generated_outputs/DOCX_BUILD_NOTES.md` explaining which
+  images and evidence sources were used.
 - If `.docx` cannot be created, provide Markdown with image placeholders using
-  the exact package paths from `figure_placement_manifest.csv`.
+  the exact package paths from `05_visual_assets/figure_placement_manifest.csv`.
 """
 
 
@@ -1483,26 +1688,27 @@ document from this package.
 
 ## Required Output
 
-- Preferred file: `model_methodology.docx`
-- Fallback file: `model_methodology.md` with image placeholders and captions
-- Supporting note: `DOCX_BUILD_NOTES.md`
+- Preferred file: `09_generated_outputs/model_methodology.docx`
+- Fallback file: `09_generated_outputs/model_methodology.md` with image placeholders and captions
+- Supporting note: `09_generated_outputs/DOCX_BUILD_NOTES.md`
 
 ## Document Structure
 
-1. Use the institution-specific table of contents in `document_template/` if one
+1. Use the institution-specific table of contents in `01_document_template/` if one
    was supplied.
 2. If no custom table of contents exists, use
-   `default_model_methodology_outline.md`.
-3. Use the section-by-section evidence folders in `document_sections/` to keep
-   each section tied to approved package evidence.
-4. Use `target_document_schema.json` for required sections, minimum evidence,
-   and missing-evidence behavior.
+   `02_document_planning/default_model_methodology_outline.md`.
+3. Use the section-by-section evidence folders in
+   `02_document_planning/document_sections/` to keep each section tied to
+   approved package evidence.
+4. Use `02_document_planning/target_document_schema.json` for required sections,
+   minimum evidence, and missing-evidence behavior.
 
 ## Figure Use
 
-- Use `figure_placement_manifest.csv` as the authority for which visuals belong
-  in the main document versus the appendix.
-- Prefer PNG files from `source_artifacts/figures/png/` for DOCX insertion.
+- Use `05_visual_assets/figure_placement_manifest.csv` as the authority for
+  which visuals belong in the main document versus the appendix.
+- Prefer PNG files from `05_visual_assets/figures/png/` for DOCX insertion.
 - HTML chart files are review aids and should not be embedded directly in Word.
 - Do not insert every chart. Insert only visuals that support a specific
   methodology, performance, calibration, stability, explainability, or
@@ -1536,7 +1742,7 @@ If the LLM environment cannot create `.docx`, produce Markdown with this image
 placeholder pattern:
 
 ```markdown
-![Figure 1: Calibration Curve](source_artifacts/figures/png/calibration_curve.png)
+![Figure 1: Calibration Curve](05_visual_assets/figures/png/calibration_curve.png)
 
 Figure 1. Calibration Curve. Caption text. [source: package/path > field_or_section]
 ```
@@ -1598,7 +1804,7 @@ Before treating an LLM-generated Word document as ready for human review, verify
   `source_citation_map.csv`.
 - No prompt, style, validator, checklist, or `DO_NOT_CITE.md` file is cited as
   model evidence.
-- Every inserted figure appears in `figure_placement_manifest.csv`.
+- Every inserted figure appears in `05_visual_assets/figure_placement_manifest.csv`.
 - Every inserted figure has a title, figure number, caption, and citation.
 - Every table has a title and clear source reference.
 - Warnings, failed checks, limitations, and documentation gaps are preserved.
@@ -1607,6 +1813,207 @@ Before treating an LLM-generated Word document as ready for human review, verify
   production readiness unless explicit evidence supports that statement.
 - The document includes a final unresolved-items section.
 - A qualified model-development or validation reviewer has reviewed the draft.
+"""
+
+
+def _build_resolved_toc_binding_schema() -> dict[str, Any]:
+    return {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "Resolved TOC Binding",
+        "type": "object",
+        "required": ["toc_source", "sections"],
+        "properties": {
+            "toc_source": {"type": "string"},
+            "sections": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "required": [
+                        "toc_heading",
+                        "canonical_section",
+                        "section_order",
+                        "draft_status",
+                    ],
+                    "properties": {
+                        "section_order": {"type": "integer"},
+                        "toc_heading": {"type": "string"},
+                        "canonical_section": {"type": "string"},
+                        "evidence_files": {"type": "array", "items": {"type": "string"}},
+                        "allowed_figure_ids": {"type": "array", "items": {"type": "string"}},
+                        "allowed_table_ids": {"type": "array", "items": {"type": "string"}},
+                        "approved_claim_ids": {"type": "array", "items": {"type": "string"}},
+                        "missing_evidence": {"type": "array", "items": {"type": "string"}},
+                        "draft_status": {
+                            "type": "string",
+                            "enum": ["ready", "partial", "blocked", "not_applicable"],
+                        },
+                    },
+                    "additionalProperties": True,
+                },
+            },
+        },
+        "additionalProperties": True,
+    }
+
+
+def _build_methodology_doc_spec_schema() -> dict[str, Any]:
+    return {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "Methodology Document Spec",
+        "type": "object",
+        "required": ["document_title", "sections"],
+        "properties": {
+            "document_title": {"type": "string"},
+            "document_subtitle": {"type": "string"},
+            "sections": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "required": ["heading", "order", "blocks"],
+                    "properties": {
+                        "order": {"type": "integer"},
+                        "heading": {"type": "string"},
+                        "canonical_section": {"type": "string"},
+                        "blocks": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "required": ["type"],
+                                "properties": {
+                                    "type": {
+                                        "type": "string",
+                                        "enum": ["paragraph", "bullet_list", "table", "figure"],
+                                    },
+                                    "text": {"type": "string"},
+                                    "items": {"type": "array", "items": {"type": "string"}},
+                                    "table_id": {"type": "string"},
+                                    "figure_id": {"type": "string"},
+                                    "caption": {"type": "string"},
+                                    "citations": {
+                                        "type": "array",
+                                        "items": {"type": "string"},
+                                    },
+                                },
+                                "additionalProperties": True,
+                            },
+                        },
+                    },
+                    "additionalProperties": True,
+                },
+            },
+            "appendices": {"type": "array"},
+        },
+        "additionalProperties": True,
+    }
+
+
+def _build_methodology_doc_spec_example() -> dict[str, Any]:
+    return {
+        "document_title": "Model Methodology Document",
+        "document_subtitle": "Generated from Quant Studio LLM package evidence",
+        "sections": [
+            {
+                "order": 1,
+                "heading": "Executive Summary",
+                "canonical_section": "Executive Summary",
+                "blocks": [
+                    {
+                        "type": "paragraph",
+                        "text": (
+                            "Draft paragraph with a citation. Replace this with evidence-backed "
+                            "content from approved_claims and source files."
+                        ),
+                        "citations": ["04_evidence/claims/approved_claims.json"],
+                    }
+                ],
+            },
+            {
+                "order": 2,
+                "heading": "Model Performance",
+                "canonical_section": (
+                    "Performance, Calibration, Stability, And Statistical Testing"
+                ),
+                "blocks": [
+                    {
+                        "type": "table",
+                        "table_id": "TABLE_001_EXAMPLE",
+                        "caption": "Example table placeholder.",
+                        "citations": ["03_docx_workflow/table_placement_manifest.csv"],
+                    },
+                    {
+                        "type": "figure",
+                        "figure_id": "FIG_001_EXAMPLE",
+                        "caption": "Example figure placeholder.",
+                        "citations": ["05_visual_assets/figure_placement_manifest.csv"],
+                    },
+                ],
+            },
+        ],
+        "appendices": [],
+    }
+
+
+def _build_generated_outputs_readme() -> str:
+    return """# Generated Outputs Workspace
+
+Use this folder for files created by the LLM and helper scripts.
+
+Expected files:
+
+- `resolved_toc_binding.json`: LLM-created mapping from your custom table of
+  contents to package evidence sections.
+- `methodology_doc_spec.json`: LLM-created structured document spec.
+- `model_methodology.docx`: DOCX created by `08_tools/build_docx_from_spec.py`.
+- `model_methodology.md`: fallback when DOCX generation is not available.
+- `DOCX_BUILD_NOTES.md`: notes about inserted/omitted figures, tables, and
+  unresolved formatting constraints.
+
+Recommended order:
+
+1. Ask the LLM to create `resolved_toc_binding.json`.
+2. Ask the LLM to create `methodology_doc_spec.json`.
+3. Run `python ../08_tools/validate_docx_spec.py`.
+4. Run `python ../08_tools/build_docx_from_spec.py`.
+5. Run `python ../08_tools/validate_docx_output.py`.
+"""
+
+
+def _build_resolved_toc_binding_instructions() -> str:
+    return f"""# Resolved TOC Binding Instructions
+
+Use this file when an institution-specific table of contents is dropped into
+`{DOCUMENT_TEMPLATE_DIR}/`.
+
+The LLM should not immediately draft the methodology document. It should first
+create `{GENERATED_OUTPUTS_DIR}/resolved_toc_binding.json` that maps the custom
+TOC to package evidence.
+
+Required inputs:
+
+- `{DOCUMENT_TEMPLATE_DIR}/DROP_TABLE_OF_CONTENTS_HERE.md` or another custom TOC
+  file in the same folder.
+- `{DOCUMENT_PLANNING_DIR}/document_section_evidence_map.csv`
+- `{DOCUMENT_PLANNING_DIR}/template_binding.json`
+- `{DOCUMENT_PLANNING_DIR}/target_document_schema.json`
+- `{VISUAL_ASSETS_DIR}/figure_placement_manifest.csv`
+- `{DOCX_WORKFLOW_DIR}/table_placement_manifest.csv`
+- `{EVIDENCE_DIR}/claims/approved_claims.json`
+- `{EVIDENCE_DIR}/gaps/documentation_gaps.md`
+- `EVIDENCE_INDEX.csv`
+
+Required output:
+
+- `{GENERATED_OUTPUTS_DIR}/resolved_toc_binding.json`
+
+Binding rules:
+
+- Preserve the custom TOC heading text and order.
+- Map every custom heading to the closest canonical Quant Studio section.
+- List the exact evidence files, approved claim IDs, figure IDs, and table IDs
+  allowed for that section.
+- Mark sections as `blocked` when evidence is missing instead of inventing
+  content.
+- Do not cite prompt, template, validation, or tooling files as model evidence.
 """
 
 
@@ -1622,7 +2029,7 @@ Prompt 1: Create The Documentation Plan
 
 You are assisting with a regulated model-risk technical documentation review.
 Use only the files in the current extracted LLM documentation package directory.
-Do not cite or rely on files in operator_instructions/ as model evidence. Those
+Do not cite or rely on files in 07_operator_prompts/ as model evidence. Those
 files are workflow instructions only.
 
 First, do not draft the model methodology document. Review the package and
@@ -1630,23 +2037,25 @@ produce a controlled documentation plan.
 
 Read these files first:
 - README_LLM_PACKAGE.md
-- DOCX_BUILD_INSTRUCTIONS.md
-- MODEL_DOCUMENT_STYLE_GUIDE.md
+- 00_START_HERE/PACKAGE_MAP.md
+- 03_docx_workflow/DOCX_BUILD_INSTRUCTIONS.md
+- 03_docx_workflow/MODEL_DOCUMENT_STYLE_GUIDE.md
 - EVIDENCE_INDEX.csv
 - DO_NOT_CITE.md
-- MODEL_FACTS_DIGEST.md
+- 00_START_HERE/MODEL_FACTS_DIGEST.md
 - llm_evidence_manifest.json
 - source_citation_map.csv
-- figure_placement_manifest.csv
-- target_document_schema.json
-- template_binding.json
-- document_section_evidence_map.csv
-- approved_claims.json
-- documentation_gaps.md
-- evidence_strength_policy.json
-- document_completion_rules.json
-- controlled_vocabulary.json
-- regulatory_language_guardrails.md
+- 05_visual_assets/figure_placement_manifest.csv
+- 03_docx_workflow/table_placement_manifest.csv
+- 02_document_planning/target_document_schema.json
+- 02_document_planning/template_binding.json
+- 02_document_planning/document_section_evidence_map.csv
+- 04_evidence/claims/approved_claims.json
+- 04_evidence/gaps/documentation_gaps.md
+- 06_validation_controls/evidence_strength_policy.json
+- 06_validation_controls/document_completion_rules.json
+- 06_validation_controls/controlled_vocabulary.json
+- 06_validation_controls/regulatory_language_guardrails.md
 
 For each required document section, return:
 - the section heading to use
@@ -1689,51 +2098,53 @@ You are assisting with a regulated model-risk technical documentation draft.
 Use only the files in the current extracted LLM documentation package directory
 and the reviewed documentation plan from the prior step.
 Use only files marked cite_as_evidence=true in EVIDENCE_INDEX.csv for factual
-claims. Do not cite operator_instructions/, document_template/, tools/, prompt
+claims. Do not cite 07_operator_prompts/, 01_document_template/, 08_tools/, prompt
 files, rubrics, validators, or files listed in DO_NOT_CITE.md as model evidence.
 
 Draft the full model methodology / technical model document. If your
 environment supports Word file generation, create `model_methodology.docx`.
 If your environment cannot create `.docx`, create Markdown with explicit image
-placeholders using paths from `figure_placement_manifest.csv`.
+placeholders using paths from `05_visual_assets/figure_placement_manifest.csv`.
 
 Required sources:
 - the reviewed documentation plan
-- DOCX_BUILD_INSTRUCTIONS.md
-- MODEL_DOCUMENT_STYLE_GUIDE.md
-- DOCX_QUALITY_CHECKLIST.md
-- figure_placement_manifest.csv
+- 03_docx_workflow/DOCX_BUILD_INSTRUCTIONS.md
+- 03_docx_workflow/MODEL_DOCUMENT_STYLE_GUIDE.md
+- 03_docx_workflow/DOCX_QUALITY_CHECKLIST.md
+- 05_visual_assets/figure_placement_manifest.csv
+- 03_docx_workflow/table_placement_manifest.csv
 - EVIDENCE_INDEX.csv
 - DO_NOT_CITE.md
-- MODEL_FACTS_DIGEST.md
-- target_document_schema.json
-- template_binding.json
-- default_model_methodology_outline.md, unless a custom table of contents was
-  provided in document_template/
-- approved_claims.json
-- document_section_evidence_map.csv
-- model_document_context.json
-- metrics_interpretation_brief.md
-- feature_dictionary_narrative.md
-- chart_interpretation_brief.md
-- documentation_gaps.md
-- evidence_strength_policy.json
-- controlled_vocabulary.json
-- regulatory_language_guardrails.md
+- 00_START_HERE/MODEL_FACTS_DIGEST.md
+- 02_document_planning/target_document_schema.json
+- 02_document_planning/template_binding.json
+- 02_document_planning/default_model_methodology_outline.md, unless a custom
+  table of contents was provided in 01_document_template/
+- 04_evidence/claims/approved_claims.json
+- 02_document_planning/document_section_evidence_map.csv
+- 04_evidence/context/model_document_context.json
+- 04_evidence/interpretation_briefs/metrics_interpretation_brief.md
+- 04_evidence/interpretation_briefs/feature_dictionary_narrative.md
+- 04_evidence/interpretation_briefs/chart_interpretation_brief.md
+- 04_evidence/gaps/documentation_gaps.md
+- 06_validation_controls/evidence_strength_policy.json
+- 06_validation_controls/controlled_vocabulary.json
+- 06_validation_controls/regulatory_language_guardrails.md
 - source_citation_map.csv
 
 Rules:
 - Draft only from the reviewed documentation plan and citable evidence files.
-- Use approved_claims.json as the primary claim library.
-- Follow target_document_schema.json for required sections.
+- Use 04_evidence/claims/approved_claims.json as the primary claim library.
+- Follow 02_document_planning/target_document_schema.json for required sections.
 - Use the custom table of contents if one was supplied; otherwise use
-  default_model_methodology_outline.md.
+  02_document_planning/default_model_methodology_outline.md.
 - Cite every factual claim using this style:
   [source: package/path > field_or_section]
-- When chart image files are present in source_artifacts/figures/png/, insert
-  only the body-priority visuals identified in figure_placement_manifest.csv.
+- When chart image files are present in 05_visual_assets/figures/png/, insert
+  only the body-priority visuals identified in
+  05_visual_assets/figure_placement_manifest.csv.
   If creating Markdown fallback output, use this form:
-  ![Descriptive chart title](source_artifacts/figures/png/chart.png)
+  ![Descriptive chart title](05_visual_assets/figures/png/chart.png)
 - For every inserted chart, include a short caption explaining what the chart
   shows, why it matters, and the package source citation.
 - Do not embed every available chart. Prefer charts that support key
@@ -1744,8 +2155,9 @@ Rules:
 - Do not invent missing evidence.
 - Do not claim approval, validation sign-off, compliance, or production
   readiness unless explicit package evidence supports that statement.
-- Use conservative model-risk language from controlled_vocabulary.json and
-  regulatory_language_guardrails.md.
+- Use conservative model-risk language from
+  06_validation_controls/controlled_vocabulary.json and
+  06_validation_controls/regulatory_language_guardrails.md.
 
 Deliver:
 1. A complete `model_methodology.docx` file when possible, otherwise a Markdown
@@ -1754,8 +2166,8 @@ Deliver:
 3. A limitations and assumptions section.
 4. A citation appendix mapping major sections to package evidence.
 5. A short list of items requiring human review before the document can be used.
-6. `DOCX_BUILD_NOTES.md` summarizing inserted figures, omitted figures, and any
-   formatting limitations.
+6. `09_generated_outputs/DOCX_BUILD_NOTES.md` summarizing inserted figures,
+   omitted figures, and any formatting limitations.
 
 Prompt 3: Validate The Draft Against Evidence
 ---------------------------------------------
@@ -1765,25 +2177,25 @@ Use this after the LLM has produced the draft.
 You are acting as a model validation and documentation quality reviewer.
 Use only the current extracted LLM documentation package directory and the draft
 model methodology document.
-Do not treat operator_instructions/, document_template/, tools/, prompt files,
+Do not treat 07_operator_prompts/, 01_document_template/, 08_tools/, prompt files,
 rubrics, validators, or files listed in DO_NOT_CITE.md as factual model
 evidence.
 
 Review the draft against:
 - EVIDENCE_INDEX.csv
 - DO_NOT_CITE.md
-- document_completion_rules.json
-- draft_validation_rules.json
-- document_quality_rubric.md
-- DOCX_QUALITY_CHECKLIST.md
-- citation_coverage_validator.md
-- unsupported_claim_detector.md
-- evidence_strength_policy.json
-- controlled_vocabulary.json
-- regulatory_language_guardrails.md
+- 06_validation_controls/document_completion_rules.json
+- 06_validation_controls/draft_validation_rules.json
+- 06_validation_controls/document_quality_rubric.md
+- 03_docx_workflow/DOCX_QUALITY_CHECKLIST.md
+- 06_validation_controls/citation_coverage_validator.md
+- 06_validation_controls/unsupported_claim_detector.md
+- 06_validation_controls/evidence_strength_policy.json
+- 06_validation_controls/controlled_vocabulary.json
+- 06_validation_controls/regulatory_language_guardrails.md
 - source_citation_map.csv
-- documentation_gaps.md
-- approved_claims.json
+- 04_evidence/gaps/documentation_gaps.md
+- 04_evidence/claims/approved_claims.json
 
 Perform these checks:
 - Identify factual claims without citations.
@@ -1794,9 +2206,10 @@ Perform these checks:
 - Confirm that warnings, failed checks, limitations, and documentation gaps were
   preserved.
 - Confirm every inserted figure has a title, caption, citation, and appears in
-  figure_placement_manifest.csv.
-- Confirm the DOCX or Markdown fallback follows MODEL_DOCUMENT_STYLE_GUIDE.md.
-- Score the draft using document_quality_rubric.md.
+  05_visual_assets/figure_placement_manifest.csv.
+- Confirm the DOCX or Markdown fallback follows
+  03_docx_workflow/MODEL_DOCUMENT_STYLE_GUIDE.md.
+- Score the draft using 06_validation_controls/document_quality_rubric.md.
 - Identify sections that are complete, partially supported, missing evidence, or
   blocked.
 
@@ -1897,7 +2310,7 @@ def _build_section_evidence_map(payload: Mapping[str, Any]) -> list[dict[str, An
                 "model_document_context.json",
                 "config/run_config.json",
                 "metadata/reproducibility_manifest.json",
-                "structured_table_previews/split_summary.csv",
+                "04_evidence/table_previews/split_summary.csv",
             ],
             fields=[
                 "run.input_shape",
@@ -1937,7 +2350,7 @@ def _build_section_evidence_map(payload: Mapping[str, Any]) -> list[dict[str, An
                 "feature_dictionary_narrative.md",
                 "model/feature_lineage_map.csv",
                 "tables/governance/feature_lineage_map.*",
-                "structured_table_previews/",
+                "04_evidence/table_previews/",
             ],
             fields=["feature_columns", "feature_importance", "diagnostic_table_previews"],
             instruction=(
@@ -2051,7 +2464,10 @@ def _write_section_evidence_folders(
 ) -> None:
     for index, row in enumerate(section_map, start=1):
         section_name = str(row.get("document_section", f"Section {index}"))
-        folder = f"{PACKAGE_ROOT}/document_sections/{index:02d}_{_safe_name(section_name)}"
+        folder = (
+            f"{DOCUMENT_PLANNING_DIR}/document_sections/"
+            f"{index:02d}_{_safe_name(section_name)}"
+        )
         _write_text(
             archive,
             added_arcnames,
@@ -2176,7 +2592,7 @@ def _build_regulatory_crosswalk(payload: Mapping[str, Any]) -> list[dict[str, An
             ),
             "package_source": (
                 "model_document_context.json; metadata/reproducibility_manifest.json; "
-                "structured_table_previews/"
+                "04_evidence/table_previews/"
             ),
             "evidence_status": _source_status(
                 payload,
@@ -2458,9 +2874,15 @@ def _build_target_document_schema(
         "global_requirements": [
             "Use the supplied table of contents when present; otherwise use the default outline.",
             "Every factual claim must cite package evidence using the required citation style.",
-            "Use approved_claims.json as the primary claim library.",
-            "Use figure_placement_manifest.csv for any DOCX or Markdown figure insertion.",
-            "Disclose documentation_gaps.md items instead of filling gaps with assumptions.",
+            "Use 04_evidence/claims/approved_claims.json as the primary claim library.",
+            (
+                "Use 05_visual_assets/figure_placement_manifest.csv for DOCX "
+                "or Markdown figure insertion."
+            ),
+            (
+                "Disclose 04_evidence/gaps/documentation_gaps.md items instead "
+                "of filling gaps with assumptions."
+            ),
             "Do not state the model is approved, validated, compliant, or production-ready "
             "unless explicit package evidence supports that status.",
         ],
@@ -2481,13 +2903,13 @@ def _build_evidence_strength_policy() -> dict[str, Any]:
             {
                 "level": "authoritative",
                 "sources": [
-                    "config/run_config.json",
-                    "model_document_context.json",
-                    "metadata/metrics.json",
-                    "metadata/statistical_tests.json",
-                    "metadata/reproducibility_manifest.json",
-                    "tables/governance/*.csv",
-                    "tables/governance/*.parquet",
+                    "04_evidence/source_artifacts/config/run_config.json",
+                    "04_evidence/context/model_document_context.json",
+                    "04_evidence/source_artifacts/metadata/metrics.json",
+                    "04_evidence/source_artifacts/metadata/statistical_tests.json",
+                    "04_evidence/source_artifacts/metadata/reproducibility_manifest.json",
+                    "04_evidence/source_artifacts/tables/governance/*.csv",
+                    "04_evidence/converted_tables/tables/governance/*.csv",
                 ],
                 "allowed_claims": [
                     "run configuration",
@@ -2501,12 +2923,12 @@ def _build_evidence_strength_policy() -> dict[str, Any]:
             {
                 "level": "derived_summary",
                 "sources": [
-                    "approved_claims.json",
-                    "document_section_evidence_map.csv",
-                    "metrics_interpretation_brief.md",
-                    "feature_dictionary_narrative.md",
-                    "chart_interpretation_brief.md",
-                    "figure_placement_manifest.csv",
+                    "04_evidence/claims/approved_claims.json",
+                    "02_document_planning/document_section_evidence_map.csv",
+                    "04_evidence/interpretation_briefs/metrics_interpretation_brief.md",
+                    "04_evidence/interpretation_briefs/feature_dictionary_narrative.md",
+                    "04_evidence/interpretation_briefs/chart_interpretation_brief.md",
+                    "05_visual_assets/figure_placement_manifest.csv",
                 ],
                 "allowed_claims": [
                     "plain-English interpretations of structured run facts",
@@ -2530,10 +2952,10 @@ def _build_evidence_strength_policy() -> dict[str, Any]:
             {
                 "level": "prompt_or_template",
                 "sources": [
-                    "operator_instructions/*.txt",
-                    "operator_instructions/prompts/*.md",
-                    "tone_profiles/*.md",
-                    "document_template/*.md",
+                    "07_operator_prompts/*.txt",
+                    "07_operator_prompts/prompts/*.md",
+                    "07_operator_prompts/tone_profiles/*.md",
+                    "01_document_template/*.md",
                 ],
                 "allowed_claims": ["formatting and writing instructions only"],
             },
@@ -2706,7 +3128,7 @@ def _build_template_binding(section_map: list[dict[str, Any]]) -> dict[str, Any]
             "Fill `custom_heading` when using an external methodology template."
         ),
         "instructions": [
-            "Paste or save the external table of contents in document_template/.",
+            "Paste or save the external table of contents in 01_document_template/.",
             "Map each custom heading to one canonical section below.",
             "Do not draft sections with `evidence_status` equal to `not_found` without "
             "explicitly disclosing missing evidence.",
@@ -2933,7 +3355,7 @@ def _build_llm_draft_validator_script() -> str:
     return r'''"""Validate an LLM-generated methodology draft against package controls.
 
 Usage:
-    python tools/validate_llm_draft.py path/to/draft.md
+    python 08_tools/validate_llm_draft.py path/to/draft.md
 
 This lightweight checker is intentionally conservative. It does not prove that
 the document is correct; it highlights missing citations and high-risk language
@@ -3024,11 +3446,511 @@ def validate(draft_path: Path) -> dict[str, object]:
 
 def main() -> int:
     if len(sys.argv) != 2:
-        print("Usage: python tools/validate_llm_draft.py path/to/draft.md")
+        print("Usage: python 08_tools/validate_llm_draft.py path/to/draft.md")
         return 2
     result = validate(Path(sys.argv[1]))
     print(json.dumps(result, indent=2))
     return 1 if result["status"] == "needs_review" else 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+'''
+
+
+def _build_docx_spec_validator_script() -> str:
+    return r'''"""Validate methodology_doc_spec.json before DOCX creation.
+
+Usage:
+    python ../08_tools/validate_docx_spec.py
+
+Run this from 09_generated_outputs/ or from anywhere inside the extracted
+llm_documentation_package folder. The checker intentionally uses only the Python
+standard library so it can run in constrained review environments.
+"""
+
+from __future__ import annotations
+
+import csv
+import json
+import sys
+from pathlib import Path
+from typing import Any
+
+
+def _package_root() -> Path:
+    here = Path(__file__).resolve()
+    if here.parent.name == "08_tools":
+        return here.parents[1]
+    for parent in [here.parent, *here.parents]:
+        if (parent / "EVIDENCE_INDEX.csv").exists():
+            return parent
+    return Path.cwd()
+
+
+def _read_json(path: Path) -> Any:
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _read_csv(path: Path) -> list[dict[str, str]]:
+    if not path.exists():
+        return []
+    with path.open("r", encoding="utf-8", newline="") as handle:
+        return list(csv.DictReader(handle))
+
+
+def _boolish(value: str) -> bool:
+    return str(value).strip().lower() in {"true", "1", "yes", "y"}
+
+
+def _path_exists(package_root: Path, package_path: str) -> bool:
+    return bool(package_path) and (package_root / package_path).exists()
+
+
+def validate() -> dict[str, Any]:
+    package_root = _package_root()
+    generated_root = package_root / "09_generated_outputs"
+    spec_path = generated_root / "methodology_doc_spec.json"
+    figure_manifest = _read_csv(package_root / "05_visual_assets" / "figure_placement_manifest.csv")
+    table_manifest = _read_csv(package_root / "03_docx_workflow" / "table_placement_manifest.csv")
+    evidence_index = _read_csv(package_root / "EVIDENCE_INDEX.csv")
+    valid_figure_ids = {row.get("figure_id", "") for row in figure_manifest}
+    valid_table_ids = {row.get("table_id", "") for row in table_manifest}
+    citable_paths = {
+        row.get("package_path", "")
+        for row in evidence_index
+        if _boolish(row.get("cite_as_evidence", ""))
+    }
+    non_citable_paths = {
+        row.get("package_path", "")
+        for row in evidence_index
+        if not _boolish(row.get("cite_as_evidence", ""))
+    }
+    errors: list[str] = []
+    warnings: list[str] = []
+
+    if not spec_path.exists():
+        errors.append(f"Missing {spec_path}")
+        return {"status": "failed", "errors": errors, "warnings": warnings}
+
+    spec = _read_json(spec_path)
+    if not isinstance(spec, dict):
+        errors.append("Spec root must be a JSON object.")
+        return {"status": "failed", "errors": errors, "warnings": warnings}
+    if not str(spec.get("document_title", "")).strip():
+        errors.append("document_title is required.")
+    sections = spec.get("sections")
+    if not isinstance(sections, list) or not sections:
+        errors.append("sections must be a non-empty list.")
+        sections = []
+
+    seen_orders: set[int] = set()
+    for section_index, section in enumerate(sections, start=1):
+        if not isinstance(section, dict):
+            errors.append(f"Section {section_index} must be an object.")
+            continue
+        heading = str(section.get("heading", "")).strip()
+        if not heading:
+            errors.append(f"Section {section_index} is missing heading.")
+        order = section.get("order")
+        if not isinstance(order, int):
+            errors.append(f"Section {heading or section_index} has non-integer order.")
+        elif order in seen_orders:
+            errors.append(f"Duplicate section order {order}.")
+        else:
+            seen_orders.add(order)
+        blocks = section.get("blocks")
+        if not isinstance(blocks, list) or not blocks:
+            warnings.append(f"Section {heading or section_index} has no blocks.")
+            continue
+        for block_index, block in enumerate(blocks, start=1):
+            if not isinstance(block, dict):
+                errors.append(f"Section {heading} block {block_index} must be an object.")
+                continue
+            block_type = block.get("type")
+            if block_type not in {"paragraph", "bullet_list", "table", "figure"}:
+                errors.append(
+                    f"Section {heading} block {block_index} has invalid "
+                    f"type {block_type!r}."
+                )
+            if block_type == "paragraph" and not str(block.get("text", "")).strip():
+                warnings.append(f"Section {heading} paragraph block {block_index} is empty.")
+            if block_type == "bullet_list" and not isinstance(block.get("items"), list):
+                errors.append(
+                    f"Section {heading} bullet_list block {block_index} "
+                    "needs items list."
+                )
+            if block_type == "figure":
+                figure_id = str(block.get("figure_id", ""))
+                if figure_id not in valid_figure_ids:
+                    errors.append(f"Section {heading} references unknown figure_id {figure_id!r}.")
+            if block_type == "table":
+                table_id = str(block.get("table_id", ""))
+                if table_id not in valid_table_ids:
+                    errors.append(f"Section {heading} references unknown table_id {table_id!r}.")
+            for citation in block.get("citations", []) or []:
+                citation_path = str(citation).split(">", 1)[0].strip()
+                if citation_path in non_citable_paths:
+                    errors.append(f"Section {heading} cites non-citable file {citation_path!r}.")
+                elif (
+                    citable_paths
+                    and citation_path not in citable_paths
+                    and not _path_exists(package_root, citation_path)
+                ):
+                    warnings.append(
+                        f"Section {heading} cites a path not found in package "
+                        f"index: {citation_path!r}."
+                    )
+
+    status = "passed" if not errors else "failed"
+    result = {
+        "status": status,
+        "package_root": str(package_root),
+        "spec_path": str(spec_path),
+        "section_count": len(sections),
+        "errors": errors,
+        "warnings": warnings,
+    }
+    (generated_root / "methodology_doc_spec_validation.json").write_text(
+        json.dumps(result, indent=2),
+        encoding="utf-8",
+    )
+    return result
+
+
+def main() -> int:
+    result = validate()
+    print(json.dumps(result, indent=2))
+    return 0 if result["status"] == "passed" else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+'''
+
+
+def _build_docx_builder_script() -> str:
+    return r'''"""Build model_methodology.docx from methodology_doc_spec.json.
+
+Usage:
+    python ../08_tools/build_docx_from_spec.py
+
+The preferred output is 09_generated_outputs/model_methodology.docx. If the
+optional python-docx package is unavailable, this script writes a Markdown
+fallback to 09_generated_outputs/model_methodology.md and records the limitation
+in DOCX_BUILD_NOTES.md.
+"""
+
+from __future__ import annotations
+
+import csv
+import json
+from pathlib import Path
+from typing import Any
+
+
+def _package_root() -> Path:
+    here = Path(__file__).resolve()
+    if here.parent.name == "08_tools":
+        return here.parents[1]
+    for parent in [here.parent, *here.parents]:
+        if (parent / "EVIDENCE_INDEX.csv").exists():
+            return parent
+    return Path.cwd()
+
+
+PACKAGE_ROOT = _package_root()
+GENERATED_ROOT = PACKAGE_ROOT / "09_generated_outputs"
+SPEC_PATH = GENERATED_ROOT / "methodology_doc_spec.json"
+
+
+def _read_json(path: Path) -> Any:
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _read_csv(path: Path) -> list[dict[str, str]]:
+    if not path.exists():
+        return []
+    with path.open("r", encoding="utf-8", newline="") as handle:
+        return list(csv.DictReader(handle))
+
+
+def _table_manifest() -> dict[str, dict[str, str]]:
+    rows = _read_csv(PACKAGE_ROOT / "03_docx_workflow" / "table_placement_manifest.csv")
+    return {row.get("table_id", ""): row for row in rows if row.get("table_id")}
+
+
+def _figure_manifest() -> dict[str, dict[str, str]]:
+    rows = _read_csv(PACKAGE_ROOT / "05_visual_assets" / "figure_placement_manifest.csv")
+    return {row.get("figure_id", ""): row for row in rows if row.get("figure_id")}
+
+
+def _read_table_preview(
+    package_path: str,
+    *,
+    max_rows: int = 12,
+) -> tuple[list[str], list[list[str]]]:
+    path = PACKAGE_ROOT / package_path
+    if not path.exists():
+        return ["missing_source"], [[package_path]]
+    if path.suffix.lower() == ".csv":
+        with path.open("r", encoding="utf-8", newline="") as handle:
+            reader = csv.reader(handle)
+            rows = list(reader)
+        if not rows:
+            return ["empty"], [[""]]
+        return rows[0], rows[1 : max_rows + 1]
+    if path.suffix.lower() == ".json":
+        payload = _read_json(path)
+        if isinstance(payload, list) and payload and isinstance(payload[0], dict):
+            columns = sorted({str(key) for row in payload[:max_rows] for key in row})
+            records = [
+                [str(row.get(column, "")) for column in columns]
+                for row in payload[:max_rows]
+            ]
+            return columns, records
+        if isinstance(payload, dict):
+            rows = [
+                [str(key), json.dumps(value, default=str)[:500]]
+                for key, value in list(payload.items())[:max_rows]
+            ]
+            return ["field", "value"], rows
+    return ["unsupported_source"], [[package_path]]
+
+
+def _citations_text(citations: Any) -> str:
+    if not citations:
+        return ""
+    if not isinstance(citations, list):
+        citations = [citations]
+    return " ".join(f"[source: {citation}]" for citation in citations)
+
+
+def _write_markdown(
+    spec: dict[str, Any],
+    table_rows: dict[str, dict[str, str]],
+    figure_rows: dict[str, dict[str, str]],
+) -> Path:
+    output_path = GENERATED_ROOT / "model_methodology.md"
+    lines = [f"# {spec.get('document_title', 'Model Methodology Document')}", ""]
+    subtitle = str(spec.get("document_subtitle", "")).strip()
+    if subtitle:
+        lines.extend([subtitle, ""])
+    for section in sorted(spec.get("sections", []), key=lambda item: item.get("order", 9999)):
+        lines.extend([f"## {section.get('heading', 'Untitled Section')}", ""])
+        for block in section.get("blocks", []):
+            block_type = block.get("type")
+            if block_type == "paragraph":
+                text = str(block.get("text", "")).strip()
+                citation_text = _citations_text(block.get("citations"))
+                lines.extend([f"{text} {citation_text}".strip(), ""])
+            elif block_type == "bullet_list":
+                for item in block.get("items", []) or []:
+                    lines.append(f"- {item}")
+                lines.append("")
+            elif block_type == "figure":
+                row = figure_rows.get(str(block.get("figure_id", "")), {})
+                image_path = row.get("image_path", "")
+                title = row.get("figure_name", block.get("figure_id", "Figure"))
+                caption = block.get("caption") or row.get("caption", "")
+                if image_path:
+                    lines.append(f"![{title}]({image_path})")
+                figure_citations = _citations_text(
+                    block.get("citations") or [row.get("citation_source", "")]
+                )
+                lines.extend([f"Figure: {caption}", figure_citations, ""])
+            elif block_type == "table":
+                row = table_rows.get(str(block.get("table_id", "")), {})
+                source_path = row.get("source_path", "")
+                columns, records = _read_table_preview(source_path)
+                lines.append(f"Table: {block.get('caption') or row.get('caption', '')}")
+                lines.append("| " + " | ".join(columns) + " |")
+                lines.append("| " + " | ".join("---" for _ in columns) + " |")
+                for record in records:
+                    cells = [str(value).replace("|", "\\|") for value in record]
+                    lines.append("| " + " | ".join(cells) + " |")
+                lines.extend([_citations_text(block.get("citations") or [source_path]), ""])
+    output_path.write_text("\n".join(lines).strip() + "\n", encoding="utf-8")
+    return output_path
+
+
+def _write_docx(
+    spec: dict[str, Any],
+    table_rows: dict[str, dict[str, str]],
+    figure_rows: dict[str, dict[str, str]],
+) -> Path:
+    from docx import Document
+    from docx.shared import Inches
+
+    document = Document()
+    document.add_heading(str(spec.get("document_title", "Model Methodology Document")), 0)
+    subtitle = str(spec.get("document_subtitle", "")).strip()
+    if subtitle:
+        document.add_paragraph(subtitle)
+    for section in sorted(spec.get("sections", []), key=lambda item: item.get("order", 9999)):
+        document.add_heading(str(section.get("heading", "Untitled Section")), level=1)
+        for block in section.get("blocks", []) or []:
+            block_type = block.get("type")
+            if block_type == "paragraph":
+                paragraph = document.add_paragraph(str(block.get("text", "")).strip())
+                citation_text = _citations_text(block.get("citations"))
+                if citation_text:
+                    paragraph.add_run(f" {citation_text}").italic = True
+            elif block_type == "bullet_list":
+                for item in block.get("items", []) or []:
+                    document.add_paragraph(str(item), style="List Bullet")
+            elif block_type == "figure":
+                row = figure_rows.get(str(block.get("figure_id", "")), {})
+                image_path = row.get("image_path", "")
+                if image_path and (PACKAGE_ROOT / image_path).exists():
+                    document.add_picture(
+                        str(PACKAGE_ROOT / image_path),
+                        width=Inches(float(row.get("width_inches") or 6.5)),
+                    )
+                caption = block.get("caption") or row.get("caption", "")
+                caption_paragraph = document.add_paragraph(f"Figure. {caption}")
+                citation_text = _citations_text(
+                    block.get("citations") or [row.get("citation_source", "")]
+                )
+                if citation_text:
+                    caption_paragraph.add_run(f" {citation_text}").italic = True
+            elif block_type == "table":
+                row = table_rows.get(str(block.get("table_id", "")), {})
+                source_path = row.get("source_path", "")
+                columns, records = _read_table_preview(
+                    source_path,
+                    max_rows=int(row.get("max_rows") or 12),
+                )
+                document.add_paragraph(f"Table. {block.get('caption') or row.get('caption', '')}")
+                table = document.add_table(rows=1, cols=max(len(columns), 1))
+                table.style = "Table Grid"
+                for index, column in enumerate(columns or ["value"]):
+                    table.rows[0].cells[index].text = str(column)
+                for record in records:
+                    cells = table.add_row().cells
+                    for index, value in enumerate(record[: len(cells)]):
+                        cells[index].text = str(value)[:1000]
+                citation_text = _citations_text(block.get("citations") or [source_path])
+                if citation_text:
+                    document.add_paragraph(citation_text)
+    output_path = GENERATED_ROOT / "model_methodology.docx"
+    document.save(output_path)
+    return output_path
+
+
+def main() -> int:
+    GENERATED_ROOT.mkdir(parents=True, exist_ok=True)
+    if not SPEC_PATH.exists():
+        raise SystemExit(
+            f"Missing {SPEC_PATH}. Ask the LLM to create methodology_doc_spec.json first."
+        )
+    spec = _read_json(SPEC_PATH)
+    table_rows = _table_manifest()
+    figure_rows = _figure_manifest()
+    notes: list[str] = []
+    try:
+        output_path = _write_docx(spec, table_rows, figure_rows)
+        notes.append(f"Created DOCX: {output_path}")
+    except Exception as exc:
+        output_path = _write_markdown(spec, table_rows, figure_rows)
+        notes.append(f"DOCX creation failed; created Markdown fallback: {output_path}")
+        notes.append(f"DOCX failure detail: {exc}")
+        notes.append("Install python-docx if DOCX creation is required in this environment.")
+    notes_path = GENERATED_ROOT / "DOCX_BUILD_NOTES.md"
+    notes_path.write_text(
+        "# DOCX Build Notes\n\n" + "\n".join(f"- {note}" for note in notes) + "\n",
+        encoding="utf-8",
+    )
+    print("\n".join(notes))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+'''
+
+
+def _build_docx_output_validator_script() -> str:
+    return r'''"""Validate generated DOCX or Markdown output.
+
+Usage:
+    python ../08_tools/validate_docx_output.py
+"""
+
+from __future__ import annotations
+
+import json
+import zipfile
+from pathlib import Path
+from typing import Any
+
+
+def _package_root() -> Path:
+    here = Path(__file__).resolve()
+    if here.parent.name == "08_tools":
+        return here.parents[1]
+    for parent in [here.parent, *here.parents]:
+        if (parent / "EVIDENCE_INDEX.csv").exists():
+            return parent
+    return Path.cwd()
+
+
+def validate() -> dict[str, Any]:
+    package_root = _package_root()
+    generated_root = package_root / "09_generated_outputs"
+    docx_path = generated_root / "model_methodology.docx"
+    md_path = generated_root / "model_methodology.md"
+    notes_path = generated_root / "DOCX_BUILD_NOTES.md"
+    errors: list[str] = []
+    warnings: list[str] = []
+    output_type = ""
+    media_count = 0
+
+    if docx_path.exists():
+        output_type = "docx"
+        try:
+            with zipfile.ZipFile(docx_path) as archive:
+                names = archive.namelist()
+                if "word/document.xml" not in names:
+                    errors.append("DOCX is missing word/document.xml.")
+                media_count = len([name for name in names if name.startswith("word/media/")])
+                document_xml = archive.read("word/document.xml").decode("utf-8", errors="ignore")
+                if "{{" in document_xml or "}}" in document_xml:
+                    errors.append("DOCX appears to contain unresolved template placeholders.")
+        except zipfile.BadZipFile:
+            errors.append("DOCX is not a valid zip-based Word file.")
+    elif md_path.exists():
+        output_type = "markdown_fallback"
+        text = md_path.read_text(encoding="utf-8")
+        if "![" in text:
+            media_count = text.count("![")
+        if "{{" in text or "}}" in text:
+            errors.append("Markdown appears to contain unresolved template placeholders.")
+        warnings.append("DOCX was not created; Markdown fallback is present.")
+    else:
+        errors.append("Neither model_methodology.docx nor model_methodology.md exists.")
+
+    if not notes_path.exists():
+        warnings.append("DOCX_BUILD_NOTES.md was not found.")
+
+    result = {
+        "status": "passed" if not errors else "failed",
+        "output_type": output_type,
+        "media_count": media_count,
+        "errors": errors,
+        "warnings": warnings,
+    }
+    (generated_root / "docx_output_validation.json").write_text(
+        json.dumps(result, indent=2),
+        encoding="utf-8",
+    )
+    return result
+
+
+def main() -> int:
+    result = validate()
+    print(json.dumps(result, indent=2))
+    return 0 if result["status"] == "passed" else 1
 
 
 if __name__ == "__main__":
@@ -3281,9 +4203,12 @@ def _write_prompt_variants(
             "Draft a complete model methodology document. Create "
             "`model_methodology.docx` if your environment supports Word file "
             "generation; otherwise create a Markdown fallback. Use the custom table of "
-            "contents if supplied. Use `DOCX_BUILD_INSTRUCTIONS.md`, "
-            "`figure_placement_manifest.csv`, `document_section_evidence_map.csv`, "
-            "`approved_claims.json`, `documentation_gaps.md`, and `citation_rules.md`. "
+            "contents if supplied. Use `03_docx_workflow/DOCX_BUILD_INSTRUCTIONS.md`, "
+            "`05_visual_assets/figure_placement_manifest.csv`, "
+            "`02_document_planning/document_section_evidence_map.csv`, "
+            "`04_evidence/claims/approved_claims.json`, "
+            "`04_evidence/gaps/documentation_gaps.md`, and "
+            "`06_validation_controls/citation_rules.md`. "
             "Every factual claim must cite package evidence.\n"
         ),
         "prompt_executive_summary.md": (
@@ -3301,22 +4226,28 @@ def _write_prompt_variants(
         "prompt_limitations_and_assumptions.md": (
             "# Prompt: Limitations And Assumptions\n\n"
             "Write the limitations, assumptions, and use restrictions section. Use "
-            "`documentation_gaps.md`, decision issues, warnings, suitability checks, "
-            "and validation evidence. Clearly separate known limitations from missing evidence.\n"
+            "`04_evidence/gaps/documentation_gaps.md`, decision issues, warnings, "
+            "suitability checks, and validation evidence. Clearly separate known "
+            "limitations from missing evidence.\n"
         ),
         "prompt_regulatory_gap_review.md": (
             "# Prompt: Regulatory Gap Review\n\n"
-            "Compare the evidence package to `regulatory_documentation_crosswalk.csv`. "
+            "Compare the evidence package to "
+            "`04_evidence/regulatory/regulatory_documentation_crosswalk.csv`. "
             "List each expected documentation area as satisfied, partial, missing, or "
             "not applicable, and cite the package evidence used for that judgment.\n"
         ),
         "prompt_1_create_document_plan.md": (
             "# Prompt 1: Create Controlled Document Plan\n\n"
             "Do not draft the methodology document yet. First, read "
-            "`EVIDENCE_INDEX.csv`, `DO_NOT_CITE.md`, `MODEL_FACTS_DIGEST.md`, "
-            "`target_document_schema.json`, `template_binding.json`, "
-            "`document_section_evidence_map.csv`, `documentation_gaps.md`, and "
-            "`evidence_strength_policy.json`. Produce a section-by-section drafting "
+            "`EVIDENCE_INDEX.csv`, `DO_NOT_CITE.md`, "
+            "`00_START_HERE/MODEL_FACTS_DIGEST.md`, "
+            "`02_document_planning/target_document_schema.json`, "
+            "`02_document_planning/template_binding.json`, "
+            "`02_document_planning/document_section_evidence_map.csv`, "
+            "`04_evidence/gaps/documentation_gaps.md`, and "
+            "`06_validation_controls/evidence_strength_policy.json`. "
+            "Produce a section-by-section drafting "
             "plan with columns for section, objective, citable evidence, approved "
             "claims, missing evidence, human review needed, and draft status. "
             "Do not cite instruction, template, validator, or prompt files as evidence.\n"
@@ -3325,19 +4256,23 @@ def _write_prompt_variants(
             "# Prompt 2: Draft From Approved Plan\n\n"
             "Draft the methodology document only after the document plan has been "
             "reviewed. Use `EVIDENCE_INDEX.csv` to identify citable evidence, use "
-            "`approved_claims.json` as the primary claim library, follow "
-            "`target_document_schema.json`, use controlled vocabulary, and cite every "
+            "`04_evidence/claims/approved_claims.json` as the primary claim library, "
+            "follow `02_document_planning/target_document_schema.json`, use controlled "
+            "vocabulary, and cite every "
             "factual claim. Do not cite files listed in `DO_NOT_CITE.md`. "
             "Preserve all unresolved gaps. If creating DOCX output, follow "
-            "`DOCX_BUILD_INSTRUCTIONS.md` and insert only body-priority PNGs listed "
-            "in `figure_placement_manifest.csv`. If DOCX is not supported, use "
+            "`03_docx_workflow/DOCX_BUILD_INSTRUCTIONS.md` and insert only "
+            "body-priority PNGs listed in "
+            "`05_visual_assets/figure_placement_manifest.csv`. If DOCX is not supported, use "
             "Markdown image placeholders with captions and citations.\n"
         ),
         "prompt_3_validate_draft_against_evidence.md": (
             "# Prompt 3: Validate Draft Against Evidence\n\n"
-            "Review the draft against `document_completion_rules.json`, "
-            "`draft_validation_rules.json`, `document_quality_rubric.md`, "
-            "`citation_coverage_validator.md`, and `unsupported_claim_detector.md`. "
+            "Review the draft against `06_validation_controls/document_completion_rules.json`, "
+            "`06_validation_controls/draft_validation_rules.json`, "
+            "`06_validation_controls/document_quality_rubric.md`, "
+            "`06_validation_controls/citation_coverage_validator.md`, and "
+            "`06_validation_controls/unsupported_claim_detector.md`. "
             "Return citation gaps, unsupported claims, high-risk language, missing "
             "sections, and a pass/fail recommendation for human review readiness.\n"
         ),
@@ -3416,7 +4351,7 @@ def _write_tone_profiles(
         _write_text(
             archive,
             added_arcnames,
-            f"{PACKAGE_ROOT}/tone_profiles/{file_name}",
+            f"{OPERATOR_INSTRUCTIONS_DIR}/tone_profiles/{file_name}",
             text,
             included,
             evidence_area="tone_profile",
@@ -3537,7 +4472,7 @@ def _build_figure_placement_manifest(included: list[dict[str, Any]]) -> list[dic
         package_path = str(record.get("package_path", ""))
         if (
             record.get("source") != "generated_chart_export"
-            or "/source_artifacts/figures/" not in package_path
+            or not _is_visual_asset_path(package_path)
         ):
             continue
         path = Path(package_path)
@@ -3551,6 +4486,7 @@ def _build_figure_placement_manifest(included: list[dict[str, Any]]) -> list[dic
         return [
             {
                 "figure_rank": "",
+                "figure_id": "",
                 "figure_name": "no_generated_chart_assets",
                 "image_path": "",
                 "html_review_path": "",
@@ -3575,9 +4511,11 @@ def _build_figure_placement_manifest(included: list[dict[str, Any]]) -> list[dic
         preferred_path = assets.get("png") or assets.get("html", "")
         preferred_format = "png" if assets.get("png") else "html"
         body_priority = bool(assets.get("png")) and position <= 8
+        figure_id = _document_asset_id("FIG", position, figure_name)
         rows.append(
             {
                 "figure_rank": position,
+                "figure_id": figure_id,
                 "figure_name": figure_name,
                 "image_path": preferred_path,
                 "html_review_path": assets.get("html", ""),
@@ -3601,6 +4539,300 @@ def _build_figure_placement_manifest(included: list[dict[str, Any]]) -> list[dic
             }
         )
     return rows
+
+
+def _is_visual_asset_path(package_path: str) -> bool:
+    path_lower = package_path.lower().replace("\\", "/")
+    figure_root = FIGURE_ASSETS_ROOT.lower().replace("\\", "/")
+    return (
+        f"/{figure_root}/" in f"/{path_lower}"
+        or "/source_artifacts/figures/" in path_lower
+    )
+
+
+def _document_asset_id(prefix: str, position: int, name: str) -> str:
+    safe = _safe_name(name).replace(".", "_").replace("-", "_").upper()
+    safe = "_".join(part for part in safe.split("_") if part)
+    return f"{prefix}_{position:03d}_{safe[:48] or 'ASSET'}"
+
+
+def _build_figure_contact_sheet(rows: list[dict[str, Any]]) -> str:
+    lines = [
+        "# Figure Contact Sheet",
+        "",
+        "Use this index to decide which visuals belong in the methodology document.",
+        "The manifest CSV remains the authority for exact IDs and paths.",
+        "",
+    ]
+    available_rows = [row for row in rows if row.get("figure_id")]
+    if not available_rows:
+        lines.append("No document-ready chart images were included in this package.")
+        return "\n".join(lines).strip() + "\n"
+    for row in available_rows:
+        figure_id = row.get("figure_id", "")
+        title = str(row.get("figure_name", "")).replace("_", " ").title()
+        image_path = str(row.get("image_path", ""))
+        relative_image = _relative_visual_path_for_contact_sheet(image_path)
+        lines.extend(
+            [
+                f"## {figure_id}: {title}",
+                "",
+                f"- Recommended section: {row.get('recommended_section', '')}",
+                f"- Placement: {row.get('insert_or_appendix', '')}",
+                f"- Caption: {row.get('caption', '')}",
+                f"- Citation source: `{row.get('citation_source', '')}`",
+                "",
+            ]
+        )
+        if relative_image and image_path.lower().endswith((".png", ".jpg", ".jpeg", ".svg")):
+            lines.extend([f"![{title}]({relative_image})", ""])
+        else:
+            lines.extend(
+                [
+                    "No PNG image is available for inline preview. Use the HTML review path:",
+                    f"`{row.get('html_review_path', '')}`",
+                    "",
+                ]
+            )
+    return "\n".join(lines).strip() + "\n"
+
+
+def _relative_visual_path_for_contact_sheet(package_path: str) -> str:
+    normalized = package_path.replace("\\", "/")
+    prefix = f"{VISUAL_ASSETS_DIR}/"
+    if normalized.startswith(prefix):
+        return normalized[len(prefix) :]
+    return normalized
+
+
+def _build_table_placement_manifest(included: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    candidates = [
+        record
+        for record in included
+        if _is_document_table_candidate(record)
+    ]
+    ordered_candidates = sorted(
+        candidates,
+        key=lambda record: (
+            _document_table_priority(str(record.get("package_path", ""))),
+            str(record.get("package_path", "")),
+        ),
+    )
+    if not ordered_candidates:
+        return [
+            {
+                "table_rank": "",
+                "table_id": "",
+                "table_name": "no_table_assets",
+                "source_path": "",
+                "recommended_section": "Appendices And Source Evidence Index",
+                "title": "No high-value table assets were identified.",
+                "caption": "No table insertion is available for the DOCX draft.",
+                "citation_source": "",
+                "priority": "",
+                "max_rows": "",
+                "insert_or_appendix": "not_available",
+                "docx_instruction": (
+                    "Do not invent tables. Draft from available text and citable evidence."
+                ),
+            }
+        ]
+
+    rows: list[dict[str, Any]] = []
+    for position, record in enumerate(ordered_candidates[:40], start=1):
+        package_path = str(record.get("package_path", ""))
+        table_name = Path(package_path).stem
+        metadata = _document_table_metadata(package_path)
+        table_id = _document_asset_id("TABLE", position, table_name)
+        rows.append(
+            {
+                "table_rank": position,
+                "table_id": table_id,
+                "table_name": table_name,
+                "source_path": package_path,
+                "recommended_section": metadata["recommended_section"],
+                "title": metadata["title"],
+                "caption": metadata["caption"],
+                "citation_source": package_path,
+                "priority": metadata["priority"],
+                "max_rows": metadata["max_rows"],
+                "insert_or_appendix": metadata["insert_or_appendix"],
+                "docx_instruction": metadata["docx_instruction"],
+            }
+        )
+    return rows
+
+
+def _is_document_table_candidate(record: Mapping[str, Any]) -> bool:
+    package_path = str(record.get("package_path", ""))
+    path_lower = package_path.lower().replace("\\", "/")
+    suffix = Path(package_path).suffix.lower()
+    if suffix not in {".csv", ".json"}:
+        return False
+    if any(
+        token in path_lower
+        for token in (
+            "/07_operator_prompts/",
+            "/08_tools/",
+            "/01_document_template/",
+            "schema.json",
+            "policy.json",
+            "rules.json",
+            "rubric.json",
+            "manifest.json",
+            "plotly.min.js",
+            "figure_manifest.json",
+        )
+    ):
+        return False
+    evidence_area = str(record.get("evidence_area", "")).lower()
+    if evidence_area in {
+        "llm_prompt",
+        "docx_authoring_control",
+        "draft_validation",
+        "document_quality",
+        "document_control",
+        "citation_rules",
+        "document_template",
+        "manifest",
+    }:
+        return False
+    if "source_citation_map.csv" in path_lower or "evidence_index.csv" in path_lower:
+        return False
+    return any(
+        token in path_lower
+        for token in (
+            "metrics",
+            "statistical_tests",
+            "validation_checklist",
+            "traceability",
+            "feature_lineage",
+            "feature_importance",
+            "documentation_gaps",
+            "approved_claims",
+            "regulatory_documentation_crosswalk",
+            "document_section_evidence_map",
+            "model_document_context",
+            "table_previews",
+            "converted_tables",
+            "/tables/",
+            "governance",
+        )
+    )
+
+
+def _document_table_priority(package_path: str) -> int:
+    normalized = package_path.lower().replace("-", "_").replace(" ", "_")
+    priorities = (
+        ("metric", "performance"),
+        ("validation_checklist",),
+        ("statistical_tests",),
+        ("feature_importance", "feature_lineage"),
+        ("documentation_gaps",),
+        ("approved_claims",),
+        ("regulatory_documentation_crosswalk",),
+        ("document_section_evidence_map",),
+        ("traceability",),
+        ("model_document_context",),
+    )
+    for priority, patterns in enumerate(priorities, start=1):
+        if any(pattern in normalized for pattern in patterns):
+            return priority
+    return 99
+
+
+def _document_table_metadata(package_path: str) -> dict[str, Any]:
+    normalized = package_path.lower().replace("-", "_").replace(" ", "_")
+    table_title = Path(package_path).stem.replace("_", " ").title()
+    if "metric" in normalized or "performance" in normalized:
+        return {
+            "recommended_section": "Performance, Calibration, Stability, And Statistical Testing",
+            "title": table_title,
+            "caption": "Primary model-performance evidence for the methodology document.",
+            "priority": 1,
+            "max_rows": 25,
+            "insert_or_appendix": "body",
+            "docx_instruction": "Insert as a concise body table with rounded metrics.",
+        }
+    if "validation_checklist" in normalized:
+        return {
+            "recommended_section": "Governance, Reproducibility, And Controls",
+            "title": table_title,
+            "caption": "Validation checklist evidence that should be preserved for review.",
+            "priority": 2,
+            "max_rows": 30,
+            "insert_or_appendix": "body",
+            "docx_instruction": (
+                "Insert failed or warning rows in the body; move full table to appendix."
+            ),
+        }
+    if "statistical_tests" in normalized:
+        return {
+            "recommended_section": "Performance, Calibration, Stability, And Statistical Testing",
+            "title": table_title,
+            "caption": "Statistical-test evidence for model validation discussion.",
+            "priority": 3,
+            "max_rows": 30,
+            "insert_or_appendix": "body",
+            "docx_instruction": (
+                "Summarize material tests in the body and cite the full source table."
+            ),
+        }
+    if "feature" in normalized:
+        return {
+            "recommended_section": "Features, Transformations, Imputation, And Lineage",
+            "title": table_title,
+            "caption": "Feature lineage, importance, or transformation evidence.",
+            "priority": 4,
+            "max_rows": 30,
+            "insert_or_appendix": "body",
+            "docx_instruction": (
+                "Insert the most material feature rows; appendix any full inventory."
+            ),
+        }
+    if "documentation_gaps" in normalized:
+        return {
+            "recommended_section": "Assumptions, Limitations, And Open Review Items",
+            "title": table_title,
+            "caption": "Open documentation gaps and limitations that must not be hidden.",
+            "priority": 5,
+            "max_rows": 40,
+            "insert_or_appendix": "body",
+            "docx_instruction": "Insert all material gaps in the body limitations section.",
+        }
+    if "approved_claims" in normalized:
+        return {
+            "recommended_section": "Executive Summary",
+            "title": table_title,
+            "caption": "Evidence-backed claim library for controlled drafting.",
+            "priority": 6,
+            "max_rows": 20,
+            "insert_or_appendix": "appendix",
+            "docx_instruction": (
+                "Use as drafting evidence; do not paste the full claim library in body."
+            ),
+        }
+    if "regulatory" in normalized or "crosswalk" in normalized:
+        return {
+            "recommended_section": "Governance, Reproducibility, And Controls",
+            "title": table_title,
+            "caption": "Regulatory documentation crosswalk for review traceability.",
+            "priority": 7,
+            "max_rows": 30,
+            "insert_or_appendix": "appendix",
+            "docx_instruction": (
+                "Use as appendix support unless a governance section needs the table."
+            ),
+        }
+    return {
+        "recommended_section": "Appendices And Source Evidence Index",
+        "title": table_title,
+        "caption": "Supporting table evidence from the completed run.",
+        "priority": 99,
+        "max_rows": 25,
+        "insert_or_appendix": "appendix",
+        "docx_instruction": "Use in appendix or cite only if it supports a specific claim.",
+    }
 
 
 def _document_figure_priority(name: str) -> int:
@@ -3809,7 +5041,7 @@ def _source_available(payload: Mapping[str, Any], source: str) -> bool:
     )
     if any(token in source_lower for token in generated_tokens):
         return True
-    if "structured_table_previews" in source_lower:
+    if "structured_table_previews" in source_lower or "table_previews" in source_lower:
         return bool(_mapping(payload.get("diagnostic_table_previews")))
     artifact_paths = " ".join(
         str(value).lower().replace("\\", "/")
@@ -3914,7 +5146,7 @@ def _build_guidance_mapping() -> list[dict[str, Any]]:
                 "config/run_config.json",
                 "model_document_context.json",
                 "reports/model_development_dossier.md",
-                "structured_table_previews/",
+                "04_evidence/table_previews/",
             ],
         },
     ]
@@ -4055,7 +5287,7 @@ def _build_evidence_checklist(
         ),
         (
             "Diagnostic table previews",
-            "structured_table_previews",
+            "table_previews",
             "Useful for LLM-readable diagnostics.",
         ),
         ("Chart exports", "figures/", "Useful when individual chart exports exist."),
@@ -4191,7 +5423,7 @@ def _classify_included_record(record: Mapping[str, Any]) -> dict[str, Any]:
     cite_as_evidence = True
     reason = ""
 
-    if "/source_artifacts/figures/" in path_lower:
+    if _is_visual_asset_path(package_path):
         if path_lower.endswith(("plotly.min.js", "figure_manifest.json")):
             category = "do_not_cite"
             cite_as_evidence = False
@@ -4199,21 +5431,32 @@ def _classify_included_record(record: Mapping[str, Any]) -> dict[str, Any]:
         else:
             category = "supporting_chart"
             cite_as_evidence = True
-    elif "/operator_instructions/" in path_lower or "prompt" in path_lower:
+    elif (
+        "/07_operator_prompts/" in path_lower
+        or "/operator_instructions/" in path_lower
+        or "prompt" in path_lower
+    ):
         category = "instruction"
         cite_as_evidence = False
         reason = "Operator prompt/instruction file, not model-run evidence."
-    elif "/document_template/" in path_lower or path_lower.endswith(
+    elif (
+        "/01_document_template/" in path_lower
+        or "/document_template/" in path_lower
+        or path_lower.endswith(
         (
             "default_model_methodology_outline.md",
             "target_document_schema.json",
             "template_binding.json",
+            "resolved_toc_binding.schema.json",
+            "methodology_doc_spec.schema.json",
+            "methodology_doc_spec_example.json",
+        )
         )
     ):
         category = "template"
         cite_as_evidence = False
         reason = "Document structure or template control, not model-run evidence."
-    elif "/tools/" in path_lower or any(
+    elif "/08_tools/" in path_lower or "/tools/" in path_lower or any(
         token in path_lower
         for token in (
             "validator",
@@ -4237,6 +5480,9 @@ def _classify_included_record(record: Mapping[str, Any]) -> dict[str, Any]:
             "docx_quality_checklist",
             "model_document_style_guide",
             "figure_placement_manifest",
+            "figure_contact_sheet",
+            "table_placement_manifest",
+            "resolved_toc_binding_instructions",
             "citation_rules",
             "evidence_strength_policy",
             "document_completion_rules",
@@ -4470,7 +5716,7 @@ def _resolve_run_root(artifacts: Mapping[str, Any]) -> Path | None:
 
 def _source_arcname(path: Path, run_root: Path | None) -> str:
     relative = _relative_source_path(path, run_root)
-    return f"{PACKAGE_ROOT}/source_artifacts/{_posix(relative)}"
+    return f"{SOURCE_ARTIFACTS_DIR}/{_posix(relative)}"
 
 
 def _relative_source_path(path: Path, run_root: Path | None) -> Path:

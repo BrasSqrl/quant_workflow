@@ -32,7 +32,7 @@ from quant_pd_framework.figure_exports import (
     build_individual_figure_zip,
 )
 from quant_pd_framework.llm_documentation_package import (
-    PACKAGE_ROOT,
+    FIGURE_ASSETS_ROOT,
     build_llm_documentation_context_payload,
     build_llm_documentation_package,
     build_llm_documentation_package_from_payload,
@@ -187,95 +187,191 @@ def test_llm_documentation_package_exports_evidence_without_row_level_data() -> 
                 "llm_documentation_package/DO_NOT_CITE.md"
             ).decode("utf-8")
 
-        assert "llm_documentation_package/model_document_context.json" in names
-        assert "llm_documentation_package/model_document_context.md" in names
-        assert "llm_documentation_package/MODEL_FACTS_DIGEST.md" in names
+        assert "llm_documentation_package/START_HERE.md" in names
+        assert "llm_documentation_package/00_START_HERE/PACKAGE_MAP.md" in names
+        assert "llm_documentation_package/04_evidence/context/model_document_context.json" in names
+        assert "llm_documentation_package/04_evidence/context/model_document_context.md" in names
+        assert "llm_documentation_package/00_START_HERE/MODEL_FACTS_DIGEST.md" in names
         assert "llm_documentation_package/EVIDENCE_INDEX.csv" in names
         assert "llm_documentation_package/DO_NOT_CITE.md" in names
-        assert "llm_documentation_package/DOCX_BUILD_INSTRUCTIONS.md" in names
-        assert "llm_documentation_package/MODEL_DOCUMENT_STYLE_GUIDE.md" in names
-        assert "llm_documentation_package/DOCX_QUALITY_CHECKLIST.md" in names
-        assert "llm_documentation_package/figure_placement_manifest.csv" in names
+        assert "llm_documentation_package/03_docx_workflow/DOCX_BUILD_INSTRUCTIONS.md" in names
+        assert "llm_documentation_package/03_docx_workflow/MODEL_DOCUMENT_STYLE_GUIDE.md" in names
+        assert "llm_documentation_package/03_docx_workflow/DOCX_QUALITY_CHECKLIST.md" in names
+        assert "llm_documentation_package/03_docx_workflow/table_placement_manifest.csv" in names
         assert (
-            "llm_documentation_package/operator_instructions/"
+            "llm_documentation_package/03_docx_workflow/"
+            "resolved_toc_binding.schema.json"
+            in names
+        )
+        assert (
+            "llm_documentation_package/03_docx_workflow/"
+            "methodology_doc_spec.schema.json"
+            in names
+        )
+        assert "llm_documentation_package/05_visual_assets/figure_placement_manifest.csv" in names
+        assert "llm_documentation_package/05_visual_assets/FIGURE_CONTACT_SHEET.md" in names
+        assert (
+            "llm_documentation_package/07_operator_prompts/"
             "prompt_generate_model_methodology.md"
             in names
         )
         assert (
-            "llm_documentation_package/operator_instructions/"
+            "llm_documentation_package/07_operator_prompts/"
             "THREE_PROMPTS_FOR_LLM_USE.txt"
             in names
         )
         assert (
-            "llm_documentation_package/operator_instructions/prompts/"
+            "llm_documentation_package/07_operator_prompts/prompts/"
             "prompt_create_docx_methodology.md"
             in names
         )
-        assert "llm_documentation_package/document_section_evidence_map.json" in names
-        assert "llm_documentation_package/document_section_evidence_map.csv" in names
-        assert any("/document_sections/" in name for name in names)
-        assert "llm_documentation_package/approved_claims.json" in names
-        assert "llm_documentation_package/target_document_schema.json" in names
-        assert "llm_documentation_package/evidence_strength_policy.json" in names
-        assert "llm_documentation_package/document_completion_rules.json" in names
-        assert "llm_documentation_package/controlled_vocabulary.json" in names
-        assert "llm_documentation_package/draft_validation_rules.json" in names
-        assert "llm_documentation_package/template_binding.json" in names
-        assert "llm_documentation_package/llm_redaction_policy.json" in names
-        assert "llm_documentation_package/document_quality_rubric.md" in names
-        assert "llm_documentation_package/citation_coverage_validator.md" in names
-        assert "llm_documentation_package/unsupported_claim_detector.md" in names
-        assert "llm_documentation_package/regulatory_language_guardrails.md" in names
-        assert "llm_documentation_package/tools/validate_llm_draft.py" in names
-        assert "llm_documentation_package/documentation_gaps.md" in names
-        assert "llm_documentation_package/regulatory_documentation_crosswalk.csv" in names
-        assert "llm_documentation_package/model_type_writing_guide.md" in names
-        assert "llm_documentation_package/citation_rules.md" in names
-        assert "llm_documentation_package/human_review_checklist.md" in names
-        assert "llm_documentation_package/feature_dictionary_narrative.md" in names
-        assert "llm_documentation_package/metrics_interpretation_brief.md" in names
-        assert "llm_documentation_package/chart_interpretation_brief.md" in names
         assert (
-            "llm_documentation_package/operator_instructions/prompts/"
+            "llm_documentation_package/02_document_planning/"
+            "document_section_evidence_map.json"
+            in names
+        )
+        assert (
+            "llm_documentation_package/02_document_planning/"
+            "document_section_evidence_map.csv"
+            in names
+        )
+        assert any("/document_sections/" in name for name in names)
+        assert "llm_documentation_package/04_evidence/claims/approved_claims.json" in names
+        assert "llm_documentation_package/02_document_planning/target_document_schema.json" in names
+        assert (
+            "llm_documentation_package/06_validation_controls/"
+            "evidence_strength_policy.json"
+            in names
+        )
+        assert (
+            "llm_documentation_package/06_validation_controls/"
+            "document_completion_rules.json"
+            in names
+        )
+        assert (
+            "llm_documentation_package/06_validation_controls/"
+            "controlled_vocabulary.json"
+            in names
+        )
+        assert (
+            "llm_documentation_package/06_validation_controls/"
+            "draft_validation_rules.json"
+            in names
+        )
+        assert "llm_documentation_package/02_document_planning/template_binding.json" in names
+        assert "llm_documentation_package/06_validation_controls/llm_redaction_policy.json" in names
+        assert (
+            "llm_documentation_package/06_validation_controls/"
+            "document_quality_rubric.md"
+            in names
+        )
+        assert (
+            "llm_documentation_package/06_validation_controls/"
+            "citation_coverage_validator.md"
+            in names
+        )
+        assert (
+            "llm_documentation_package/06_validation_controls/"
+            "unsupported_claim_detector.md"
+            in names
+        )
+        assert (
+            "llm_documentation_package/06_validation_controls/"
+            "regulatory_language_guardrails.md"
+            in names
+        )
+        assert "llm_documentation_package/08_tools/validate_llm_draft.py" in names
+        assert "llm_documentation_package/08_tools/validate_docx_spec.py" in names
+        assert "llm_documentation_package/08_tools/build_docx_from_spec.py" in names
+        assert "llm_documentation_package/08_tools/validate_docx_output.py" in names
+        assert "llm_documentation_package/04_evidence/gaps/documentation_gaps.md" in names
+        assert (
+            "llm_documentation_package/04_evidence/regulatory/"
+            "regulatory_documentation_crosswalk.csv"
+            in names
+        )
+        assert (
+            "llm_documentation_package/04_evidence/methodology/"
+            "model_type_writing_guide.md"
+            in names
+        )
+        assert "llm_documentation_package/06_validation_controls/citation_rules.md" in names
+        assert "llm_documentation_package/06_validation_controls/human_review_checklist.md" in names
+        assert (
+            "llm_documentation_package/04_evidence/interpretation_briefs/"
+            "feature_dictionary_narrative.md"
+            in names
+        )
+        assert (
+            "llm_documentation_package/04_evidence/interpretation_briefs/"
+            "metrics_interpretation_brief.md"
+            in names
+        )
+        assert (
+            "llm_documentation_package/04_evidence/interpretation_briefs/"
+            "chart_interpretation_brief.md"
+            in names
+        )
+        assert (
+            "llm_documentation_package/07_operator_prompts/prompts/"
             "prompt_full_methodology.md"
             in names
         )
         assert (
-            "llm_documentation_package/operator_instructions/prompts/"
+            "llm_documentation_package/07_operator_prompts/prompts/"
             "prompt_regulatory_gap_review.md"
             in names
         )
         assert (
-            "llm_documentation_package/operator_instructions/prompts/"
+            "llm_documentation_package/07_operator_prompts/prompts/"
             "prompt_1_create_document_plan.md"
             in names
         )
         assert (
-            "llm_documentation_package/operator_instructions/prompts/"
+            "llm_documentation_package/07_operator_prompts/prompts/"
             "prompt_2_draft_from_approved_plan.md"
             in names
         )
         assert (
-            "llm_documentation_package/operator_instructions/prompts/"
+            "llm_documentation_package/07_operator_prompts/prompts/"
             "prompt_3_validate_draft_against_evidence.md"
             in names
         )
-        assert "llm_documentation_package/tone_profiles/tone_regulatory_formal.md" in names
         assert (
-            "llm_documentation_package/document_template/DROP_TABLE_OF_CONTENTS_HERE.md"
+            "llm_documentation_package/07_operator_prompts/tone_profiles/"
+            "tone_regulatory_formal.md"
             in names
         )
-        assert "llm_documentation_package/default_model_methodology_outline.md" in names
+        assert (
+            "llm_documentation_package/01_document_template/DROP_TABLE_OF_CONTENTS_HERE.md"
+            in names
+        )
+        assert (
+            "llm_documentation_package/02_document_planning/"
+            "default_model_methodology_outline.md"
+            in names
+        )
         assert "llm_documentation_package/source_citation_map.csv" in names
-        assert "llm_documentation_package/source_artifacts/config/run_config.json" in names
-        assert "llm_documentation_package/source_artifacts/code/generated_run.py" in names
-        assert "llm_documentation_package/source_artifacts/reports/decision_summary.md" in names
-        assert "operator_instructions" not in citation_map_text
-        assert "operator_instructions" in evidence_index_text
+        assert (
+            "llm_documentation_package/04_evidence/source_artifacts/config/"
+            "run_config.json"
+            in names
+        )
+        assert (
+            "llm_documentation_package/04_evidence/source_artifacts/code/generated_run.py"
+            in names
+        )
+        assert (
+            "llm_documentation_package/04_evidence/source_artifacts/reports/"
+            "decision_summary.md"
+            in names
+        )
+        assert "07_operator_prompts" not in citation_map_text
+        assert "07_operator_prompts" in evidence_index_text
         assert "DOCX_BUILD_INSTRUCTIONS.md" in evidence_index_text
         assert "figure_placement_manifest" in evidence_index_text
         assert "cite_as_evidence" in evidence_index_text
-        assert "operator_instructions" in do_not_cite_text
+        assert "07_operator_prompts" in do_not_cite_text
         assert "DOCX_BUILD_INSTRUCTIONS.md" in do_not_cite_text
         assert "figure_placement_manifest.csv" in do_not_cite_text
         assert not any(name.endswith("quant_model.joblib") for name in names)
@@ -305,7 +401,7 @@ def test_llm_package_can_include_generated_chart_assets() -> None:
                     data=[go.Scatter(x=[0.1, 0.5, 0.9], y=[0.08, 0.48, 0.86])]
                 )
             },
-            root_dir=f"{PACKAGE_ROOT}/source_artifacts/figures",
+            root_dir=FIGURE_ASSETS_ROOT,
             include_html=True,
             include_png=False,
         ).assets
@@ -326,13 +422,13 @@ def test_llm_package_can_include_generated_chart_assets() -> None:
             )
 
         assert (
-            "llm_documentation_package/source_artifacts/figures/html/validation_curve.html"
+            "llm_documentation_package/05_visual_assets/figures/html/validation_curve.html"
             in names
         )
-        assert "llm_documentation_package/source_artifacts/figures/html/plotly.min.js" in names
-        assert "llm_documentation_package/source_artifacts/figures/figure_manifest.json" in names
-        assert "llm_documentation_package/llm_package_build_profile.json" in names
-        assert "llm_documentation_package/figure_placement_manifest.csv" in names
+        assert "llm_documentation_package/05_visual_assets/figures/html/plotly.min.js" in names
+        assert "llm_documentation_package/05_visual_assets/figures/figure_manifest.json" in names
+        assert "llm_documentation_package/00_START_HERE/llm_package_build_profile.json" in names
+        assert "llm_documentation_package/05_visual_assets/figure_placement_manifest.csv" in names
         assert not any(name.endswith(".png") for name in names)
         assert "generated_figures" in citation_map
         assert "llm_package_build_profile" in evidence_index

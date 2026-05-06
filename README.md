@@ -2269,15 +2269,21 @@ controlled vocabulary, draft-validation rules, two-pass prompts, citation
 rules, interpretation briefs, redaction controls, a document quality rubric, a
 lightweight draft validator script, human review checklists, a build timing
 profile, DOCX build instructions, a model document style guide, a DOCX quality
-checklist, a figure placement manifest, section-specific evidence folders, and
-capped HTML plus document-ready PNG chart assets. It reuses prepared individual
-chart assets when they already exist in the current UI session; otherwise it
-renders only the capped chart set. Use `Download Individual Images` when every
-separate PNG file is required. It also includes
-`operator_instructions/THREE_PROMPTS_FOR_LLM_USE.txt`, a copy/paste plain-text
-prompt sequence for planning, drafting, and validating the LLM output, plus
-`EVIDENCE_INDEX.csv`, `DO_NOT_CITE.md`, and `MODEL_FACTS_DIGEST.md` to separate
-citable evidence from workflow instructions.
+checklist, a figure placement manifest, table placement manifest, section-specific
+evidence folders, deterministic DOCX helper scripts, and capped HTML plus
+document-ready PNG chart assets. The downloaded folder is organized into numbered
+folders: `00_START_HERE`, `01_document_template`, `02_document_planning`,
+`03_docx_workflow`, `04_evidence`, `05_visual_assets`,
+`06_validation_controls`, `07_operator_prompts`, `08_tools`, and
+`09_generated_outputs`. It reuses prepared individual chart assets when they
+already exist in the current UI session; otherwise it renders only the capped
+chart set. Use `Download Individual Images` when every separate PNG file is
+required. It also includes
+`07_operator_prompts/THREE_PROMPTS_FOR_LLM_USE.txt`, a copy/paste plain-text
+prompt sequence for planning, drafting, validating, and building the LLM output,
+plus `EVIDENCE_INDEX.csv`, `DO_NOT_CITE.md`, and
+`00_START_HERE/MODEL_FACTS_DIGEST.md` to separate citable evidence from workflow
+instructions.
 
 ### Starting An LLM Documentation Review
 
@@ -2293,7 +2299,7 @@ otherwise it falls back to Markdown with explicit figure placeholders.
 ```text
 You are assisting with a regulated model-risk technical documentation review.
 Use only the files in the current extracted LLM documentation package directory.
-Do not cite or rely on files in operator_instructions/ as model evidence. Those
+Do not cite or rely on files in 07_operator_prompts/ as model evidence. Those
 files are workflow instructions only.
 
 First, do not draft the model methodology document. Review the package and
@@ -2301,23 +2307,25 @@ produce a controlled documentation plan.
 
 Read these files first:
 - README_LLM_PACKAGE.md
-- DOCX_BUILD_INSTRUCTIONS.md
-- MODEL_DOCUMENT_STYLE_GUIDE.md
+- 00_START_HERE/PACKAGE_MAP.md
+- 03_docx_workflow/DOCX_BUILD_INSTRUCTIONS.md
+- 03_docx_workflow/MODEL_DOCUMENT_STYLE_GUIDE.md
 - EVIDENCE_INDEX.csv
 - DO_NOT_CITE.md
-- MODEL_FACTS_DIGEST.md
+- 00_START_HERE/MODEL_FACTS_DIGEST.md
 - llm_evidence_manifest.json
 - source_citation_map.csv
-- figure_placement_manifest.csv
-- target_document_schema.json
-- template_binding.json
-- document_section_evidence_map.csv
-- approved_claims.json
-- documentation_gaps.md
-- evidence_strength_policy.json
-- document_completion_rules.json
-- controlled_vocabulary.json
-- regulatory_language_guardrails.md
+- 05_visual_assets/figure_placement_manifest.csv
+- 03_docx_workflow/table_placement_manifest.csv
+- 02_document_planning/target_document_schema.json
+- 02_document_planning/template_binding.json
+- 02_document_planning/document_section_evidence_map.csv
+- 04_evidence/claims/approved_claims.json
+- 04_evidence/gaps/documentation_gaps.md
+- 06_validation_controls/evidence_strength_policy.json
+- 06_validation_controls/document_completion_rules.json
+- 06_validation_controls/controlled_vocabulary.json
+- 06_validation_controls/regulatory_language_guardrails.md
 
 For each required document section, return:
 - the section heading to use
@@ -2361,51 +2369,53 @@ You are assisting with a regulated model-risk technical documentation draft.
 Use only the files in the current extracted LLM documentation package directory
 and the reviewed documentation plan from the prior step.
 Use only files marked cite_as_evidence=true in EVIDENCE_INDEX.csv for factual
-claims. Do not cite operator_instructions/, document_template/, tools/, prompt
+claims. Do not cite 07_operator_prompts/, 01_document_template/, 08_tools/, prompt
 files, rubrics, validators, or files listed in DO_NOT_CITE.md as model evidence.
 
 Draft the full model methodology / technical model document. If your
 environment supports Word file generation, create `model_methodology.docx`.
 If your environment cannot create `.docx`, create Markdown with explicit image
-placeholders using paths from `figure_placement_manifest.csv`.
+placeholders using paths from `05_visual_assets/figure_placement_manifest.csv`.
 
 Required sources:
 - the reviewed documentation plan
-- DOCX_BUILD_INSTRUCTIONS.md
-- MODEL_DOCUMENT_STYLE_GUIDE.md
-- DOCX_QUALITY_CHECKLIST.md
-- figure_placement_manifest.csv
+- 03_docx_workflow/DOCX_BUILD_INSTRUCTIONS.md
+- 03_docx_workflow/MODEL_DOCUMENT_STYLE_GUIDE.md
+- 03_docx_workflow/DOCX_QUALITY_CHECKLIST.md
+- 05_visual_assets/figure_placement_manifest.csv
+- 03_docx_workflow/table_placement_manifest.csv
 - EVIDENCE_INDEX.csv
 - DO_NOT_CITE.md
-- MODEL_FACTS_DIGEST.md
-- target_document_schema.json
-- template_binding.json
-- default_model_methodology_outline.md, unless a custom table of contents was
-  provided in document_template/
-- approved_claims.json
-- document_section_evidence_map.csv
-- model_document_context.json
-- metrics_interpretation_brief.md
-- feature_dictionary_narrative.md
-- chart_interpretation_brief.md
-- documentation_gaps.md
-- evidence_strength_policy.json
-- controlled_vocabulary.json
-- regulatory_language_guardrails.md
+- 00_START_HERE/MODEL_FACTS_DIGEST.md
+- 02_document_planning/target_document_schema.json
+- 02_document_planning/template_binding.json
+- 02_document_planning/default_model_methodology_outline.md, unless a custom
+  table of contents was provided in 01_document_template/
+- 04_evidence/claims/approved_claims.json
+- 02_document_planning/document_section_evidence_map.csv
+- 04_evidence/context/model_document_context.json
+- 04_evidence/interpretation_briefs/metrics_interpretation_brief.md
+- 04_evidence/interpretation_briefs/feature_dictionary_narrative.md
+- 04_evidence/interpretation_briefs/chart_interpretation_brief.md
+- 04_evidence/gaps/documentation_gaps.md
+- 06_validation_controls/evidence_strength_policy.json
+- 06_validation_controls/controlled_vocabulary.json
+- 06_validation_controls/regulatory_language_guardrails.md
 - source_citation_map.csv
 
 Rules:
 - Draft only from the reviewed documentation plan and citable evidence files.
-- Use approved_claims.json as the primary claim library.
-- Follow target_document_schema.json for required sections.
+- Use 04_evidence/claims/approved_claims.json as the primary claim library.
+- Follow 02_document_planning/target_document_schema.json for required sections.
 - Use the custom table of contents if one was supplied; otherwise use
-  default_model_methodology_outline.md.
+  02_document_planning/default_model_methodology_outline.md.
 - Cite every factual claim using this style:
   [source: package/path > field_or_section]
-- When chart image files are present in `source_artifacts/figures/png/`, insert
-  only the body-priority visuals identified in `figure_placement_manifest.csv`.
+- When chart image files are present in `05_visual_assets/figures/png/`, insert
+  only the body-priority visuals identified in
+  `05_visual_assets/figure_placement_manifest.csv`.
   If creating Markdown fallback output, use this form:
-  `![Descriptive chart title](source_artifacts/figures/png/chart.png)`
+  `![Descriptive chart title](05_visual_assets/figures/png/chart.png)`
 - For every inserted chart, include a short caption explaining what the chart
   shows, why it matters, and the package source citation.
 - Do not embed every available chart. Prefer charts that support key
@@ -2416,8 +2426,9 @@ Rules:
 - Do not invent missing evidence.
 - Do not claim approval, validation sign-off, compliance, or production
   readiness unless explicit package evidence supports that statement.
-- Use conservative model-risk language from controlled_vocabulary.json and
-  regulatory_language_guardrails.md.
+- Use conservative model-risk language from
+  06_validation_controls/controlled_vocabulary.json and
+  06_validation_controls/regulatory_language_guardrails.md.
 
 Deliver:
 1. A complete `model_methodology.docx` file when possible, otherwise a Markdown
@@ -2426,7 +2437,8 @@ Deliver:
 3. A limitations and assumptions section.
 4. A citation appendix mapping major sections to package evidence.
 5. A short list of items requiring human review before the document can be used.
-6. `DOCX_BUILD_NOTES.md` summarizing inserted figures, omitted figures, and any
+6. `09_generated_outputs/DOCX_BUILD_NOTES.md` summarizing inserted figures,
+   omitted figures, and any
    formatting limitations.
 ```
 
@@ -2438,25 +2450,25 @@ Use this after the LLM has produced the draft.
 You are acting as a model validation and documentation quality reviewer.
 Use only the current extracted LLM documentation package directory and the draft
 model methodology document.
-Do not treat operator_instructions/, document_template/, tools/, prompt files,
+Do not treat 07_operator_prompts/, 01_document_template/, 08_tools/, prompt files,
 rubrics, validators, or files listed in DO_NOT_CITE.md as factual model
 evidence.
 
 Review the draft against:
 - EVIDENCE_INDEX.csv
 - DO_NOT_CITE.md
-- document_completion_rules.json
-- draft_validation_rules.json
-- document_quality_rubric.md
-- DOCX_QUALITY_CHECKLIST.md
-- citation_coverage_validator.md
-- unsupported_claim_detector.md
-- evidence_strength_policy.json
-- controlled_vocabulary.json
-- regulatory_language_guardrails.md
+- 06_validation_controls/document_completion_rules.json
+- 06_validation_controls/draft_validation_rules.json
+- 06_validation_controls/document_quality_rubric.md
+- 03_docx_workflow/DOCX_QUALITY_CHECKLIST.md
+- 06_validation_controls/citation_coverage_validator.md
+- 06_validation_controls/unsupported_claim_detector.md
+- 06_validation_controls/evidence_strength_policy.json
+- 06_validation_controls/controlled_vocabulary.json
+- 06_validation_controls/regulatory_language_guardrails.md
 - source_citation_map.csv
-- documentation_gaps.md
-- approved_claims.json
+- 04_evidence/gaps/documentation_gaps.md
+- 04_evidence/claims/approved_claims.json
 
 Perform these checks:
 - Identify factual claims without citations.
@@ -2467,9 +2479,10 @@ Perform these checks:
 - Confirm that warnings, failed checks, limitations, and documentation gaps were
   preserved.
 - Confirm every inserted figure has a title, caption, citation, and appears in
-  figure_placement_manifest.csv.
-- Confirm the DOCX or Markdown fallback follows MODEL_DOCUMENT_STYLE_GUIDE.md.
-- Score the draft using document_quality_rubric.md.
+  05_visual_assets/figure_placement_manifest.csv.
+- Confirm the DOCX or Markdown fallback follows
+  03_docx_workflow/MODEL_DOCUMENT_STYLE_GUIDE.md.
+- Score the draft using 06_validation_controls/document_quality_rubric.md.
 - Identify sections that are complete, partially supported, missing evidence, or
   blocked.
 

@@ -28,7 +28,7 @@ from quant_pd_framework.figure_exports import (
     build_individual_figure_zip,
 )
 from quant_pd_framework.llm_documentation_package import (
-    PACKAGE_ROOT,
+    FIGURE_ASSETS_ROOT,
     build_llm_documentation_context_payload,
     build_llm_documentation_package_from_payload,
 )
@@ -90,7 +90,7 @@ SUITABILITY_DISPLAY_COLUMNS = [
 LLM_PACKAGE_MAX_CHARTS = 25
 LLM_PACKAGE_INCLUDE_PNG = True
 LLM_PACKAGE_PNG_LIMIT = 10
-LLM_PACKAGE_CHART_ROOT = f"{PACKAGE_ROOT}/source_artifacts/figures"
+LLM_PACKAGE_CHART_ROOT = FIGURE_ASSETS_ROOT
 LLM_PACKAGE_CHART_PRIORITY_PATTERNS = (
     ("roc", "auc"),
     ("ks",),
