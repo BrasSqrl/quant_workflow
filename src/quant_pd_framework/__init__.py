@@ -1,5 +1,7 @@
 """Public package surface for the quantitative modeling framework."""
 
+__version__ = "1.0.0"
+
 from .config import (
     AdvancedImputationConfig,
     ArtifactConfig,
@@ -86,6 +88,7 @@ from .stage_runner import CheckpointedWorkflowRunner
 __all__ = [
     "ArtifactConfig",
     "AdvancedImputationConfig",
+    "__version__",
     "CalibrationConfig",
     "CalibrationRankingMetric",
     "CalibrationStrategy",

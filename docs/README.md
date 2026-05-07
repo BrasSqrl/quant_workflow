@@ -19,6 +19,7 @@ users can find the right document without reading everything.
 | Fix common app or run problems | [Troubleshooting Guide](./user_guides/TROUBLESHOOTING.md) |
 | Work with multi-GB datasets | [Large Data Playbook](./user_guides/LARGE_DATA_PLAYBOOK.md) |
 | Understand checkpoint execution stages | [Checkpoint Stage Guide](./CHECKPOINT_STAGE_GUIDE.md) |
+| Review v1.0 release readiness | [Release Notes](./RELEASE_NOTES_V1.0.0.md) and [Release Validation Report](./RELEASE_VALIDATION_REPORT.md) |
 | Understand the application UI standard | [UI / UX Standard](./UI_UX_STANDARD.md) |
 | Understand GUI-to-code traceability | [GUI-to-Code Traceability Guide](./GUI_TO_CODE_TRACEABILITY_GUIDE.md) |
 | Run locally on macOS | [macOS Setup](./MACOS_SETUP.md) |
@@ -94,6 +95,8 @@ Use these when you need implementation-level detail or audit traceability:
 - [GUI-to-Code Traceability Guide](./GUI_TO_CODE_TRACEABILITY_GUIDE.md)
 - [macOS Setup](./MACOS_SETUP.md)
 - [SageMaker Setup](./SAGEMAKER_SETUP.md)
+- [Release Notes v1.0.0](./RELEASE_NOTES_V1.0.0.md)
+- [Release Validation Report](./RELEASE_VALIDATION_REPORT.md)
 
 ## Standards And Governance
 

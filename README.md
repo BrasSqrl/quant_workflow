@@ -12,6 +12,14 @@ The underlying Python package and import path remain `quant_pd_framework`, and
 the current distribution name remains `quant-pd-framework`, for compatibility
 with the existing codebase and saved artifacts.
 
+Release status: `v1.0.0` is the current release-ready baseline for the
+application's narrow scope: model development, validation evidence,
+documentation, artifact export, existing-model scoring, feature-subset
+comparison, and downstream LLM/ongoing-monitoring handoff packages. See
+[v1.0.0 Release Notes](./docs/RELEASE_NOTES_V1.0.0.md) and the
+[Release Validation Report](./docs/RELEASE_VALIDATION_REPORT.md) for validated
+workflows, artifact audit results, and known limitations.
+
 The project supports two working modes:
 
 1. A Python API for developers who want to configure and run the pipeline in code.
@@ -217,6 +225,8 @@ The most practical user guides are:
 - [Troubleshooting Guide](./docs/user_guides/TROUBLESHOOTING.md)
 - [Large Data Playbook](./docs/user_guides/LARGE_DATA_PLAYBOOK.md)
 - [Glossary](./docs/user_guides/GLOSSARY.md)
+- [v1.0.0 Release Notes](./docs/RELEASE_NOTES_V1.0.0.md)
+- [Release Validation Report](./docs/RELEASE_VALIDATION_REPORT.md)
 
 ## Engineering Standards
 

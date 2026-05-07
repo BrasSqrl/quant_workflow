@@ -8,6 +8,13 @@ testing, and documenting quantitative models from tabular data. It is designed
 to help teams move from raw development data to an auditable model package
 without forcing the work into notebooks or ad hoc scripts.
 
+The current release-ready baseline is v1.0.0. That baseline is focused on
+model development and documentation rather than production monitoring or MLOps.
+The v1.0.0 release-hardening pass validated canonical PD, LGD, CECL/lifetime
+PD, and CCAR forecasting workflows, plus existing-model scoring, feature-subset
+search, Large Data Mode controls, Streamlit workflow behavior, and artifact
+export contracts.
+
 Primary Users
 -------------
 Quant Studio is built primarily for:
@@ -155,9 +162,10 @@ Each run can produce a structured output package that includes:
 - diagnostic registry tables that explain which validation surfaces were
   emitted, disabled, or skipped
 - fast, standard, and audit export profile support
-- on-demand LLM documentation packages with controlled prompt sequences,
-  evidence maps, approved claims, documentation-gap handling, citation rules,
-  redaction controls, and quality-review rubrics
+- on-demand LLM documentation packages with numbered folders, controlled prompt
+  sequences, evidence maps, approved claims, documentation-gap handling,
+  citation rules, figure/table placement manifests, deterministic DOCX helper
+  scripts, redaction controls, and quality-review rubrics
 - on-demand monitoring handoff bundles for the separate monitoring application
 - machine-readable artifact manifests that index the full output package
 - Excel templates and governance workbooks for offline review
