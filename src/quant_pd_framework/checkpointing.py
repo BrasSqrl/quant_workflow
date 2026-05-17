@@ -10,10 +10,10 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-import joblib
 import pandas as pd
 
 from .context import PipelineContext
+from .safe_serialization import dump_joblib_with_hash, load_joblib_verified
 
 CHECKPOINT_MANIFEST_FILE_NAME = "checkpoint_manifest.json"
 CHECKPOINT_CONTEXT_SUFFIX = ".joblib"
@@ -117,14 +117,19 @@ def save_context_checkpoint(context: PipelineContext, path: Path) -> Path:
 
     path.parent.mkdir(parents=True, exist_ok=True)
     checkpoint_context = _spill_large_data_context_tables(context, path)
-    joblib.dump(checkpoint_context, path, compress=0)
+    dump_joblib_with_hash(checkpoint_context, path, compress=0)
     return path
 
 
-def load_context_checkpoint(path: Path) -> PipelineContext:
+def load_context_checkpoint(path: str | Path) -> PipelineContext:
     """Loads a previously persisted pipeline context."""
 
-    context = joblib.load(path)
+    path = Path(path)
+    context = load_joblib_verified(
+        path,
+        allow_missing_sidecar=True,
+        trusted_legacy_root=path.parent,
+    )
     if not isinstance(context, PipelineContext):
         raise TypeError(f"Checkpoint did not contain a PipelineContext: {path}")
     _rehydrate_checkpoint_table_refs(context)

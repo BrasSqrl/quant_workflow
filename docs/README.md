@@ -68,8 +68,11 @@ For macOS use:
 | Category | Document | Purpose |
 | --- | --- | --- |
 | Start-here | [README](../README.md) | Project overview, setup links, feature summary, and developer entry points. |
+| Start-here | [Detailed Project Guide](./DETAILED_PROJECT_GUIDE.md) | Preserved long-form project guide moved out of the root README for readability. |
 | Start-here | [Executive Summary](../EXECUTIVE_SUMMARY.txt) | Non-technical executive explanation of the application. |
 | Start-here | [License](../LICENSE) | Noncommercial/commercial-permission license terms. |
+| Governance | [Security Policy](../SECURITY.md) | Joblib trust model, vulnerability reporting, secrets policy, and artifact handling expectations. |
+| Governance | [Contributing Guide](../CONTRIBUTING.md) | Setup, test, secrets baseline, module-size, broad-exception, and artifact compatibility policies. |
 | Start-here | [User Guide Index](./user_guides/README.md) | Task-oriented index for model builders, reviewers, and support users. |
 | Start-here | [User Quick Start Guide](./user_guides/QUICK_START.md) | First successful Streamlit run with safe defaults. |
 | Start-here | [PD Logistic Regression Walkthrough](./user_guides/PD_LOGISTIC_REGRESSION_WALKTHROUGH.html) | Complete offline visual walkthrough for a simple PD logistic regression run. |

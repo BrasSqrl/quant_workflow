@@ -6,6 +6,8 @@ import json
 import traceback
 from collections.abc import Callable
 from copy import deepcopy
+from dataclasses import fields as dataclass_fields
+from dataclasses import replace as dataclass_replace
 from datetime import UTC, datetime
 from pathlib import Path
 from time import perf_counter
@@ -46,6 +48,57 @@ from .steps import (
     VariableSelectionStep,
 )
 
+OVERRIDDEN_EXISTING_CONFIG_FIELDS: frozenset[str] = frozenset(
+    {
+        "execution",
+        "comparison",
+        "subset_search",
+        "feature_policy",
+        "feature_dictionary",
+        "advanced_imputation",
+        "transformations",
+        "manual_review",
+        "suitability_checks",
+        "workflow_guardrails",
+        "explainability",
+        "calibration",
+        "scorecard",
+        "scorecard_workbench",
+        "imputation_sensitivity",
+        "variable_selection",
+        "documentation",
+        "regulatory_reporting",
+        "scenario_testing",
+        "diagnostics",
+        "distribution_diagnostics",
+        "residual_diagnostics",
+        "outlier_diagnostics",
+        "dependency_diagnostics",
+        "time_series_diagnostics",
+        "structural_breaks",
+        "feature_workbench",
+        "preset_recommendations",
+        "credit_risk",
+        "robustness",
+        "cross_validation",
+        "reproducibility",
+        "performance",
+        "artifacts",
+    }
+)
+
+INHERITED_EXISTING_CONFIG_FIELDS: frozenset[str] = frozenset(
+    {
+        "schema",
+        "cleaning",
+        "feature_engineering",
+        "target",
+        "split",
+        "model",
+        "preset_name",
+    }
+)
+
 
 def build_run_id() -> str:
     """Builds a readable, filesystem-safe identifier for artifact folders."""
@@ -82,38 +135,16 @@ class QuantModelOrchestrator:
             return resolved
 
         base_config = load_framework_config(execution.existing_config_path)
-        base_config.preset_name = resolved.preset_name or base_config.preset_name
-        base_config.execution = execution
-        base_config.comparison = resolved.comparison
-        base_config.feature_policy = resolved.feature_policy
-        base_config.feature_dictionary = resolved.feature_dictionary
-        base_config.advanced_imputation = resolved.advanced_imputation
-        base_config.transformations = resolved.transformations
-        base_config.manual_review = resolved.manual_review
-        base_config.suitability_checks = resolved.suitability_checks
-        base_config.workflow_guardrails = resolved.workflow_guardrails
-        base_config.explainability = resolved.explainability
-        base_config.calibration = resolved.calibration
-        base_config.scorecard = resolved.scorecard
-        base_config.scorecard_workbench = resolved.scorecard_workbench
-        base_config.imputation_sensitivity = resolved.imputation_sensitivity
-        base_config.variable_selection = resolved.variable_selection
-        base_config.documentation = resolved.documentation
-        base_config.regulatory_reporting = resolved.regulatory_reporting
-        base_config.scenario_testing = resolved.scenario_testing
-        base_config.diagnostics = resolved.diagnostics
-        base_config.distribution_diagnostics = resolved.distribution_diagnostics
-        base_config.residual_diagnostics = resolved.residual_diagnostics
-        base_config.outlier_diagnostics = resolved.outlier_diagnostics
-        base_config.dependency_diagnostics = resolved.dependency_diagnostics
-        base_config.time_series_diagnostics = resolved.time_series_diagnostics
-        base_config.structural_breaks = resolved.structural_breaks
-        base_config.feature_workbench = resolved.feature_workbench
-        base_config.preset_recommendations = resolved.preset_recommendations
-        base_config.credit_risk = resolved.credit_risk
-        base_config.reproducibility = resolved.reproducibility
-        base_config.artifacts = resolved.artifacts
-        return base_config
+        field_names = {field.name for field in dataclass_fields(FrameworkConfig)}
+        override_values = {
+            field_name: getattr(resolved, field_name)
+            for field_name in sorted(OVERRIDDEN_EXISTING_CONFIG_FIELDS)
+            if field_name in field_names
+        }
+        merged_config = dataclass_replace(base_config, **override_values)
+        if resolved.preset_name:
+            merged_config.preset_name = resolved.preset_name
+        return merged_config
 
     def _build_default_steps(self) -> list[BasePipelineStep]:
         if self.config.execution.mode == ExecutionMode.SEARCH_FEATURE_SUBSETS:

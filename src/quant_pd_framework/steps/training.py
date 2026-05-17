@@ -5,7 +5,6 @@ from __future__ import annotations
 from collections.abc import Iterable
 from pathlib import Path
 
-import joblib
 import pandas as pd
 
 from ..base import BasePipelineStep
@@ -13,6 +12,7 @@ from ..config import ExecutionMode, ModelType
 from ..context import PipelineContext, PipelineMetadataKey
 from ..large_data_policy import resolve_large_data_certification
 from ..models import build_model_adapter
+from ..safe_serialization import load_joblib_verified
 
 Meta = PipelineMetadataKey
 
@@ -97,7 +97,7 @@ class ModelTrainingStep(BasePipelineStep):
         if not resolved_path.exists():
             raise FileNotFoundError(f"Existing model artifact not found: {resolved_path}")
 
-        model_adapter = joblib.load(resolved_path)
+        model_adapter = load_joblib_verified(resolved_path)
         self._validate_loaded_model(context, model_adapter, resolved_path)
         self._apply_loaded_feature_contract(context, model_adapter)
 

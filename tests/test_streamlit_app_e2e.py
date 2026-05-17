@@ -21,6 +21,7 @@ from quant_pd_framework import (
     TargetMode,
     build_sample_pd_dataframe,
 )
+from quant_pd_framework.safe_serialization import sha256_sidecar_path
 from tests.support import build_common_schema, temporary_artifact_root
 
 _ORIGINAL_TEMP_DIR_CLEANUP = tempfile.TemporaryDirectory._cleanup
@@ -91,6 +92,8 @@ def _build_existing_model_bundle() -> tuple[Path, Path]:
         preserved_model = preserved_root / model_path.name
         preserved_config = preserved_root / config_path.name
         preserved_model.write_bytes(model_path.read_bytes())
+        preserved_sidecar = sha256_sidecar_path(preserved_model)
+        preserved_sidecar.write_bytes(sha256_sidecar_path(model_path).read_bytes())
         preserved_config.write_bytes(config_path.read_bytes())
     return preserved_model, preserved_config
 

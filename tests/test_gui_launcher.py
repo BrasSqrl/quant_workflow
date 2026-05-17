@@ -36,10 +36,11 @@ def test_build_streamlit_command_uses_current_python_and_streamlit() -> None:
 
 
 def test_main_returns_subprocess_exit_code(monkeypatch) -> None:
-    def fake_run(command, check, cwd):
+    def fake_run(command, check, cwd, timeout):
         assert command == build_streamlit_command()
         assert check is False
         assert cwd == resolve_project_root()
+        assert timeout > 0
         return CompletedProcess(args=command, returncode=0)
 
     monkeypatch.setattr(gui_launcher.subprocess, "run", fake_run)

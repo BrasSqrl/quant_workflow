@@ -2,11 +2,16 @@
 
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 from pathlib import Path
 
+from .config import PerformanceConfig
+from .logging import configure_cli_logging, get_logger
+
 MAX_UPLOAD_SIZE_MB = 51_200
+LOGGER = get_logger(__name__)
 
 
 def resolve_project_root() -> Path:
@@ -40,11 +45,29 @@ def build_streamlit_command() -> list[str]:
 def main() -> int:
     """Launches the GUI using the current Python environment."""
 
-    completed = subprocess.run(
-        build_streamlit_command(),
-        check=False,
-        cwd=resolve_project_root(),
-    )
+    configure_cli_logging()
+    try:
+        timeout_seconds = int(
+            os.environ.get(
+                "QUANT_STUDIO_GUI_TIMEOUT_SECONDS",
+                PerformanceConfig().gui_launch_timeout_seconds,
+            )
+        )
+    except ValueError:
+        LOGGER.warning(
+            "Ignoring invalid QUANT_STUDIO_GUI_TIMEOUT_SECONDS; using default timeout."
+        )
+        timeout_seconds = PerformanceConfig().gui_launch_timeout_seconds
+    try:
+        completed = subprocess.run(
+            build_streamlit_command(),
+            check=False,
+            cwd=resolve_project_root(),
+            timeout=timeout_seconds,
+        )
+    except subprocess.TimeoutExpired:
+        LOGGER.error("Streamlit launcher exceeded timeout of %s seconds.", timeout_seconds)
+        return 124
     return int(completed.returncode)
 
 

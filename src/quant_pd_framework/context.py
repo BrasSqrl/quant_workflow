@@ -105,6 +105,51 @@ def get_pipeline_metadata_dict(context: Any, key: PipelineMetadataKey | str) -> 
     return value if isinstance(value, dict) else {}
 
 
+@dataclass(frozen=True)
+class ModelArtifactState:
+    """Small grouped view of fitted model outputs on a pipeline context."""
+
+    model: Any
+    model_summary: str | pd.DataFrame | None
+    feature_importance: pd.DataFrame | None
+    model_artifacts: dict[str, Any]
+
+
+@dataclass(frozen=True)
+class DiagnosticResultState:
+    """Small grouped view of diagnostics, metrics, and generated visuals."""
+
+    predictions: dict[str, pd.DataFrame]
+    metrics: dict[str, dict[str, float | int | None]]
+    backtest_summary: pd.DataFrame | None
+    comparison_results: pd.DataFrame | None
+    scenario_results: dict[str, pd.DataFrame]
+    diagnostics_tables: dict[str, pd.DataFrame]
+    statistical_tests: dict[str, Any]
+    visualizations: dict[str, Any]
+
+
+@dataclass(frozen=True)
+class LargeDataState:
+    """Small grouped view of large-data source and staging state."""
+
+    large_data_handle: Any
+    raw_input: Any
+    raw_data: pd.DataFrame | None
+    working_data: pd.DataFrame | None
+    metadata: dict[str, Any]
+
+
+@dataclass(frozen=True)
+class ExecutionArtifactState:
+    """Small grouped view of exported paths and run diagnostics."""
+
+    artifacts: dict[str, Path]
+    warnings: list[str]
+    events: list[str]
+    debug_trace: list[dict[str, Any]]
+
+
 @dataclass
 class PipelineContext:
     """Holds the evolving state of a full model run."""
@@ -171,6 +216,55 @@ class PipelineContext:
 
     def _known_metadata_key(self, key: PipelineMetadataKey | str) -> PipelineMetadataKey | None:
         return _known_metadata_key(key)
+
+    @property
+    def model_artifact_state(self) -> ModelArtifactState:
+        """Returns a grouped view for newer code without changing stored fields."""
+
+        return ModelArtifactState(
+            model=self.model,
+            model_summary=self.model_summary,
+            feature_importance=self.feature_importance,
+            model_artifacts=self.model_artifacts,
+        )
+
+    @property
+    def diagnostic_result_state(self) -> DiagnosticResultState:
+        """Returns a grouped diagnostics view for incremental context refactors."""
+
+        return DiagnosticResultState(
+            predictions=self.predictions,
+            metrics=self.metrics,
+            backtest_summary=self.backtest_summary,
+            comparison_results=self.comparison_results,
+            scenario_results=self.scenario_results,
+            diagnostics_tables=self.diagnostics_tables,
+            statistical_tests=self.statistical_tests,
+            visualizations=self.visualizations,
+        )
+
+    @property
+    def large_data_state(self) -> LargeDataState:
+        """Returns a grouped large-data view for incremental context refactors."""
+
+        return LargeDataState(
+            large_data_handle=self.large_data_handle,
+            raw_input=self.raw_input,
+            raw_data=self.raw_data,
+            working_data=self.working_data,
+            metadata=self.metadata,
+        )
+
+    @property
+    def execution_artifact_state(self) -> ExecutionArtifactState:
+        """Returns a grouped export/debug view for incremental context refactors."""
+
+        return ExecutionArtifactState(
+            artifacts=self.artifacts,
+            warnings=self.warnings,
+            events=self.events,
+            debug_trace=self.debug_trace,
+        )
 
 
 def _validate_metadata_value(metadata_key: PipelineMetadataKey, value: Any) -> None:

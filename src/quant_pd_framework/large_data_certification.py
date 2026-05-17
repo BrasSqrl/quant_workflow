@@ -54,6 +54,7 @@ from .large_data_policy import (
     resolve_large_data_certification,
     resolve_large_data_fit_capability,
 )
+from .logging import configure_cli_logging
 from .orchestrator import QuantModelOrchestrator
 
 CERTIFICATION_STATUSES = (
@@ -180,6 +181,7 @@ class Thresholds:
 def main(argv: list[str] | None = None) -> int:
     """Runs the large-data certification CLI."""
 
+    configure_cli_logging()
     parser = build_parser()
     args = parser.parse_args(argv)
     result = run_certification_suite(
@@ -207,7 +209,10 @@ def main(argv: list[str] | None = None) -> int:
             "chunk_rows": args.chunk_rows,
         },
     )
-    print(json.dumps({"certification_root": str(result["certification_root"])}, indent=2))
+    sys.stdout.write(
+        json.dumps({"certification_root": str(result["certification_root"])}, indent=2)
+        + "\n"
+    )
     return 0
 
 

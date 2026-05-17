@@ -3,15 +3,16 @@
 from __future__ import annotations
 
 import json
+import os
+import signal
 import subprocess
 import sys
+import time
 import traceback
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
-
-import joblib
 
 from .config import FrameworkConfig
 from .config_io import load_framework_config
@@ -23,11 +24,14 @@ from .large_data import (
     describe_s3_uri,
     is_s3_uri,
 )
+from .logging import get_logger
+from .safe_serialization import dump_joblib_with_hash, load_joblib_verified
 from .stage_runner import CheckpointedWorkflowRunner
 
 BACKGROUND_JOB_MANIFEST = "job_manifest.json"
 BACKGROUND_JOB_SNAPSHOT = "streamlit_snapshot.joblib"
 Meta = PipelineMetadataKey
+LOGGER = get_logger(__name__)
 
 
 @dataclass(slots=True)
@@ -51,6 +55,7 @@ class BackgroundJobManifest:
     queue_dir: str = ""
     stdout_path: str = ""
     stderr_path: str = ""
+    started_at_utc: str = ""
     source_profile_key: str = ""
     prepared_manifest_path: str = ""
     memory_trace_path: str = ""
@@ -80,6 +85,7 @@ class BackgroundJobManifest:
             "queue_dir": self.queue_dir,
             "stdout_path": self.stdout_path,
             "stderr_path": self.stderr_path,
+            "started_at_utc": self.started_at_utc,
             "source_profile_key": self.source_profile_key,
             "prepared_manifest_path": self.prepared_manifest_path,
             "memory_trace_path": self.memory_trace_path,
@@ -111,6 +117,7 @@ class BackgroundJobManifest:
             queue_dir=str(payload.get("queue_dir") or ""),
             stdout_path=str(payload.get("stdout_path") or ""),
             stderr_path=str(payload.get("stderr_path") or ""),
+            started_at_utc=str(payload.get("started_at_utc") or ""),
             source_profile_key=str(payload.get("source_profile_key") or ""),
             prepared_manifest_path=str(payload.get("prepared_manifest_path") or ""),
             memory_trace_path=str(payload.get("memory_trace_path") or ""),
@@ -148,6 +155,7 @@ def start_background_workflow(
     )
     manifest_path = job_dir / BACKGROUND_JOB_MANIFEST
     write_background_manifest(manifest_path, manifest)
+    LOGGER.info("Starting background workflow job %s", job_id)
 
     stdout_path = job_dir / "stdout.log"
     stderr_path = job_dir / "stderr.log"
@@ -172,9 +180,11 @@ def start_background_workflow(
     manifest.pid = process.pid
     manifest.status = "running"
     manifest.progress = "Background process started."
+    manifest.started_at_utc = datetime.now(UTC).isoformat()
     manifest.stdout_path = str(stdout_path)
     manifest.stderr_path = str(stderr_path)
     write_background_manifest(manifest_path, manifest)
+    LOGGER.info("Background workflow job %s started with PID %s", job_id, process.pid)
     return manifest_path
 
 
@@ -230,9 +240,16 @@ def write_background_manifest(
 
 def request_background_cancel(manifest_path: str | Path) -> None:
     manifest = read_background_manifest(manifest_path)
+    LOGGER.warning("Cancel requested for background job %s", manifest.job_id)
     manifest.cancel_requested = True
     manifest.progress = "Cancel requested. The worker will stop at the next safe boundary."
     write_background_manifest(manifest_path, manifest)
+    if manifest.pid:
+        _terminate_process(
+            manifest.pid,
+            grace_seconds=_config_cancel_grace_seconds(manifest),
+            reason=f"cancel request for background job {manifest.job_id}",
+        )
 
 
 def load_background_snapshot(manifest: BackgroundJobManifest) -> dict[str, Any] | None:
@@ -241,7 +258,11 @@ def load_background_snapshot(manifest: BackgroundJobManifest) -> dict[str, Any] 
     snapshot_path = Path(manifest.snapshot_path)
     if not snapshot_path.exists():
         return None
-    snapshot = joblib.load(snapshot_path)
+    snapshot = load_joblib_verified(
+        snapshot_path,
+        allow_missing_sidecar=True,
+        trusted_legacy_root=snapshot_path.parent,
+    )
     if not isinstance(snapshot, dict):
         return None
     return snapshot
@@ -263,6 +284,7 @@ def run_background_manifest(manifest_path: str | Path) -> int:
             active_manifest = read_background_manifest(manifest_path)
             if active_manifest.cancel_requested:
                 raise RuntimeError("Background large-data run was cancelled by the user.")
+            _enforce_background_runtime_limit(active_manifest, config)
             active_manifest.status = "running"
             active_manifest.run_id = str(event.get("run_id") or active_manifest.run_id)
             active_manifest.current_stage = str(
@@ -294,7 +316,7 @@ def run_background_manifest(manifest_path: str | Path) -> int:
         from quant_pd_framework.streamlit_ui.state import build_run_snapshot
 
         snapshot = build_run_snapshot(context, config.to_dict())
-        joblib.dump(snapshot, snapshot_path, compress=3)
+        dump_joblib_with_hash(snapshot, snapshot_path, compress=3)
         manifest = read_background_manifest(manifest_path)
         manifest.status = "completed"
         manifest.run_id = context.run_id
@@ -312,8 +334,10 @@ def run_background_manifest(manifest_path: str | Path) -> int:
         manifest.progress = "Completed."
         manifest.completed_at_utc = datetime.now(UTC).isoformat()
         write_background_manifest(manifest_path, manifest)
+        LOGGER.info("Background job completed: %s", manifest.job_id)
         return 0
     except Exception as exc:
+        LOGGER.exception("Background job failed: %s", manifest_path)
         manifest = read_background_manifest(manifest_path)
         manifest.status = "failed"
         manifest.error_message = str(exc)
@@ -361,3 +385,57 @@ def _describe_input_path(path: Path) -> dict[str, Any]:
             "size_bytes": 0,
             "modified_ns": 0,
         }
+
+
+def _enforce_background_runtime_limit(
+    manifest: BackgroundJobManifest,
+    config: FrameworkConfig,
+) -> None:
+    started_at_text = manifest.started_at_utc or manifest.created_at_utc
+    if not started_at_text:
+        return
+    try:
+        started_at = datetime.fromisoformat(started_at_text)
+    except ValueError:
+        return
+    elapsed = (datetime.now(UTC) - started_at).total_seconds()
+    max_runtime = float(config.performance.background_job_max_runtime_seconds)
+    if elapsed > max_runtime:
+        raise TimeoutError(
+            f"Background job exceeded maximum runtime of {max_runtime:.0f} seconds."
+        )
+
+
+def _config_cancel_grace_seconds(manifest: BackgroundJobManifest) -> int:
+    try:
+        config = load_framework_config(manifest.config_path)
+        return int(config.performance.background_cancel_grace_seconds)
+    except Exception:  # noqa: BLE001 - cancellation must remain best-effort.
+        return 10
+
+
+def _terminate_process(pid: int, *, grace_seconds: int, reason: str) -> None:
+    LOGGER.warning("Terminating process %s for %s", pid, reason)
+    try:
+        os.kill(pid, signal.SIGTERM)
+    except OSError:
+        return
+    deadline = time.monotonic() + max(0, grace_seconds)
+    while time.monotonic() < deadline:
+        if not _process_exists(pid):
+            return
+        time.sleep(0.2)
+    if _process_exists(pid):
+        LOGGER.warning("Killing process %s after cancel grace period", pid)
+        try:
+            os.kill(pid, getattr(signal, "SIGKILL", signal.SIGTERM))
+        except OSError:
+            return
+
+
+def _process_exists(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except OSError:
+        return False
+    return True

@@ -15,7 +15,6 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-import joblib
 import pandas as pd
 
 from ..base import BasePipelineStep
@@ -70,6 +69,7 @@ from ..presentation import (
 from ..report_payload import optimize_report_visualizations
 from ..reporting import build_regulatory_report_bundle
 from ..run_registry import write_per_run_audit_log
+from ..safe_serialization import dump_joblib_with_hash
 from ..tabular_policy import resolve_tabular_output_format
 from ..validation_evidence import publish_validation_evidence_tables
 
@@ -163,7 +163,7 @@ class ArtifactExportStep(BasePipelineStep):
         ):
             raise ValueError("Cannot export artifacts before diagnostics finish.")
 
-        joblib.dump(context.model, model_path)
+        dump_joblib_with_hash(context.model, model_path)
         self._write_json(metrics_path, context.metrics)
         self._write_json(config_path, self._build_export_config_payload(context, model_path))
         self._write_json(tests_path, context.statistical_tests)
@@ -2083,7 +2083,7 @@ class ArtifactExportStep(BasePipelineStep):
             {
                 "field": "git_commit",
                 "value": (
-                    self._get_git_commit()
+                    self._get_git_commit(context)
                     if context.config.reproducibility.capture_git_metadata
                     else ""
                 ),
@@ -2609,7 +2609,7 @@ class ArtifactExportStep(BasePipelineStep):
                 digest.update(chunk)
         return digest.hexdigest()
 
-    def _get_git_commit(self) -> str:
+    def _get_git_commit(self, context: PipelineContext) -> str:
         project_root = Path(__file__).resolve().parents[3]
         try:
             completed = subprocess.run(
@@ -2618,6 +2618,7 @@ class ArtifactExportStep(BasePipelineStep):
                 capture_output=True,
                 check=True,
                 text=True,
+                timeout=context.config.performance.export_subprocess_timeout_seconds,
             )
         except (FileNotFoundError, subprocess.SubprocessError):
             return ""

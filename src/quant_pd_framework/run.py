@@ -8,7 +8,10 @@ from pathlib import Path
 
 from .config_io import load_framework_config
 from .large_data import build_dataset_handle, build_s3_dataset_handle, describe_s3_uri, is_s3_uri
+from .logging import configure_cli_logging, get_logger
 from .orchestrator import QuantModelOrchestrator
+
+LOGGER = get_logger(__name__)
 
 
 def build_argument_parser() -> argparse.ArgumentParser:
@@ -120,8 +123,9 @@ def _describe_input_path(path: Path) -> dict[str, str | int]:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Executes a saved-run pipeline and prints the main artifact location."""
+    """Executes a saved-run pipeline and logs the main artifact location."""
 
+    configure_cli_logging()
     parser = build_argument_parser()
     args = parser.parse_args(argv)
     context = run_saved_config(
@@ -131,7 +135,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     output_root = context.artifacts.get("output_root")
     if output_root is not None:
-        print(f"Run completed. Artifacts written to {output_root}")
+        LOGGER.info("Run completed. Artifacts written to %s", output_root)
     return 0
 
 

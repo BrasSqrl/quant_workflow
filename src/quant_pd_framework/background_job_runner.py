@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 
 from .background_jobs import run_background_manifest
+from .logging import configure_cli_logging
 
 
 def build_argument_parser() -> argparse.ArgumentParser:
@@ -14,6 +15,7 @@ def build_argument_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
+    configure_cli_logging()
     args = build_argument_parser().parse_args(argv)
     return run_background_manifest(args.manifest)
 

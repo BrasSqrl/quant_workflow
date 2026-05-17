@@ -1,0 +1,17 @@
+# Default ownership
+* @BrasSqrl
+
+# Source and tests
+/src/ @BrasSqrl
+/tests/ @BrasSqrl
+
+# CI, security, and governance
+/.github/ @BrasSqrl
+/.pre-commit-config.yaml @BrasSqrl
+/pyproject.toml @BrasSqrl
+/SECURITY.md @BrasSqrl
+/CONTRIBUTING.md @BrasSqrl
+
+# Documentation
+/docs/ @BrasSqrl
+/README.md @BrasSqrl

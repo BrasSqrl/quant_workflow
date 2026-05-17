@@ -70,13 +70,48 @@ select = [
     "F",
     "I",
     "B",
+    "BLE",
     "UP",
 ]
+
+[tool.ruff.lint.per-file-ignores]
+# Existing broad-exception debt is allowed only in these files while the ratchet
+# is reduced. New files do not receive this ignore by default.
+"src/quant_pd_framework/background_jobs.py" = ["BLE001"]
+"src/quant_pd_framework/checkpointing.py" = ["BLE001"]
+"src/quant_pd_framework/diagnostic_frameworks.py" = ["BLE001"]
+"src/quant_pd_framework/figure_exports.py" = ["BLE001"]
+"src/quant_pd_framework/gui_support.py" = ["BLE001"]
+"src/quant_pd_framework/large_data.py" = ["BLE001"]
+"src/quant_pd_framework/large_data_certification.py" = ["BLE001"]
+"src/quant_pd_framework/large_data_enterprise.py" = ["BLE001"]
+"src/quant_pd_framework/large_data_runtime.py" = ["BLE001"]
+"src/quant_pd_framework/llm_documentation_package.py" = ["BLE001"]
+"src/quant_pd_framework/orchestrator.py" = ["BLE001"]
+"src/quant_pd_framework/presentation.py" = ["BLE001"]
+"src/quant_pd_framework/run_registry.py" = ["BLE001"]
+"src/quant_pd_framework/stage_runner.py" = ["BLE001"]
+"src/quant_pd_framework/steps/cross_validation.py" = ["BLE001"]
+"src/quant_pd_framework/steps/diagnostics.py" = ["BLE001"]
+"src/quant_pd_framework/steps/export.py" = ["BLE001"]
+"src/quant_pd_framework/steps/feature_subset_search.py" = ["BLE001"]
+"src/quant_pd_framework/steps/ingestion.py" = ["BLE001"]
+"src/quant_pd_framework/steps/large_data_scoring.py" = ["BLE001"]
+"src/quant_pd_framework/steps/transformations.py" = ["BLE001"]
+"src/quant_pd_framework/streamlit_ui/app_controller.py" = ["BLE001"]
+"src/quant_pd_framework/streamlit_ui/config_builder.py" = ["BLE001"]
+"src/quant_pd_framework/streamlit_ui/config_profiles.py" = ["BLE001"]
+"src/quant_pd_framework/streamlit_ui/data.py" = ["BLE001"]
+"src/quant_pd_framework/streamlit_ui/results.py" = ["BLE001"]
+"src/quant_pd_framework/streamlit_ui/state.py" = ["BLE001"]
+"src/quant_pd_framework/streamlit_ui/steps/step3_readiness_run.py" = ["BLE001"]
+"src/quant_pd_framework/streamlit_ui/workspace.py" = ["BLE001"]
 
 [tool.mypy]
 python_version = "3.11"
 files = [
     "src/quant_pd_framework/base.py",
+    "src/quant_pd_framework/background_job_runner.py",
     "src/quant_pd_framework/config.py",
     "src/quant_pd_framework/config_io.py",
     "src/quant_pd_framework/config_serialization.py",
@@ -84,9 +119,11 @@ files = [
     "src/quant_pd_framework/export_profiles.py",
     "src/quant_pd_framework/gui_launcher.py",
     "src/quant_pd_framework/large_data_policy.py",
+    "src/quant_pd_framework/logging.py",
     "src/quant_pd_framework/presets.py",
     "src/quant_pd_framework/run.py",
     "src/quant_pd_framework/run_stage.py",
+    "src/quant_pd_framework/safe_serialization.py",
     "src/quant_pd_framework/workflow_guardrails.py",
 ]
 check_untyped_defs = true

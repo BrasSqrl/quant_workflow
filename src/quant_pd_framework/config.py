@@ -1867,6 +1867,11 @@ class PerformanceConfig:
     memory_limit_gb: float | None = None
     memory_estimate_file_multiplier: float = 6.0
     memory_estimate_dataframe_multiplier: float = 4.0
+    stage_subprocess_timeout_seconds: int = 3_600
+    export_subprocess_timeout_seconds: int = 30
+    gui_launch_timeout_seconds: int = 604_800
+    background_job_max_runtime_seconds: int = 86_400
+    background_cancel_grace_seconds: int = 10
 
     def __post_init__(self) -> None:
         self.large_data_backend = _coerce_str_enum(
@@ -1903,6 +1908,11 @@ class PerformanceConfig:
             "large_data_score_chunk_rows": self.large_data_score_chunk_rows,
             "large_data_result_page_rows": self.large_data_result_page_rows,
             "large_data_max_in_memory_rows": self.large_data_max_in_memory_rows,
+            "stage_subprocess_timeout_seconds": self.stage_subprocess_timeout_seconds,
+            "export_subprocess_timeout_seconds": self.export_subprocess_timeout_seconds,
+            "gui_launch_timeout_seconds": self.gui_launch_timeout_seconds,
+            "background_job_max_runtime_seconds": self.background_job_max_runtime_seconds,
+            "background_cancel_grace_seconds": self.background_cancel_grace_seconds,
         }.items():
             if value <= 0:
                 raise ValueError(f"PerformanceConfig.{field_name} must be greater than 0.")

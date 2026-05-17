@@ -14,6 +14,12 @@ repos:
         pass_filenames: false
         files: ^src/quant_pd_framework/
 
+      - id: module-size-ratchet
+        name: module size ratchet
+        entry: python scripts/check_module_size.py
+        language: system
+        pass_filenames: false
+
       - id: detect-secrets
         name: detect-secrets
         entry: detect-secrets-hook --baseline .secrets.baseline

@@ -35,6 +35,7 @@ from .checkpointing import (
 from .config import ExecutionMode, FrameworkConfig
 from .context import PipelineContext
 from .export_layout import build_export_path_layout
+from .logging import get_logger
 from .orchestrator import QuantModelOrchestrator, build_run_id
 from .run_registry import (
     append_audit_event,
@@ -76,6 +77,7 @@ DIAGNOSTIC_GROUP_LABELS: dict[str, str] = {
     "credit_risk": "Diagnostics: credit risk",
     "expanded_framework": "Diagnostics: expanded framework tests",
 }
+LOGGER = get_logger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -356,7 +358,38 @@ class CheckpointedWorkflowRunner:
             "--stage-id",
             stage.stage_id,
         ]
-        completed = subprocess.run(command, capture_output=True, text=True, check=False)
+        try:
+            completed = subprocess.run(
+                command,
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=self.config.performance.stage_subprocess_timeout_seconds,
+            )
+        except subprocess.TimeoutExpired as exc:
+            error_message = (
+                f"Checkpoint stage '{stage.label}' exceeded subprocess timeout of "
+                f"{self.config.performance.stage_subprocess_timeout_seconds} seconds."
+            )
+            LOGGER.exception(error_message)
+            manifest = read_checkpoint_manifest(manifest_path)
+            mark_stage_failed(
+                manifest,
+                stage.stage_id,
+                error_message=error_message,
+                elapsed_seconds=float(self.config.performance.stage_subprocess_timeout_seconds),
+                optional=not stage.critical,
+            )
+            write_checkpoint_manifest(manifest_path, manifest)
+            self._notify_stage_manifest_event(
+                manifest,
+                stage,
+                "stage_failed",
+                error_message=error_message,
+            )
+            if stage.critical:
+                raise RuntimeError(error_message) from exc
+            return None
         manifest = read_checkpoint_manifest(manifest_path)
         if completed.returncode != 0:
             error_message = completed.stderr.strip() or completed.stdout.strip()

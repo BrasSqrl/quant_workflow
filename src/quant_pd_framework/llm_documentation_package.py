@@ -3446,10 +3446,10 @@ def validate(draft_path: Path) -> dict[str, object]:
 
 def main() -> int:
     if len(sys.argv) != 2:
-        print("Usage: python 08_tools/validate_llm_draft.py path/to/draft.md")
+        sys.stdout.write("Usage: python 08_tools/validate_llm_draft.py path/to/draft.md\n")
         return 2
     result = validate(Path(sys.argv[1]))
-    print(json.dumps(result, indent=2))
+    sys.stdout.write(json.dumps(result, indent=2) + "\n")
     return 1 if result["status"] == "needs_review" else 0
 
 
@@ -3620,7 +3620,7 @@ def validate() -> dict[str, Any]:
 
 def main() -> int:
     result = validate()
-    print(json.dumps(result, indent=2))
+    sys.stdout.write(json.dumps(result, indent=2) + "\n")
     return 0 if result["status"] == "passed" else 1
 
 
@@ -3645,6 +3645,7 @@ from __future__ import annotations
 
 import csv
 import json
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -3861,7 +3862,7 @@ def main() -> int:
         "# DOCX Build Notes\n\n" + "\n".join(f"- {note}" for note in notes) + "\n",
         encoding="utf-8",
     )
-    print("\n".join(notes))
+    sys.stdout.write("\n".join(notes) + "\n")
     return 0
 
 
@@ -3880,6 +3881,7 @@ Usage:
 from __future__ import annotations
 
 import json
+import sys
 import zipfile
 from pathlib import Path
 from typing import Any
@@ -3949,7 +3951,7 @@ def validate() -> dict[str, Any]:
 
 def main() -> int:
     result = validate()
-    print(json.dumps(result, indent=2))
+    sys.stdout.write(json.dumps(result, indent=2) + "\n")
     return 0 if result["status"] == "passed" else 1
 
 

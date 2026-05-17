@@ -11,6 +11,8 @@ from tempfile import NamedTemporaryFile
 from typing import Any
 from uuid import uuid4
 
+from .logging import get_logger
+
 RUN_REGISTRY_SCHEMA_VERSION = "1.0"
 AUDIT_EVENT_SCHEMA_VERSION = "1.0"
 RUN_REGISTRY_DIRECTORY_NAME = "_run_registry"
@@ -26,6 +28,7 @@ SENSITIVE_KEY_FRAGMENTS = (
     "session_token",
     "token",
 )
+LOGGER = get_logger(__name__)
 
 
 @dataclass(slots=True)
@@ -157,8 +160,8 @@ def json_safe(value: Any) -> Any:
     if hasattr(value, "item"):
         try:
             return value.item()
-        except Exception:
-            pass
+        except (TypeError, ValueError, AttributeError) as exc:
+            LOGGER.debug("Unable to coerce registry scalar value: %s", exc)
     if value is None or isinstance(value, (bool, int, float, str)):
         return value
     return str(value)
@@ -189,7 +192,8 @@ def load_run_registry(
         if isinstance(entry_payload, dict):
             try:
                 result.append(RunRegistryEntry.from_dict(entry_payload))
-            except Exception:
+            except (TypeError, ValueError) as exc:
+                LOGGER.warning("Skipping invalid run registry entry: %s", exc)
                 continue
     return sorted(result, key=_entry_sort_key, reverse=True)
 
@@ -273,7 +277,8 @@ def load_audit_events(
         try:
             payload = json.loads(line)
             event = AuditEvent.from_dict(payload)
-        except Exception:
+        except (json.JSONDecodeError, TypeError, ValueError) as exc:
+            LOGGER.warning("Skipping invalid audit event row: %s", exc)
             continue
         if run_id is not None and event.run_id != run_id:
             continue
@@ -459,7 +464,8 @@ def _read_registry_payload(output_root: str | Path) -> dict[str, Any]:
         return {"schema_version": RUN_REGISTRY_SCHEMA_VERSION, "runs": []}
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
-    except Exception:
+    except (OSError, json.JSONDecodeError) as exc:
+        LOGGER.warning("Unable to read run registry file %s: %s", path, exc)
         return {"schema_version": RUN_REGISTRY_SCHEMA_VERSION, "runs": []}
     if not isinstance(payload, dict):
         return {"schema_version": RUN_REGISTRY_SCHEMA_VERSION, "runs": []}
@@ -489,7 +495,8 @@ def _read_json_if_exists(path: Path) -> dict[str, Any]:
         return {}
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
-    except Exception:
+    except (OSError, json.JSONDecodeError) as exc:
+        LOGGER.warning("Unable to read JSON file %s: %s", path, exc)
         return {}
     return payload if isinstance(payload, dict) else {}
 
