@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
+import shutil
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 import pandas as pd
 
@@ -20,18 +23,48 @@ GIB = 1024**3
 class DatasetHandle:
     """A file-backed dataset reference used when large data mode avoids eager loading."""
 
-    path: Path
+    path: Path | None = None
+    uri: str | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
     staged_path: Path | None = None
     staging_metadata: dict[str, Any] = field(default_factory=dict)
 
     @property
     def active_path(self) -> Path:
-        return self.staged_path or self.path
+        if self.staged_path is not None:
+            return self.staged_path
+        if self.path is not None:
+            return self.path
+        raise ValueError(
+            "This dataset handle does not have a local active path. Stage the "
+            "remote source before requesting active_path."
+        )
+
+    @property
+    def source_identifier(self) -> str:
+        if self.uri:
+            return self.uri
+        if self.path is not None:
+            return str(self.path)
+        return ""
+
+    @property
+    def is_s3(self) -> bool:
+        return is_s3_uri(self.source_identifier)
+
+    @property
+    def source_suffix(self) -> str:
+        metadata_suffix = str(self.metadata.get("suffix") or "").lower()
+        if metadata_suffix:
+            return metadata_suffix
+        parsed_path = urlparse(self.source_identifier).path if self.uri else self.source_identifier
+        return Path(parsed_path).suffix.lower()
 
     @property
     def suffix(self) -> str:
-        return self.active_path.suffix.lower()
+        if self.staged_path is not None or self.path is not None:
+            return self.active_path.suffix.lower()
+        return self.source_suffix
 
     def with_staging(
         self,
@@ -45,11 +78,18 @@ class DatasetHandle:
         )
 
     def to_metadata(self) -> dict[str, Any]:
+        active_path = (
+            str(self.active_path)
+            if self.staged_path is not None or self.path is not None
+            else ""
+        )
         return {
-            "source_path": str(self.path),
-            "active_path": str(self.active_path),
-            "source_suffix": self.path.suffix.lower(),
+            "source_path": str(self.path) if self.path is not None else "",
+            "source_uri": self.uri or "",
+            "active_path": active_path,
+            "source_suffix": self.source_suffix,
             "active_suffix": self.suffix,
+            "source_kind": "s3" if self.is_s3 else "local_file",
             "metadata": dict(self.metadata),
             "staging": dict(self.staging_metadata),
         }
@@ -82,11 +122,81 @@ def build_dataset_handle(path: Path, metadata: dict[str, Any] | None = None) -> 
     return DatasetHandle(path=path, metadata=dict(metadata or {}))
 
 
+def build_s3_dataset_handle(uri: str, metadata: dict[str, Any] | None = None) -> DatasetHandle:
+    """Builds a remote S3 dataset handle with lightweight metadata."""
+
+    if not is_s3_uri(uri):
+        raise ValueError(f"Expected an s3:// URI. Received: {uri}")
+    normalized_metadata = normalize_s3_metadata(uri, metadata or {})
+    return DatasetHandle(uri=uri, metadata=normalized_metadata)
+
+
+def is_s3_uri(value: str | Path | None) -> bool:
+    """Returns whether a value is an S3 URI."""
+
+    return str(value or "").strip().lower().startswith("s3://")
+
+
+def parse_s3_uri(uri: str) -> tuple[str, str]:
+    """Parses an S3 URI into bucket and key."""
+
+    parsed = urlparse(uri)
+    if parsed.scheme.lower() != "s3" or not parsed.netloc or not parsed.path.strip("/"):
+        raise ValueError("S3 paths must use the form s3://bucket/key.")
+    return parsed.netloc, parsed.path.lstrip("/")
+
+
+def normalize_s3_metadata(uri: str, metadata: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Normalizes S3 metadata without storing credentials."""
+
+    bucket, key = parse_s3_uri(uri)
+    suffix = Path(key).suffix.lower()
+    payload = {
+        "source_kind": "s3",
+        "display_label": uri,
+        "source_uri": uri,
+        "bucket": bucket,
+        "key": key,
+        "file_name": Path(key).name,
+        "relative_path": uri,
+        "suffix": suffix,
+        "size_bytes": "",
+        "modified_at_utc": "",
+        "etag": "",
+    }
+    payload.update(dict(metadata or {}))
+    payload["source_kind"] = "s3"
+    payload["source_uri"] = uri
+    payload["display_label"] = uri
+    payload["bucket"] = bucket
+    payload["key"] = key
+    payload["suffix"] = suffix
+    return payload
+
+
+def describe_s3_uri(uri: str) -> dict[str, Any]:
+    """Reads lightweight object metadata for an S3 URI using environment credentials."""
+
+    metadata = normalize_s3_metadata(uri)
+    try:
+        filesystem, object_path = _s3_filesystem_and_path(uri)
+        info = filesystem.get_file_info(object_path)
+    except Exception:
+        return metadata
+    if getattr(info, "size", None) is not None and int(info.size) >= 0:
+        metadata["size_bytes"] = int(info.size)
+    mtime = getattr(info, "mtime", None)
+    if mtime is not None:
+        metadata["modified_at_utc"] = str(mtime)
+    return metadata
+
+
 def stage_large_data_file(
     handle: DatasetHandle,
     *,
     chunk_rows: int,
     compression: str,
+    s3_cache_dir: Path | None = None,
 ) -> DatasetHandle:
     """
     Returns a handle whose active path is a reusable Parquet staging file.
@@ -95,6 +205,17 @@ def stage_large_data_file(
     source-adjacent cache keyed by file size and modified timestamp so repeated
     runs do not reconvert unchanged data.
     """
+
+    if handle.is_s3:
+        return _stage_s3_data_file(
+            handle,
+            chunk_rows=chunk_rows,
+            compression=compression,
+            s3_cache_dir=s3_cache_dir or Path(".quant_studio_cache") / "s3",
+        )
+
+    if handle.path is None:
+        raise ValueError("Local large-data staging requires a local file path.")
 
     source_path = handle.path
     suffix = source_path.suffix.lower()
@@ -149,6 +270,148 @@ def stage_large_data_file(
     )
 
 
+def materialize_projected_parquet(
+    handle: DatasetHandle,
+    *,
+    columns: list[str],
+    destination_path: Path,
+    compression: str,
+    duckdb_threads: int = 0,
+    duckdb_memory_limit_gb: float | None = None,
+) -> tuple[DatasetHandle, dict[str, Any]]:
+    """Writes a projected Parquet dataset once so downstream chunks read fewer columns."""
+
+    selected_columns = list(dict.fromkeys(column for column in columns if column))
+    if not selected_columns:
+        return handle, {
+            "materialized": False,
+            "reason": "no_projected_columns",
+            "source_identifier": handle.source_identifier,
+        }
+    if handle.is_s3 and handle.staged_path is None:
+        return handle, {
+            "materialized": False,
+            "reason": "s3_source_not_staged",
+            "source_identifier": handle.source_identifier,
+        }
+    try:
+        import duckdb
+    except ImportError:
+        return handle, {
+            "materialized": False,
+            "reason": "duckdb_not_available",
+            "source_identifier": handle.source_identifier,
+        }
+
+    source_path = handle.active_path
+    if source_path.resolve() == destination_path.resolve():
+        return handle, {
+            "materialized": False,
+            "reason": "source_already_projected_destination",
+            "source_identifier": handle.source_identifier,
+            "destination_path": str(destination_path),
+        }
+
+    suffix = source_path.suffix.lower()
+    if suffix not in PARQUET_SUFFIXES and suffix != ".csv":
+        return handle, {
+            "materialized": False,
+            "reason": f"unsupported_suffix:{suffix}",
+            "source_identifier": handle.source_identifier,
+        }
+
+    destination_path.parent.mkdir(parents=True, exist_ok=True)
+    reader = "read_parquet" if suffix in PARQUET_SUFFIXES else "read_csv_auto"
+    select_sql = ", ".join(_quote_identifier(column) for column in selected_columns)
+    compression_sql = compression.replace("'", "").upper()
+    reused = destination_path.exists()
+    metadata = {
+        "materialized": True,
+        "reused_existing_projected_file": reused,
+        "source_identifier": handle.source_identifier,
+        "source_path": str(source_path),
+        "destination_path": str(destination_path),
+        "projected_columns": selected_columns,
+        "compression": compression,
+        "engine": "duckdb_projected_copy",
+    }
+    if not reused:
+        with duckdb.connect(database=":memory:") as connection:
+            if duckdb_threads > 0:
+                connection.execute(f"PRAGMA threads={int(duckdb_threads)}")
+            if duckdb_memory_limit_gb is not None:
+                connection.execute(f"PRAGMA memory_limit='{float(duckdb_memory_limit_gb)}GB'")
+            connection.execute(
+                (
+                    f"COPY (SELECT {select_sql} FROM {reader}(?)) TO ? "
+                    f"(FORMAT PARQUET, COMPRESSION '{compression_sql}')"
+                ),
+                [str(source_path), str(destination_path)],
+            )
+    metadata["row_count"] = _parquet_row_count(destination_path)
+    staged_metadata = dict(handle.staging_metadata)
+    staged_metadata["projected_dataset"] = metadata
+    return handle.with_staging(destination_path, staged_metadata), metadata
+
+
+def _stage_s3_data_file(
+    handle: DatasetHandle,
+    *,
+    chunk_rows: int,
+    compression: str,
+    s3_cache_dir: Path,
+) -> DatasetHandle:
+    """Stages S3 CSV/Parquet sources into a local reusable cache."""
+
+    source_uri = handle.uri or handle.source_identifier
+    suffix = handle.source_suffix
+    if suffix not in {".csv", *PARQUET_SUFFIXES}:
+        raise ValueError(
+            "S3 large-data intake supports CSV and Parquet files. "
+            f"Received suffix: {suffix or 'unknown'}."
+        )
+    s3_cache_dir.mkdir(parents=True, exist_ok=True)
+    cache_key = _source_cache_key(source_uri, handle.metadata)
+    staged_path = s3_cache_dir / f"{cache_key}.parquet"
+    metadata_path = s3_cache_dir / f"{cache_key}.json"
+    reused = staged_path.exists()
+    if reused:
+        staging_metadata = {
+            "source_uri": source_uri,
+            "destination_path": str(staged_path),
+            "reused_existing_staging_file": True,
+            "staging_required": True,
+            "s3_local_cache_dir": str(s3_cache_dir),
+            "metadata_path": str(metadata_path),
+        }
+    elif suffix == ".csv":
+        staging_metadata = convert_s3_csv_to_parquet(
+            source_uri,
+            staged_path,
+            chunk_rows=chunk_rows,
+            compression=compression,
+        )
+    else:
+        staging_metadata = copy_s3_object_to_local(
+            source_uri,
+            staged_path,
+        )
+        staging_metadata["compression"] = compression
+    staging_metadata.update(
+        {
+            "staging_required": True,
+            "source_kind": "s3",
+            "source_uri": source_uri,
+            "reused_existing_staging_file": reused,
+            "metadata_path": str(metadata_path),
+            "s3_local_cache_dir": str(s3_cache_dir),
+        }
+    )
+    if not reused:
+        metadata_path.write_text(json.dumps(staging_metadata, indent=2), encoding="utf-8")
+    return handle.with_staging(staged_path, staging_metadata)
+
+
 def read_dataset_preview(
     handle: DatasetHandle,
     *,
@@ -156,6 +419,9 @@ def read_dataset_preview(
     columns: list[str] | None = None,
 ) -> pd.DataFrame:
     """Reads a small preview from a file-backed dataset."""
+
+    if handle.is_s3 and handle.staged_path is None:
+        return _read_s3_rows(handle, rows=rows, columns=columns)
 
     path = handle.active_path
     suffix = path.suffix.lower()
@@ -180,6 +446,9 @@ def read_dataset_sample(
 ) -> pd.DataFrame:
     """Reads a deterministic sample for model development."""
 
+    if handle.is_s3 and handle.staged_path is None:
+        return read_dataset_preview(handle, rows=rows, columns=columns)
+
     sampled = _read_duckdb_sample(
         handle.active_path,
         rows=rows,
@@ -199,6 +468,9 @@ def iter_dataset_batches(
 ):
     """Yields dataframe batches from a file-backed dataset."""
 
+    if handle.is_s3 and handle.staged_path is None:
+        raise ValueError("S3 datasets must be staged locally before chunked scoring.")
+
     path = handle.active_path
     suffix = path.suffix.lower()
     if suffix == ".csv":
@@ -216,12 +488,24 @@ def iter_dataset_batches(
     raise ValueError(f"Unsupported batch-read format: {path.suffix}")
 
 
-def profile_dataset_handle(handle: DatasetHandle, *, preview_rows: int = 50) -> dict[str, Any]:
+def profile_dataset_handle(
+    handle: DatasetHandle,
+    *,
+    preview_rows: int = 50,
+    selected_columns: list[str] | None = None,
+) -> dict[str, Any]:
     """Builds a lightweight profile without loading the full file into memory."""
 
-    preview = read_dataset_preview(handle, rows=preview_rows)
+    preview = read_dataset_preview(handle, rows=preview_rows, columns=selected_columns)
     row_count: int | None = None
-    if handle.suffix in PARQUET_SUFFIXES:
+    if handle.suffix in PARQUET_SUFFIXES and not handle.is_s3:
+        try:
+            import pyarrow.parquet as pq
+
+            row_count = int(pq.ParquetFile(handle.active_path).metadata.num_rows)
+        except ImportError:
+            row_count = None
+    elif handle.suffix in PARQUET_SUFFIXES and handle.is_s3 and handle.staged_path is not None:
         try:
             import pyarrow.parquet as pq
 
@@ -231,14 +515,125 @@ def profile_dataset_handle(handle: DatasetHandle, *, preview_rows: int = 50) -> 
     elif handle.suffix == ".csv":
         row_count = None
 
+    approximate_quantiles = _preview_quantiles(preview)
+    approximate_cardinality = {
+        column: int(preview[column].nunique(dropna=True)) for column in preview.columns
+    }
+    null_counts = {column: int(preview[column].isna().sum()) for column in preview.columns}
+
     return {
-        "active_path": str(handle.active_path),
+        "source_kind": "s3" if handle.is_s3 else "local_file",
+        "source_uri": handle.uri or "",
+        "source_path": str(handle.path) if handle.path is not None else "",
+        "active_path": (
+            str(handle.active_path)
+            if handle.staged_path is not None or handle.path is not None
+            else ""
+        ),
+        "source_suffix": handle.source_suffix,
+        "active_suffix": handle.suffix,
+        "source_metadata": dict(handle.metadata),
         "row_count": row_count,
         "column_count": int(preview.shape[1]),
         "columns": list(preview.columns),
         "dtypes": {column: str(dtype) for column, dtype in preview.dtypes.items()},
+        "null_counts": null_counts,
+        "null_counts_preview": null_counts,
+        "approximate_cardinality": approximate_cardinality,
+        "unique_counts_preview": approximate_cardinality,
+        "approximate_quantiles": approximate_quantiles,
+        "profile_basis": "file_metadata_plus_preview_rows",
+        "selected_columns": list(selected_columns or []),
         "preview_rows": int(len(preview)),
     }
+
+
+def profile_dataset_handle_cached(
+    handle: DatasetHandle,
+    *,
+    preview_rows: int = 50,
+    selected_columns: list[str] | None = None,
+    cache_enabled: bool = True,
+    cache_root: Path | None = None,
+) -> dict[str, Any]:
+    """Builds or reuses a persistent lightweight profile for file-backed datasets."""
+
+    cache_key = build_profile_cache_key(handle, selected_columns=selected_columns)
+    profile_dir = cache_root or Path(".quant_studio_cache") / "profiles"
+    profile_path = profile_dir / f"{cache_key}.json"
+    if cache_enabled and profile_path.exists():
+        try:
+            cached = json.loads(profile_path.read_text(encoding="utf-8"))
+            cached["profile_cache_key"] = cache_key
+            cached["profile_cache_path"] = str(profile_path)
+            cached["profile_cache_hit"] = True
+            cached["profile_cache_enabled"] = True
+            return cached
+        except Exception:
+            pass
+
+    profile = profile_dataset_handle(
+        handle,
+        preview_rows=preview_rows,
+        selected_columns=selected_columns,
+    )
+    profile["profile_cache_key"] = cache_key
+    profile["profile_cache_path"] = str(profile_path)
+    profile["profile_cache_hit"] = False
+    profile["profile_cache_enabled"] = bool(cache_enabled)
+    if cache_enabled:
+        profile_dir.mkdir(parents=True, exist_ok=True)
+        profile_path.write_text(json.dumps(profile, indent=2, default=str), encoding="utf-8")
+    return profile
+
+
+def build_profile_cache_key(
+    handle: DatasetHandle,
+    *,
+    selected_columns: list[str] | None = None,
+) -> str:
+    """Returns the persistent profile-cache fingerprint for one dataset view."""
+
+    metadata = dict(handle.metadata)
+    active_path = None
+    active_stat: dict[str, Any] = {}
+    if handle.staged_path is not None or handle.path is not None:
+        try:
+            active_path = handle.active_path
+            stat_result = active_path.stat()
+            active_stat = {
+                "active_path": str(active_path),
+                "active_size_bytes": int(stat_result.st_size),
+                "active_modified_ns": int(stat_result.st_mtime_ns),
+            }
+        except OSError:
+            active_stat = {"active_path": str(handle.source_identifier)}
+    fingerprint = {
+        "source_identifier": handle.source_identifier,
+        "source_suffix": handle.source_suffix,
+        "active_suffix": handle.suffix,
+        "selected_columns": list(selected_columns or []),
+        "source_size_bytes": metadata.get("size_bytes", ""),
+        "source_modified_at_utc": metadata.get("modified_at_utc", ""),
+        "source_modified_ns": metadata.get("modified_ns", ""),
+        "source_etag": metadata.get("etag", ""),
+        **active_stat,
+    }
+    encoded = json.dumps(fingerprint, sort_keys=True, default=str).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()[:24]
+
+
+def _preview_quantiles(preview: pd.DataFrame) -> dict[str, dict[str, float]]:
+    quantiles: dict[str, dict[str, float]] = {}
+    for column in preview.columns:
+        numeric = pd.to_numeric(preview[column], errors="coerce").dropna()
+        if numeric.empty:
+            continue
+        values = numeric.quantile([0.01, 0.25, 0.5, 0.75, 0.99])
+        quantiles[column] = {
+            str(index): float(value) for index, value in values.items() if pd.notna(value)
+        }
+    return quantiles
 
 
 def optimize_dataframe_dtypes(
@@ -347,43 +742,165 @@ def convert_csv_to_parquet(
     chunk_rows: int,
     compression: str,
 ) -> dict[str, Any]:
-    """Converts a CSV file to Parquet in chunks using pyarrow."""
+    """Converts a CSV file to Parquet without loading the full file into pandas."""
 
+    duckdb_metadata = _convert_csv_to_parquet_with_duckdb(
+        source_path,
+        destination_path,
+        chunk_rows=chunk_rows,
+        compression=compression,
+    )
+    if duckdb_metadata is not None:
+        return duckdb_metadata
+    return _convert_csv_to_parquet_with_pyarrow_stream(
+        source_path,
+        destination_path,
+        chunk_rows=chunk_rows,
+        compression=compression,
+    )
+
+
+def convert_s3_csv_to_parquet(
+    source_uri: str,
+    destination_path: Path,
+    *,
+    chunk_rows: int,
+    compression: str,
+) -> dict[str, Any]:
+    """Streams an S3 CSV object into a local Parquet cache."""
+
+    filesystem, object_path = _s3_filesystem_and_path(source_uri)
+    return _convert_csv_stream_to_parquet(
+        source_display=source_uri,
+        source_opener=lambda: filesystem.open_input_file(object_path),
+        destination_path=destination_path,
+        chunk_rows=chunk_rows,
+        compression=compression,
+        engine="pyarrow_s3_stream",
+    )
+
+
+def copy_s3_object_to_local(source_uri: str, destination_path: Path) -> dict[str, Any]:
+    """Copies an S3 object into the local staging cache without storing credentials."""
+
+    filesystem, object_path = _s3_filesystem_and_path(source_uri)
+    destination_path.parent.mkdir(parents=True, exist_ok=True)
+    with filesystem.open_input_file(object_path) as source, destination_path.open("wb") as target:
+        shutil.copyfileobj(source, target, length=1024 * 1024 * 16)
+    return {
+        "source_uri": source_uri,
+        "destination_path": str(destination_path),
+        "conversion_engine": "s3_object_copy",
+        "row_count": _parquet_row_count(destination_path),
+    }
+
+
+def _convert_csv_to_parquet_with_duckdb(
+    source_path: Path,
+    destination_path: Path,
+    *,
+    chunk_rows: int,
+    compression: str,
+) -> dict[str, Any] | None:
+    try:
+        import duckdb
+    except ImportError:
+        return None
+
+    destination_path.parent.mkdir(parents=True, exist_ok=True)
+    compression_sql = compression.replace("'", "").upper()
+    try:
+        with duckdb.connect(database=":memory:") as connection:
+            connection.execute(
+                (
+                    "COPY (SELECT * FROM read_csv_auto(?)) TO ? "
+                    f"(FORMAT PARQUET, COMPRESSION '{compression_sql}')"
+                ),
+                [str(source_path), str(destination_path)],
+            )
+    except Exception:
+        return None
+
+    return {
+        "source_path": str(source_path),
+        "destination_path": str(destination_path),
+        "chunk_rows": int(chunk_rows),
+        "chunk_count": None,
+        "row_count": _parquet_row_count(destination_path),
+        "compression": compression,
+        "conversion_engine": "duckdb_copy",
+    }
+
+
+def _convert_csv_to_parquet_with_pyarrow_stream(
+    source_path: Path,
+    destination_path: Path,
+    *,
+    chunk_rows: int,
+    compression: str,
+) -> dict[str, Any]:
+    return _convert_csv_stream_to_parquet(
+        source_display=str(source_path),
+        source_opener=lambda: source_path.open("rb"),
+        destination_path=destination_path,
+        chunk_rows=chunk_rows,
+        compression=compression,
+        engine="pyarrow_local_stream",
+    )
+
+
+def _convert_csv_stream_to_parquet(
+    *,
+    source_display: str,
+    source_opener,
+    destination_path: Path,
+    chunk_rows: int,
+    compression: str,
+    engine: str,
+) -> dict[str, Any]:
     try:
         import pyarrow as pa
+        import pyarrow.csv as pc
         import pyarrow.parquet as pq
     except ImportError as exc:
-        raise ImportError("Chunked CSV-to-Parquet conversion requires `pyarrow`.") from exc
+        raise ImportError("Streaming CSV-to-Parquet conversion requires `pyarrow`.") from exc
 
     destination_path.parent.mkdir(parents=True, exist_ok=True)
     writer: pq.ParquetWriter | None = None
     chunk_count = 0
     row_count = 0
     try:
-        for chunk in pd.read_csv(source_path, chunksize=chunk_rows):
-            table = pa.Table.from_pandas(chunk, preserve_index=False)
-            if writer is None:
-                writer = pq.ParquetWriter(
-                    destination_path,
-                    table.schema,
-                    compression=compression,
-                )
-            else:
-                table = table.cast(writer.schema, safe=False)
-            writer.write_table(table)
-            chunk_count += 1
-            row_count += int(len(chunk))
+        with source_opener() as source:
+            reader = pc.open_csv(
+                source,
+                read_options=pc.ReadOptions(block_size=max(1, int(chunk_rows)) * 1024),
+            )
+            for batch in reader:
+                table = pa.Table.from_batches([batch])
+                if writer is None:
+                    writer = pq.ParquetWriter(
+                        destination_path,
+                        table.schema,
+                        compression=compression,
+                    )
+                else:
+                    table = table.cast(writer.schema, safe=False)
+                writer.write_table(table)
+                chunk_count += 1
+                row_count += int(table.num_rows)
     finally:
         if writer is not None:
             writer.close()
 
     return {
-        "source_path": str(source_path),
+        "source_path": source_display if not is_s3_uri(source_display) else "",
+        "source_uri": source_display if is_s3_uri(source_display) else "",
         "destination_path": str(destination_path),
         "chunk_rows": int(chunk_rows),
         "chunk_count": int(chunk_count),
         "row_count": int(row_count),
         "compression": compression,
+        "conversion_engine": engine,
     }
 
 
@@ -440,6 +957,108 @@ def _read_duckdb_sample(
     try:
         with duckdb.connect(database=":memory:") as connection:
             return connection.execute(query, [str(path)]).df()
+    except Exception:
+        return None
+
+
+def _read_s3_rows(
+    handle: DatasetHandle,
+    *,
+    rows: int,
+    columns: list[str] | None,
+) -> pd.DataFrame:
+    uri = handle.uri or handle.source_identifier
+    suffix = handle.source_suffix
+    if suffix == ".csv":
+        return _read_s3_csv_rows(uri, rows=rows, columns=columns)
+    if suffix in PARQUET_SUFFIXES:
+        return _read_s3_parquet_rows(uri, rows=rows, columns=columns)
+    raise ValueError(f"Unsupported S3 preview format: {suffix}")
+
+
+def _read_s3_csv_rows(
+    uri: str,
+    *,
+    rows: int,
+    columns: list[str] | None,
+) -> pd.DataFrame:
+    try:
+        import pyarrow.csv as pc
+    except ImportError as exc:
+        raise ImportError("Reading S3 CSV previews requires `pyarrow`.") from exc
+
+    filesystem, object_path = _s3_filesystem_and_path(uri)
+    with filesystem.open_input_file(object_path) as source:
+        reader = pc.open_csv(source)
+        frames: list[pd.DataFrame] = []
+        remaining = rows
+        for batch in reader:
+            table = batch.to_pandas()
+            if columns:
+                table = table.loc[:, [column for column in columns if column in table.columns]]
+            frames.append(table.iloc[:remaining].copy(deep=True))
+            remaining -= len(frames[-1])
+            if remaining <= 0:
+                break
+    if not frames:
+        return pd.DataFrame()
+    return pd.concat(frames, ignore_index=True)
+
+
+def _read_s3_parquet_rows(
+    uri: str,
+    *,
+    rows: int,
+    columns: list[str] | None,
+) -> pd.DataFrame:
+    try:
+        import pyarrow.parquet as pq
+    except ImportError as exc:
+        raise ImportError("Reading S3 Parquet previews requires `pyarrow`.") from exc
+
+    filesystem, object_path = _s3_filesystem_and_path(uri)
+    with filesystem.open_input_file(object_path) as source:
+        parquet_file = pq.ParquetFile(source)
+        frames: list[pd.DataFrame] = []
+        remaining = rows
+        for batch in parquet_file.iter_batches(batch_size=min(rows, 100_000), columns=columns):
+            frame = batch.to_pandas()
+            frames.append(frame.iloc[:remaining].copy(deep=True))
+            remaining -= len(frames[-1])
+            if remaining <= 0:
+                break
+    if not frames:
+        return pd.DataFrame()
+    return pd.concat(frames, ignore_index=True)
+
+
+def _s3_filesystem_and_path(uri: str):
+    try:
+        import pyarrow.fs as pafs
+    except ImportError as exc:
+        raise ImportError("S3 data access requires `pyarrow` with filesystem support.") from exc
+
+    filesystem, object_path = pafs.FileSystem.from_uri(uri)
+    return filesystem, object_path
+
+
+def _source_cache_key(source_identifier: str, metadata: dict[str, Any]) -> str:
+    fingerprint = {
+        "source_identifier": source_identifier,
+        "size_bytes": metadata.get("size_bytes", ""),
+        "modified_at_utc": metadata.get("modified_at_utc", ""),
+        "modified_ns": metadata.get("modified_ns", ""),
+        "etag": metadata.get("etag", ""),
+    }
+    encoded = json.dumps(fingerprint, sort_keys=True, default=str).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()[:24]
+
+
+def _parquet_row_count(path: Path) -> int | None:
+    try:
+        import pyarrow.parquet as pq
+
+        return int(pq.ParquetFile(path).metadata.num_rows)
     except Exception:
         return None
 

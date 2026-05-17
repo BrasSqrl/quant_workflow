@@ -1,0 +1,483 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Quant Studio PD Logistic Regression Walkthrough</title>
+  <style>
+    :root {
+      --bg: #eef4fb;
+      --panel: #ffffff;
+      --panel-soft: #f7faff;
+      --ink: #14223b;
+      --muted: #64748b;
+      --line: #dbe7f5;
+      --blue: #2673ee;
+      --blue-dark: #1954bd;
+      --green: #079669;
+      --amber: #b7791f;
+      --red: #d14343;
+      --shadow: 0 20px 60px rgba(35, 77, 132, 0.16);
+      --radius: 24px;
+      --mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+      --sans: "Segoe UI", Aptos, Calibri, Arial, sans-serif;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background:
+        radial-gradient(circle at 10% 0%, rgba(38, 115, 238, 0.12), transparent 28rem),
+        linear-gradient(180deg, #f8fbff 0%, var(--bg) 46%, #f7fafc 100%);
+      color: var(--ink);
+      font-family: var(--sans);
+      line-height: 1.55;
+    }
+    a { color: var(--blue-dark); }
+    .shell { max-width: 1240px; margin: 0 auto; padding: 28px; }
+    .hero {
+      display: grid;
+      grid-template-columns: minmax(0, 1.15fr) minmax(320px, 0.85fr);
+      gap: 24px;
+      align-items: stretch;
+      margin-bottom: 24px;
+    }
+    .card {
+      background: rgba(255, 255, 255, 0.86);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      padding: 28px;
+    }
+    .eyebrow {
+      color: var(--blue);
+      font-weight: 800;
+      font-size: 12px;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      margin: 0 0 10px;
+    }
+    h1 { font-size: clamp(34px, 5vw, 64px); line-height: 1; margin: 0 0 16px; }
+    h2 { font-size: 30px; margin: 0 0 14px; }
+    h3 { font-size: 20px; margin: 0 0 10px; }
+    p { margin: 0 0 14px; color: #26364f; }
+    .lead { font-size: 19px; color: #31425f; }
+    .pillbar {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 12px;
+      margin: 26px 0;
+    }
+    .pill {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 14px 16px;
+      font-weight: 800;
+      color: #61708b;
+      text-align: center;
+    }
+    .pill.active {
+      color: #fff;
+      background: linear-gradient(135deg, var(--blue), #5a98ff);
+      border-color: transparent;
+    }
+    .mock {
+      background: linear-gradient(180deg, #ffffff, #f6faff);
+      border: 1px solid var(--line);
+      border-radius: 20px;
+      padding: 16px;
+      min-height: 100%;
+    }
+    .mock-top {
+      display: grid;
+      grid-template-columns: 1.1fr 0.7fr 0.7fr 0.7fr;
+      gap: 10px;
+      margin-bottom: 14px;
+    }
+    .mock-tile, .mini-card, .metric {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 13px;
+    }
+    .mock-label { display: block; color: var(--muted); font-size: 10px; font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase; }
+    .mock-value { display: block; color: var(--ink); font-weight: 800; margin-top: 4px; }
+    .run-button {
+      background: linear-gradient(135deg, var(--blue), #4e8bff);
+      color: #fff;
+      text-align: center;
+      font-weight: 900;
+      border-radius: 14px;
+      padding: 16px;
+    }
+    .grid-2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
+    .grid-3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; }
+    .steps { display: grid; gap: 22px; margin-top: 24px; }
+    .step {
+      display: grid;
+      grid-template-columns: 88px minmax(0, 1fr);
+      gap: 18px;
+      align-items: start;
+    }
+    .badge {
+      width: 64px;
+      height: 64px;
+      border-radius: 22px;
+      display: grid;
+      place-items: center;
+      font-size: 24px;
+      font-weight: 900;
+      color: #fff;
+      background: linear-gradient(135deg, var(--blue), #69a5ff);
+      box-shadow: 0 14px 28px rgba(38, 115, 238, 0.22);
+    }
+    .callout {
+      border-left: 5px solid var(--blue);
+      background: #eef6ff;
+      border-radius: 16px;
+      padding: 16px 18px;
+      margin: 16px 0 0;
+    }
+    .warning { border-left-color: var(--amber); background: #fff8e8; }
+    .success { border-left-color: var(--green); background: #eafaf4; }
+    .mini-list { margin: 10px 0 0; padding-left: 20px; }
+    .mini-list li { margin: 7px 0; color: #26364f; }
+    code {
+      font-family: var(--mono);
+      background: #edf3fb;
+      border: 1px solid #d8e5f5;
+      border-radius: 8px;
+      padding: 2px 6px;
+      color: #19345f;
+    }
+    pre {
+      overflow: auto;
+      background: #102033;
+      color: #e8f2ff;
+      border-radius: 16px;
+      padding: 18px;
+      font-family: var(--mono);
+      font-size: 13px;
+    }
+    .table {
+      width: 100%;
+      border-collapse: separate;
+      border-spacing: 0;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      background: var(--panel);
+      margin-top: 14px;
+    }
+    .table th, .table td {
+      text-align: left;
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--line);
+      vertical-align: top;
+    }
+    .table th { background: #f1f6fd; color: #465a77; font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; }
+    .table tr:last-child td { border-bottom: 0; }
+    .chart {
+      height: 170px;
+      display: flex;
+      align-items: end;
+      gap: 12px;
+      padding-top: 16px;
+    }
+    .bar {
+      flex: 1;
+      min-width: 18px;
+      border-radius: 10px 10px 4px 4px;
+      background: linear-gradient(180deg, #2a7df0, #9fc7ff);
+    }
+    .line-chart {
+      height: 150px;
+      border-radius: 16px;
+      background:
+        linear-gradient(90deg, transparent 24%, rgba(100,116,139,0.12) 25%, transparent 26%),
+        linear-gradient(180deg, transparent 24%, rgba(100,116,139,0.12) 25%, transparent 26%),
+        #ffffff;
+      position: relative;
+      border: 1px solid var(--line);
+      overflow: hidden;
+    }
+    .line-chart svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+    .footer {
+      color: var(--muted);
+      font-size: 13px;
+      text-align: center;
+      padding: 24px;
+    }
+    @media (max-width: 900px) {
+      .hero, .grid-2, .grid-3 { grid-template-columns: 1fr; }
+      .pillbar { grid-template-columns: 1fr; }
+      .mock-top { grid-template-columns: 1fr; }
+      .step { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <section class="hero">
+      <div class="card">
+        <p class="eyebrow">Quant Studio walkthrough</p>
+        <h1>Build a simple PD logistic regression model</h1>
+        <p class="lead">This offline guide walks a new user through a full Quant Studio run: data setup, schema roles, binary PD logistic model configuration, readiness checks, results review, exports, and model artifact handoff.</p>
+        <div class="callout success">
+          <strong>Target outcome:</strong> a completed `fit_new_model` run using binary `logistic_regression`, with model diagnostics, an interactive report, a decision summary, and `model/quant_model.joblib` saved in the run folder.
+        </div>
+      </div>
+      <div class="mock">
+        <div class="mock-top">
+          <div class="mock-tile"><span class="mock-label">Dataset</span><span class="mock-value">Sample Data (CSV)</span></div>
+          <div class="mock-tile"><span class="mock-label">Preset</span><span class="mock-value">Custom</span></div>
+          <div class="mock-tile"><span class="mock-label">Workspace</span><span class="mock-value">Guided</span></div>
+          <div class="run-button">Run Quant Model Workflow</div>
+        </div>
+        <div class="pillbar">
+          <div class="pill active">1 Dataset &amp; Schema</div>
+          <div class="pill">2 Model Configuration</div>
+          <div class="pill">3 Readiness Check &amp; Run</div>
+          <div class="pill">4 Results &amp; Artifacts</div>
+          <div class="pill">5 Decision Summary</div>
+        </div>
+        <div class="grid-3">
+          <div class="metric"><span class="mock-label">Rows</span><span class="mock-value">1,000</span></div>
+          <div class="metric"><span class="mock-label">Columns</span><span class="mock-value">Financial, behavior, borrower fields</span></div>
+          <div class="metric"><span class="mock-label">Target</span><span class="mock-value">default_status</span></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Before You Start</h2>
+      <div class="grid-3">
+        <div class="mini-card">
+          <h3>Use the GUI</h3>
+          <p>Launch Streamlit with the normal project scripts or command-line entry point, then open the local URL shown by Streamlit.</p>
+          <pre>streamlit run app/streamlit_app.py</pre>
+        </div>
+        <div class="mini-card">
+          <h3>Use beginner defaults</h3>
+          <p>Start with `Guided` workspace mode. Switch to `Advanced` only if you need extra controls.</p>
+        </div>
+        <div class="mini-card">
+          <h3>Know the target</h3>
+          <p>For PD modeling, use a binary target source such as `default_status`, where 1 or default-like values mean the event occurred.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="steps">
+      <article class="step card">
+        <div class="badge">1</div>
+        <div>
+          <h2>Launch Quant Studio</h2>
+          <p>Open the app and confirm the five workflow steps appear across the top. Quant Studio opens to Step 1 by default.</p>
+          <ul class="mini-list">
+            <li>Local Windows users can use the project launch script.</li>
+            <li>macOS users should follow `docs/MACOS_SETUP.md`.</li>
+            <li>SageMaker users should use VS Code Remote port forwarding from `docs/SAGEMAKER_SETUP.md`.</li>
+          </ul>
+          <div class="callout">
+            If the app opens but looks stale, hard refresh the browser. Streamlit caches some frontend state between reruns.
+          </div>
+        </div>
+      </article>
+
+      <article class="step card">
+        <div class="badge">2</div>
+        <div>
+          <h2>Select The Dataset</h2>
+          <p>In Step 1, choose the bundled sample data for the first run, or select a CSV/Excel/Parquet file from `Data_Load`, local path, browser upload, or S3 when Large Data Mode applies.</p>
+          <div class="grid-2">
+            <div class="mini-card">
+              <h3>Bundled sample</h3>
+              <p>Best for learning the workflow. The sample is synthetic panel loan data with financial statement fields, borrower behavior fields, dates, IDs, and a binary default target.</p>
+            </div>
+            <div class="mini-card">
+              <h3>User data</h3>
+              <p>For real PD data, include one target source, candidate features known before the prediction date, and date/entity fields for panel or out-of-time workflows.</p>
+            </div>
+          </div>
+        </div>
+      </article>
+
+      <article class="step card">
+        <div class="badge">3</div>
+        <div>
+          <h2>Prepare Dataset &amp; Schema</h2>
+          <p>Use the Step 1 section controls in this order: `Dataset Preview`, `Data Review`, `Column Designer`, `Feature Dictionary`, `Transformation Studio`, and `Template Workbook`.</p>
+          <table class="table">
+            <thead><tr><th>Section</th><th>What To Confirm</th></tr></thead>
+            <tbody>
+              <tr><td>Data Review</td><td>Review data contract, leakage-name flags, duplicate indicators, target distribution, and schema fingerprint.</td></tr>
+              <tr><td>Column Designer</td><td>Mark `default_status` as `target_source`, the observation date as `date`, the loan/customer ID as `identifier`, and modeling columns as `feature`.</td></tr>
+              <tr><td>Feature Dictionary</td><td>Add business definitions, expected sign, unit, source system, and rationale for important features.</td></tr>
+              <tr><td>Transformation Studio</td><td>Optional for a simple logistic model. Use recommendations or recipes only when a transform is defensible. Scorecard/WOE workflows can add bins or WOE here.</td></tr>
+              <tr><td>Template Workbook</td><td>Download/upload the review workbook only when offline governance edits are needed.</td></tr>
+            </tbody>
+          </table>
+          <div class="callout warning">
+            For this simple walkthrough, do not over-transform the data. A plain logistic regression is easiest to validate when the feature set and preprocessing choices are simple.
+          </div>
+        </div>
+      </article>
+
+      <article class="step card">
+        <div class="badge">4</div>
+        <div>
+          <h2>Configure The Logistic Regression Model</h2>
+          <p>Click Step 2 `Model Configuration`. Use the grouped controls to set the model run.</p>
+          <div class="grid-2">
+            <div class="mini-card">
+              <h3>Core setup</h3>
+              <ul class="mini-list">
+                <li>`Execution mode`: `fit_new_model`</li>
+                <li>`Target mode`: `binary`</li>
+                <li>`Model family`: binary logistic / PD</li>
+                <li>`Model type`: `logistic_regression`</li>
+                <li>`Data structure`: `panel` if each borrower has repeated observations; otherwise `cross_sectional`</li>
+              </ul>
+            </div>
+            <div class="mini-card">
+              <h3>Safe beginner defaults</h3>
+              <ul class="mini-list">
+                <li>Use automatic or date-aware split settings unless your policy requires explicit windows.</li>
+                <li>Keep default diagnostics on for the first run.</li>
+                <li>Leave advanced visual analytics off unless exploratory visuals are needed.</li>
+                <li>Use default export settings until the first artifact package is reviewed.</li>
+              </ul>
+            </div>
+          </div>
+          <div class="callout">
+            If the bundled sample defaults to scorecard logistic regression, switch the model type to plain `logistic_regression` for this walkthrough. Scorecard logistic regression is useful later when you want binning, WOE, score points, and reason codes.
+          </div>
+        </div>
+      </article>
+
+      <article class="step card">
+        <div class="badge">5</div>
+        <div>
+          <h2>Run Readiness Checks</h2>
+          <p>Click Step 3 `Readiness Check &amp; Run`. Resolve blockers before running. Warnings can be acceptable when they are understood and documented.</p>
+          <div class="grid-3">
+            <div class="mini-card"><span class="mock-label">Readiness</span><span class="mock-value">Target, split, model compatibility</span></div>
+            <div class="mini-card"><span class="mock-label">Resources</span><span class="mock-value">Memory, disk, Large Data Mode</span></div>
+            <div class="mini-card"><span class="mock-label">Checkpoint Flow</span><span class="mock-value">Stage-by-stage execution status</span></div>
+          </div>
+          <div class="callout success">
+            Click `Run Quant Model Workflow` when readiness has no blockers. The full workflow still runs through discrete checkpoint stages so memory can be released between major phases.
+          </div>
+        </div>
+      </article>
+
+      <article class="step card">
+        <div class="badge">6</div>
+        <div>
+          <h2>Review Results And Diagnostics</h2>
+          <p>After completion, Step 4 `Results &amp; Artifacts` shows grouped outputs. Start with model performance, then calibration and stability.</p>
+          <div class="grid-3">
+            <div class="mini-card">
+              <h3>ROC / AUC</h3>
+              <div class="line-chart">
+                <svg viewBox="0 0 300 150" preserveAspectRatio="none">
+                  <path d="M20,130 C55,96 80,72 116,58 C160,40 206,28 280,18" fill="none" stroke="#2673ee" stroke-width="5"/>
+                  <path d="M20,130 L280,20" fill="none" stroke="#94a3b8" stroke-width="2" stroke-dasharray="8 8"/>
+                </svg>
+              </div>
+              <p>AUC measures rank ordering. Higher is generally better, but confirm stability and calibration.</p>
+            </div>
+            <div class="mini-card">
+              <h3>KS</h3>
+              <div class="chart">
+                <div class="bar" style="height: 32%"></div>
+                <div class="bar" style="height: 48%"></div>
+                <div class="bar" style="height: 66%"></div>
+                <div class="bar" style="height: 52%"></div>
+                <div class="bar" style="height: 36%"></div>
+              </div>
+              <p>KS shows separation between event and non-event score distributions.</p>
+            </div>
+            <div class="mini-card">
+              <h3>Calibration</h3>
+              <div class="line-chart">
+                <svg viewBox="0 0 300 150" preserveAspectRatio="none">
+                  <path d="M25,125 L275,20" fill="none" stroke="#b7791f" stroke-width="3" stroke-dasharray="8 8"/>
+                  <path d="M25,126 C72,114 100,96 136,78 C180,55 220,54 275,34" fill="none" stroke="#079669" stroke-width="5"/>
+                </svg>
+              </div>
+              <p>Calibration checks whether predicted PD levels align with observed default rates.</p>
+            </div>
+          </div>
+          <p>Also review lift/gain, threshold diagnostics, feature importance, statistical tests, data quality, stability, and any skipped diagnostics. Skips are not always failures; they often mean the selected data or model type does not support that specific diagnostic.</p>
+        </div>
+      </article>
+
+      <article class="step card">
+        <div class="badge">7</div>
+        <div>
+          <h2>Use The Decision Summary And Downloads</h2>
+          <p>Click Step 5 `Decision Summary` for the decision-ready synthesis. This page is the fastest way to see whether the run is ready for review, needs remediation, or needs additional explanation.</p>
+          <div class="grid-2">
+            <div class="mini-card">
+              <h3>Primary review items</h3>
+              <ul class="mini-list">
+                <li>Recommendation and attention items</li>
+                <li>Primary metric scorecard</li>
+                <li>Top feature drivers</li>
+                <li>Validation checklist</li>
+                <li>Evidence traceability map</li>
+              </ul>
+            </div>
+            <div class="mini-card">
+              <h3>Step 5 export buttons</h3>
+              <ul class="mini-list">
+                <li>`Download decision summary` for a portable Markdown scorecard.</li>
+                <li>`Download Individual Images` for standalone chart PNG/HTML files on demand.</li>
+                <li>`Download LLM Package` for curated evidence used in methodology-document drafting.</li>
+                <li>`Download OM Package` for the separate ongoing-monitoring handoff bundle.</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </article>
+
+      <article class="step card">
+        <div class="badge">8</div>
+        <div>
+          <h2>Find The Model Object And Rerun Stack</h2>
+          <p>The run folder is written under the configured artifact root, usually `artifacts/`, with a timestamped name.</p>
+          <pre>artifacts/
+  run_YYYY-MM-DD_HH-MM-SS_UTC/
+    START_HERE.md
+    model/quant_model.joblib
+    config/run_config.json
+    code/generated_run.py
+    code/HOW_TO_RERUN.md
+    reports/interactive_report.html
+    reports/decision_summary.md
+    artifact_manifest.json</pre>
+          <p>Use `model/quant_model.joblib` as the fitted model object for score-existing-model workflows or standalone Python scoring. Use `config/run_config.json` and `code/generated_run.py` when the full workflow/config needs to be recreated outside the GUI.</p>
+        </div>
+      </article>
+    </section>
+
+    <section class="card">
+      <h2>Acceptance Checklist</h2>
+      <table class="table">
+        <thead><tr><th>Question</th><th>Expected Answer</th></tr></thead>
+        <tbody>
+          <tr><td>Did the run complete?</td><td>Step 3 checkpoint flow shows completed stages and Step 4/5 display current outputs.</td></tr>
+          <tr><td>Was the model fit as logistic regression?</td><td>Run configuration and summary identify `logistic_regression` with binary target mode.</td></tr>
+          <tr><td>Are performance diagnostics available?</td><td>ROC/AUC, KS, calibration, lift/gain, and threshold diagnostics are present when labels are available.</td></tr>
+          <tr><td>Can the run be audited?</td><td>`START_HERE.md`, `artifact_manifest.json`, `config/run_config.json`, `metadata/reproducibility_manifest.json`, and reports are exported.</td></tr>
+          <tr><td>Can the model be reused?</td><td>`model/quant_model.joblib` is present and can be loaded by the score-existing-model workflow.</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <p class="footer">Quant Studio PD Logistic Regression Walkthrough. This guide is static and self-contained; it does not require internet access or live app screenshots.</p>
+  </main>
+</body>
+</html>

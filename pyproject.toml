@@ -26,6 +26,9 @@ dependencies = [
 quant-pd-gui = "quant_pd_framework.gui_launcher:main"
 quant-pd-run = "quant_pd_framework.run:main"
 quant-pd-run-stage = "quant_pd_framework.run_stage:main"
+quant-pd-background-job = "quant_pd_framework.background_job_runner:main"
+quant-pd-worker = "quant_pd_framework.worker_service:main"
+quant-pd-certify-large-data = "quant_pd_framework.large_data_certification:main"
 
 [project.optional-dependencies]
 dev = [

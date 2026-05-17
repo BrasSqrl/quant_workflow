@@ -5690,11 +5690,18 @@ def _normalize_plotly_value(value: Any) -> Any:
         return [_normalize_plotly_value(item) for item in value.tolist()]
     if isinstance(value, (list, tuple)):
         return [_normalize_plotly_value(item) for item in value]
+    if isinstance(value, Mapping):
+        return {str(key): _normalize_plotly_value(item) for key, item in value.items()}
     return _normalize_display_scalar(value)
 
 
 def _normalize_display_scalar(value: Any) -> Any:
-    if pd.isna(value):
+    if isinstance(value, (list, tuple, set, dict)):
+        return json.dumps(value, default=str)
+    try:
+        if pd.isna(value):
+            return value
+    except (TypeError, ValueError):
         return value
     if isinstance(value, pd.Interval):
         return str(value)

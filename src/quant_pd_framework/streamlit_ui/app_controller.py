@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import traceback
 from dataclasses import replace
+from pathlib import Path
 from typing import Any
 
 import pandas as pd
@@ -21,7 +22,11 @@ from quant_pd_framework import (
     DiagnosticConfig,
     ExecutionMode,
     ExportProfile,
+    LargeDataBackend,
     LargeDataExportPolicy,
+    LargeDataModelPolicy,
+    LargeDataPartitionStrategy,
+    LargeDataWorkerMode,
     MissingValuePolicy,
     ModelType,
     PresetName,
@@ -57,6 +62,9 @@ from quant_pd_framework.gui_support import (
     model_types_for_family,
     model_types_for_target_mode,
     subset_search_model_types_for_target_mode,
+)
+from quant_pd_framework.streamlit_ui.audit import (
+    record_gui_audit_event as ui_record_gui_audit_event,
 )
 from quant_pd_framework.streamlit_ui.config_builder import (
     build_preview_configuration as ui_build_preview_configuration,
@@ -173,6 +181,9 @@ from quant_pd_framework.streamlit_ui.results import (
     render_decision_summary as ui_render_decision_summary,
 )
 from quant_pd_framework.streamlit_ui.results import (
+    render_run_registry_panel as ui_render_run_registry_panel,
+)
+from quant_pd_framework.streamlit_ui.results import (
     render_run_results as ui_render_run_results,
 )
 from quant_pd_framework.streamlit_ui.results import (
@@ -182,7 +193,16 @@ from quant_pd_framework.streamlit_ui.run_execution import (
     build_execution_plan_cards as ui_build_execution_plan_cards,
 )
 from quant_pd_framework.streamlit_ui.run_execution import (
+    cancel_large_data_background_workflow as ui_cancel_large_data_background_workflow,
+)
+from quant_pd_framework.streamlit_ui.run_execution import (
     execute_workflow as ui_execute_workflow,
+)
+from quant_pd_framework.streamlit_ui.run_execution import (
+    poll_large_data_background_workflow as ui_poll_large_data_background_workflow,
+)
+from quant_pd_framework.streamlit_ui.run_execution import (
+    render_background_job_status as ui_render_background_job_status,
 )
 from quant_pd_framework.streamlit_ui.run_execution import (
     render_runtime_status as ui_render_runtime_status,
@@ -192,6 +212,9 @@ from quant_pd_framework.streamlit_ui.run_execution import (
 )
 from quant_pd_framework.streamlit_ui.run_execution import (
     start_checkpointed_workflow as ui_start_checkpointed_workflow,
+)
+from quant_pd_framework.streamlit_ui.run_execution import (
+    start_large_data_background_workflow as ui_start_large_data_background_workflow,
 )
 from quant_pd_framework.streamlit_ui.run_execution import (
     workflow_spinner_message as ui_workflow_spinner_message,
@@ -287,6 +310,7 @@ LARGE_DATA_DIAGNOSTIC_DEFAULTS = {
     "Quantile analysis",
 }
 CHECKPOINTED_WORKFLOW_STATE_KEY = "checkpointed_workflow_state"
+BACKGROUND_WORKFLOW_STATE_KEY = "large_data_background_workflow_state"
 
 SCENARIO_EDITOR_COLUMNS = [
     "enabled",
@@ -299,6 +323,56 @@ SCENARIO_EDITOR_COLUMNS = [
 MAX_UPLOAD_SIZE_MB = 51_200
 CONFIGURATION_PROFILE_STATE_KEY = "active_configuration_profile"
 CONFIGURATION_PROFILE_MESSAGE_KEY = "configuration_profile_message"
+
+
+def _audit_metadata_summary(metadata: dict[str, Any]) -> dict[str, Any]:
+    """Returns safe, compact data-source metadata for audit events."""
+
+    allowed_keys = (
+        "source_kind",
+        "display_label",
+        "relative_path",
+        "suffix",
+        "size_bytes",
+        "modified_at_utc",
+        "is_s3",
+        "source_identifier",
+    )
+    return {key: metadata.get(key) for key in allowed_keys if metadata.get(key) is not None}
+
+
+def _audit_workspace_table_changes(
+    *,
+    output_root: str | Path,
+    selected_input_metadata: dict[str, Any],
+    schema_frame: pd.DataFrame,
+    feature_dictionary_frame: pd.DataFrame,
+    transformation_frame: pd.DataFrame,
+    feature_review_frame: pd.DataFrame,
+    scorecard_override_frame: pd.DataFrame,
+) -> None:
+    """Records fingerprinted editor changes without storing raw input data."""
+
+    table_bindings = {
+        "schema_changed": schema_frame,
+        "feature_dictionary_changed": feature_dictionary_frame,
+        "transformation_pipeline_changed": transformation_frame,
+        "feature_review_changed": feature_review_frame,
+        "scorecard_overrides_changed": scorecard_override_frame,
+    }
+    source_summary = _audit_metadata_summary(selected_input_metadata)
+    for event_type, frame in table_bindings.items():
+        ui_record_gui_audit_event(
+            output_root,
+            event_type,
+            metadata={
+                "row_count": int(frame.shape[0]),
+                "column_count": int(frame.shape[1]),
+                "data_source": source_summary,
+            },
+            debounce_key=f"{event_type}_{source_summary.get('display_label', '')}",
+            debounce_payload=frame.to_dict("records"),
+        )
 
 
 def initialize_preset_state() -> GUIBuildInputs:
@@ -647,6 +721,16 @@ def render_configuration_profile_manager(
             assert profile_payload is not None
             output_path = ui_save_configuration_profile(profile_payload)
             st.session_state[CONFIGURATION_PROFILE_STATE_KEY] = profile_payload
+            ui_record_gui_audit_event(
+                preview_config.artifacts.output_root,
+                "configuration_profile_saved",
+                metadata={
+                    "profile_name": ui_profile_display_name(profile_payload),
+                    "profile_path": str(output_path),
+                    "model_type": preview_config.model.model_type.value,
+                    "execution_mode": preview_config.execution.mode.value,
+                },
+            )
             st.success(f"Saved profile to {output_path}.")
         if profile_payload is not None:
             download_column.download_button(
@@ -696,6 +780,20 @@ def render_configuration_profile_manager(
                         profile_payload=loaded_profile,
                         workspace_keys=workspace_keys,
                         dataframe=dataframe,
+                    )
+                    output_root = (
+                        preview_config.artifacts.output_root
+                        if preview_config is not None
+                        else Path("artifacts")
+                    )
+                    ui_record_gui_audit_event(
+                        output_root,
+                        "configuration_profile_loaded",
+                        metadata={
+                            "profile_name": ui_profile_display_name(loaded_profile),
+                            "profile_path": selected_profile_path,
+                            "source": "saved_profile_library",
+                        },
                     )
                     st.rerun()
                 except Exception as exc:
@@ -767,6 +865,19 @@ def render_configuration_profile_manager(
                     profile_payload=loaded_profile,
                     workspace_keys=workspace_keys,
                     dataframe=dataframe,
+                )
+                output_root = (
+                    preview_config.artifacts.output_root
+                    if preview_config is not None
+                    else Path("artifacts")
+                )
+                ui_record_gui_audit_event(
+                    output_root,
+                    "configuration_profile_loaded",
+                    metadata={
+                        "profile_name": ui_profile_display_name(loaded_profile),
+                        "source": "uploaded_profile_json",
+                    },
                 )
                 st.rerun()
             except Exception as exc:
@@ -943,6 +1054,7 @@ def run_app() -> None:
             st.info("Readiness checks appear after a dataset and schema are available.")
         with results_tab:
             st.info("Run a valid workflow from Step 3 to populate results and artifacts.")
+            ui_render_run_registry_panel(Path("artifacts"))
         with decision_tab:
             st.info("Complete a run before reviewing the Step 5 decision summary.")
         return
@@ -1646,6 +1758,26 @@ def run_app() -> None:
                 step=1,
                 disabled=model_type not in tree_model_types,
             )
+            model_n_jobs = int(
+                st.number_input(
+                    "Model CPU workers",
+                    min_value=-1,
+                    max_value=256,
+                    value=int(preset_inputs.model.n_jobs),
+                    step=1,
+                    help=(
+                        "Used by XGBoost and tree ensemble models. `0` lets Quant Studio "
+                        "use all available cores where the estimator supports it; `-1` "
+                        "also means all cores for scikit-learn style estimators."
+                    ),
+                    disabled=model_type
+                    not in {
+                        ModelType.XGBOOST.value,
+                        ModelType.RANDOM_FOREST.value,
+                        ModelType.EXTRA_TREES.value,
+                    },
+                )
+            )
             gee_group_options = [""] + categorical_like_columns
             gee_group_column = st.selectbox(
                 "GEE group column",
@@ -1933,10 +2065,155 @@ def run_app() -> None:
                 st.caption(
                     "Large Data Mode is active from Data Source. This run will train on a "
                     "governed sample and score the full file in chunks when a file-backed "
-                    "Data_Load source is selected."
+                    "Data_Load, local path, or S3 source is selected."
                 )
             else:
                 st.caption("Enable Large Data Mode in Data Source before selecting a large file.")
+            large_data_backend = st.selectbox(
+                "Large-data backend",
+                options=[backend.value for backend in LargeDataBackend],
+                index=[backend.value for backend in LargeDataBackend].index(
+                    preset_inputs.performance.large_data_backend.value
+                    if isinstance(
+                        preset_inputs.performance.large_data_backend,
+                        LargeDataBackend,
+                    )
+                    else str(preset_inputs.performance.large_data_backend)
+                ),
+                format_func=lambda value: value.replace("_", " ").title(),
+                disabled=not large_data_mode,
+                help=(
+                    "`auto` chooses the safest available large-data path. "
+                    "`pandas_sample` forces governed sample fit plus full-file scoring. "
+                    "`disk_backed` is for certified full-data paths and guarded overrides."
+                ),
+            )
+            large_data_model_policy = st.selectbox(
+                "Large-data model policy",
+                options=[policy.value for policy in LargeDataModelPolicy],
+                index=[policy.value for policy in LargeDataModelPolicy].index(
+                    preset_inputs.performance.large_data_model_policy.value
+                    if isinstance(
+                        preset_inputs.performance.large_data_model_policy,
+                        LargeDataModelPolicy,
+                    )
+                    else str(preset_inputs.performance.large_data_model_policy)
+                ),
+                format_func=lambda value: value.replace("_", " ").title(),
+                disabled=not large_data_mode,
+                help=(
+                    "`allow_sample_fallback` is the default. `certified_only` blocks "
+                    "uncertified model families. `force_full_data_override` requires "
+                    "explicit confirmation and audit rationale."
+                ),
+            )
+            large_data_override_confirmed = False
+            large_data_override_reason = ""
+            if large_data_mode and (
+                large_data_model_policy == LargeDataModelPolicy.FORCE_FULL_DATA_OVERRIDE.value
+            ):
+                large_data_override_confirmed = st.checkbox(
+                    "I understand this complex large-data model path is experimental",
+                    value=preset_inputs.performance.large_data_override_confirmed,
+                    help=(
+                        "Required before running an uncertified model family with a forced "
+                        "large-data override. The confirmation is written to run metadata."
+                    ),
+                )
+                large_data_override_reason = st.text_area(
+                    "Override reason",
+                    value=preset_inputs.performance.large_data_override_reason,
+                    placeholder=(
+                        "Example: final validation requires this model family on the full "
+                        "large dataset and the instance was sized for the run."
+                    ),
+                    help="Required when force override is selected.",
+                ).strip()
+            s3_local_cache_dir = st.text_input(
+                "S3 local staging cache",
+                value=preset_inputs.performance.s3_local_cache_dir,
+                disabled=not large_data_mode,
+                help=(
+                    "S3 files are staged locally through this cache. Credentials come from "
+                    "the runtime environment, not from Quant Studio."
+                ),
+            ).strip() or ".quant_studio_cache/s3"
+            large_data_profile_cache_enabled = st.toggle(
+                "Use persistent large-data profile cache",
+                value=preset_inputs.performance.large_data_profile_cache_enabled,
+                disabled=not large_data_mode,
+                help=(
+                    "Caches schema, preview, and profile metadata under "
+                    "`.quant_studio_cache/profiles` so repeated runs do not re-profile "
+                    "unchanged large files."
+                ),
+            )
+            large_data_partition_strategy = st.selectbox(
+                "Large-data partition strategy",
+                options=[strategy.value for strategy in LargeDataPartitionStrategy],
+                index=[strategy.value for strategy in LargeDataPartitionStrategy].index(
+                    preset_inputs.performance.large_data_partition_strategy.value
+                    if isinstance(
+                        preset_inputs.performance.large_data_partition_strategy,
+                        LargeDataPartitionStrategy,
+                    )
+                    else str(preset_inputs.performance.large_data_partition_strategy)
+                ),
+                format_func=lambda value: value.replace("_", " ").title(),
+                disabled=not large_data_mode,
+                help=(
+                    "`auto` writes split-aware sample partitions. Use `none` when storage "
+                    "is more important than resumable file-backed evidence."
+                ),
+            )
+            large_data_prescreen_enabled = st.toggle(
+                "Run large-data feature pre-screening",
+                value=preset_inputs.performance.large_data_prescreen_enabled,
+                disabled=not large_data_mode,
+                help=(
+                    "Computes advisory missingness, variance, cardinality, target "
+                    "relationship, IV, and PSI checks on the governed training sample."
+                ),
+            )
+            large_data_auto_apply_prescreen = st.toggle(
+                "Apply large-data pre-screening recommendations",
+                value=preset_inputs.performance.large_data_auto_apply_prescreen,
+                disabled=not (large_data_mode and large_data_prescreen_enabled),
+                help=(
+                    "Leave off by default. When on, features flagged for very high "
+                    "missingness, low variance, or unsafe cardinality are removed and "
+                    "recorded in feature lineage."
+                ),
+            )
+            large_data_worker_mode = st.selectbox(
+                "Large-data worker mode",
+                options=[mode.value for mode in LargeDataWorkerMode],
+                index=[mode.value for mode in LargeDataWorkerMode].index(
+                    preset_inputs.performance.large_data_worker_mode.value
+                    if isinstance(
+                        preset_inputs.performance.large_data_worker_mode,
+                        LargeDataWorkerMode,
+                    )
+                    else str(preset_inputs.performance.large_data_worker_mode)
+                ),
+                format_func=lambda value: value.replace("_", " ").title(),
+                disabled=not large_data_mode,
+                help=(
+                    "`auto` uses a detected local worker service when available, otherwise "
+                    "falls back to the detached background process. Start a worker with "
+                    "`quant-pd-worker --queue-dir artifacts/_job_queue --workers 1`."
+                ),
+            )
+            large_data_certified_fit_enabled = st.toggle(
+                "Enable certified large-data fit planner",
+                value=preset_inputs.performance.large_data_certified_fit_enabled,
+                disabled=not large_data_mode,
+                help=(
+                    "Records the certified/sampled/override fit basis for selected model "
+                    "families. Unsupported model families remain selectable with honest "
+                    "fallback or override status."
+                ),
+            )
             diagnostic_sample_rows = int(
                 st.number_input(
                     "Large-data diagnostic sample rows",
@@ -2067,6 +2344,67 @@ def run_app() -> None:
                     step=10000,
                     disabled=not large_data_mode,
                 )
+            )
+            large_data_result_page_rows = int(
+                st.number_input(
+                    "Paged result rows",
+                    min_value=100,
+                    max_value=10000,
+                    value=int(
+                        min(
+                            max(preset_inputs.performance.large_data_result_page_rows, 100),
+                            10000,
+                        )
+                    ),
+                    step=100,
+                    disabled=not large_data_mode,
+                    help=(
+                        "Rows queried at a time in the Step 4 full-row browser. "
+                        "This does not change exported prediction files."
+                    ),
+                )
+            )
+            large_data_max_in_memory_rows = int(
+                st.number_input(
+                    "Large-data max in-memory rows",
+                    min_value=10000,
+                    max_value=5000000,
+                    value=int(
+                        min(
+                            max(preset_inputs.performance.large_data_max_in_memory_rows, 10000),
+                            5000000,
+                        )
+                    ),
+                    step=10000,
+                    disabled=not large_data_mode,
+                    help=(
+                        "Hard guardrail for UI/session dataframe materialization. Large "
+                        "tables above this size should be browsed from disk by page."
+                    ),
+                )
+            )
+            duckdb_threads = int(
+                st.number_input(
+                    "DuckDB threads (0 = auto)",
+                    min_value=0,
+                    max_value=256,
+                    value=int(preset_inputs.performance.duckdb_threads),
+                    step=1,
+                    disabled=not large_data_mode,
+                    help="Controls CPU parallelism for DuckDB-backed staging and paged queries.",
+                )
+            )
+            duckdb_memory_limit_input = st.number_input(
+                "DuckDB memory limit (GB, 0 = auto)",
+                min_value=0.0,
+                max_value=2048.0,
+                value=float(preset_inputs.performance.duckdb_memory_limit_gb or 0.0),
+                step=1.0,
+                format="%.1f",
+                disabled=not large_data_mode,
+            )
+            duckdb_memory_limit_gb = (
+                None if duckdb_memory_limit_input <= 0 else float(duckdb_memory_limit_input)
             )
             default_segment_options = ["(auto)", *categorical_like_columns]
             default_segment_column = st.selectbox(
@@ -2616,6 +2954,19 @@ def run_app() -> None:
             performance_config = replace(
                 preset_inputs.performance,
                 large_data_mode=large_data_mode,
+                large_data_backend=LargeDataBackend(large_data_backend),
+                large_data_model_policy=LargeDataModelPolicy(large_data_model_policy),
+                large_data_override_confirmed=large_data_override_confirmed,
+                large_data_override_reason=large_data_override_reason,
+                s3_local_cache_dir=s3_local_cache_dir,
+                large_data_profile_cache_enabled=large_data_profile_cache_enabled,
+                large_data_partition_strategy=LargeDataPartitionStrategy(
+                    large_data_partition_strategy
+                ),
+                large_data_prescreen_enabled=large_data_prescreen_enabled,
+                large_data_auto_apply_prescreen=large_data_auto_apply_prescreen,
+                large_data_worker_mode=LargeDataWorkerMode(large_data_worker_mode),
+                large_data_certified_fit_enabled=large_data_certified_fit_enabled,
                 diagnostic_sample_rows=diagnostic_sample_rows,
                 optimize_dtypes=optimize_dtypes,
                 capture_memory_profile=capture_memory_profile,
@@ -2624,6 +2975,10 @@ def run_app() -> None:
                 csv_conversion_chunk_rows=csv_conversion_chunk_rows,
                 large_data_training_sample_rows=large_data_training_sample_rows,
                 large_data_score_chunk_rows=large_data_score_chunk_rows,
+                large_data_result_page_rows=large_data_result_page_rows,
+                large_data_max_in_memory_rows=large_data_max_in_memory_rows,
+                duckdb_threads=duckdb_threads,
+                duckdb_memory_limit_gb=duckdb_memory_limit_gb,
                 html_max_points_per_figure=html_max_points_per_figure,
                 html_max_figure_payload_mb=html_max_figure_payload_mb,
                 html_max_total_figure_payload_mb=html_max_total_figure_payload_mb,
@@ -2940,53 +3295,10 @@ def run_app() -> None:
                 disabled=not variable_selection_enabled,
                 help="Comma-separated features that must be excluded before training.",
             )
-            auto_interactions_enabled = st.checkbox(
-                "Auto-screen interaction terms",
-                value=preset_inputs.transformations.auto_interactions_enabled,
-                help=(
-                    "Screens train-split interaction candidates and persists the selected "
-                    "interaction features into the saved run config."
-                ),
-                disabled=not advanced_workspace,
-            )
-            include_numeric_numeric_interactions = st.checkbox(
-                "Numeric-numeric interactions",
-                value=preset_inputs.transformations.include_numeric_numeric_interactions,
-                disabled=not auto_interactions_enabled,
-            )
-            include_categorical_numeric_interactions = st.checkbox(
-                "Categorical-numeric interactions",
-                value=preset_inputs.transformations.include_categorical_numeric_interactions,
-                disabled=not auto_interactions_enabled,
-            )
-            max_auto_interactions = int(
-                st.number_input(
-                    "Max auto interactions",
-                    min_value=1,
-                    max_value=20,
-                    value=int(preset_inputs.transformations.max_auto_interactions),
-                    step=1,
-                    disabled=not auto_interactions_enabled,
-                )
-            )
-            max_categorical_levels = int(
-                st.number_input(
-                    "Max categorical levels per feature",
-                    min_value=1,
-                    max_value=10,
-                    value=int(preset_inputs.transformations.max_categorical_levels),
-                    step=1,
-                    disabled=not auto_interactions_enabled,
-                )
-            )
-            min_interaction_score = st.number_input(
-                "Min interaction score",
-                min_value=0.0,
-                max_value=1.0,
-                value=float(preset_inputs.transformations.min_interaction_score),
-                step=0.01,
-                format="%.2f",
-                disabled=not auto_interactions_enabled,
+            st.caption(
+                "Auto-generated interaction controls moved to Step 1 > "
+                "Transformation Studio > Advanced Generation so all transformation "
+                "setup lives in one place."
             )
             imputation_sensitivity_enabled = st.checkbox(
                 "Imputation sensitivity testing",
@@ -3666,11 +3978,38 @@ def run_app() -> None:
                 feature_review_frame=workspace_feature_review_frame,
                 scorecard_override_frame=workspace_scorecard_override_frame,
             ),
+            preset_transformations=preset_inputs.transformations,
+            advanced_workspace=advanced_workspace,
+            target_mode=target_mode,
+            model_type=model_type,
+            data_structure=data_structure,
         )
 
     edited_schema = workspace_frames["schema"]
     feature_dictionary_frame = workspace_frames["feature_dictionary"]
     transformation_frame = workspace_frames["transformations"]
+    transformation_controls = workspace_frames.get("transformation_controls", {})
+    auto_interactions_enabled = transformation_controls.get(
+        "auto_interactions_enabled",
+        auto_interactions_enabled,
+    )
+    include_numeric_numeric_interactions = transformation_controls.get(
+        "include_numeric_numeric_interactions",
+        include_numeric_numeric_interactions,
+    )
+    include_categorical_numeric_interactions = transformation_controls.get(
+        "include_categorical_numeric_interactions",
+        include_categorical_numeric_interactions,
+    )
+    max_auto_interactions = int(
+        transformation_controls.get("max_auto_interactions", max_auto_interactions)
+    )
+    max_categorical_levels = int(
+        transformation_controls.get("max_categorical_levels", max_categorical_levels)
+    )
+    min_interaction_score = float(
+        transformation_controls.get("min_interaction_score", min_interaction_score)
+    )
     feature_review_frame = feature_review_rows.copy(deep=True)
     scorecard_override_frame = scorecard_override_rows.copy(deep=True)
     tobit_right_censoring = (
@@ -3693,6 +4032,33 @@ def run_app() -> None:
             "feature_review_frame": feature_review_frame,
             "scorecard_override_frame": scorecard_override_frame,
         },
+    )
+    audit_output_root = (
+        preview_config.artifacts.output_root if preview_config is not None else Path(output_root)
+    )
+    ui_record_gui_audit_event(
+        audit_output_root,
+        "data_source_selected",
+        metadata={
+            "label": data_source_label,
+            "large_data_mode": bool(large_data_mode),
+            "source": _audit_metadata_summary(selected_input.metadata),
+        },
+        debounce_key="data_source_selected",
+        debounce_payload={
+            "label": data_source_label,
+            "large_data_mode": bool(large_data_mode),
+            "metadata": _audit_metadata_summary(selected_input.metadata),
+        },
+    )
+    _audit_workspace_table_changes(
+        output_root=audit_output_root,
+        selected_input_metadata=selected_input.metadata,
+        schema_frame=edited_schema,
+        feature_dictionary_frame=feature_dictionary_frame,
+        transformation_frame=transformation_frame,
+        feature_review_frame=feature_review_frame,
+        scorecard_override_frame=scorecard_override_frame,
     )
     current_config = preview_config.to_dict() if preview_config is not None else None
     last_run_snapshot = ui_get_last_run_snapshot()
@@ -3821,6 +4187,35 @@ def run_app() -> None:
             ),
         )
         checkpoint_state = st.session_state.get(CHECKPOINTED_WORKFLOW_STATE_KEY)
+        background_state = st.session_state.get(BACKGROUND_WORKFLOW_STATE_KEY)
+        background_large_data_run = (
+            large_data_mode
+            and workflow_run_style == "full"
+            and selected_input.dataset_handle is not None
+        )
+        if background_large_data_run and background_state:
+            snapshot, background_state = ui_poll_large_data_background_workflow(background_state)
+            st.session_state[BACKGROUND_WORKFLOW_STATE_KEY] = background_state
+            ui_render_background_job_status(background_state)
+            if snapshot is not None:
+                ui_set_last_run_snapshot(snapshot)
+                st.success("Background large-data workflow completed. Results are available.")
+            background_actions = st.columns(2)
+            if background_actions[0].button(
+                "Cancel background job",
+                width="stretch",
+                key="readiness_cancel_background_job_button",
+                disabled=background_state.get("status") in {"completed", "failed"},
+            ):
+                ui_cancel_large_data_background_workflow(background_state)
+                st.warning("Cancel requested. The worker will stop at the next safe boundary.")
+            if background_actions[1].button(
+                "Clear background job state",
+                width="stretch",
+                key="readiness_clear_background_job_button",
+            ):
+                st.session_state.pop(BACKGROUND_WORKFLOW_STATE_KEY, None)
+                background_state = None
         if workflow_run_style == "step_by_step" and checkpoint_state:
             st.caption(
                 "Active checkpointed run: "
@@ -3840,6 +4235,10 @@ def run_app() -> None:
             if workflow_run_style == "step_by_step" and checkpoint_state
             else "Start Checkpointed Run"
             if workflow_run_style == "step_by_step"
+            else "Refresh Background Large-Data Job"
+            if background_large_data_run and background_state
+            else "Start Background Large-Data Run"
+            if background_large_data_run
             else run_button_label,
             type="primary",
             width="stretch",
@@ -3864,6 +4263,36 @@ def run_app() -> None:
                             status_placeholder=status_placeholder,
                             progress_placeholder=progress_placeholder,
                         )
+                        event_type = str(event.get("event_type") or "")
+                        if event_type in {
+                            "run_started",
+                            "run_completed",
+                            "step_failed",
+                            "stage_failed",
+                        }:
+                            audit_type = (
+                                "workflow_run_completed"
+                                if event_type == "run_completed"
+                                else "workflow_run_failed"
+                                if event_type in {"step_failed", "stage_failed"}
+                                else "workflow_run_started"
+                            )
+                            ui_record_gui_audit_event(
+                                preview_config.artifacts.output_root,
+                                audit_type,
+                                run_id=str(event.get("run_id") or ""),
+                                artifact_root=preview_config.artifacts.output_root
+                                / str(event.get("run_id") or ""),
+                                metadata={
+                                    "event_type": event_type,
+                                    "stage": event.get("step_name") or event.get("stage_id"),
+                                    "step_order": event.get("step_order"),
+                                    "total_steps": event.get("total_steps"),
+                                    "elapsed_seconds": event.get("elapsed_seconds"),
+                                    "error_message": event.get("error_message", ""),
+                                },
+                                debounce_key=f"{audit_type}_{event.get('run_id', '')}_{event_type}",
+                            )
 
                     if workflow_run_style == "step_by_step":
                         checkpoint_state = st.session_state.get(CHECKPOINTED_WORKFLOW_STATE_KEY)
@@ -3895,6 +4324,37 @@ def run_app() -> None:
                             )
                             ui_set_last_run_snapshot(snapshot)
                             ui_render_run_success(snapshot)
+                    elif background_large_data_run:
+                        background_state = st.session_state.get(BACKGROUND_WORKFLOW_STATE_KEY)
+                        if background_state is None or background_state.get("status") in {
+                            "completed",
+                            "failed",
+                        }:
+                            background_state = ui_start_large_data_background_workflow(
+                                preview_config=preview_config,
+                                dataframe=dataframe,
+                                selected_input=selected_input,
+                                large_data_mode=large_data_mode,
+                            )
+                            st.session_state[BACKGROUND_WORKFLOW_STATE_KEY] = background_state
+                            ui_render_background_job_status(background_state)
+                            st.info(
+                                "Large-data workflow is running in the background. "
+                                "Use Refresh Background Large-Data Job to update status."
+                            )
+                        else:
+                            snapshot, background_state = ui_poll_large_data_background_workflow(
+                                background_state
+                            )
+                            st.session_state[BACKGROUND_WORKFLOW_STATE_KEY] = background_state
+                            ui_render_background_job_status(background_state)
+                            if snapshot is not None:
+                                ui_set_last_run_snapshot(snapshot)
+                                ui_render_run_success(snapshot)
+                            elif background_state.get("status") == "failed":
+                                st.error(background_state.get("error_message", "Run failed."))
+                            else:
+                                st.info("Background workflow is still running.")
                     else:
                         with st.spinner(ui_workflow_spinner_message(execution_mode)):
                             context = ui_execute_workflow(
@@ -3911,6 +4371,16 @@ def run_app() -> None:
                         ui_set_last_run_snapshot(snapshot)
                         ui_render_run_success(snapshot)
                 except Exception as exc:
+                    ui_record_gui_audit_event(
+                        preview_config.artifacts.output_root,
+                        "workflow_run_failed",
+                        metadata={
+                            "execution_mode": preview_config.execution.mode.value,
+                            "model_type": preview_config.model.model_type.value,
+                            "target_mode": preview_config.target.mode.value,
+                            "error_message": str(exc),
+                        },
+                    )
                     ui_render_run_failure(
                         ui_classify_workflow_exception(
                             exc,
@@ -3929,8 +4399,23 @@ def run_app() -> None:
                     "the current workflow configuration has changed."
                 )
             ui_render_run_results(last_run_snapshot)
+            st.divider()
+            if preview_config is not None:
+                registry_root = preview_config.artifacts.output_root
+            else:
+                snapshot_root = last_run_snapshot.get("artifacts", {}).get("output_root")
+                registry_root = (
+                    Path(str(snapshot_root)).parent if snapshot_root else Path(output_root)
+                )
+            ui_render_run_registry_panel(registry_root)
         else:
             st.info("Run a valid workflow from Step 3 to populate results and artifacts.")
+            registry_root = (
+                preview_config.artifacts.output_root
+                if preview_config is not None
+                else Path(output_root)
+            )
+            ui_render_run_registry_panel(registry_root)
 
     with decision_tab:
         last_run_snapshot = ui_get_last_run_snapshot()

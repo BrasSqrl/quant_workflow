@@ -117,6 +117,40 @@ default, adds memory and dtype audit tables, trains on a configurable governed
 sample, scores the full file in chunks, and lets you choose Parquet or sampled
 tabular outputs.
 
+Large Data Mode also records persistent profile-cache evidence, projected
+Parquet staging metadata, an execution plan, a transformation replay contract,
+feature pre-screening evidence, and governed-sample split partitions.
+
+For repeated high-volume jobs, you can start the optional local worker queue
+from a separate VS Code Remote terminal:
+
+   quant-pd-worker --queue-dir artifacts/_job_queue --workers 1
+
+With Large-data worker mode set to auto, Quant Studio uses that queue only when
+it detects a fresh worker heartbeat. Otherwise it falls back to the detached
+background process.
+
+To benchmark the SageMaker instance before using production-scale data:
+
+   python scripts/benchmark_large_data.py --preset 1gb --output-root artifacts/benchmarks
+   python scripts/benchmark_large_data.py --preset 10gb --output-root artifacts/benchmarks
+
+The benchmark writes JSON and Markdown summaries with runtime, memory, artifact
+size, phase timings, backend policy, and any failure point.
+
+For audit-ready Large Data Mode acceptance evidence, run the certification
+harness on the same SageMaker instance class:
+
+   python scripts/certify_large_data.py --preset smoke --model-scope small
+   python scripts/certify_large_data.py --preset 1gb --model-scope certified
+   python scripts/certify_large_data.py --preset 10gb --model-scope certified
+
+Certification outputs are written under artifacts/certification/<timestamp>/
+and include HTML, Markdown, JSON, CSV scenario results, model capability
+evidence, effective thresholds, an environment profile, and run links. Use
+--source-kind s3 --s3-uri s3://bucket/path/file.parquet only when the SageMaker
+role or environment already has access to that object.
+
 Why downloaded HTML charts may fail from SageMaker
 --------------------------------------------------
 
@@ -131,8 +165,8 @@ you specifically need optional PNG figure exports, rerun:
 
    bash scripts/bootstrap_sagemaker.sh
 
-Then rerun the Quant Studio workflow with individual figure export enabled. To
-skip the Chrome install attempt in locked-down environments, use:
+Then rerun the Quant Studio workflow and use Step 5 Download Individual Images.
+To skip the Chrome install attempt in locked-down environments, use:
 
    INSTALL_PLOTLY_CHROME=0 bash scripts/bootstrap_sagemaker.sh
 

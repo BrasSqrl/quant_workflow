@@ -215,6 +215,7 @@ owners do not have to scan every reference file.
 The most practical user guides are:
 
 - [User Quick Start Guide](./docs/user_guides/QUICK_START.md)
+- [PD Logistic Regression Walkthrough](./docs/user_guides/PD_LOGISTIC_REGRESSION_WALKTHROUGH.html)
 - [Data Requirements Guide](./docs/user_guides/DATA_REQUIREMENTS.md)
 - [Execution Mode Decision Guide](./docs/user_guides/EXECUTION_MODE_DECISION_GUIDE.md)
 - [Artifact Map](./docs/user_guides/ARTIFACT_MAP.md)
@@ -224,18 +225,17 @@ The most practical user guides are:
 - [Validation Reviewer Guide](./docs/user_guides/VALIDATION_REVIEWER_GUIDE.md)
 - [Troubleshooting Guide](./docs/user_guides/TROUBLESHOOTING.md)
 - [Large Data Playbook](./docs/user_guides/LARGE_DATA_PLAYBOOK.md)
+- [Large Data Certification Guide](./docs/user_guides/LARGE_DATA_CERTIFICATION_GUIDE.md)
 - [Glossary](./docs/user_guides/GLOSSARY.md)
 - [v1.0.0 Release Notes](./docs/RELEASE_NOTES_V1.0.0.md)
 - [Release Validation Report](./docs/RELEASE_VALIDATION_REPORT.md)
 
 ## Engineering Standards
 
-The repository now includes an explicit engineering rubric and alignment note:
+The repository includes current engineering and UI standards:
 
 - [docs/ENGINEERING_RUBRIC.md](./docs/ENGINEERING_RUBRIC.md)
-- [docs/RUBRIC_ALIGNMENT.md](./docs/RUBRIC_ALIGNMENT.md)
 - [docs/UI_UX_STANDARD.md](./docs/UI_UX_STANDARD.md)
-- [docs/UI_ENTERPRISE_REDESIGN.md](./docs/UI_ENTERPRISE_REDESIGN.md)
 
 ## Transparency and Auditability Guides
 
@@ -312,10 +312,8 @@ quant/
     METRIC_CATALOG.md
     MODEL_CATALOG.md
     PREPROCESSING_AND_DATA_TREATMENT_GUIDE.md
-    RUBRIC_ALIGNMENT.md
     SAGEMAKER_SETUP.md
     STATISTICAL_TEST_CATALOG.md
-    UI_ENTERPRISE_REDESIGN.md
     UI_UX_STANDARD.md
     user_guides/
       README.md
@@ -324,8 +322,11 @@ quant/
       DATA_REQUIREMENTS.md
       EXECUTION_MODE_DECISION_GUIDE.md
       GLOSSARY.md
+      LARGE_DATA_CERTIFICATION_GUIDE.md
       LARGE_DATA_PLAYBOOK.md
+      MODEL_TYPE_REFERENCE_GUIDE.md
       MODEL_SELECTION_GUIDE.md
+      PD_LOGISTIC_REGRESSION_WALKTHROUGH.html
       QUICK_START.md
       TROUBLESHOOTING.md
       VALIDATION_REVIEWER_GUIDE.md
@@ -353,6 +354,8 @@ quant/
     quant_pd_framework/
       __init__.py
       base.py
+      background_job_runner.py
+      background_jobs.py
       checkpointing.py
       config.py
       config_io.py
@@ -365,6 +368,9 @@ quant/
       gui_launcher.py
       gui_support.py
       large_data.py
+      large_data_enterprise.py
+      large_data_policy.py
+      large_data_runtime.py
       models.py
       orchestrator.py
       presentation.py
@@ -393,6 +399,7 @@ quant/
         workflow_feedback.py
         workspace.py
       workflow_guardrails.py
+      worker_service.py
       steps/
         assumption_checks.py
         comparison.py
@@ -421,6 +428,7 @@ quant/
     bootstrap_macos.sh
     bootstrap_sagemaker.sh
     benchmark_large_data.py
+    certify_large_data.py
     profile_workflow.py
     run_macos_streamlit.sh
     run_sagemaker_streamlit.sh
@@ -649,7 +657,6 @@ The current interface is intentionally styled as a premium light-mode fintech da
 The governing visual and interaction standards are documented in:
 
 - [docs/UI_UX_STANDARD.md](./docs/UI_UX_STANDARD.md)
-- [docs/UI_ENTERPRISE_REDESIGN.md](./docs/UI_ENTERPRISE_REDESIGN.md)
 
 That standard drives both the live GUI and the exported standalone HTML report. The design system emphasizes:
 
@@ -799,6 +806,9 @@ The GUI now includes several development-focused enterprise UX surfaces:
   profile and last completed run.
 - `Artifact Explorer` groups completed outputs by purpose and provides direct
   downloads for file artifacts.
+- `Run Registry` in Step 4 indexes completed and known failed runs from the
+  artifact root and shows a filtered audit trail for major user/workflow
+  actions.
 - `Decision Summary` synthesizes the completed run into a recommendation,
   decision issues, key metrics, feature drivers, and evidence links.
 - `Reviewer / Approval Workspace` records reviewer status, notes, and
@@ -1542,9 +1552,10 @@ feature, output feature, and transform-specific parameters such as quantiles,
 categorical indicator values, lag windows, rolling windows, z-score caps,
 bin counts, target-encoding smoothing, fiscal start month, or manual bin
 edges. The review workbook includes a `transform_catalog` sheet that explains
-each transform, its parameters, and expected output type. Auto-generated
-screened interactions are persisted back into the saved run config so
-existing-model scoring can replay the same features.
+each transform, recipe group, large-data status, parameters, and expected output
+type. Auto-generated screened interactions are configured in Step 1
+`Transformation Studio` > `Advanced Generation` and are persisted back into the
+saved run config so existing-model scoring can replay the same features.
 
 ### `AdvancedImputationConfig` And Expanded Diagnostic Framework Configs
 
@@ -1785,6 +1796,11 @@ Key toggles include:
 Important fields include:
 
 - `large_data_mode`
+- `large_data_backend`
+- `large_data_model_policy`
+- `large_data_override_confirmed`
+- `large_data_override_reason`
+- `s3_local_cache_dir`
 - `diagnostic_sample_rows`
 - `optimize_dtypes`
 - `retain_full_working_data`
@@ -1800,6 +1816,12 @@ Important fields include:
 - `large_data_score_chunk_rows`
 - `large_data_project_columns`
 - `large_data_auto_stage_parquet`
+- `large_data_profile_cache_enabled`
+- `large_data_partition_strategy`
+- `large_data_prescreen_enabled`
+- `large_data_auto_apply_prescreen`
+- `large_data_worker_mode`
+- `large_data_certified_fit_enabled`
 - `html_max_points_per_figure`
 - `html_max_figure_payload_mb`
 - `html_max_total_figure_payload_mb`
@@ -1817,10 +1839,28 @@ per-step dataframe memory estimates when `capture_memory_profile=True`; deep
 pandas memory inspection remains off by default to avoid extra profiling cost.
 
 When large-data mode is enabled in the GUI, Quant Studio adds safer file-backed
-defaults: Data_Load intake, sampled diagnostics, disabled robustness and
-cross-validation refits, disabled per-figure file exports, reusable
-CSV-to-Parquet staging for file-path inputs, configurable training sample size,
-chunked full-data scoring, and input-aware CSV or Parquet tabular outputs.
+defaults: Data_Load, direct file-path, or S3 URI intake; sampled diagnostics;
+disabled robustness and cross-validation refits; disabled per-figure file
+exports; persistent profile caching under `.quant_studio_cache/profiles/`;
+reusable CSV-to-Parquet staging; projected Parquet preparation; configurable
+training sample size; chunked full-data scoring; large-data model
+certification; explicit complex model override audit; advisory feature
+pre-screening; and input-aware CSV or Parquet tabular outputs.
+
+For file-backed Large Data Mode full runs, Streamlit starts a detached
+background worker by default and polls a `job_manifest.json` status file. If a
+local worker service is running with `quant-pd-worker --queue-dir
+artifacts/_job_queue --workers 1`, `large_data_worker_mode=auto` can submit
+jobs to that file-backed queue instead. This keeps the browser control plane
+responsive while the worker stages data, fits/scores, runs diagnostics, and
+writes artifacts. Step 4 uses file-backed `prediction_table_refs` and a paged
+result browser so full prediction files are queried from disk instead of
+concatenated into Streamlit session state.
+
+Large files should be referenced from `Data_Load/`, a CLI file path, or an S3
+URI such as `s3://bucket/key.csv`. Quant Studio does not store AWS credentials;
+S3 access uses the active SageMaker role, AWS CLI profile, or environment
+credentials available to the Python process.
 
 The HTML report controls cap embedded Plotly chart payloads in the standalone
 interactive report. If a chart is downsampled or skipped to keep the report
@@ -1841,9 +1881,29 @@ For file-backed runs, the large-data workflow is intentionally split:
 - `data/full_data_scoring/` contains chunked full-file scoring outputs, including
   full-data predictions written in the same input-aware tabular format used by
   the rest of the run.
-- `metadata/large_data/` contains metadata describing the source path, staged
-  Parquet path, projected columns, sample size, chunk size, row counts, and
+- `metadata/large_data/` contains metadata describing the source path or S3 URI,
+  staged Parquet path, source profile, model certification decision, override
+  audit if used, projected columns, sample size, chunk size, row counts, and
   chunk-progress status.
+- `metadata/large_data/execution_plan.json` records the planned large-data
+  stage basis: file-backed, sample-based, in-memory, blocked, or override.
+- `metadata/large_data/large_data_transformation_contract.json` records whether
+  configured transformations are compiled for large-data replay, sample-only,
+  unsupported, or blocked.
+- `metadata/large_data/feature_screening_manifest.json` and
+  `tables/feature_screening/large_data_feature_screening.*` record advisory
+  missingness, variance, cardinality, target-relationship, IV, and PSI evidence.
+- `metadata/large_data/partitioned_dataset_manifest.json` records split-aware
+  governed-sample Parquet partitions when partitioning is enabled.
+- `metadata/large_data/prepared_dataset_manifest.json` records the staged
+  prepared dataset contract: source identifier, staged path, governed sample
+  path, projected columns, target column, profile cache key, partition paths,
+  artifact-size estimates, and row count where available.
+
+Large Data Mode checkpoints also spill over-cap dataframe fields to Parquet
+table references before joblib serialization. Loading the checkpoint rehydrates
+those references for the next stage, reducing duplicate checkpoint size while
+preserving the existing Python stage interface.
 
 ### `RobustnessConfig`
 
@@ -2114,9 +2174,14 @@ Fits and applies explicit, reproducible feature transformations such as:
 
 These transforms are fit on the training split, replayed on the remaining
 splits, and exported through a `governed_transformations` audit table. The
-offline review workbook includes a `transform_catalog` reference sheet and a
-long-list-safe dropdown for `transform_type`. When the interaction engine is
-enabled, train-split screened candidates are exported through
+Step 1 `Transformation Studio` is the guided setup surface: recommendations
+suggest profile-driven transforms, recipe cards group predefined transforms,
+the custom builder creates one governed row at a time, and pipeline review
+keeps the raw workbook-compatible table available for power users. The offline
+review workbook includes a `transform_catalog` reference sheet with recipe
+groups and large-data status plus a long-list-safe dropdown for
+`transform_type`. When the interaction engine is enabled from Transformation
+Studio `Advanced Generation`, train-split screened candidates are exported through
 `interaction_candidates` and the selected interactions are persisted into the
 saved run config.
 
@@ -2822,9 +2887,39 @@ python scripts/benchmark_large_data.py --rows 100000 --features 12 --output-root
 ```
 
 This generates synthetic Parquet data, runs Large Data Mode with sample-fit and
-chunked full-data scoring, and writes a benchmark JSON file. It is intended for
-before/after comparisons when optimizing diagnostics, exports, or large-data
-scoring.
+chunked full-data scoring, and writes benchmark JSON and Markdown summaries.
+Use named presets for repeatable capacity checks:
+
+```powershell
+python scripts/benchmark_large_data.py --preset 1gb --output-root artifacts\benchmarks
+python scripts/benchmark_large_data.py --preset 50gb_projected --output-root artifacts\benchmarks
+```
+
+The `50gb_projected` preset records the projected scale without creating a 50
+GB local file by default. The benchmark captures wall time, peak traced memory,
+file size, artifact size, model family, backend policy, cache setting, phase
+timings, and failure point if a run fails.
+
+For audit-ready acceptance evidence across model families, use the large-data
+certification harness:
+
+```powershell
+python scripts/certify_large_data.py --preset smoke --model-scope small
+python scripts/certify_large_data.py --preset smoke --model-scope all
+python scripts/certify_large_data.py --preset 10gb --model-scope certified
+```
+
+After editable install, the same harness is available as:
+
+```powershell
+quant-pd-certify-large-data --preset smoke --model-scope small
+```
+
+Certification outputs are written under
+`artifacts\certification\<timestamp>\` and include JSON, Markdown, HTML, CSV
+scenario evidence, an environment profile, effective thresholds, run links, and
+the model capability matrix. The default acceptance suite lives at
+`configs\large_data_certification\default_acceptance_suite.json`.
 
 ### Time-Series Or Panel Runs Fail Validation
 
@@ -2889,6 +2984,10 @@ The current implementation includes:
 - checkpointed subprocess stage execution with `checkpoints/checkpoint_manifest.json`,
   pruned checkpoint contexts by default, optional full checkpoint retention, and a
   live `Checkpoint Flow` status chart
+- enterprise Large Data Mode artifacts: persistent profile cache, projected
+  Parquet staging, execution plan, transformation replay contract, advisory
+  feature pre-screening, split-aware sample partitions, worker-service queue,
+  and benchmark presets
 - diagnostic registry output that records enabled, emitted, disabled, and
   skipped diagnostic surfaces
 - profiling and synthetic Large Data Mode benchmark scripts for performance

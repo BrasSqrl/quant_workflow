@@ -52,6 +52,7 @@ class ExportPathLayout:
     validation_report_pdf_path: Path
     reproducibility_manifest_path: Path
     run_debug_trace_path: Path
+    audit_events_path: Path
     template_workbook_path: Path
     runner_script_path: Path
     rerun_readme_path: Path
@@ -118,6 +119,7 @@ def build_export_path_layout(
         validation_report_pdf_path=reports_dir / artifacts.validation_report_pdf_file_name,
         reproducibility_manifest_path=metadata_dir / artifacts.reproducibility_manifest_file_name,
         run_debug_trace_path=metadata_dir / artifacts.run_debug_trace_file_name,
+        audit_events_path=metadata_dir / "audit_events.jsonl",
         template_workbook_path=config_dir / artifacts.template_workbook_file_name,
         runner_script_path=code_dir / artifacts.runner_script_file_name,
         rerun_readme_path=code_dir / artifacts.rerun_readme_file_name,

@@ -5,7 +5,9 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import joblib
 import pandas as pd
+import pytest
 
 from quant_pd_framework import (
     ArtifactConfig,
@@ -15,20 +17,55 @@ from quant_pd_framework import (
     DiagnosticConfig,
     FeatureEngineeringConfig,
     FrameworkConfig,
+    LargeDataBackend,
     LargeDataExportPolicy,
+    LargeDataModelPolicy,
+    LargeDataPartitionStrategy,
+    LargeDataWorkerMode,
+    ModelType,
     PerformanceConfig,
     QuantModelOrchestrator,
     SplitConfig,
     TabularOutputFormat,
     TargetConfig,
     TargetMode,
+    TransformationConfig,
+    TransformationSpec,
+    TransformationType,
     load_framework_config,
 )
+from quant_pd_framework.background_jobs import (
+    BackgroundJobManifest,
+    queue_background_workflow,
+    read_background_manifest,
+    request_background_cancel,
+    write_background_manifest,
+)
+from quant_pd_framework.checkpointing import (
+    CHECKPOINT_TABLE_REF_MARKER,
+    load_context_checkpoint,
+    save_context_checkpoint,
+)
 from quant_pd_framework.config_serialization import FRAMEWORK_CONFIG_SECTION_NAMES
+from quant_pd_framework.context import PipelineContext
 from quant_pd_framework.large_data import (
     build_dataset_handle,
+    build_s3_dataset_handle,
     convert_csv_to_parquet,
+    parse_s3_uri,
+    profile_dataset_handle_cached,
     stage_large_data_file,
+)
+from quant_pd_framework.large_data_enterprise import (
+    record_large_data_feature_screening,
+    record_large_data_transformation_contract,
+)
+from quant_pd_framework.large_data_policy import resolve_large_data_certification
+from quant_pd_framework.large_data_runtime import (
+    ResultTableRef,
+    TableRef,
+    count_table_rows,
+    query_table_page,
 )
 from quant_pd_framework.run import _resolve_input_path
 from quant_pd_framework.steps.large_data_scoring import _ChunkedParquetWriter
@@ -148,9 +185,103 @@ def test_chunked_csv_to_parquet_conversion_helper() -> None:
         )
         converted = pd.read_parquet(parquet_path)
 
-    assert metadata["chunk_count"] == 2
+    assert metadata["conversion_engine"] in {"duckdb_copy", "pyarrow_local_stream"}
     assert metadata["row_count"] == 3
     assert converted.to_dict(orient="list") == {"x": [1, 2, 3], "y": ["a", "b", "c"]}
+
+
+def test_s3_uri_handle_normalization_does_not_require_secrets() -> None:
+    uri = "s3://example-bucket/path/to/input.csv"
+
+    bucket, key = parse_s3_uri(uri)
+    handle = build_s3_dataset_handle(uri, {"size_bytes": 123, "etag": "abc"})
+
+    assert bucket == "example-bucket"
+    assert key == "path/to/input.csv"
+    assert handle.is_s3 is True
+    assert handle.uri == uri
+    assert handle.source_suffix == ".csv"
+    assert handle.metadata["source_kind"] == "s3"
+    assert handle.metadata["bucket"] == "example-bucket"
+    assert handle.metadata["size_bytes"] == 123
+
+
+def test_large_data_certification_policy_blocks_uncertified_models() -> None:
+    certification = resolve_large_data_certification(
+        ModelType.TOBIT_REGRESSION,
+        PerformanceConfig(
+            large_data_mode=True,
+            large_data_model_policy=LargeDataModelPolicy.CERTIFIED_ONLY,
+        ),
+    )
+
+    assert certification.status.value == "blocked"
+    assert certification.execution_strategy == "blocked_uncertified_model"
+    assert certification.fit_capability.status.value == "sample_fit_full_score"
+
+
+def test_large_data_capability_matrix_classifies_common_model_families() -> None:
+    logistic = resolve_large_data_certification(
+        ModelType.LOGISTIC_REGRESSION,
+        PerformanceConfig(large_data_mode=True),
+    )
+    xgboost = resolve_large_data_certification(
+        ModelType.XGBOOST,
+        PerformanceConfig(large_data_mode=True),
+    )
+    random_forest = resolve_large_data_certification(
+        ModelType.RANDOM_FOREST,
+        PerformanceConfig(large_data_mode=True),
+    )
+
+    assert logistic.fit_capability.status.value == "full_data_exact"
+    assert xgboost.fit_capability.status.value == "full_data_incremental"
+    assert random_forest.fit_capability.status.value == "in_memory_only"
+    assert random_forest.status.value == "sample_fit_full_score"
+
+
+def test_large_data_force_override_requires_confirmation_and_reason() -> None:
+    blocked = resolve_large_data_certification(
+        ModelType.TOBIT_REGRESSION,
+        PerformanceConfig(
+            large_data_mode=True,
+            large_data_model_policy=LargeDataModelPolicy.FORCE_FULL_DATA_OVERRIDE,
+            large_data_override_confirmed=True,
+        ),
+    )
+    allowed = resolve_large_data_certification(
+        ModelType.TOBIT_REGRESSION,
+        PerformanceConfig(
+            large_data_mode=True,
+            large_data_model_policy=LargeDataModelPolicy.FORCE_FULL_DATA_OVERRIDE,
+            large_data_override_confirmed=True,
+            large_data_override_reason="Final validation requires this model on sized compute.",
+        ),
+    )
+
+    assert blocked.status.value == "blocked"
+    assert allowed.status.value == "experimental_full_data_override"
+
+
+def test_background_job_manifest_records_cancel_requests() -> None:
+    with temporary_artifact_root("pytest_background_job_manifest") as artifact_root:
+        manifest_path = artifact_root / "job_manifest.json"
+        manifest = BackgroundJobManifest(
+            job_id="job_1",
+            status="running",
+            job_dir=str(artifact_root),
+            config_path=str(artifact_root / "run_config.json"),
+            input_kind="dataset_handle",
+            input_identifier=str(artifact_root / "input.parquet"),
+        )
+
+        write_background_manifest(manifest_path, manifest)
+        request_background_cancel(manifest_path)
+        loaded = read_background_manifest(manifest_path)
+
+    assert loaded.cancel_requested is True
+    assert loaded.status == "running"
+    assert "Cancel requested" in loaded.progress
 
 
 def test_saved_run_resolves_parquet_snapshot_when_csv_is_absent() -> None:
@@ -181,6 +312,14 @@ def test_large_data_config_round_trips_through_loader() -> None:
         large_data_mode=True,
         optimize_dtypes=True,
         convert_csv_to_parquet=True,
+        large_data_backend=LargeDataBackend.DISK_BACKED,
+        large_data_model_policy=LargeDataModelPolicy.ALLOW_SAMPLE_FALLBACK,
+        large_data_partition_strategy=LargeDataPartitionStrategy.SPLIT,
+        large_data_worker_mode=LargeDataWorkerMode.WORKER_SERVICE,
+        large_data_profile_cache_enabled=False,
+        large_data_prescreen_enabled=True,
+        large_data_auto_apply_prescreen=True,
+        large_data_certified_fit_enabled=False,
         csv_conversion_chunk_rows=25000,
         memory_limit_gb=64.0,
     )
@@ -188,10 +327,22 @@ def test_large_data_config_round_trips_through_loader() -> None:
     loaded = load_framework_config(config.to_dict())
 
     assert loaded.performance.large_data_mode is True
+    assert loaded.performance.large_data_backend == LargeDataBackend.DISK_BACKED
+    assert loaded.performance.large_data_model_policy == LargeDataModelPolicy.ALLOW_SAMPLE_FALLBACK
+    assert loaded.performance.large_data_partition_strategy == LargeDataPartitionStrategy.SPLIT
+    assert loaded.performance.large_data_worker_mode == LargeDataWorkerMode.WORKER_SERVICE
+    assert loaded.performance.large_data_profile_cache_enabled is False
+    assert loaded.performance.large_data_prescreen_enabled is True
+    assert loaded.performance.large_data_auto_apply_prescreen is True
+    assert loaded.performance.large_data_certified_fit_enabled is False
     assert loaded.performance.convert_csv_to_parquet is True
     assert loaded.performance.csv_conversion_chunk_rows == 25000
     assert loaded.performance.large_data_training_sample_rows == 250000
     assert loaded.performance.large_data_score_chunk_rows == 100000
+    assert loaded.performance.large_data_result_page_rows == 1000
+    assert loaded.performance.large_data_max_in_memory_rows == 250000
+    assert loaded.performance.duckdb_threads == 0
+    assert loaded.performance.duckdb_memory_limit_gb is None
     assert loaded.performance.memory_limit_gb == 64.0
     assert loaded.artifacts.tabular_output_format == TabularOutputFormat.PARQUET
     assert loaded.artifacts.large_data_export_policy == LargeDataExportPolicy.SAMPLED
@@ -226,9 +377,202 @@ def test_file_backed_large_data_run_trains_on_sample_and_scores_full_file() -> N
         assert context.artifacts["sample_development_dir"].name == "sample_development"
         assert context.artifacts["full_data_scoring_dir"].name == "full_data_scoring"
         assert context.artifacts["large_data_metadata_dir"].name == "large_data"
+        assert Path(context.artifacts["large_data_profile"]).exists()
+        assert context.metadata["large_data_model_certification"]["status"] == (
+            "full_data_certified"
+        )
         assert "large_data_full_scoring_summary" in context.diagnostics_tables
+        assert "large_data_source_profile" in context.diagnostics_tables
+        assert "large_data_model_certification" in context.diagnostics_tables
         assert "diagnostic_registry" in context.diagnostics_tables
+        assert "prepared_dataset_manifest" in context.diagnostics_tables
+        assert "large_data_execution_plan" in context.diagnostics_tables
+        assert "large_data_transformation_contract" in context.diagnostics_tables
+        assert "large_data_feature_screening" in context.diagnostics_tables
+        assert Path(context.artifacts["large_data_execution_plan"]).exists()
+        assert Path(context.artifacts["large_data_transformation_contract"]).exists()
+        assert Path(context.artifacts["large_data_feature_screening_manifest"]).exists()
         assert Path(context.artifacts["large_data_full_scoring_progress"]).exists()
+        assert Path(context.artifacts["prepared_dataset_manifest"]).exists()
+
+
+def test_large_data_profile_cache_reuses_unchanged_file_profile() -> None:
+    with temporary_artifact_root("pytest_large_data_profile_cache") as artifact_root:
+        parquet_path = artifact_root / "input.parquet"
+        pd.DataFrame({"x": [1, 2, 3], "y": ["a", "b", "c"]}).to_parquet(
+            parquet_path,
+            index=False,
+        )
+        handle = build_dataset_handle(parquet_path, {"source_kind": "data_load"})
+        cache_root = artifact_root / "profiles"
+
+        first = profile_dataset_handle_cached(
+            handle,
+            preview_rows=2,
+            cache_root=cache_root,
+        )
+        second = profile_dataset_handle_cached(
+            handle,
+            preview_rows=2,
+            cache_root=cache_root,
+        )
+
+        assert first["profile_cache_hit"] is False
+        assert second["profile_cache_hit"] is True
+        assert first["profile_cache_key"] == second["profile_cache_key"]
+        assert Path(second["profile_cache_path"]).exists()
+
+
+def test_large_data_transformation_contract_classifies_supported_and_sample_only() -> None:
+    with temporary_artifact_root("pytest_large_data_transform_contract") as artifact_root:
+        config = _large_data_test_config(artifact_root)
+        config.transformations = TransformationConfig(
+            transformations=[
+                TransformationSpec(
+                    transform_type=TransformationType.SAFE_RATIO,
+                    source_feature="balance",
+                    secondary_feature="annual_income",
+                    output_feature="balance_to_income",
+                ),
+                TransformationSpec(
+                    transform_type=TransformationType.TARGET_ENCODING,
+                    source_feature="region",
+                    output_feature="region_target_encoded",
+                ),
+            ]
+        )
+        context = PipelineContext(config=config, run_id="run_contract", raw_input=None)
+
+        payload = record_large_data_transformation_contract(context)
+        statuses = {
+            row["output_feature"]: row["large_data_status"]
+            for row in payload["rows"]
+        }
+
+        assert statuses["balance_to_income"] == "compiled"
+        assert statuses["region_target_encoded"] == "sample_only"
+        assert Path(context.artifacts["large_data_transformation_contract"]).exists()
+
+
+def test_large_data_feature_screening_is_advisory_unless_auto_apply_enabled() -> None:
+    with temporary_artifact_root("pytest_large_data_feature_screen") as artifact_root:
+        config = _large_data_test_config(artifact_root)
+        frame = pd.DataFrame(
+            {
+                "constant_feature": [1, 1, 1, 1, 1, 1],
+                "useful_feature": [0.1, 0.2, 0.9, 1.0, 1.1, 1.2],
+                "default_status": [0, 0, 1, 1, 1, 0],
+            }
+        )
+        context = PipelineContext(config=config, run_id="run_screen", raw_input=None)
+        context.target_column = "default_status"
+        context.feature_columns = ["constant_feature", "useful_feature"]
+        context.numeric_features = list(context.feature_columns)
+        context.split_frames = {"train": frame}
+
+        record_large_data_feature_screening(context)
+
+        assert context.feature_columns == ["constant_feature", "useful_feature"]
+        assert "large_data_feature_screening" in context.diagnostics_tables
+
+        config.performance.large_data_auto_apply_prescreen = True
+        auto_context = PipelineContext(config=config, run_id="run_screen_auto", raw_input=None)
+        auto_context.target_column = "default_status"
+        auto_context.feature_columns = ["constant_feature", "useful_feature"]
+        auto_context.numeric_features = list(auto_context.feature_columns)
+        auto_context.split_frames = {"train": frame}
+
+        record_large_data_feature_screening(auto_context)
+
+    assert auto_context.feature_columns == ["useful_feature"]
+    assert auto_context.metadata["large_data_prescreen_excluded_features"] == [
+        "constant_feature"
+    ]
+
+
+def test_worker_service_queue_manifest_records_dispatch_mode() -> None:
+    with temporary_artifact_root("pytest_large_data_worker_queue") as artifact_root:
+        input_path = artifact_root / "input.parquet"
+        pd.DataFrame({"x": [1], "default_status": [0]}).to_parquet(input_path, index=False)
+        config = _large_data_test_config(artifact_root)
+
+        manifest_path = queue_background_workflow(
+            config=config,
+            input_data=build_dataset_handle(input_path, {"source_kind": "data_load"}),
+            queue_dir=artifact_root / "_job_queue",
+        )
+        manifest = read_background_manifest(manifest_path)
+
+        assert manifest.status == "queued"
+        assert manifest.dispatch_mode == "worker_service"
+        assert Path(manifest.config_path).exists()
+
+
+def test_table_ref_supports_paged_parquet_result_access() -> None:
+    pytest.importorskip("duckdb")
+    with temporary_artifact_root("pytest_table_ref_paged_results") as artifact_root:
+        parquet_path = artifact_root / "predictions.parquet"
+        pd.DataFrame(
+            {
+                "split": ["train", "train", "test", "test"],
+                "segment": ["a", "b", "a", "b"],
+                "predicted_probability": [0.2, 0.9, 0.4, 0.7],
+            }
+        ).to_parquet(parquet_path, index=False)
+
+        table_ref = TableRef.from_path(parquet_path, name="full_data_predictions")
+        result_ref = ResultTableRef.from_table_ref(
+            table_ref,
+            score_column="predicted_probability",
+            split_column="split",
+            segment_columns=["segment"],
+        )
+        page = query_table_page(
+            result_ref,
+            columns=["split", "segment", "predicted_probability"],
+            filters=[{"column": "split", "op": "eq", "value": "test"}],
+            sort_by="predicted_probability",
+            descending=True,
+            page=1,
+            page_size=1,
+        )
+        row_count = count_table_rows(
+            result_ref,
+            filters=[{"column": "split", "op": "eq", "value": "test"}],
+        )
+
+    assert table_ref.row_count == 4
+    assert row_count == 2
+    assert page.to_dict(orient="records") == [
+        {"split": "test", "segment": "b", "predicted_probability": 0.7}
+    ]
+
+
+def test_large_data_checkpoint_spills_large_dataframes_to_table_refs() -> None:
+    with temporary_artifact_root("pytest_large_data_checkpoint_spill") as artifact_root:
+        config = _large_data_test_config(artifact_root)
+        config.performance = PerformanceConfig(
+            large_data_mode=True,
+            large_data_max_in_memory_rows=2,
+        )
+        context = PipelineContext(
+            config=config,
+            run_id="run_1",
+            raw_input=None,
+            working_data=pd.DataFrame({"x": [1, 2, 3], "y": ["a", "b", "c"]}),
+            predictions={"test": pd.DataFrame({"score": [0.1, 0.2, 0.3]})},
+        )
+        checkpoint_path = artifact_root / "checkpoints" / "01_test.joblib"
+
+        save_context_checkpoint(context, checkpoint_path)
+        raw_checkpoint = joblib.load(checkpoint_path)
+
+        loaded = load_context_checkpoint(checkpoint_path)
+
+    assert raw_checkpoint.working_data[CHECKPOINT_TABLE_REF_MARKER] is True
+    assert raw_checkpoint.predictions["test"][CHECKPOINT_TABLE_REF_MARKER] is True
+    assert loaded.working_data.equals(pd.DataFrame({"x": [1, 2, 3], "y": ["a", "b", "c"]}))
+    assert loaded.predictions["test"].equals(pd.DataFrame({"score": [0.1, 0.2, 0.3]}))
 
 
 def test_csv_parquet_staging_reuses_unchanged_cache_file() -> None:

@@ -10,6 +10,7 @@ from sklearn.metrics import roc_auc_score
 from ..base import BasePipelineStep
 from ..config import ExecutionMode, FeatureReviewDecisionType, TargetMode
 from ..context import PipelineContext
+from ..large_data_enterprise import record_large_data_feature_screening
 
 
 class VariableSelectionStep(BasePipelineStep):
@@ -25,6 +26,8 @@ class VariableSelectionStep(BasePipelineStep):
     def run(self, context: PipelineContext) -> PipelineContext:
         config = context.config.variable_selection
         manual_review = context.config.manual_review
+        if context.config.performance.large_data_mode and context.feature_columns:
+            record_large_data_feature_screening(context)
         if not config.enabled:
             if manual_review.enabled and manual_review.feature_decisions:
                 selection_table = self._build_manual_review_only_table(context)

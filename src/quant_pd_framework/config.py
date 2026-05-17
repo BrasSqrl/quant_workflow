@@ -102,6 +102,70 @@ class LargeDataExportPolicy(StrEnum):
     METADATA_ONLY = "metadata_only"
 
 
+class LargeDataBackend(StrEnum):
+    """Controls how file-backed large datasets are executed."""
+
+    AUTO = "auto"
+    PANDAS_SAMPLE = "pandas_sample"
+    DISK_BACKED = "disk_backed"
+
+
+class LargeDataModelPolicy(StrEnum):
+    """Controls how strictly large-data model certification is enforced."""
+
+    CERTIFIED_ONLY = "certified_only"
+    ALLOW_SAMPLE_FALLBACK = "allow_sample_fallback"
+    FORCE_FULL_DATA_OVERRIDE = "force_full_data_override"
+
+
+class LargeDataCertificationStatus(StrEnum):
+    """Model certification outcomes for large-file workflows."""
+
+    FULL_DATA_CERTIFIED = "full_data_certified"
+    SAMPLE_FIT_FULL_SCORE = "sample_fit_full_score"
+    EXPERIMENTAL_FULL_DATA_OVERRIDE = "experimental_full_data_override"
+    BLOCKED = "blocked"
+
+
+class LargeDataFitCapabilityStatus(StrEnum):
+    """Estimator-level capability for very large file-backed fitting."""
+
+    FULL_DATA_EXACT = "full_data_exact"
+    FULL_DATA_INCREMENTAL = "full_data_incremental"
+    SAMPLE_FIT_FULL_SCORE = "sample_fit_full_score"
+    IN_MEMORY_ONLY = "in_memory_only"
+    BLOCKED = "blocked"
+
+
+class LargeDataPartitionStrategy(StrEnum):
+    """Controls how prepared large-data Parquet assets are partitioned."""
+
+    AUTO = "auto"
+    NONE = "none"
+    SPLIT = "split"
+    SPLIT_DATE = "split_date"
+    SPLIT_SEGMENT = "split_segment"
+
+
+class LargeDataWorkerMode(StrEnum):
+    """Controls how Large Data Mode background execution is dispatched."""
+
+    AUTO = "auto"
+    DETACHED_PROCESS = "detached_process"
+    WORKER_SERVICE = "worker_service"
+
+
+class LargeDataExecutionStageStatus(StrEnum):
+    """Per-stage large-data execution planning status."""
+
+    FULL_DATA = "full_data"
+    SAMPLE_BASED = "sample_based"
+    FILE_BACKED = "file_backed"
+    IN_MEMORY = "in_memory"
+    BLOCKED = "blocked"
+    REQUIRES_OVERRIDE = "requires_override"
+
+
 class TargetMode(StrEnum):
     """Controls whether the framework should build a binary, multiclass, or continuous target."""
 
@@ -528,6 +592,7 @@ class ModelConfig:
     regularization_alpha: float = 1.0
     tree_n_estimators: int = 300
     tree_max_depth: int | None = 5
+    n_jobs: int = 0
     gee_group_column: str | None = None
     mixed_effects_group_column: str | None = None
     spline_n_knots: int = 5
@@ -571,6 +636,8 @@ class ModelConfig:
             raise ValueError("ModelConfig.tree_n_estimators must be greater than 0.")
         if self.tree_max_depth is not None and self.tree_max_depth <= 0:
             raise ValueError("ModelConfig.tree_max_depth must be positive when provided.")
+        if self.n_jobs < -1:
+            raise ValueError("ModelConfig.n_jobs must be -1, 0, or a positive integer.")
         if self.spline_n_knots < 3:
             raise ValueError("ModelConfig.spline_n_knots must be at least 3.")
         if self.spline_degree < 1:
@@ -1739,6 +1806,11 @@ class PerformanceConfig:
 
     enabled: bool = True
     large_data_mode: bool = False
+    large_data_backend: LargeDataBackend = LargeDataBackend.AUTO
+    large_data_model_policy: LargeDataModelPolicy = LargeDataModelPolicy.ALLOW_SAMPLE_FALLBACK
+    large_data_override_confirmed: bool = False
+    large_data_override_reason: str = ""
+    s3_local_cache_dir: str = ".quant_studio_cache/s3"
     upload_warning_mb: int = 5_120
     ui_preview_rows: int = 50
     html_table_preview_rows: int = 12
@@ -1766,13 +1838,33 @@ class PerformanceConfig:
     csv_conversion_chunk_rows: int = 100_000
     large_data_training_sample_rows: int = 250_000
     large_data_score_chunk_rows: int = 100_000
+    large_data_result_page_rows: int = 1_000
+    large_data_max_in_memory_rows: int = 250_000
     large_data_project_columns: bool = True
     large_data_auto_stage_parquet: bool = True
+    large_data_profile_cache_enabled: bool = True
+    large_data_partition_strategy: LargeDataPartitionStrategy = LargeDataPartitionStrategy.AUTO
+    large_data_prescreen_enabled: bool = True
+    large_data_auto_apply_prescreen: bool = False
+    large_data_worker_mode: LargeDataWorkerMode = LargeDataWorkerMode.AUTO
+    large_data_certified_fit_enabled: bool = True
+    duckdb_threads: int = 0
+    duckdb_memory_limit_gb: float | None = None
     memory_limit_gb: float | None = None
     memory_estimate_file_multiplier: float = 6.0
     memory_estimate_dataframe_multiplier: float = 4.0
 
     def validate(self) -> None:
+        if isinstance(self.large_data_backend, str):
+            self.large_data_backend = LargeDataBackend(self.large_data_backend)
+        if isinstance(self.large_data_model_policy, str):
+            self.large_data_model_policy = LargeDataModelPolicy(self.large_data_model_policy)
+        if isinstance(self.large_data_partition_strategy, str):
+            self.large_data_partition_strategy = LargeDataPartitionStrategy(
+                self.large_data_partition_strategy
+            )
+        if isinstance(self.large_data_worker_mode, str):
+            self.large_data_worker_mode = LargeDataWorkerMode(self.large_data_worker_mode)
         for field_name, value in {
             "upload_warning_mb": self.upload_warning_mb,
             "ui_preview_rows": self.ui_preview_rows,
@@ -1787,9 +1879,13 @@ class PerformanceConfig:
             "csv_conversion_chunk_rows": self.csv_conversion_chunk_rows,
             "large_data_training_sample_rows": self.large_data_training_sample_rows,
             "large_data_score_chunk_rows": self.large_data_score_chunk_rows,
+            "large_data_result_page_rows": self.large_data_result_page_rows,
+            "large_data_max_in_memory_rows": self.large_data_max_in_memory_rows,
         }.items():
             if value <= 0:
                 raise ValueError(f"PerformanceConfig.{field_name} must be greater than 0.")
+        if self.duckdb_threads < 0:
+            raise ValueError("PerformanceConfig.duckdb_threads must be 0 or a positive integer.")
         if not 0 < self.category_max_unique_ratio <= 1:
             raise ValueError("PerformanceConfig.category_max_unique_ratio must be in (0, 1].")
         if not 0 < self.max_categorical_cardinality_ratio <= 1:
@@ -1798,12 +1894,18 @@ class PerformanceConfig:
             )
         if self.memory_limit_gb is not None and self.memory_limit_gb <= 0:
             raise ValueError("PerformanceConfig.memory_limit_gb must be positive when set.")
+        if self.duckdb_memory_limit_gb is not None and self.duckdb_memory_limit_gb <= 0:
+            raise ValueError(
+                "PerformanceConfig.duckdb_memory_limit_gb must be positive when set."
+            )
         if self.memory_estimate_file_multiplier <= 0:
             raise ValueError("PerformanceConfig.memory_estimate_file_multiplier must be positive.")
         if self.memory_estimate_dataframe_multiplier <= 0:
             raise ValueError(
                 "PerformanceConfig.memory_estimate_dataframe_multiplier must be positive."
             )
+        if not str(self.s3_local_cache_dir).strip():
+            raise ValueError("PerformanceConfig.s3_local_cache_dir cannot be blank.")
         if self.html_max_figure_payload_mb <= 0:
             raise ValueError("PerformanceConfig.html_max_figure_payload_mb must be positive.")
         if self.html_max_total_figure_payload_mb <= 0:

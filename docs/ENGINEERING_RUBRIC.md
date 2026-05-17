@@ -78,3 +78,23 @@ The repository should:
 - leave the working tree clean after normal testing and verification
 
 A design fails this standard if routine development work leaves large volumes of generated clutter in the repo.
+
+## Current Alignment Notes
+
+The current Quant Studio codebase aligns to this rubric in the following ways:
+
+- The GUI remains a configuration and review layer over the Python framework.
+- Workflow execution is coordinated through explicit pipeline stages and
+  checkpointed subprocess boundaries for memory isolation, restartability, and
+  auditability.
+- `fit_new_model`, `score_existing_model`, and `search_feature_subsets` are
+  explicit execution modes rather than hidden branches.
+- Large Data Mode uses file-backed intake, profile manifests, governed samples,
+  chunked scoring, and certification metadata instead of keeping large files in
+  Streamlit session state.
+- Completed runs export the model artifact, resolved configuration, generated
+  runner, artifact manifest, reproducibility metadata, diagnostic registry,
+  decision summary, and traceability evidence.
+- The user documentation is organized around setup, workflow use, validation
+  review, artifacts, model types, statistical tests, large data, and
+  GUI-to-code traceability.

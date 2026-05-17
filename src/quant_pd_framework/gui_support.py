@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
 from io import BytesIO
 from pathlib import Path
@@ -123,6 +124,60 @@ SUPPORTED_DTYPES = ["auto", "string", "category", "float", "int", "bool", "datet
 SUPPORTED_MISSING_VALUE_POLICIES = [policy.value for policy in MissingValuePolicy]
 SUPPORTED_TRANSFORMATION_TYPES = [transform_type.value for transform_type in TransformationType]
 SUPPORTED_FEATURE_REVIEW_DECISIONS = [decision.value for decision in FeatureReviewDecisionType]
+
+LARGE_DATA_COMPILED_TRANSFORMATION_TYPES = {
+    TransformationType.WINSORIZE,
+    TransformationType.STANDARD_SCALE,
+    TransformationType.ROBUST_SCALE,
+    TransformationType.MIN_MAX_SCALE,
+    TransformationType.EQUAL_WIDTH_BINS,
+    TransformationType.QUANTILE_BINS,
+    TransformationType.WOE_ENCODING,
+    TransformationType.BAD_RATE_ENCODING,
+    TransformationType.FREQUENCY_ENCODING,
+    TransformationType.DATE_YEAR,
+    TransformationType.DATE_MONTH,
+    TransformationType.DATE_QUARTER,
+    TransformationType.DATE_MONTH_END_FLAG,
+    TransformationType.DATE_FISCAL_QUARTER,
+    TransformationType.DATE_AGE_DAYS,
+    TransformationType.DATE_AGE_MONTHS,
+    TransformationType.RATIO,
+    TransformationType.SAFE_RATIO,
+    TransformationType.MARGIN_RATIO,
+    TransformationType.DEBT_SERVICE_RATIO,
+    TransformationType.ADD,
+    TransformationType.SUBTRACT,
+    TransformationType.PRODUCT,
+    TransformationType.INTERACTION,
+    TransformationType.LAG,
+    TransformationType.ROLLING_MEAN,
+    TransformationType.ROLLING_MIN,
+    TransformationType.ROLLING_MAX,
+    TransformationType.ROLLING_SUM,
+    TransformationType.ROW_MISSING_COUNT,
+    TransformationType.ROW_MISSING_SHARE,
+    TransformationType.ANY_MISSING_FLAG,
+}
+LARGE_DATA_SAMPLE_ONLY_TRANSFORMATION_TYPES = {
+    TransformationType.TARGET_ENCODING,
+    TransformationType.ORDINAL_ENCODING,
+    TransformationType.RARE_CATEGORY_COLLAPSE,
+    TransformationType.MONOTONIC_BINS,
+    TransformationType.PERCENTILE_RANK,
+    TransformationType.NORMAL_SCORE,
+    TransformationType.EWMA,
+    TransformationType.ROLLING_MEDIAN,
+    TransformationType.ROLLING_STD,
+    TransformationType.ROLLING_RANGE,
+    TransformationType.ROLLING_CV,
+    TransformationType.ROLLING_SLOPE,
+    TransformationType.EXPANDING_MEAN,
+    TransformationType.CUMULATIVE_SUM,
+    TransformationType.CUMULATIVE_COUNT,
+    TransformationType.CHANGE_FROM_BASELINE,
+    TransformationType.PCT_CHANGE,
+}
 
 
 @dataclass(slots=True)
@@ -550,6 +605,489 @@ def normalize_transformation_frame(frame: pd.DataFrame) -> pd.DataFrame:
     return working
 
 
+def build_transformation_recipe_catalog_frame() -> pd.DataFrame:
+    """Returns the Transformation Studio recipe catalog grouped by modeling purpose."""
+
+    rows = [
+        {
+            "recipe_group": _transformation_recipe_group(transform_type),
+            "category": _transformation_category(transform_type),
+            "transform_type": transform_type.value,
+            "what_it_does": _transformation_meaning(transform_type),
+            "when_to_use": _transformation_use_case(transform_type),
+            "key_parameters": _transformation_parameter_guidance(transform_type),
+            "output_type": _transformation_output_type(transform_type),
+            "large_data_status": transformation_large_data_status(transform_type),
+        }
+        for transform_type in TransformationType
+    ]
+    return pd.DataFrame(
+        rows,
+        columns=[
+            "recipe_group",
+            "category",
+            "transform_type",
+            "what_it_does",
+            "when_to_use",
+            "key_parameters",
+            "output_type",
+            "large_data_status",
+        ],
+    )
+
+
+def transformation_large_data_status(transform_type: TransformationType | str) -> str:
+    """Classifies whether a transform is compiled for large-data execution."""
+
+    try:
+        resolved_type = (
+            transform_type
+            if isinstance(transform_type, TransformationType)
+            else TransformationType(str(transform_type))
+        )
+    except ValueError:
+        return "unknown"
+    if resolved_type in LARGE_DATA_COMPILED_TRANSFORMATION_TYPES:
+        return "compiled"
+    if resolved_type in LARGE_DATA_SAMPLE_ONLY_TRANSFORMATION_TYPES:
+        return "sample_only"
+    return "unsupported"
+
+
+def build_transformation_row(
+    *,
+    transform_type: TransformationType | str,
+    source_feature: str,
+    secondary_feature: str = "",
+    categorical_value: str = "",
+    output_feature: str = "",
+    lower_quantile: Any = "",
+    upper_quantile: Any = "",
+    parameter_value: Any = "",
+    window_size: Any = "",
+    lag_periods: Any = "",
+    bin_edges: Any = "",
+    generated_automatically: bool = False,
+    notes: str = "",
+) -> dict[str, Any]:
+    """Builds one transformation editor row using the existing frame schema."""
+
+    resolved_type = (
+        transform_type
+        if isinstance(transform_type, TransformationType)
+        else TransformationType(str(transform_type))
+    )
+    clean_source = str(source_feature).strip()
+    clean_secondary = str(secondary_feature or "").strip()
+    clean_category = str(categorical_value or "").strip()
+    clean_output = str(output_feature or "").strip()
+    if not clean_output and clean_source:
+        clean_output = _safe_resolve_transformation_output_name(
+            transform_type=resolved_type,
+            source_feature=clean_source,
+            secondary_feature=clean_secondary or None,
+            categorical_value=clean_category or None,
+            parameter_value=_safe_optional_float(parameter_value),
+            window_size=_safe_optional_int(window_size),
+            lag_periods=_safe_optional_int(lag_periods),
+        )
+    return {
+        "enabled": True,
+        "transform_type": resolved_type.value,
+        "source_feature": clean_source,
+        "secondary_feature": clean_secondary,
+        "categorical_value": clean_category,
+        "output_feature": clean_output,
+        "lower_quantile": lower_quantile,
+        "upper_quantile": upper_quantile,
+        "parameter_value": parameter_value,
+        "window_size": window_size,
+        "lag_periods": lag_periods,
+        "bin_edges": _format_transformation_edges(bin_edges),
+        "generated_automatically": bool(generated_automatically),
+        "notes": str(notes or "").strip(),
+    }
+
+
+def transformation_recommendation_to_row(recommendation: Mapping[str, Any]) -> dict[str, Any]:
+    """Converts a Transformation Studio recommendation into an editor row."""
+
+    return build_transformation_row(
+        transform_type=str(recommendation.get("transform_type", "")).strip(),
+        source_feature=str(recommendation.get("source_feature", "")).strip(),
+        secondary_feature=str(recommendation.get("secondary_feature", "") or ""),
+        output_feature=str(recommendation.get("output_feature", "") or ""),
+        lower_quantile=recommendation.get("lower_quantile", ""),
+        upper_quantile=recommendation.get("upper_quantile", ""),
+        parameter_value=recommendation.get("parameter_value", ""),
+        window_size=recommendation.get("window_size", ""),
+        lag_periods=recommendation.get("lag_periods", ""),
+        bin_edges=recommendation.get("bin_edges", ""),
+        generated_automatically=True,
+        notes=str(recommendation.get("notes", "") or recommendation.get("reason", "")),
+    )
+
+
+def build_transformation_recommendations(
+    dataframe: pd.DataFrame,
+    schema_frame: pd.DataFrame,
+    *,
+    target_mode: str = TargetMode.BINARY.value,
+    model_type: str = ModelType.LOGISTIC_REGRESSION.value,
+    data_structure: str = DataStructure.CROSS_SECTIONAL.value,
+) -> pd.DataFrame:
+    """Creates advisory transformation recommendations from a capped profile sample."""
+
+    profile = dataframe.head(100_000)
+    active_schema = _active_schema_rows_for_gui(schema_frame)
+    feature_columns = _schema_columns_by_role(active_schema, ColumnRole.FEATURE)
+    if not feature_columns:
+        feature_columns = [str(column) for column in profile.columns]
+    feature_columns = [column for column in feature_columns if column in profile.columns]
+    date_columns = _schema_columns_by_role(active_schema, ColumnRole.DATE)
+    identifier_columns = _schema_columns_by_role(active_schema, ColumnRole.IDENTIFIER)
+    numeric_columns = [
+        column
+        for column in feature_columns
+        if pd.api.types.is_numeric_dtype(profile[column])
+    ]
+    categorical_columns = [
+        column
+        for column in feature_columns
+        if column in profile.columns and column not in numeric_columns
+    ]
+    rows: list[dict[str, Any]] = []
+    for column in numeric_columns[:20]:
+        numeric = pd.to_numeric(profile[column], errors="coerce").dropna()
+        if numeric.empty:
+            continue
+        skew = float(numeric.skew()) if len(numeric) > 2 else 0.0
+        if abs(skew) >= 1.0:
+            min_value = float(numeric.min())
+            transform_type = (
+                TransformationType.LOG1P
+                if min_value > -1 and skew > 0
+                else TransformationType.SIGNED_LOG1P
+            )
+            rows.append(
+                _transformation_recommendation(
+                    transform_type=transform_type,
+                    source_feature=column,
+                    reason=f"Profile skew is {skew:.2f}; reshaping may stabilize this feature.",
+                    parameter_value="",
+                    notes="Review distribution before accepting.",
+                )
+            )
+        if _has_numeric_outliers(numeric):
+            rows.append(
+                _transformation_recommendation(
+                    transform_type=TransformationType.WINSORIZE,
+                    source_feature=column,
+                    reason="Profiled values show tail outliers beyond the IQR screen.",
+                    lower_quantile=0.01,
+                    upper_quantile=0.99,
+                    notes="Train-fit quantiles reduce outlier leverage.",
+                )
+            )
+    scorecard_or_logistic = _looks_like_scorecard_or_logistic(
+        model_type=model_type,
+        target_mode=target_mode,
+    )
+    if scorecard_or_logistic:
+        for column in numeric_columns[:12]:
+            rows.append(
+                _transformation_recommendation(
+                    transform_type=TransformationType.QUANTILE_BINS,
+                    source_feature=column,
+                    reason="Binary/logistic workflow can benefit from monotonic or binned views.",
+                    parameter_value=5,
+                    notes="Useful for scorecard review and nonlinear risk bands.",
+                )
+            )
+            if str(target_mode).lower() == TargetMode.BINARY.value:
+                rows.append(
+                    _transformation_recommendation(
+                        transform_type=TransformationType.WOE_ENCODING,
+                        source_feature=column,
+                        reason="Binary target supports WOE review for scorecard-style models.",
+                        parameter_value=5,
+                        notes="Requires binary target and train-fit event rates.",
+                    )
+                )
+    for column in categorical_columns[:20]:
+        unique_count = int(profile[column].nunique(dropna=True))
+        if unique_count >= max(25, min(500, int(max(len(profile), 1) * 0.05))):
+            rows.append(
+                _transformation_recommendation(
+                    transform_type=TransformationType.RARE_CATEGORY_COLLAPSE,
+                    source_feature=column,
+                    reason=f"{column} has {unique_count:,} profiled levels.",
+                    parameter_value=0.01,
+                    notes="Collapses sparse levels before encoding.",
+                )
+            )
+            rows.append(
+                _transformation_recommendation(
+                    transform_type=TransformationType.FREQUENCY_ENCODING,
+                    source_feature=column,
+                    reason=f"{column} has {unique_count:,} profiled levels.",
+                    notes="Converts high-cardinality levels to train-fit frequency share.",
+                )
+            )
+    for column in date_columns[:3]:
+        if column in profile.columns:
+            rows.append(
+                _transformation_recommendation(
+                    transform_type=TransformationType.DATE_MONTH,
+                    source_feature=column,
+                    reason="Date role detected; month can capture seasonal effects.",
+                    notes="Only accept if seasonality is known before prediction.",
+                )
+            )
+            rows.append(
+                _transformation_recommendation(
+                    transform_type=TransformationType.DATE_QUARTER,
+                    source_feature=column,
+                    reason="Date role detected; quarter can support reporting-cycle effects.",
+                    notes="Only accept if reporting cycle effects are relevant.",
+                )
+            )
+    if _is_time_aware_structure(data_structure) and date_columns and identifier_columns:
+        for column in numeric_columns[:6]:
+            rows.append(
+                _transformation_recommendation(
+                    transform_type=TransformationType.LAG,
+                    source_feature=column,
+                    reason="Panel/time structure detected with date and identifier roles.",
+                    lag_periods=1,
+                    notes="Creates prior-observation signal by entity.",
+                )
+            )
+            rows.append(
+                _transformation_recommendation(
+                    transform_type=TransformationType.ROLLING_MEAN,
+                    source_feature=column,
+                    reason="Panel/time structure detected with date and identifier roles.",
+                    window_size=3,
+                    notes="Creates smoothed trailing behavior by entity.",
+                )
+            )
+    recommendations = pd.DataFrame(rows)
+    if recommendations.empty:
+        return pd.DataFrame(
+            columns=[
+                "recommendation_id",
+                "recipe_group",
+                "transform_type",
+                "source_feature",
+                "secondary_feature",
+                "output_feature",
+                "lower_quantile",
+                "upper_quantile",
+                "parameter_value",
+                "window_size",
+                "lag_periods",
+                "bin_edges",
+                "reason",
+                "warning",
+                "large_data_status",
+                "notes",
+            ]
+        )
+    recommendations = recommendations.drop_duplicates(
+        subset=["transform_type", "source_feature", "secondary_feature"],
+        keep="first",
+    ).reset_index(drop=True)
+    recommendations["recommendation_id"] = [
+        f"{row.transform_type}:{row.source_feature}:{row.secondary_feature or ''}"
+        for row in recommendations.itertuples(index=False)
+    ]
+    return recommendations.loc[
+        :,
+        [
+            "recommendation_id",
+            "recipe_group",
+            "transform_type",
+            "source_feature",
+            "secondary_feature",
+            "output_feature",
+            "lower_quantile",
+            "upper_quantile",
+            "parameter_value",
+            "window_size",
+            "lag_periods",
+            "bin_edges",
+            "reason",
+            "warning",
+            "large_data_status",
+            "notes",
+        ],
+    ]
+
+
+def build_transformation_validation_frame(
+    transformation_frame: pd.DataFrame,
+    dataframe: pd.DataFrame,
+    schema_frame: pd.DataFrame,
+    *,
+    target_mode: str = TargetMode.BINARY.value,
+    data_structure: str = DataStructure.CROSS_SECTIONAL.value,
+) -> pd.DataFrame:
+    """Validates transformation rows for UI feedback without changing config parsing."""
+
+    normalized = normalize_transformation_frame(transformation_frame)
+    active_schema = _active_schema_rows_for_gui(schema_frame)
+    date_columns = _schema_columns_by_role(active_schema, ColumnRole.DATE)
+    identifier_columns = _schema_columns_by_role(active_schema, ColumnRole.IDENTIFIER)
+    rows: list[dict[str, Any]] = []
+    for row_number, row in normalized.iterrows():
+        if not bool(row["enabled"]):
+            continue
+        transform_name = str(row["transform_type"]).strip()
+        source_feature = str(row["source_feature"]).strip()
+        messages: list[str] = []
+        status = "valid"
+        try:
+            transform_type = TransformationType(transform_name)
+        except ValueError:
+            transform_type = None
+            messages.append("Unsupported transformation type.")
+            status = "blocker"
+        source_columns = _split_transformation_source_columns(source_feature)
+        missing_sources = [column for column in source_columns if column not in dataframe.columns]
+        if not source_feature:
+            messages.append("Source feature is required.")
+            status = "blocker"
+        elif missing_sources:
+            messages.append(f"Missing source column(s): {', '.join(missing_sources)}.")
+            status = "blocker"
+        if transform_type is not None:
+            if _transform_requires_numeric_source(transform_type):
+                nonnumeric = [
+                    column
+                    for column in source_columns
+                    if column in dataframe.columns
+                    and not pd.api.types.is_numeric_dtype(dataframe[column])
+                ]
+                if nonnumeric:
+                    messages.append(f"Expected numeric source(s): {', '.join(nonnumeric)}.")
+                    status = "blocker"
+            if _transform_requires_secondary_feature(transform_type) and not str(
+                row["secondary_feature"]
+            ).strip():
+                messages.append("Secondary feature is required.")
+                status = "blocker"
+            if transform_type in {
+                TransformationType.WOE_ENCODING,
+                TransformationType.BAD_RATE_ENCODING,
+            } and str(target_mode).lower() != TargetMode.BINARY.value:
+                messages.append("This encoding requires a binary target.")
+                status = "blocker"
+            if transform_type == TransformationType.MANUAL_BINS and not str(
+                row["bin_edges"]
+            ).strip():
+                messages.append("Manual bins require comma-separated bin_edges.")
+                status = "blocker"
+            if _transform_requires_time_structure(transform_type) and (
+                not _is_time_aware_structure(data_structure)
+                or not date_columns
+                or not identifier_columns
+            ):
+                messages.append("Requires panel/time-series structure with date and identifier.")
+                status = "warning" if status == "valid" else status
+            try:
+                TransformationSpec(
+                    transform_type=transform_type,
+                    source_feature=source_feature,
+                    secondary_feature=_clean_text(row["secondary_feature"]),
+                    categorical_value=_clean_text(row["categorical_value"]),
+                    output_feature=_clean_text(row["output_feature"]),
+                    lower_quantile=_coerce_optional_float(row["lower_quantile"]),
+                    upper_quantile=_coerce_optional_float(row["upper_quantile"]),
+                    parameter_value=_coerce_optional_float(row["parameter_value"]),
+                    window_size=_coerce_optional_int(row["window_size"]),
+                    lag_periods=_coerce_optional_int(row["lag_periods"]),
+                    bin_edges=_parse_float_list(row["bin_edges"]),
+                ).validate()
+            except Exception as exc:
+                messages.append(str(exc))
+                status = "blocker"
+        large_data_status = (
+            transformation_large_data_status(transform_type)
+            if transform_type is not None
+            else "unknown"
+        )
+        if large_data_status == "unsupported" and status == "valid":
+            status = "warning"
+            messages.append("Not currently compiled for disk-backed large-data execution.")
+        rows.append(
+            {
+                "row": int(row_number) + 1,
+                "status": status,
+                "transform_type": transform_name,
+                "source_feature": source_feature,
+                "output_feature": str(row["output_feature"]).strip()
+                or _validation_output_name(transform_type, row),
+                "large_data_status": large_data_status,
+                "message": " ".join(messages) if messages else "Ready.",
+                "generated_python": build_transformation_code_snippet(row),
+            }
+        )
+    return pd.DataFrame(
+        rows,
+        columns=[
+            "row",
+            "status",
+            "transform_type",
+            "source_feature",
+            "output_feature",
+            "large_data_status",
+            "message",
+            "generated_python",
+        ],
+    )
+
+
+def build_transformation_summary_cards(
+    transformation_frame: pd.DataFrame,
+    validation_frame: pd.DataFrame,
+) -> list[dict[str, str]]:
+    """Returns compact metric cards for Transformation Studio."""
+
+    normalized = normalize_transformation_frame(transformation_frame)
+    enabled = normalized.loc[normalized["enabled"]]
+    generated_count = int(enabled["generated_automatically"].sum()) if not enabled.empty else 0
+    large_data_compatible = (
+        int(validation_frame["large_data_status"].eq("compiled").sum())
+        if not validation_frame.empty
+        else 0
+    )
+    warnings = (
+        int(validation_frame["status"].isin({"warning", "blocker"}).sum())
+        if not validation_frame.empty
+        else 0
+    )
+    return [
+        {"label": "Enabled", "value": f"{len(enabled):,}"},
+        {"label": "Generated / Recommended", "value": f"{generated_count:,}"},
+        {"label": "Large-Data Compatible", "value": f"{large_data_compatible:,}"},
+        {"label": "Warnings / Blockers", "value": f"{warnings:,}"},
+    ]
+
+
+def build_transformation_code_snippet(row: Mapping[str, Any]) -> str:
+    """Builds a concise audit snippet for a transformation row."""
+
+    values = {
+        column: row.get(column, "")
+        for column in TRANSFORMATION_EDITOR_COLUMNS
+        if column not in {"enabled", "generated_automatically"}
+        and str(row.get(column, "")).strip()
+    }
+    arguments = ", ".join(f"{key}={value!r}" for key, value in values.items())
+    return f"TransformationSpec({arguments})"
+
+
 def build_subset_search_feature_options(
     schema_frame: pd.DataFrame,
     transformation_frame: pd.DataFrame,
@@ -865,6 +1403,347 @@ def _resolve_transformation_output_name_for_ui(
 def _sanitize_transformation_token(value: str) -> str:
     sanitized = "".join(character if character.isalnum() else "_" for character in value)
     return sanitized.strip("_").lower() or "value"
+
+
+def _transformation_recipe_group(transform_type: TransformationType) -> str:
+    outlier = {TransformationType.WINSORIZE, TransformationType.CAPPED_ZSCORE}
+    scaling = {
+        TransformationType.STANDARD_SCALE,
+        TransformationType.ROBUST_SCALE,
+        TransformationType.MIN_MAX_SCALE,
+        TransformationType.PERCENTILE_RANK,
+        TransformationType.NORMAL_SCORE,
+        TransformationType.CENTER_MEAN,
+        TransformationType.CENTER_MEDIAN,
+    }
+    distribution = {
+        TransformationType.LOG1P,
+        TransformationType.SIGNED_LOG1P,
+        TransformationType.BOX_COX,
+        TransformationType.YEO_JOHNSON,
+        TransformationType.SQRT,
+        TransformationType.RECIPROCAL,
+        TransformationType.SQUARE,
+        TransformationType.POWER,
+        TransformationType.ABSOLUTE_VALUE,
+        TransformationType.PIECEWISE_LINEAR,
+        TransformationType.NATURAL_SPLINE,
+    }
+    ratios = {
+        TransformationType.RATIO,
+        TransformationType.SAFE_RATIO,
+        TransformationType.MARGIN_RATIO,
+        TransformationType.DEBT_SERVICE_RATIO,
+        TransformationType.ADD,
+        TransformationType.SUBTRACT,
+        TransformationType.PRODUCT,
+        TransformationType.INTERACTION,
+    }
+    panel = {
+        TransformationType.LAG,
+        TransformationType.DIFFERENCE,
+        TransformationType.EWMA,
+        TransformationType.ROLLING_MEAN,
+        TransformationType.ROLLING_MEDIAN,
+        TransformationType.ROLLING_MIN,
+        TransformationType.ROLLING_MAX,
+        TransformationType.ROLLING_STD,
+        TransformationType.ROLLING_SUM,
+        TransformationType.ROLLING_RANGE,
+        TransformationType.ROLLING_CV,
+        TransformationType.ROLLING_SLOPE,
+        TransformationType.EXPANDING_MEAN,
+        TransformationType.CUMULATIVE_SUM,
+        TransformationType.CUMULATIVE_COUNT,
+        TransformationType.MONTHS_SINCE_EVENT,
+        TransformationType.CHANGE_FROM_BASELINE,
+        TransformationType.PCT_CHANGE,
+    }
+    binning = {
+        TransformationType.MANUAL_BINS,
+        TransformationType.QUANTILE_BINS,
+        TransformationType.EQUAL_WIDTH_BINS,
+        TransformationType.MONOTONIC_BINS,
+        TransformationType.WOE_ENCODING,
+        TransformationType.BAD_RATE_ENCODING,
+        TransformationType.RARE_CATEGORY_COLLAPSE,
+        TransformationType.FREQUENCY_ENCODING,
+        TransformationType.ORDINAL_ENCODING,
+        TransformationType.TARGET_ENCODING,
+    }
+    dates = {
+        TransformationType.DATE_YEAR,
+        TransformationType.DATE_MONTH,
+        TransformationType.DATE_QUARTER,
+        TransformationType.DATE_MONTH_END_FLAG,
+        TransformationType.DATE_FISCAL_QUARTER,
+        TransformationType.DATE_AGE_DAYS,
+        TransformationType.DATE_AGE_MONTHS,
+    }
+    missingness = {
+        TransformationType.ROW_MISSING_COUNT,
+        TransformationType.ROW_MISSING_SHARE,
+        TransformationType.ANY_MISSING_FLAG,
+    }
+    if transform_type in outlier:
+        return "Outlier handling"
+    if transform_type in scaling:
+        return "Scaling / ranking"
+    if transform_type in distribution:
+        return "Distribution reshaping"
+    if transform_type in ratios:
+        return "Ratios / interactions"
+    if transform_type in panel:
+        return "Panel / time features"
+    if transform_type in binning:
+        return "Binning / WOE / encoding"
+    if transform_type in dates:
+        return "Date features"
+    if transform_type in missingness:
+        return "Missingness features"
+    return "Other"
+
+
+def _transformation_recommendation(
+    *,
+    transform_type: TransformationType,
+    source_feature: str,
+    reason: str,
+    secondary_feature: str = "",
+    lower_quantile: Any = "",
+    upper_quantile: Any = "",
+    parameter_value: Any = "",
+    window_size: Any = "",
+    lag_periods: Any = "",
+    bin_edges: Any = "",
+    notes: str = "",
+    warning: str = "",
+) -> dict[str, Any]:
+    row = build_transformation_row(
+        transform_type=transform_type,
+        source_feature=source_feature,
+        secondary_feature=secondary_feature,
+        lower_quantile=lower_quantile,
+        upper_quantile=upper_quantile,
+        parameter_value=parameter_value,
+        window_size=window_size,
+        lag_periods=lag_periods,
+        bin_edges=bin_edges,
+        generated_automatically=True,
+        notes=notes or reason,
+    )
+    return {
+        "recipe_group": _transformation_recipe_group(transform_type),
+        "transform_type": row["transform_type"],
+        "source_feature": row["source_feature"],
+        "secondary_feature": row["secondary_feature"],
+        "output_feature": row["output_feature"],
+        "lower_quantile": row["lower_quantile"],
+        "upper_quantile": row["upper_quantile"],
+        "parameter_value": row["parameter_value"],
+        "window_size": row["window_size"],
+        "lag_periods": row["lag_periods"],
+        "bin_edges": row["bin_edges"],
+        "reason": reason,
+        "warning": warning,
+        "large_data_status": transformation_large_data_status(transform_type),
+        "notes": row["notes"],
+    }
+
+
+def _safe_resolve_transformation_output_name(
+    *,
+    transform_type: TransformationType,
+    source_feature: str,
+    secondary_feature: str | None,
+    categorical_value: str | None,
+    parameter_value: float | None,
+    window_size: int | None,
+    lag_periods: int | None,
+) -> str:
+    try:
+        return _resolve_transformation_output_name_for_ui(
+            transform_type=transform_type,
+            source_feature=source_feature,
+            secondary_feature=secondary_feature,
+            categorical_value=categorical_value,
+            parameter_value=parameter_value,
+            window_size=window_size,
+            lag_periods=lag_periods,
+        )
+    except Exception:
+        source_token = _sanitize_transformation_token(source_feature)
+        return f"{source_token}_{transform_type.value}"
+
+
+def _safe_optional_float(value: Any) -> float | None:
+    try:
+        return _coerce_optional_float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _safe_optional_int(value: Any) -> int | None:
+    try:
+        return _coerce_optional_int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _format_transformation_edges(value: Any) -> Any:
+    if isinstance(value, list):
+        return ", ".join(str(item) for item in value)
+    return value
+
+
+def _active_schema_rows_for_gui(schema_frame: pd.DataFrame) -> pd.DataFrame:
+    if schema_frame.empty:
+        return pd.DataFrame(columns=schema_frame.columns)
+    working = schema_frame.copy(deep=False)
+    if "enabled" not in working.columns:
+        working["enabled"] = True
+    return working.loc[working["enabled"].map(_coerce_enabled_flag)].copy(deep=False)
+
+
+def _schema_columns_by_role(schema_frame: pd.DataFrame, role: ColumnRole) -> list[str]:
+    if schema_frame.empty or "role" not in schema_frame.columns:
+        return []
+    name_column = "name" if "name" in schema_frame.columns else schema_frame.columns[0]
+    return (
+        schema_frame.loc[
+            schema_frame["role"].astype(str).str.strip().str.lower().eq(role.value),
+            name_column,
+        ]
+        .dropna()
+        .astype(str)
+        .str.strip()
+        .replace("", pd.NA)
+        .dropna()
+        .tolist()
+    )
+
+
+def _coerce_enabled_flag(value: Any) -> bool:
+    if value is None:
+        return False
+    try:
+        if pd.isna(value):
+            return False
+    except (TypeError, ValueError):
+        pass
+    if isinstance(value, str):
+        return value.strip().lower() not in {"", "0", "false", "no", "off"}
+    return bool(value)
+
+
+def _has_numeric_outliers(values: pd.Series) -> bool:
+    if len(values) < 20:
+        return False
+    q1 = values.quantile(0.25)
+    q3 = values.quantile(0.75)
+    iqr = q3 - q1
+    if pd.isna(iqr) or iqr <= 0:
+        return False
+    lower = q1 - 3 * iqr
+    upper = q3 + 3 * iqr
+    return bool(((values < lower) | (values > upper)).mean() >= 0.01)
+
+
+def _looks_like_scorecard_or_logistic(*, model_type: str, target_mode: str) -> bool:
+    normalized_model = str(model_type).lower()
+    normalized_target = str(target_mode).lower()
+    return normalized_target == TargetMode.BINARY.value and (
+        "logistic" in normalized_model or "scorecard" in normalized_model
+    )
+
+
+def _is_time_aware_structure(data_structure: str) -> bool:
+    normalized = str(data_structure).lower()
+    return normalized in {
+        DataStructure.PANEL.value,
+        DataStructure.TIME_SERIES.value,
+    }
+
+
+def _split_transformation_source_columns(source_feature: str) -> list[str]:
+    return [item.strip() for item in str(source_feature).split(",") if item.strip()]
+
+
+def _transform_requires_numeric_source(transform_type: TransformationType) -> bool:
+    return transform_type not in {
+        TransformationType.RARE_CATEGORY_COLLAPSE,
+        TransformationType.FREQUENCY_ENCODING,
+        TransformationType.ORDINAL_ENCODING,
+        TransformationType.TARGET_ENCODING,
+        TransformationType.WOE_ENCODING,
+        TransformationType.BAD_RATE_ENCODING,
+        TransformationType.DATE_YEAR,
+        TransformationType.DATE_MONTH,
+        TransformationType.DATE_QUARTER,
+        TransformationType.DATE_MONTH_END_FLAG,
+        TransformationType.DATE_FISCAL_QUARTER,
+        TransformationType.DATE_AGE_DAYS,
+        TransformationType.DATE_AGE_MONTHS,
+        TransformationType.ROW_MISSING_COUNT,
+        TransformationType.ROW_MISSING_SHARE,
+        TransformationType.ANY_MISSING_FLAG,
+    }
+
+
+def _transform_requires_secondary_feature(transform_type: TransformationType) -> bool:
+    return transform_type in {
+        TransformationType.RATIO,
+        TransformationType.SAFE_RATIO,
+        TransformationType.MARGIN_RATIO,
+        TransformationType.DEBT_SERVICE_RATIO,
+        TransformationType.ADD,
+        TransformationType.SUBTRACT,
+        TransformationType.PRODUCT,
+        TransformationType.INTERACTION,
+    }
+
+
+def _transform_requires_time_structure(transform_type: TransformationType) -> bool:
+    return transform_type in {
+        TransformationType.LAG,
+        TransformationType.DIFFERENCE,
+        TransformationType.EWMA,
+        TransformationType.ROLLING_MEAN,
+        TransformationType.ROLLING_MEDIAN,
+        TransformationType.ROLLING_MIN,
+        TransformationType.ROLLING_MAX,
+        TransformationType.ROLLING_STD,
+        TransformationType.ROLLING_SUM,
+        TransformationType.ROLLING_RANGE,
+        TransformationType.ROLLING_CV,
+        TransformationType.ROLLING_SLOPE,
+        TransformationType.EXPANDING_MEAN,
+        TransformationType.CUMULATIVE_SUM,
+        TransformationType.CUMULATIVE_COUNT,
+        TransformationType.MONTHS_SINCE_EVENT,
+        TransformationType.CHANGE_FROM_BASELINE,
+        TransformationType.PCT_CHANGE,
+    }
+
+
+def _validation_output_name(
+    transform_type: TransformationType | None,
+    row: Mapping[str, Any],
+) -> str:
+    if transform_type is None:
+        return ""
+    source_feature = str(row.get("source_feature", "")).strip()
+    if not source_feature:
+        return ""
+    return _safe_resolve_transformation_output_name(
+        transform_type=transform_type,
+        source_feature=source_feature,
+        secondary_feature=_clean_text(row.get("secondary_feature", "")),
+        categorical_value=_clean_text(row.get("categorical_value", "")),
+        parameter_value=_safe_optional_float(row.get("parameter_value", "")),
+        window_size=_safe_optional_int(row.get("window_size", "")),
+        lag_periods=_safe_optional_int(row.get("lag_periods", "")),
+    )
 
 
 def build_gui_inputs_from_preset(preset_name: PresetName) -> GUIBuildInputs:
@@ -1266,28 +2145,7 @@ def build_workbook_allowed_values_frame() -> pd.DataFrame:
 def build_workbook_transform_catalog_frame() -> pd.DataFrame:
     """Returns a user-facing catalog for governed transformation setup."""
 
-    rows = [
-        {
-            "category": _transformation_category(transform_type),
-            "transform_type": transform_type.value,
-            "what_it_does": _transformation_meaning(transform_type),
-            "when_to_use": _transformation_use_case(transform_type),
-            "key_parameters": _transformation_parameter_guidance(transform_type),
-            "output_type": _transformation_output_type(transform_type),
-        }
-        for transform_type in TransformationType
-    ]
-    return pd.DataFrame(
-        rows,
-        columns=[
-            "category",
-            "transform_type",
-            "what_it_does",
-            "when_to_use",
-            "key_parameters",
-            "output_type",
-        ],
-    )
+    return build_transformation_recipe_catalog_frame()
 
 
 def build_workbook_examples_frame() -> pd.DataFrame:

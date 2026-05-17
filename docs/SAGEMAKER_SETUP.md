@@ -123,6 +123,47 @@ off, adds memory-estimate and dtype-optimization audit tables, trains on a
 configurable governed sample, scores the full file in chunks, and lets you
 choose Parquet or sampled tabular exports.
 
+Large Data Mode also records persistent source profiles, projected Parquet
+staging evidence, a large-data execution plan, transformation replay contract,
+feature pre-screening evidence, and split-aware governed-sample partitions.
+For repeated high-volume jobs, you can run a local worker queue from a separate
+VS Code Remote terminal:
+
+```bash
+quant-pd-worker --queue-dir artifacts/_job_queue --workers 1
+```
+
+With `Large-data worker mode` set to `auto`, Quant Studio uses that queue only
+when a fresh worker heartbeat is detected. Otherwise it falls back to the
+detached background process.
+
+Before testing a production-scale dataset, run the synthetic benchmark harness
+on the target SageMaker instance:
+
+```bash
+python scripts/benchmark_large_data.py --preset 1gb --output-root artifacts/benchmarks
+python scripts/benchmark_large_data.py --preset 10gb --output-root artifacts/benchmarks
+```
+
+The benchmark writes JSON and Markdown summaries with wall time, peak traced
+memory, artifact size, backend policy, phase timings, and any failure point.
+
+For audit-ready Large Data Mode acceptance evidence, run the certification
+harness on the same SageMaker instance class you expect to use:
+
+```bash
+python scripts/certify_large_data.py --preset smoke --model-scope small
+python scripts/certify_large_data.py --preset 1gb --model-scope certified
+python scripts/certify_large_data.py --preset 10gb --model-scope certified
+```
+
+The certification harness writes reports under
+`artifacts/certification/<timestamp>/`, including `certification_report.html`,
+`scenario_results.csv`, `model_capability_matrix.csv`,
+`effective_thresholds.json`, `environment_profile.json`, and `run_index.csv`.
+Use `--source-kind s3 --s3-uri s3://bucket/path/file.parquet` only when the
+SageMaker role or environment already has access to that object.
+
 ## Why The Virtual Environment Matters
 
 SageMaker JupyterLab and Code Editor images include their own Jupyter and

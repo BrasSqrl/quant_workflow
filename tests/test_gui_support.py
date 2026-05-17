@@ -18,6 +18,7 @@ from quant_pd_framework import (
     ScenarioShockOperation,
     SplitStrategy,
     TargetMode,
+    TransformationType,
 )
 from quant_pd_framework.gui_support import (
     GUIBuildInputs,
@@ -25,6 +26,10 @@ from quant_pd_framework.gui_support import (
     build_framework_config_from_editor,
     build_gui_inputs_from_preset,
     build_subset_search_feature_options,
+    build_transformation_recipe_catalog_frame,
+    build_transformation_recommendations,
+    build_transformation_row,
+    build_transformation_validation_frame,
     default_challengers_for_target_mode,
     format_model_family,
     frames_equivalent,
@@ -34,6 +39,8 @@ from quant_pd_framework.gui_support import (
     model_types_for_target_mode,
     parse_positive_values,
     parse_scenario_rows,
+    parse_transformation_frame,
+    transformation_recommendation_to_row,
 )
 
 
@@ -342,3 +349,142 @@ def test_build_subset_search_feature_options_includes_transformation_outputs() -
     assert "utilization_spline_df_3_basis_1" in options
     assert "utilization_spline_df_3_basis_2" in options
     assert "utilization_spline_df_3_basis_3" in options
+
+
+def test_transformation_recipe_catalog_covers_all_types() -> None:
+    catalog = build_transformation_recipe_catalog_frame()
+
+    assert set(catalog["transform_type"]) == {transform.value for transform in TransformationType}
+    assert {
+        "Outlier handling",
+        "Scaling / ranking",
+        "Distribution reshaping",
+        "Ratios / interactions",
+        "Panel / time features",
+        "Binning / WOE / encoding",
+        "Date features",
+        "Missingness features",
+    }.issubset(set(catalog["recipe_group"]))
+    assert set(catalog["large_data_status"]).issubset(
+        {"compiled", "sample_only", "unsupported"}
+    )
+
+
+def test_transformation_recommendations_detect_profile_patterns() -> None:
+    row_count = 120
+    dataframe = pd.DataFrame(
+        {
+            "as_of_date": pd.date_range("2024-01-01", periods=row_count, freq="D"),
+            "loan_id": [f"L{index % 10:03d}" for index in range(row_count)],
+            "income": [float(index + 1) for index in range(row_count - 3)]
+            + [10000.0, 12000.0, 15000.0],
+            "balance": [float(index % 30 + 1) for index in range(row_count)],
+            "industry": [f"industry_{index % 60:02d}" for index in range(row_count)],
+            "default_status": [0, 1] * (row_count // 2),
+        }
+    )
+    schema_frame = build_column_editor_frame(dataframe)
+    schema_frame.loc[schema_frame["name"] == "as_of_date", "role"] = ColumnRole.DATE.value
+    schema_frame.loc[schema_frame["name"] == "loan_id", "role"] = ColumnRole.IDENTIFIER.value
+    schema_frame.loc[
+        schema_frame["name"] == "default_status",
+        "role",
+    ] = ColumnRole.TARGET_SOURCE.value
+
+    recommendations = build_transformation_recommendations(
+        dataframe,
+        schema_frame,
+        target_mode=TargetMode.BINARY.value,
+        model_type=ModelType.SCORECARD_LOGISTIC_REGRESSION.value,
+        data_structure=DataStructure.PANEL.value,
+    )
+
+    recommended_types = set(recommendations["transform_type"])
+    assert TransformationType.WINSORIZE.value in recommended_types
+    assert TransformationType.QUANTILE_BINS.value in recommended_types
+    assert TransformationType.WOE_ENCODING.value in recommended_types
+    assert TransformationType.RARE_CATEGORY_COLLAPSE.value in recommended_types
+    assert TransformationType.FREQUENCY_ENCODING.value in recommended_types
+    assert TransformationType.DATE_MONTH.value in recommended_types
+    assert TransformationType.LAG.value in recommended_types
+    assert TransformationType.ROLLING_MEAN.value in recommended_types
+
+
+def test_transformation_row_helpers_remain_parse_compatible() -> None:
+    row = build_transformation_row(
+        transform_type=TransformationType.SAFE_RATIO,
+        source_feature="ebitda",
+        secondary_feature="debt_service",
+        notes="Coverage ratio.",
+    )
+
+    config = parse_transformation_frame(pd.DataFrame([row]))
+
+    assert config.enabled is True
+    assert config.transformations[0].transform_type == TransformationType.SAFE_RATIO
+    assert config.transformations[0].secondary_feature == "debt_service"
+    assert config.transformations[0].output_feature == "ebitda_safe_over_debt_service"
+
+
+def test_transformation_recommendation_to_row_remains_parse_compatible() -> None:
+    recommendation = {
+        "transform_type": TransformationType.WINSORIZE.value,
+        "source_feature": "income",
+        "lower_quantile": 0.01,
+        "upper_quantile": 0.99,
+        "reason": "Outlier screen.",
+    }
+
+    row = transformation_recommendation_to_row(recommendation)
+    config = parse_transformation_frame(pd.DataFrame([row]))
+
+    assert config.transformations[0].generated_automatically is True
+    assert config.transformations[0].lower_quantile == 0.01
+    assert config.transformations[0].upper_quantile == 0.99
+
+
+def test_transformation_validation_flags_target_and_time_requirements() -> None:
+    dataframe = pd.DataFrame(
+        {
+            "balance": [100.0, 150.0, 200.0],
+            "default_status": [0, 1, 0],
+        }
+    )
+    schema_frame = build_column_editor_frame(dataframe)
+    schema_frame.loc[
+        schema_frame["name"] == "default_status",
+        "role",
+    ] = ColumnRole.TARGET_SOURCE.value
+    rows = pd.DataFrame(
+        [
+            build_transformation_row(
+                transform_type=TransformationType.WOE_ENCODING,
+                source_feature="balance",
+                parameter_value=5,
+            ),
+            build_transformation_row(
+                transform_type=TransformationType.LAG,
+                source_feature="balance",
+                lag_periods=1,
+            ),
+        ]
+    )
+
+    validation = build_transformation_validation_frame(
+        rows,
+        dataframe,
+        schema_frame,
+        target_mode=TargetMode.CONTINUOUS.value,
+        data_structure=DataStructure.CROSS_SECTIONAL.value,
+    )
+
+    woe_row = validation.loc[
+        validation["transform_type"].eq(TransformationType.WOE_ENCODING.value)
+    ].iloc[0]
+    lag_row = validation.loc[
+        validation["transform_type"].eq(TransformationType.LAG.value)
+    ].iloc[0]
+    assert woe_row["status"] == "blocker"
+    assert "binary target" in woe_row["message"]
+    assert lag_row["status"] == "warning"
+    assert "panel/time-series" in lag_row["message"]

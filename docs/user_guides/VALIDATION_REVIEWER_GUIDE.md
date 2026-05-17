@@ -28,6 +28,11 @@ traceability map. The Feature Lineage and Dossier tabs provide the feature-level
 audit map and a narrative model-development package. Use the exported run folder
 when reviewing offline.
 
+Step 4 also includes the `Run Registry` panel. Use it to find prior completed
+or known failed runs, confirm the artifact root, inspect reviewer status, and
+review the audit trail for high-value actions such as profile loading, run
+completion, package downloads, and review-record saves.
+
 The Decision Room is the default Step 5 landing tab. It is intended for a live
 review meeting: start there for the recommendation, attention items, top
 drivers, key artifacts, and next actions, then move into the technical tabs
@@ -50,7 +55,8 @@ when a reviewer needs supporting evidence.
 13. Review `evidence_traceability_map` when distributing artifacts to other reviewers.
 14. Review `feature_lineage_map` for source features, transformations, imputation, selection rationale, and documentation gaps.
 15. Review warnings, run debug trace, and diagnostic registry.
-16. Record reviewer notes and exceptions.
+16. Review the Step 4 run registry and audit trail when confirming run lineage.
+17. Record reviewer notes and exceptions.
 
 ## Execution Mode Review
 
@@ -98,6 +104,9 @@ For larger runs, distinguish model-fitting data from diagnostic/display data:
 Important evidence:
 
 - `metadata/run_debug_trace.json`
+- `metadata/audit_events.jsonl`
+- `artifacts/_run_registry/run_registry.json`
+- `artifacts/_run_registry/audit_events.jsonl`
 - `tables/diagnostics/large_data_memory_estimate.*`
 - `tables/diagnostics/dtype_optimization.*` when dtype optimization changed columns
 - `tables/diagnostics/categorical_cardinality_profile.*`

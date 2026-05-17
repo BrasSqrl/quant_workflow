@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -15,11 +16,22 @@ from ..large_data import (
     DatasetHandle,
     build_memory_estimate_table,
     convert_csv_to_parquet,
+    materialize_projected_parquet,
     optimize_dataframe_dtypes,
+    profile_dataset_handle_cached,
     read_dataset_sample,
     read_tabular_path,
     stage_large_data_file,
 )
+from ..large_data_enterprise import (
+    record_large_data_execution_plan,
+    record_large_data_transformation_contract,
+)
+from ..large_data_policy import (
+    build_large_data_override_audit,
+    resolve_large_data_certification,
+)
+from ..large_data_runtime import DatasetProfile, PreparedDatasetManifest
 
 INPUT_SOURCE_METADATA_ATTR = "quant_studio_input_source"
 
@@ -80,11 +92,20 @@ class IngestionStep(BasePipelineStep):
                 handle,
                 chunk_rows=performance.csv_conversion_chunk_rows,
                 compression=artifacts.parquet_compression,
+                s3_cache_dir=Path(performance.s3_local_cache_dir),
             )
         context.large_data_handle = active_handle
         context.metadata["input_type"] = "large_data_file"
         context.metadata["input_source"] = dict(handle.metadata)
         context.metadata["large_data_handle"] = active_handle.to_metadata()
+        self._record_large_data_profile(context, active_handle)
+        record_large_data_transformation_contract(context)
+        certification = self._record_large_data_certification(context, active_handle)
+        record_large_data_execution_plan(
+            context,
+            certification,
+            source_identifier=active_handle.source_identifier,
+        )
         if active_handle.staging_metadata:
             context.metadata["csv_to_parquet_conversion"] = active_handle.staging_metadata
             context.diagnostics_tables["csv_to_parquet_conversion"] = pd.DataFrame(
@@ -92,6 +113,17 @@ class IngestionStep(BasePipelineStep):
             )
 
         projected_columns = self._projected_source_columns(context, active_handle)
+        active_handle = self._materialize_projected_dataset(
+            context,
+            active_handle,
+            projected_columns,
+        )
+        context.large_data_handle = active_handle
+        record_large_data_execution_plan(
+            context,
+            certification,
+            source_identifier=active_handle.source_identifier,
+        )
         sample_rows = int(performance.large_data_training_sample_rows)
         dataframe = read_dataset_sample(
             active_handle,
@@ -105,8 +137,128 @@ class IngestionStep(BasePipelineStep):
             "projected_columns": projected_columns or list(dataframe.columns),
             "sample_strategy": "duckdb_reservoir_or_head_fallback",
         }
-        self._write_sample_development_artifacts(context, dataframe)
+        sample_path = self._write_sample_development_artifacts(context, dataframe)
+        self._record_prepared_dataset_manifest(
+            context=context,
+            active_handle=active_handle,
+            sample_path=sample_path,
+            projected_columns=projected_columns or list(dataframe.columns),
+        )
         return dataframe
+
+    def _record_large_data_profile(
+        self,
+        context: PipelineContext,
+        handle: DatasetHandle,
+    ) -> None:
+        output_root = context.config.artifacts.output_root / context.run_id
+        profile_dir = build_export_path_layout(
+            context.config.artifacts,
+            output_root,
+        ).metadata_dir / "large_data"
+        profile_dir.mkdir(parents=True, exist_ok=True)
+        profile = profile_dataset_handle_cached(
+            handle,
+            preview_rows=context.config.performance.ui_preview_rows,
+            cache_enabled=context.config.performance.large_data_profile_cache_enabled,
+        )
+        profile_path = profile_dir / "dataset_profile.json"
+        profile_path.write_text(
+            json.dumps(profile, indent=2, default=str),
+            encoding="utf-8",
+        )
+        context.metadata["large_data_profile"] = profile
+        context.metadata["large_data_profile_path"] = str(profile_path)
+        context.artifacts["large_data_profile"] = profile_path
+        context.artifacts["large_data_metadata_dir"] = profile_dir
+        context.diagnostics_tables["large_data_source_profile"] = pd.DataFrame(
+            [
+                {
+                    "source_kind": profile.get("source_kind"),
+                    "source_suffix": profile.get("source_suffix"),
+                    "active_suffix": profile.get("active_suffix"),
+                    "row_count": profile.get("row_count"),
+                    "column_count": profile.get("column_count"),
+                    "preview_rows": profile.get("preview_rows"),
+                    "profile_cache_key": profile.get("profile_cache_key"),
+                    "profile_cache_hit": profile.get("profile_cache_hit"),
+                }
+            ]
+        )
+        context.metadata["large_data_dataset_profile"] = DatasetProfile.from_profile_dict(
+            profile
+        ).to_dict()
+
+    def _record_large_data_certification(
+        self,
+        context: PipelineContext,
+        handle: DatasetHandle,
+    ):
+        certification = resolve_large_data_certification(
+            context.config.model.model_type,
+            context.config.performance,
+        )
+        certification_metadata = certification.to_metadata()
+        certification_metadata["source_identifier"] = handle.source_identifier
+        context.metadata["large_data_model_certification"] = certification_metadata
+        context.diagnostics_tables["large_data_model_certification"] = pd.DataFrame(
+            [certification_metadata]
+        )
+        if certification.status.value == "blocked":
+            raise ValueError(
+                "The selected model is blocked for this Large Data Mode policy. "
+                f"{certification.recommendation}"
+            )
+        if certification.status.value == "sample_fit_full_score":
+            context.warn(
+                "Large Data Mode will fit this model on the governed sample and score "
+                "the full file in chunks because the selected model is not certified "
+                "for optimized full-data fitting."
+            )
+        if certification.status.value == "experimental_full_data_override":
+            source_metadata = dict(handle.metadata)
+            audit = build_large_data_override_audit(
+                certification,
+                source_metadata=source_metadata,
+            )
+            context.metadata["large_data_override_audit"] = audit
+            context.diagnostics_tables["large_data_override_audit"] = pd.DataFrame([audit])
+            context.warn(
+                "A forced large-data model override is active. This path is audited "
+                "and is not treated as certified."
+            )
+        return certification
+
+    def _materialize_projected_dataset(
+        self,
+        context: PipelineContext,
+        handle: DatasetHandle,
+        projected_columns: list[str] | None,
+    ) -> DatasetHandle:
+        performance = self._performance_config(context)
+        if not (
+            performance.large_data_mode
+            and performance.large_data_project_columns
+            and projected_columns
+        ):
+            return handle
+        output_root = context.config.artifacts.output_root / context.run_id
+        layout = build_export_path_layout(context.config.artifacts, output_root)
+        destination_path = layout.data_dir / "prepared_large_data" / "projected_dataset.parquet"
+        projected_handle, metadata = materialize_projected_parquet(
+            handle,
+            columns=projected_columns,
+            destination_path=destination_path,
+            compression=context.config.artifacts.parquet_compression,
+            duckdb_threads=performance.duckdb_threads,
+            duckdb_memory_limit_gb=performance.duckdb_memory_limit_gb,
+        )
+        context.metadata["large_data_projected_dataset"] = metadata
+        context.diagnostics_tables["large_data_projected_dataset"] = pd.DataFrame([metadata])
+        if metadata.get("materialized"):
+            context.artifacts["large_data_projected_dataset"] = destination_path
+            context.metadata["large_data_handle"] = projected_handle.to_metadata()
+        return projected_handle
 
     def _describe_file_input(self, path: Path) -> dict[str, str | int]:
         if not path.exists():
@@ -205,7 +357,7 @@ class IngestionStep(BasePipelineStep):
         self,
         context: PipelineContext,
         dataframe: pd.DataFrame,
-    ) -> None:
+    ) -> Path | None:
         output_root = context.config.artifacts.output_root / context.run_id
         sample_dir = (
             build_export_path_layout(
@@ -224,10 +376,79 @@ class IngestionStep(BasePipelineStep):
             )
             context.artifacts["sample_development_dir"] = sample_dir
             context.artifacts["large_data_training_sample"] = sample_path
+            return sample_path
         except Exception as exc:
             warn = getattr(context, "warn", None)
             if callable(warn):
                 warn(f"Could not write large-data training sample artifact: {exc}")
+            return None
+
+    def _record_prepared_dataset_manifest(
+        self,
+        *,
+        context: PipelineContext,
+        active_handle: DatasetHandle,
+        sample_path: Path | None,
+        projected_columns: list[str],
+    ) -> None:
+        output_root = context.config.artifacts.output_root / context.run_id
+        layout = build_export_path_layout(context.config.artifacts, output_root)
+        manifest_dir = layout.metadata_dir / "large_data"
+        manifest_dir.mkdir(parents=True, exist_ok=True)
+        prepared_manifest = PreparedDatasetManifest(
+            run_id=context.run_id,
+            source_identifier=active_handle.source_identifier,
+            staged_path=str(active_handle.active_path),
+            sample_path=str(sample_path) if sample_path is not None else "",
+            projected_columns=list(projected_columns),
+            transformation_contract_keys=[
+                spec.output_feature
+                for spec in context.config.transformations.transformations
+                if spec.enabled
+            ],
+            target_column=context.config.target.output_column,
+            row_count=context.metadata.get("large_data_profile", {}).get("row_count"),
+            cache_key=str(
+                context.metadata.get("large_data_dataset_profile", {}).get("cache_key", "")
+            ),
+            profile_cache_key=str(
+                context.metadata.get("large_data_profile", {}).get("profile_cache_key", "")
+            ),
+            partition_columns=list(
+                context.metadata.get("partitioned_dataset_manifest", {}).get(
+                    "partition_columns",
+                    [],
+                )
+            ),
+            partition_paths=dict(
+                context.metadata.get("partitioned_dataset_manifest", {}).get(
+                    "partition_paths",
+                    {},
+                )
+            ),
+            artifact_size_estimates={
+                "staged_path_bytes": self._path_size(active_handle.active_path),
+                "sample_path_bytes": self._path_size(sample_path),
+            },
+        )
+        manifest_path = manifest_dir / "prepared_dataset_manifest.json"
+        manifest_path.write_text(
+            json.dumps(prepared_manifest.to_dict(), indent=2, default=str),
+            encoding="utf-8",
+        )
+        context.metadata["prepared_dataset_manifest"] = prepared_manifest.to_dict()
+        context.artifacts["prepared_dataset_manifest"] = manifest_path
+        context.diagnostics_tables["prepared_dataset_manifest"] = pd.DataFrame(
+            [prepared_manifest.to_dict()]
+        )
+
+    def _path_size(self, path: Path | None) -> int | None:
+        if path is None:
+            return None
+        try:
+            return int(path.stat().st_size)
+        except OSError:
+            return None
 
     def _apply_large_data_controls(
         self,

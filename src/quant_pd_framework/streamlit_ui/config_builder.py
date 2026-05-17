@@ -139,6 +139,7 @@ def build_preview_configuration(
                 regularization_alpha=float(values["regularization_alpha"]),
                 tree_n_estimators=int(values["tree_n_estimators"]),
                 tree_max_depth=values["tree_max_depth"],
+                n_jobs=int(values["model_n_jobs"]),
                 gee_group_column=values["gee_group_column"],
                 mixed_effects_group_column=values["mixed_effects_group_column"],
                 spline_n_knots=int(values["spline_n_knots"]),

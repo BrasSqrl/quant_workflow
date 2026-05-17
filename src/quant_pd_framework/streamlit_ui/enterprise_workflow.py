@@ -10,6 +10,7 @@ from typing import Any
 import pandas as pd
 import streamlit as st
 
+from quant_pd_framework.large_data_policy import resolve_large_data_certification
 from quant_pd_framework.presentation import format_metric_value
 from quant_pd_framework.streamlit_ui.artifact_summary import build_artifact_summary_frame
 from quant_pd_framework.streamlit_ui.state import prepare_table_for_display
@@ -542,8 +543,13 @@ def build_resource_readiness_check(
 ) -> tuple[list[dict[str, str]], pd.DataFrame]:
     """Builds memory, disk, and expensive-option planning checks before run."""
 
+    display_row_count = _profile_row_count(dataframe)
     memory_mb = _dataframe_memory_mb(dataframe)
     source_file_mb = _source_file_size_mb(dataframe)
+    certification = resolve_large_data_certification(
+        preview_config.model.model_type,
+        preview_config.performance,
+    )
     dataframe_multiplier = float(preview_config.performance.memory_estimate_dataframe_multiplier)
     file_multiplier = float(preview_config.performance.memory_estimate_file_multiplier)
     working_data_multiplier = dataframe_multiplier
@@ -568,6 +574,63 @@ def build_resource_readiness_check(
         large_data_mode=large_data_mode,
     )
     rows = [
+        _resource_row(
+            "Large-data model certification",
+            "pass"
+            if certification.status.value == "full_data_certified"
+            else (
+                "warning"
+                if certification.status.value
+                in {"sample_fit_full_score", "experimental_full_data_override"}
+                else "fail"
+            ),
+            certification.status.value.replace("_", " ").title(),
+            certification.recommendation,
+        ),
+        _resource_row(
+            "Large-data backend",
+            "pass",
+            preview_config.performance.large_data_backend.value.replace("_", " ").title(),
+            "Auto is recommended unless support is debugging a specific execution path.",
+        ),
+        _resource_row(
+            "Profile cache",
+            "pass" if preview_config.performance.large_data_profile_cache_enabled else "warning",
+            "Enabled"
+            if preview_config.performance.large_data_profile_cache_enabled
+            else "Disabled",
+            "Enable profile caching for repeated S3/Data_Load runs on unchanged large files.",
+        ),
+        _resource_row(
+            "Worker dispatch",
+            "pass",
+            preview_config.performance.large_data_worker_mode.value.replace("_", " ").title(),
+            (
+                "Auto uses a local worker service when detected and otherwise starts "
+                "a detached process."
+            ),
+        ),
+        _resource_row(
+            "Feature pre-screening",
+            "pass",
+            (
+                "Advisory"
+                if preview_config.performance.large_data_prescreen_enabled
+                and not preview_config.performance.large_data_auto_apply_prescreen
+                else (
+                    "Auto-apply"
+                    if preview_config.performance.large_data_auto_apply_prescreen
+                    else "Off"
+                )
+            ),
+            "Advisory mode records evidence without removing user-selected features.",
+        ),
+        _resource_row(
+            "Source profile rows",
+            "pass",
+            f"{display_row_count:,}" if display_row_count is not None else "Preview only",
+            "Large files use profile metadata and capped previews in the GUI.",
+        ),
         _resource_row(
             "Memory estimate",
             (
@@ -652,6 +715,10 @@ def build_resource_readiness_check(
         {
             "label": "Recommended profile",
             "value": recommended_profile,
+        },
+        {
+            "label": "Model certification",
+            "value": certification.status.value.replace("_", " ").title(),
         },
     ]
     return cards, pd.DataFrame(rows)
@@ -1068,13 +1135,32 @@ def _estimate_table_output_mb(memory_mb: float, preview_config: Any) -> float:
 
 
 def _source_file_size_mb(dataframe: pd.DataFrame) -> float:
-    metadata = dataframe.attrs.get("quant_studio_input_source", {})
+    metadata = _source_metadata(dataframe)
     if not isinstance(metadata, dict):
         return 0.0
     try:
         return float(metadata.get("size_bytes") or 0) / (1024 * 1024)
     except (TypeError, ValueError):
         return 0.0
+
+
+def _source_metadata(dataframe: pd.DataFrame) -> dict[str, Any]:
+    metadata = dataframe.attrs.get("quant_studio_input_source", {})
+    if not isinstance(metadata, dict):
+        return {}
+    return metadata
+
+
+def _profile_row_count(dataframe: pd.DataFrame) -> int | None:
+    metadata = _source_metadata(dataframe)
+    profile = metadata.get("large_data_profile", {})
+    if not isinstance(profile, dict):
+        return len(dataframe)
+    row_count = profile.get("row_count")
+    try:
+        return int(row_count) if row_count not in {None, ""} else len(dataframe)
+    except (TypeError, ValueError):
+        return len(dataframe)
 
 
 def _high_cost_option_rows(preview_config: Any) -> list[dict[str, str]]:

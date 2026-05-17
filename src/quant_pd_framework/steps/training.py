@@ -11,6 +11,7 @@ import pandas as pd
 from ..base import BasePipelineStep
 from ..config import ExecutionMode, ModelType
 from ..context import PipelineContext
+from ..large_data_policy import resolve_large_data_certification
 from ..models import build_model_adapter
 
 
@@ -79,6 +80,7 @@ class ModelTrainingStep(BasePipelineStep):
         context.model = model_adapter
         context.model_summary = model_adapter.summary_text
         context.metadata["model_reused"] = False
+        self._record_large_data_fit_metadata(context, train_frame)
         self._publish_model_numerical_findings(context, model_adapter, loaded_model=False)
         return context
 
@@ -103,8 +105,51 @@ class ModelTrainingStep(BasePipelineStep):
         )
         context.metadata["loaded_model_path"] = str(resolved_path)
         context.metadata["model_reused"] = True
+        fit_frame = context.split_frames.get("train")
+        if fit_frame is None:
+            fit_frame = next(iter(context.split_frames.values()), None)
+        if fit_frame is None:
+            fit_frame = context.working_data
+        if fit_frame is not None:
+            self._record_large_data_fit_metadata(context, fit_frame, loaded_model=True)
         self._publish_model_numerical_findings(context, model_adapter, loaded_model=True)
         return context
+
+    def _record_large_data_fit_metadata(
+        self,
+        context: PipelineContext,
+        train_frame: pd.DataFrame,
+        *,
+        loaded_model: bool = False,
+    ) -> None:
+        performance = context.config.performance
+        if not performance.large_data_mode:
+            return
+        certification = resolve_large_data_certification(
+            context.config.model.model_type,
+            performance,
+        )
+        sample_info = context.metadata.get("large_data_sample", {})
+        payload = {
+            **certification.to_metadata(),
+            "certified_fit_enabled": bool(performance.large_data_certified_fit_enabled),
+            "loaded_model": bool(loaded_model),
+            "fit_rows_observed_by_estimator": int(len(train_frame)),
+            "fit_feature_count": int(len(context.feature_columns)),
+            "sample_rows_requested": sample_info.get("sample_rows_requested"),
+            "sample_rows_loaded": sample_info.get("sample_rows_loaded"),
+            "fit_basis": (
+                "loaded_existing_model"
+                if loaded_model
+                else (
+                    "governed_sample_with_full_file_scoring"
+                    if certification.status.value != "full_data_certified"
+                    else "certified_large_data_candidate_with_governed_sample_fallback"
+                )
+            ),
+        }
+        context.metadata["large_data_fit_record"] = payload
+        context.diagnostics_tables["large_data_fit_record"] = pd.DataFrame([payload])
 
     def _publish_model_numerical_findings(
         self,

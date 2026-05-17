@@ -119,9 +119,11 @@ repeated observations over time.
 For files above roughly 1 GB:
 
 - place data in `Data_Load/` instead of browser upload
+- or enter an S3 object path such as `s3://bucket/path/file.csv`
 - prefer Parquet
 - enable `Large Data Mode`
 - consider converting CSV to Parquet before ingestion
+- review the large-data backend and model policy before running complex models
 - use sampled exports when full tabular outputs would be too large
 - review [Large Data Playbook](./LARGE_DATA_PLAYBOOK.md)
 
@@ -133,4 +135,4 @@ For files above roughly 1 GB:
 | Target has one class | Positive values are wrong or data is filtered too narrowly | Check target mapping and source data. |
 | Existing model scoring fails | New data does not have the saved model's expected raw features | Provide matching run config or add missing source features. |
 | Model performance is suspiciously high | Leakage, identifiers, or post-event fields are enabled | Review features and disable invalid fields. |
-| Memory pressure | File is too large for eager pandas loading | Use `Data_Load/`, Parquet, Large Data Mode, and sampled exports. |
+| Memory pressure | File is too large for eager pandas loading | Use `Data_Load/` or S3 path, Parquet staging, Large Data Mode, and sampled exports. |

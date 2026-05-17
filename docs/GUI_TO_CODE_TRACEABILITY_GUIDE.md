@@ -67,7 +67,7 @@ Enterprise UX chain:
 
 | GUI location | Main controls | Config or runtime target | Code path | Audit surface |
 | --- | --- | --- | --- | --- |
-| Step 1 `Dataset & Schema` data-source section | bundled sample, `Data_Load/` file selection, CSV/Excel/Parquet upload, `Large Data Mode` | runtime dataframe or file-backed `DatasetHandle` plus input-source metadata | `select_input_dataframe`, `list_data_load_files`, `load_data_load_dataframe`, `load_uploaded_dataframe_bytes`, `build_dataset_handle` | `data/input/input_snapshot.csv`, `data/input/input_snapshot.parquet`, `data/sample_development/`, `data/full_data_scoring/`, `metadata/large_data/`, `input_shape`, `input_source::*` rows in `metadata/reproducibility_manifest.json` |
+| Step 1 `Dataset & Schema` data-source section | bundled sample, `Data_Load/` file selection, local file path, S3 path, CSV/Excel/Parquet upload, `Large Data Mode` | runtime dataframe or file-backed local/S3 `DatasetHandle` plus input-source metadata | `select_input_dataframe`, `list_data_load_files`, `load_data_load_dataframe`, `load_uploaded_dataframe_bytes`, `build_dataset_handle`, `build_s3_dataset_handle` | `data/input/input_snapshot.csv`, `data/input/input_snapshot.parquet`, `data/sample_development/`, `data/full_data_scoring/`, `metadata/large_data/`, `input_shape`, `input_source::*` rows in `metadata/reproducibility_manifest.json` |
 
 Notes:
 
@@ -79,8 +79,13 @@ Notes:
   The app scans it on demand and exposes supported files in a dropdown.
 - Data_Load CSV files can be converted to Parquet from the UI before selection
   when a more efficient local file format is preferred.
-- When `Large Data Mode` is enabled, Data_Load files are previewed from disk
-  and the full file is not loaded into pandas before execution.
+- When `Large Data Mode` is enabled, Data_Load and S3 files are previewed from
+  disk/object storage and the full file is not loaded into pandas before
+  execution. S3 credentials come from the runtime environment.
+- Large Data Mode source profiling uses persistent profile-cache metadata under
+  `.quant_studio_cache/profiles/` when enabled. The exported
+  `metadata/large_data/dataset_profile.json` records the cache key and whether
+  the current run was a cache hit or miss.
 
 ## 2. Column Designer
 
@@ -124,7 +129,7 @@ The main workspace now includes dedicated sections beyond the column designer.
 | --- | --- | --- | --- |
 | `Data Review` | runtime-only dataset/schema review | `build_data_contract_scorecard(...)`, `build_potential_leakage_flags(...)`, `build_schema_fingerprint(...)` | visible pre-run data contract, leakage, and fingerprint tables |
 | `Feature Dictionary` | `FeatureDictionaryConfig.entries` | `parse_feature_dictionary_frame(...)`, diagnostics feature-dictionary output | `feature_dictionary`, `reports/validation_pack.md` |
-| `Transformations` | `TransformationConfig.transformations` | `parse_transformation_frame(...)`, `TransformationStep`, `build_transformation_preview(...)` | `governed_transformations`, `interaction_candidates`; visible before/after preview for one selected transform |
+| `Transformation Studio` | `TransformationConfig.transformations` and advanced interaction fields | `build_transformation_recommendations(...)`, `build_transformation_recipe_catalog_frame(...)`, `build_transformation_validation_frame(...)`, `parse_transformation_frame(...)`, `TransformationStep`, `build_transformation_preview(...)` | `governed_transformations`, `interaction_candidates`; recommendation decisions, recipe rows, pipeline validation, and visible before/after preview for one selected transform |
 | `Template Workbook` | none directly; imports/exports editor tables | `build_template_workbook_bytes(...)`, `load_template_workbook(...)`, `streamlit_ui/workspace.py` | `config/configuration_template.xlsx` with instructions, allowed values, transform catalog, examples, required-column notes, comments, and dropdown validation |
 
 Implementation note:
@@ -134,13 +139,23 @@ Implementation note:
 - The build workspace and result surfaces now render one active section at a
   time instead of rendering every tab body on every rerun.
 
-The transformation editor supports the expanded transformation catalog as values
-of `TransformationSpec.transform_type`. The catalog includes numeric shape
+Transformation Studio is the only live UI location for creating or modifying
+governed transformations. It has four subareas: `Recommendations` for
+profile-driven suggestions, `Recipe Library` for predefined transformation
+cards, `Custom Builder` for guided one-row creation, and `Pipeline Review` for
+ordered validation plus the advanced workbook-compatible table editor. Accepted
+recommendations and recipe rows still write to the same `transformations`
+frame used by saved profiles, workbook upload/download, generated config, and
+feature-subset search.
+
+The transformation catalog supports values of
+`TransformationSpec.transform_type`. The catalog includes numeric shape
 changes, scaling/ranking, ratios and arithmetic combinations, interactions,
 panel/time transforms, automatic and manual bins, WoE/bad-rate/target/category
 encodings, date features, and row-level missingness signals. The workbook
-`transform_catalog` sheet is the offline reference for which parameter columns
-matter for each option.
+`transform_catalog` sheet now includes the Transformation Studio recipe group
+and large-data status so offline reviewers can map workbook rows back to the
+guided UI.
 
 ## 4. Workspace Mode
 
@@ -350,6 +365,17 @@ These controls only matter when `ExecutionConfig.mode` is
 | --- | --- | --- |
 | `Default segment column` | `DiagnosticConfig.default_segment_column` | `DiagnosticsStep._add_segment_outputs` |
 | `Large Data Mode` | `PerformanceConfig.large_data_mode` | Data Source file-backed intake, safer GUI defaults, sampled diagnostics, and chunked full-data scoring |
+| `Large-data backend` | `PerformanceConfig.large_data_backend` | large-data certification and backend selection metadata |
+| `Large-data model policy` | `PerformanceConfig.large_data_model_policy` | certified-only, sample-fallback, or force-override policy |
+| `I understand this complex large-data model path is experimental` | `PerformanceConfig.large_data_override_confirmed` | required for forced complex-model override |
+| `Override reason` | `PerformanceConfig.large_data_override_reason` | exported override audit rationale |
+| `S3 local staging cache` | `PerformanceConfig.s3_local_cache_dir` | local cache for staged S3 CSV/Parquet sources |
+| `Use persistent large-data profile cache` | `PerformanceConfig.large_data_profile_cache_enabled` | `profile_dataset_handle_cached`, `metadata/large_data/dataset_profile.json` |
+| `Large-data partition strategy` | `PerformanceConfig.large_data_partition_strategy` | `record_partitioned_sample_manifest`, `metadata/large_data/partitioned_dataset_manifest.json` |
+| `Run large-data feature pre-screening` | `PerformanceConfig.large_data_prescreen_enabled` | `record_large_data_feature_screening`, `tables/feature_screening/large_data_feature_screening.*` |
+| `Apply large-data pre-screening recommendations` | `PerformanceConfig.large_data_auto_apply_prescreen` | optional feature exclusion recorded in `large_data_feature_screening_manifest` |
+| `Large-data worker mode` | `PerformanceConfig.large_data_worker_mode` | `start_large_data_background_workflow`, `queue_background_workflow`, `quant-pd-worker` |
+| `Enable certified large-data fit planner` | `PerformanceConfig.large_data_certified_fit_enabled` | `large_data_fit_record`, model certification metadata |
 | `Large-data diagnostic sample rows` | `PerformanceConfig.diagnostic_sample_rows` | diagnostics sampling helpers |
 | `Memory warning threshold` | `PerformanceConfig.memory_limit_gb` | `IngestionStep._record_memory_estimate` |
 | `Optimize dtypes during ingestion` | `PerformanceConfig.optimize_dtypes` | `IngestionStep._apply_large_data_controls` |
@@ -435,12 +461,6 @@ These controls only matter when `ExecutionConfig.mode` is
 | `Correlation threshold` | `VariableSelectionConfig.correlation_threshold` | `VariableSelectionStep` |
 | `Locked include features` | `VariableSelectionConfig.locked_include_features` | `VariableSelectionStep` |
 | `Locked exclude features` | `VariableSelectionConfig.locked_exclude_features` | `VariableSelectionStep` |
-| `Auto-screen interaction terms` | `TransformationConfig.auto_interactions_enabled` | `TransformationStep` |
-| `Numeric-numeric interactions` | `TransformationConfig.include_numeric_numeric_interactions` | `TransformationStep` |
-| `Categorical-numeric interactions` | `TransformationConfig.include_categorical_numeric_interactions` | `TransformationStep` |
-| `Max auto interactions` | `TransformationConfig.max_auto_interactions` | `TransformationStep` |
-| `Max categorical levels per feature` | `TransformationConfig.max_categorical_levels` | `TransformationStep` |
-| `Min interaction score` | `TransformationConfig.min_interaction_score` | `TransformationStep` |
 | `Imputation sensitivity testing` | `ImputationSensitivityConfig.enabled` | `DiagnosticsStep._add_imputation_sensitivity_outputs` |
 | `Imputation sensitivity split` | `ImputationSensitivityConfig.evaluation_split` | `DiagnosticsStep._add_imputation_sensitivity_outputs` |
 | `Alternative imputation policies` | `ImputationSensitivityConfig.alternative_policies` | `DiagnosticsStep._add_imputation_sensitivity_outputs` |
@@ -452,6 +472,12 @@ These controls only matter when `ExecutionConfig.mode` is
 | `Multiple-imputation feature cap` | `AdvancedImputationConfig.multiple_imputation_top_features` | `diagnostic_frameworks._add_imputation_framework_extensions` |
 | `Export documentation pack` | `DocumentationConfig.enabled` | `ArtifactExportStep` |
 | documentation text fields | `DocumentationConfig.*` | diagnostics metadata and documentation pack |
+
+Auto-generated interaction controls are no longer edited in Step 2. They live
+in Step 1 `Transformation Studio` > `Advanced Generation` so all governed and
+generated transformation settings are controlled in one place. Step 2 can still
+show downstream summaries, but it does not maintain a second editable copy of
+those fields.
 | `Export regulator-ready reports` | `RegulatoryReportConfig.enabled` | `ArtifactExportStep`, `reporting.py` |
 | `Export DOCX reports` | `RegulatoryReportConfig.export_docx` | regulator-ready report export |
 | `Export PDF reports` | `RegulatoryReportConfig.export_pdf` | regulator-ready report export |
@@ -570,12 +596,18 @@ The `Run Quant Model Workflow` button performs this chain:
 4. renders the execution-plan summary from `streamlit_ui/run_execution.py`
 5. chooses the correct dataframe or file-backed `DatasetHandle`
 6. creates a checkpointed run through `CheckpointedWorkflowRunner`
-7. runs each major stage in a subprocess-backed checkpoint sequence
-8. publishes live stage-flow events to `render_runtime_status(...)`
-9. records per-stage and per-step debug timing, shape snapshots, and memory estimates
-10. prunes checkpoint context files when `Keep all checkpoints` is off
-11. copies the checkpoint manifest into the final metadata folder
-12. stores a bounded snapshot for the result viewer
+7. for file-backed Large Data Mode full runs, starts a detached background job
+   or submits a worker-service queue manifest through
+   `start_large_data_background_workflow(...)` and polls `job_manifest.json`
+8. for normal and step-by-step runs, runs each major stage in a
+   subprocess-backed checkpoint sequence
+9. publishes live stage-flow events to `render_runtime_status(...)`
+10. records per-stage and per-step debug timing, shape snapshots, and memory estimates
+11. spills over-cap Large Data Mode dataframe checkpoint fields to Parquet table
+    references before joblib serialization
+12. prunes checkpoint context files when `Keep all checkpoints` is off
+13. copies the checkpoint manifest into the final metadata folder
+14. stores a bounded snapshot for the result viewer
 
 If a run fails, `streamlit_ui/error_guidance.py` maps the exception to a
 user-facing recovery message while preserving the original traceback in the GUI.
@@ -584,6 +616,9 @@ Relevant code path:
 
 - `build_framework_config_from_editor(...)`
 - `execute_workflow(...)`
+- `start_large_data_background_workflow(...)`
+- `quant_pd_framework.background_job_runner`
+- `quant_pd_framework.worker_service`
 - `CheckpointedWorkflowRunner(config=config).run_all(run_input)`
 - `python -m quant_pd_framework.run_stage --manifest ... --stage-id ...`
 - `QuantModelOrchestrator.run_context(...)`
@@ -611,6 +646,13 @@ For the stage-by-stage user-facing definition, see
 The controls under `Interactive Filters` do not change the model or rerun the
 pipeline. They only change the live display of exported run outputs.
 
+For Large Data Mode, full row-level prediction review uses
+`prediction_table_refs` in the run snapshot and the Step 4 `Full Row Browser`.
+That browser calls `query_table_page(...)`, `count_table_rows(...)`, and
+`distinct_column_values(...)` in `large_data_runtime.py` so filtering, sorting,
+and pagination happen against Parquet/CSV files through DuckDB instead of
+loading full prediction tables into Streamlit session state.
+
 Feature-subset-search runs intentionally use a different result viewer. That
 viewer emphasizes candidate ranking, target-appropriate comparison metrics,
 frontier charts, and comparison-only governance exports rather than prediction
@@ -633,6 +675,8 @@ These are presentation controls, not modeling controls.
 | GUI surface | Config or runtime target | Main implementation | Audit surface |
 | --- | --- | --- | --- |
 | `Artifact Explorer` | completed run artifact path map | `build_artifact_explorer_frame(...)`, `render_artifact_locations(...)` | artifact paths and file downloads |
+| `Run Registry` | configured artifact root | `run_registry.load_run_registry(...)`, `render_run_registry_panel(...)` | `artifacts/_run_registry/run_registry.json` |
+| `Audit Trail` | global and run-scoped audit JSONL | `run_registry.append_audit_event(...)`, `streamlit_ui.audit.record_gui_audit_event(...)` | `artifacts/_run_registry/audit_events.jsonl`, `metadata/audit_events.jsonl` |
 | `Reviewer / Approval Workspace` | reviewer name, approval status, notes, exceptions | `ReviewerRecord`, `render_reviewer_workspace(...)` | optional `review_workspace.json` in run folder |
 | `Download model card` | run snapshot plus reviewer record | `build_model_card_markdown(...)` | downloaded Markdown model card |
 

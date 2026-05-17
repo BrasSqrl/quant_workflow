@@ -54,6 +54,14 @@ from .config import (
 ODDS_RATIO_CLIP_BOUND = 40.0
 
 
+def _resolved_n_jobs(model_config: ModelConfig) -> int | None:
+    """Normalizes GUI CPU-thread settings for estimators that support n_jobs."""
+
+    if model_config.n_jobs == 0:
+        return -1
+    return model_config.n_jobs
+
+
 def _safe_odds_ratio(values: np.ndarray | list[float] | float) -> np.ndarray:
     """Exponentiates coefficients without emitting overflow warnings."""
 
@@ -1774,7 +1782,7 @@ class XGBoostAdapter(SklearnAdapter):
                 subsample=model_config.xgboost_subsample,
                 colsample_bytree=model_config.xgboost_colsample_bytree,
                 eval_metric="logloss",
-                n_jobs=1,
+                n_jobs=_resolved_n_jobs(model_config),
             )
             if target_mode == TargetMode.BINARY
             else XGBRegressor(
@@ -1784,7 +1792,7 @@ class XGBoostAdapter(SklearnAdapter):
                 max_depth=model_config.xgboost_max_depth,
                 subsample=model_config.xgboost_subsample,
                 colsample_bytree=model_config.xgboost_colsample_bytree,
-                n_jobs=1,
+                n_jobs=_resolved_n_jobs(model_config),
             )
         )
         super().__init__(
@@ -1823,14 +1831,14 @@ class RandomForestAdapter(SklearnAdapter):
                 max_depth=model_config.tree_max_depth,
                 class_weight=model_config.class_weight,
                 random_state=42,
-                n_jobs=1,
+                n_jobs=_resolved_n_jobs(model_config),
             )
             if target_mode == TargetMode.BINARY
             else RandomForestRegressor(
                 n_estimators=model_config.tree_n_estimators,
                 max_depth=model_config.tree_max_depth,
                 random_state=42,
-                n_jobs=1,
+                n_jobs=_resolved_n_jobs(model_config),
             )
         )
         super().__init__(
@@ -1868,14 +1876,14 @@ class ExtraTreesAdapter(SklearnAdapter):
                 max_depth=model_config.tree_max_depth,
                 class_weight=model_config.class_weight,
                 random_state=42,
-                n_jobs=1,
+                n_jobs=_resolved_n_jobs(model_config),
             )
             if target_mode == TargetMode.BINARY
             else ExtraTreesRegressor(
                 n_estimators=model_config.tree_n_estimators,
                 max_depth=model_config.tree_max_depth,
                 random_state=42,
-                n_jobs=1,
+                n_jobs=_resolved_n_jobs(model_config),
             )
         )
         super().__init__(

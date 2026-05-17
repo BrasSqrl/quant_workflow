@@ -15,8 +15,15 @@ from quant_pd_framework.gui_support import (
     SUPPORTED_MISSING_VALUE_POLICIES,
     SUPPORTED_TRANSFORMATION_TYPES,
     build_template_workbook_bytes,
+    build_transformation_recipe_catalog_frame,
+    build_transformation_recommendations,
+    build_transformation_row,
+    build_transformation_summary_cards,
+    build_transformation_validation_frame,
     frames_equivalent,
     load_template_workbook,
+    normalize_transformation_frame,
+    transformation_recommendation_to_row,
 )
 from quant_pd_framework.streamlit_ui.data import DEFAULT_PERFORMANCE_CONFIG, render_dataset_overview
 from quant_pd_framework.streamlit_ui.state import (
@@ -287,6 +294,758 @@ def render_data_review_panel(
         )
 
 
+def render_transformation_studio(
+    *,
+    dataframe: pd.DataFrame,
+    schema_frame: pd.DataFrame,
+    transformation_frame: pd.DataFrame,
+    workspace_state: WorkspaceState,
+    preset_transformations: Any | None,
+    advanced_workspace: bool,
+    target_mode: str,
+    model_type: str,
+    data_structure: str,
+) -> tuple[pd.DataFrame, dict[str, Any]]:
+    """Renders the guided Step 1 Transformation Studio."""
+
+    working_frame = normalize_transformation_frame(transformation_frame)
+    validation_frame = build_transformation_validation_frame(
+        working_frame,
+        dataframe,
+        schema_frame,
+        target_mode=target_mode,
+        data_structure=data_structure,
+    )
+    _render_local_metric_cards(
+        build_transformation_summary_cards(working_frame, validation_frame)
+    )
+    st.caption(
+        "Build governed transformations as recommendations, reusable recipes, or custom "
+        "rows. Accepted rows still write to the same workbook/config schema."
+    )
+
+    recommendation_tab, recipe_tab, builder_tab, pipeline_tab = st.tabs(
+        ["Recommendations", "Recipe Library", "Custom Builder", "Pipeline Review"]
+    )
+    with recommendation_tab:
+        _render_transformation_recommendations_tab(
+            dataframe=dataframe,
+            schema_frame=schema_frame,
+            transformation_frame=working_frame,
+            workspace_state=workspace_state,
+            target_mode=target_mode,
+            model_type=model_type,
+            data_structure=data_structure,
+        )
+    with recipe_tab:
+        _render_recipe_library_tab(
+            dataframe=dataframe,
+            transformation_frame=working_frame,
+            workspace_state=workspace_state,
+        )
+    with builder_tab:
+        _render_custom_builder_tab(
+            dataframe=dataframe,
+            transformation_frame=working_frame,
+            workspace_state=workspace_state,
+        )
+    with pipeline_tab:
+        edited_frame = _render_pipeline_review_tab(
+            dataframe=dataframe,
+            transformation_frame=working_frame,
+            validation_frame=validation_frame,
+            workspace_state=workspace_state,
+        )
+        working_frame = edited_frame
+
+    transformation_controls = _render_advanced_generation_controls(
+        workspace_state=workspace_state,
+        preset_transformations=preset_transformations,
+        advanced_workspace=advanced_workspace,
+    )
+    return working_frame, transformation_controls
+
+
+def _render_transformation_recommendations_tab(
+    *,
+    dataframe: pd.DataFrame,
+    schema_frame: pd.DataFrame,
+    transformation_frame: pd.DataFrame,
+    workspace_state: WorkspaceState,
+    target_mode: str,
+    model_type: str,
+    data_structure: str,
+) -> None:
+    recommendations = build_transformation_recommendations(
+        dataframe,
+        schema_frame,
+        target_mode=target_mode,
+        model_type=model_type,
+        data_structure=data_structure,
+    )
+    rejected_key = f"{workspace_state.keys.editor_key}_rejected_transformation_recs"
+    rejected = set(st.session_state.get(rejected_key, []))
+    if not recommendations.empty:
+        recommendations = recommendations.loc[
+            ~recommendations["recommendation_id"].isin(rejected)
+        ].reset_index(drop=True)
+    if recommendations.empty:
+        st.info(
+            "No new profile-driven recommendations are available. Use Recipe Library "
+            "or Custom Builder to add governed transformations manually."
+        )
+        if rejected and st.button(
+            "Reset dismissed recommendations",
+            key=f"{workspace_state.keys.editor_key}_reset_rejected_transformations",
+        ):
+            st.session_state[rejected_key] = []
+            st.rerun()
+        return
+
+    st.caption(
+        "Recommendations are advisory. Accept only the transformations with a defensible "
+        "business or statistical rationale."
+    )
+    st.dataframe(
+        recommendations[
+            [
+                "recipe_group",
+                "transform_type",
+                "source_feature",
+                "output_feature",
+                "reason",
+                "large_data_status",
+            ]
+        ],
+        width="stretch",
+        hide_index=True,
+    )
+    labels = [
+        f"{row.transform_type} on {row.source_feature} - {row.reason}"
+        for row in recommendations.itertuples(index=False)
+    ]
+    selected_label = st.selectbox(
+        "Recommendation to review",
+        options=labels,
+        key=f"{workspace_state.keys.editor_key}_selected_recommendation",
+    )
+    selected_index = labels.index(selected_label)
+    selected = recommendations.iloc[selected_index].to_dict()
+    with st.expander("Edit before accepting", expanded=True):
+        edited_output = st.text_input(
+            "Output feature",
+            value=str(selected.get("output_feature", "")),
+            key=f"{workspace_state.keys.editor_key}_recommendation_output",
+        )
+        edited_parameter = st.text_input(
+            "Parameter value",
+            value=str(selected.get("parameter_value", "")),
+            key=f"{workspace_state.keys.editor_key}_recommendation_parameter",
+        )
+        edited_notes = st.text_area(
+            "Rationale / notes",
+            value=str(selected.get("notes", "")),
+            key=f"{workspace_state.keys.editor_key}_recommendation_notes",
+            height=80,
+        )
+    accept_column, reject_column = st.columns(2)
+    with accept_column:
+        if st.button(
+            "Accept Recommendation",
+            key=f"{workspace_state.keys.editor_key}_accept_recommendation",
+            width="stretch",
+        ):
+            selected["output_feature"] = edited_output
+            selected["parameter_value"] = edited_parameter
+            selected["notes"] = edited_notes
+            _append_transformation_and_rerun(
+                workspace_state=workspace_state,
+                transformation_frame=transformation_frame,
+                row=transformation_recommendation_to_row(selected),
+            )
+    with reject_column:
+        if st.button(
+            "Dismiss Recommendation",
+            key=f"{workspace_state.keys.editor_key}_reject_recommendation",
+            width="stretch",
+        ):
+            rejected.add(str(selected.get("recommendation_id", "")))
+            st.session_state[rejected_key] = sorted(rejected)
+            st.rerun()
+
+
+def _render_recipe_library_tab(
+    *,
+    dataframe: pd.DataFrame,
+    transformation_frame: pd.DataFrame,
+    workspace_state: WorkspaceState,
+) -> None:
+    catalog = build_transformation_recipe_catalog_frame()
+    st.caption(
+        "Recipe cards group available transformations by use case. Add a recipe, then "
+        "finalize ordering and validation in Pipeline Review."
+    )
+    group_options = catalog["recipe_group"].drop_duplicates().tolist()
+    selected_group = st.selectbox(
+        "Recipe group",
+        options=group_options,
+        key=f"{workspace_state.keys.editor_key}_recipe_group",
+    )
+    group_catalog = catalog.loc[catalog["recipe_group"].eq(selected_group)].reset_index(
+        drop=True
+    )
+    selected_type = st.selectbox(
+        "Recipe",
+        options=group_catalog["transform_type"].tolist(),
+        format_func=lambda value: str(value).replace("_", " ").title(),
+        key=f"{workspace_state.keys.editor_key}_recipe_type",
+    )
+    recipe = group_catalog.loc[group_catalog["transform_type"].eq(selected_type)].iloc[0]
+    st.markdown(f"**What it does:** {recipe['what_it_does']}")
+    st.caption(f"When to use: {recipe['when_to_use']}")
+    st.caption(f"Parameters: {recipe['key_parameters']}")
+    source_feature, secondary_feature, categorical_value = _render_source_feature_controls(
+        dataframe=dataframe,
+        transform_type=selected_type,
+        key_prefix=f"{workspace_state.keys.editor_key}_recipe",
+    )
+    parameters = _render_transformation_parameter_controls(
+        selected_type,
+        key_prefix=f"{workspace_state.keys.editor_key}_recipe",
+    )
+    suggested_row = _build_ui_transformation_row(
+        transform_type=selected_type,
+        source_feature=source_feature,
+        secondary_feature=secondary_feature,
+        categorical_value=categorical_value,
+        parameters=parameters,
+        notes=f"Added from {selected_group} recipe.",
+    )
+    output_feature = st.text_input(
+        "Output feature",
+        value=suggested_row["output_feature"],
+        key=f"{workspace_state.keys.editor_key}_recipe_output",
+    )
+    suggested_row["output_feature"] = output_feature
+    if st.button(
+        "Add Recipe To Pipeline",
+        key=f"{workspace_state.keys.editor_key}_add_recipe",
+        width="stretch",
+        disabled=not source_feature,
+    ):
+        _append_transformation_and_rerun(
+            workspace_state=workspace_state,
+            transformation_frame=transformation_frame,
+            row=suggested_row,
+        )
+    with st.expander("Browse all recipes", expanded=False):
+        st.dataframe(catalog, width="stretch", hide_index=True)
+
+
+def _render_custom_builder_tab(
+    *,
+    dataframe: pd.DataFrame,
+    transformation_frame: pd.DataFrame,
+    workspace_state: WorkspaceState,
+) -> None:
+    catalog = build_transformation_recipe_catalog_frame()
+    st.caption(
+        "Use the builder for one governed transformation at a time. Parameter fields "
+        "appear only when relevant to the selected transform."
+    )
+    selected_group = st.selectbox(
+        "Purpose",
+        options=catalog["recipe_group"].drop_duplicates().tolist(),
+        key=f"{workspace_state.keys.editor_key}_builder_group",
+    )
+    builder_catalog = catalog.loc[catalog["recipe_group"].eq(selected_group)]
+    transform_type = st.selectbox(
+        "Transform type",
+        options=builder_catalog["transform_type"].tolist(),
+        format_func=lambda value: str(value).replace("_", " ").title(),
+        key=f"{workspace_state.keys.editor_key}_builder_transform",
+    )
+    source_feature, secondary_feature, categorical_value = _render_source_feature_controls(
+        dataframe=dataframe,
+        transform_type=transform_type,
+        key_prefix=f"{workspace_state.keys.editor_key}_builder",
+    )
+    parameters = _render_transformation_parameter_controls(
+        transform_type,
+        key_prefix=f"{workspace_state.keys.editor_key}_builder",
+    )
+    draft_row = _build_ui_transformation_row(
+        transform_type=transform_type,
+        source_feature=source_feature,
+        secondary_feature=secondary_feature,
+        categorical_value=categorical_value,
+        parameters=parameters,
+        notes="Added from Transformation Studio custom builder.",
+    )
+    output_feature = st.text_input(
+        "Output feature",
+        value=draft_row["output_feature"],
+        key=f"{workspace_state.keys.editor_key}_builder_output",
+    )
+    notes = st.text_area(
+        "Rationale / notes",
+        value=draft_row["notes"],
+        key=f"{workspace_state.keys.editor_key}_builder_notes",
+        height=80,
+    )
+    draft_row["output_feature"] = output_feature
+    draft_row["notes"] = notes
+    preview = build_transformation_preview(
+        dataframe=dataframe,
+        source_feature=source_feature,
+        transform_type=transform_type,
+        parameter_value=parameters.get("parameter_value", ""),
+        bin_edges=parameters.get("bin_edges", ""),
+    )
+    if preview["error"]:
+        st.warning(preview["error"])
+    else:
+        st.dataframe(preview["summary"], width="stretch", hide_index=True)
+        st.dataframe(preview["examples"], width="stretch", hide_index=True)
+    st.code(preview.get("snippet", ""), language="python")
+    if st.button(
+        "Add Custom Transformation",
+        key=f"{workspace_state.keys.editor_key}_add_custom_transform",
+        width="stretch",
+        disabled=not source_feature,
+    ):
+        _append_transformation_and_rerun(
+            workspace_state=workspace_state,
+            transformation_frame=transformation_frame,
+            row=draft_row,
+        )
+
+
+def _render_pipeline_review_tab(
+    *,
+    dataframe: pd.DataFrame,
+    transformation_frame: pd.DataFrame,
+    validation_frame: pd.DataFrame,
+    workspace_state: WorkspaceState,
+) -> pd.DataFrame:
+    st.caption(
+        "Review the final ordered pipeline. Power users can open the advanced table "
+        "editor for direct workbook-compatible edits."
+    )
+    if validation_frame.empty:
+        st.info("No enabled transformations are configured yet.")
+    else:
+        st.dataframe(
+            validation_frame.drop(columns=["generated_python"], errors="ignore"),
+            width="stretch",
+            hide_index=True,
+        )
+        selected_row = st.selectbox(
+            "Pipeline row action",
+            options=validation_frame["row"].astype(int).tolist(),
+            key=f"{workspace_state.keys.editor_key}_pipeline_action_row",
+        )
+        duplicate_column, delete_column = st.columns(2)
+        with duplicate_column:
+            if st.button(
+                "Duplicate Row",
+                key=f"{workspace_state.keys.editor_key}_duplicate_transform_row",
+                width="stretch",
+            ):
+                _duplicate_transformation_and_rerun(
+                    workspace_state=workspace_state,
+                    transformation_frame=transformation_frame,
+                    row_number=int(selected_row),
+                )
+        with delete_column:
+            if st.button(
+                "Delete Row",
+                key=f"{workspace_state.keys.editor_key}_delete_transform_row",
+                width="stretch",
+            ):
+                _delete_transformation_and_rerun(
+                    workspace_state=workspace_state,
+                    transformation_frame=transformation_frame,
+                    row_number=int(selected_row),
+                )
+        with st.expander("Generated Python/config snippets", expanded=False):
+            st.dataframe(
+                validation_frame[["row", "transform_type", "generated_python"]],
+                width="stretch",
+                hide_index=True,
+            )
+    with st.expander("Advanced table editor", expanded=False):
+        edited_frame = st.data_editor(
+            transformation_frame,
+            key=workspace_state.keys.transformation_widget,
+            num_rows="dynamic",
+            width="stretch",
+            hide_index=True,
+            column_config=_transformation_editor_column_config(),
+        )
+    render_transformation_preview_panel(
+        dataframe,
+        edited_frame,
+        editor_key=workspace_state.keys.editor_key,
+    )
+    return edited_frame
+
+
+def _render_advanced_generation_controls(
+    *,
+    workspace_state: WorkspaceState,
+    preset_transformations: Any | None,
+    advanced_workspace: bool,
+) -> dict[str, Any]:
+    default_auto = bool(getattr(preset_transformations, "auto_interactions_enabled", False))
+    default_numeric = bool(
+        getattr(preset_transformations, "include_numeric_numeric_interactions", True)
+    )
+    default_categorical = bool(
+        getattr(preset_transformations, "include_categorical_numeric_interactions", False)
+    )
+    default_max = int(getattr(preset_transformations, "max_auto_interactions", 5))
+    default_levels = int(getattr(preset_transformations, "max_categorical_levels", 3))
+    default_min_score = float(getattr(preset_transformations, "min_interaction_score", 0.0))
+    with st.expander("Advanced Generation", expanded=False):
+        if not advanced_workspace:
+            st.caption(
+                "Guided mode keeps generated interaction controls on preset defaults. "
+                "Switch to Advanced to edit them."
+            )
+        auto_enabled = st.checkbox(
+            "Auto-screen interaction terms",
+            value=default_auto,
+            help=(
+                "Screens train-split interaction candidates and persists selected "
+                "interaction features into the saved run config."
+            ),
+            disabled=not advanced_workspace,
+            key=f"{workspace_state.keys.editor_key}_studio_auto_interactions",
+        )
+        numeric_interactions = st.checkbox(
+            "Numeric-numeric interactions",
+            value=default_numeric,
+            disabled=not advanced_workspace or not auto_enabled,
+            key=f"{workspace_state.keys.editor_key}_studio_numeric_interactions",
+        )
+        categorical_interactions = st.checkbox(
+            "Categorical-numeric interactions",
+            value=default_categorical,
+            disabled=not advanced_workspace or not auto_enabled,
+            key=f"{workspace_state.keys.editor_key}_studio_categorical_interactions",
+        )
+        max_auto = int(
+            st.number_input(
+                "Max auto interactions",
+                min_value=1,
+                max_value=20,
+                value=default_max,
+                step=1,
+                disabled=not advanced_workspace or not auto_enabled,
+                key=f"{workspace_state.keys.editor_key}_studio_max_interactions",
+            )
+        )
+        max_levels = int(
+            st.number_input(
+                "Max categorical levels per feature",
+                min_value=1,
+                max_value=10,
+                value=default_levels,
+                step=1,
+                disabled=not advanced_workspace or not auto_enabled,
+                key=f"{workspace_state.keys.editor_key}_studio_max_levels",
+            )
+        )
+        min_score = st.number_input(
+            "Min interaction score",
+            min_value=0.0,
+            max_value=1.0,
+            value=default_min_score,
+            step=0.01,
+            format="%.2f",
+            disabled=not advanced_workspace or not auto_enabled,
+            key=f"{workspace_state.keys.editor_key}_studio_min_interaction_score",
+        )
+    return {
+        "auto_interactions_enabled": auto_enabled,
+        "include_numeric_numeric_interactions": numeric_interactions,
+        "include_categorical_numeric_interactions": categorical_interactions,
+        "max_auto_interactions": max_auto,
+        "max_categorical_levels": max_levels,
+        "min_interaction_score": float(min_score),
+    }
+
+
+def _transformation_editor_column_config() -> dict[str, object]:
+    return {
+        "enabled": st.column_config.CheckboxColumn("Enabled"),
+        "transform_type": st.column_config.SelectboxColumn(
+            "Type",
+            options=SUPPORTED_TRANSFORMATION_TYPES,
+        ),
+        "source_feature": st.column_config.TextColumn("Source feature"),
+        "secondary_feature": st.column_config.TextColumn("Secondary feature"),
+        "categorical_value": st.column_config.TextColumn("Categorical value"),
+        "output_feature": st.column_config.TextColumn("Output feature"),
+        "lower_quantile": st.column_config.NumberColumn(
+            "Lower q",
+            min_value=0.0,
+            max_value=1.0,
+            step=0.01,
+        ),
+        "upper_quantile": st.column_config.NumberColumn(
+            "Upper q",
+            min_value=0.0,
+            max_value=1.0,
+            step=0.01,
+        ),
+        "parameter_value": st.column_config.NumberColumn("Parameter"),
+        "window_size": st.column_config.NumberColumn("Window", min_value=1, step=1),
+        "lag_periods": st.column_config.NumberColumn(
+            "Lag periods",
+            min_value=1,
+            step=1,
+        ),
+        "bin_edges": st.column_config.TextColumn("Bin edges"),
+        "generated_automatically": st.column_config.CheckboxColumn("Generated"),
+        "notes": st.column_config.TextColumn("Notes"),
+    }
+
+
+def _render_source_feature_controls(
+    *,
+    dataframe: pd.DataFrame,
+    transform_type: str,
+    key_prefix: str,
+) -> tuple[str, str, str]:
+    columns = [str(column) for column in dataframe.columns]
+    if not columns:
+        return "", "", ""
+    categorical_value = ""
+    if transform_type in {
+        "row_missing_count",
+        "row_missing_share",
+        "any_missing_flag",
+    }:
+        selected_sources = st.multiselect(
+            "Source features",
+            options=columns,
+            default=columns[: min(3, len(columns))],
+            key=f"{key_prefix}_source_features",
+        )
+        source_feature = ", ".join(selected_sources)
+    else:
+        source_feature = st.selectbox(
+            "Source feature",
+            options=columns,
+            key=f"{key_prefix}_source_feature",
+        )
+    secondary_feature = ""
+    if transform_type in {
+        "ratio",
+        "safe_ratio",
+        "margin_ratio",
+        "debt_service_ratio",
+        "add",
+        "subtract",
+        "product",
+        "interaction",
+        "date_age_days",
+        "date_age_months",
+    }:
+        secondary_options = [column for column in columns if column != source_feature]
+        if secondary_options:
+            secondary_feature = st.selectbox(
+                "Secondary feature",
+                options=secondary_options,
+                key=f"{key_prefix}_secondary_feature",
+            )
+    if transform_type == "interaction":
+        categorical_value = st.text_input(
+            "Categorical value filter",
+            value="",
+            key=f"{key_prefix}_categorical_value_note",
+            help=(
+                "Optional. Use when the interaction should apply to one category level."
+            ),
+        )
+    return source_feature, secondary_feature, categorical_value
+
+
+def _render_transformation_parameter_controls(
+    transform_type: str,
+    *,
+    key_prefix: str,
+) -> dict[str, Any]:
+    parameters: dict[str, Any] = {}
+    if transform_type == "winsorize":
+        left, right = st.columns(2)
+        with left:
+            parameters["lower_quantile"] = st.number_input(
+                "Lower quantile",
+                min_value=0.0,
+                max_value=0.49,
+                value=0.01,
+                step=0.01,
+                key=f"{key_prefix}_lower_quantile",
+            )
+        with right:
+            parameters["upper_quantile"] = st.number_input(
+                "Upper quantile",
+                min_value=0.51,
+                max_value=1.0,
+                value=0.99,
+                step=0.01,
+                key=f"{key_prefix}_upper_quantile",
+            )
+    if transform_type in {
+        "capped_zscore",
+        "piecewise_linear",
+        "power",
+        "natural_spline",
+        "quantile_bins",
+        "equal_width_bins",
+        "monotonic_bins",
+        "woe_encoding",
+        "bad_rate_encoding",
+        "rare_category_collapse",
+        "target_encoding",
+        "date_fiscal_quarter",
+    }:
+        default_parameter = _default_transformation_parameter(transform_type)
+        parameters["parameter_value"] = st.number_input(
+            "Parameter value",
+            value=default_parameter,
+            step=1.0 if default_parameter >= 1 else 0.01,
+            key=f"{key_prefix}_parameter_value",
+        )
+    if transform_type in {"manual_bins", "woe_encoding", "bad_rate_encoding"}:
+        parameters["bin_edges"] = st.text_input(
+            "Bin edges",
+            value="" if transform_type != "manual_bins" else "0.2, 0.5, 0.8",
+            help="Comma-separated internal numeric edges. Omit -inf and inf.",
+            key=f"{key_prefix}_bin_edges",
+        )
+    if transform_type in {"lag", "difference", "pct_change"}:
+        parameters["lag_periods"] = int(
+            st.number_input(
+                "Lag periods",
+                min_value=1,
+                value=1,
+                step=1,
+                key=f"{key_prefix}_lag_periods",
+            )
+        )
+    if transform_type == "ewma" or transform_type.startswith("rolling_"):
+        parameters["window_size"] = int(
+            st.number_input(
+                "Window size",
+                min_value=2,
+                value=3,
+                step=1,
+                key=f"{key_prefix}_window_size",
+            )
+        )
+    return parameters
+
+
+def _default_transformation_parameter(transform_type: str) -> float:
+    defaults = {
+        "capped_zscore": 3.0,
+        "piecewise_linear": 0.0,
+        "power": 2.0,
+        "natural_spline": 4.0,
+        "quantile_bins": 5.0,
+        "equal_width_bins": 5.0,
+        "monotonic_bins": 5.0,
+        "woe_encoding": 5.0,
+        "bad_rate_encoding": 5.0,
+        "rare_category_collapse": 0.01,
+        "target_encoding": 20.0,
+        "date_fiscal_quarter": 1.0,
+    }
+    return defaults.get(transform_type, 0.0)
+
+
+def _build_ui_transformation_row(
+    *,
+    transform_type: str,
+    source_feature: str,
+    secondary_feature: str,
+    categorical_value: str,
+    parameters: dict[str, Any],
+    notes: str,
+) -> dict[str, Any]:
+    return build_transformation_row(
+        transform_type=transform_type,
+        source_feature=source_feature,
+        secondary_feature=secondary_feature,
+        categorical_value=categorical_value,
+        lower_quantile=parameters.get("lower_quantile", ""),
+        upper_quantile=parameters.get("upper_quantile", ""),
+        parameter_value=parameters.get("parameter_value", ""),
+        window_size=parameters.get("window_size", ""),
+        lag_periods=parameters.get("lag_periods", ""),
+        bin_edges=parameters.get("bin_edges", ""),
+        notes=notes,
+    )
+
+
+def _append_transformation_and_rerun(
+    *,
+    workspace_state: WorkspaceState,
+    transformation_frame: pd.DataFrame,
+    row: dict[str, Any],
+) -> None:
+    updated = pd.concat(
+        [normalize_transformation_frame(transformation_frame), pd.DataFrame([row])],
+        ignore_index=True,
+    )
+    st.session_state.pop(workspace_state.keys.transformation_widget, None)
+    store_workspace_frame(
+        workspace_state.keys.transformation_frame,
+        normalize_transformation_frame(updated),
+    )
+    st.rerun()
+
+
+def _duplicate_transformation_and_rerun(
+    *,
+    workspace_state: WorkspaceState,
+    transformation_frame: pd.DataFrame,
+    row_number: int,
+) -> None:
+    normalized = normalize_transformation_frame(transformation_frame)
+    row_index = row_number - 1
+    if row_index < 0 or row_index >= len(normalized):
+        return
+    duplicated = normalized.iloc[[row_index]].copy(deep=True)
+    duplicated.loc[:, "output_feature"] = (
+        duplicated["output_feature"].astype(str).str.strip() + "_copy"
+    )
+    updated = pd.concat([normalized, duplicated], ignore_index=True)
+    st.session_state.pop(workspace_state.keys.transformation_widget, None)
+    store_workspace_frame(workspace_state.keys.transformation_frame, updated)
+    st.rerun()
+
+
+def _delete_transformation_and_rerun(
+    *,
+    workspace_state: WorkspaceState,
+    transformation_frame: pd.DataFrame,
+    row_number: int,
+) -> None:
+    normalized = normalize_transformation_frame(transformation_frame)
+    row_index = row_number - 1
+    if row_index < 0 or row_index >= len(normalized):
+        return
+    updated = normalized.drop(index=normalized.index[row_index]).reset_index(drop=True)
+    st.session_state.pop(workspace_state.keys.transformation_widget, None)
+    store_workspace_frame(workspace_state.keys.transformation_frame, updated)
+    st.rerun()
+
+
 def render_transformation_preview_panel(
     dataframe: pd.DataFrame,
     transformation_frame: pd.DataFrame,
@@ -357,10 +1116,16 @@ def render_transformation_preview_panel(
         if preview["error"]:
             st.warning(preview["error"])
             return
+        st.caption("Summary statistics before and after the preview transform.")
         st.dataframe(preview["summary"], width="stretch", hide_index=True)
+        if not preview["examples"].empty:
+            st.caption("Example input/output rows from the preview sample.")
+            st.dataframe(preview["examples"], width="stretch", hide_index=True)
         chart_frame = preview["chart"]
         if not chart_frame.empty:
+            st.caption("Before/after distribution preview.")
             st.bar_chart(chart_frame.set_index("bucket"))
+        st.code(preview.get("snippet", ""), language="python")
 
 
 def build_transformation_preview(
@@ -378,6 +1143,8 @@ def build_transformation_preview(
             "error": f"`{source_feature}` is not in the dataset.",
             "summary": pd.DataFrame(),
             "chart": pd.DataFrame(),
+            "examples": pd.DataFrame(),
+            "snippet": "",
         }
     source = dataframe[source_feature].head(DATA_REVIEW_PROFILE_ROWS)
     values = pd.to_numeric(source, errors="coerce")
@@ -386,6 +1153,8 @@ def build_transformation_preview(
             "error": f"`{source_feature}` has no numeric values to preview.",
             "summary": pd.DataFrame(),
             "chart": pd.DataFrame(),
+            "examples": pd.DataFrame(),
+            "snippet": "",
         }
     try:
         transformed = _apply_preview_transform(values, transform_type, parameter_value, bin_edges)
@@ -394,10 +1163,26 @@ def build_transformation_preview(
             "error": f"Could not preview `{transform_type}`: {exc}",
             "summary": pd.DataFrame(),
             "chart": pd.DataFrame(),
+            "examples": pd.DataFrame(),
+            "snippet": "",
         }
     summary = _preview_summary(source_feature, transform_type, values, transformed)
     chart = _preview_chart(values, transformed)
-    return {"error": "", "summary": summary, "chart": chart}
+    examples = _preview_examples(source, transformed)
+    snippet = (
+        "TransformationSpec("
+        f"transform_type=TransformationType('{transform_type}'), "
+        f"source_feature='{source_feature}', "
+        f"parameter_value={parameter_value!r}, "
+        f"bin_edges={bin_edges!r})"
+    )
+    return {
+        "error": "",
+        "summary": summary,
+        "chart": chart,
+        "examples": examples,
+        "snippet": snippet,
+    }
 
 
 def _active_schema_rows(schema_frame: pd.DataFrame) -> pd.DataFrame:
@@ -607,6 +1392,16 @@ def _preview_summary(
     return pd.DataFrame(rows)
 
 
+def _preview_examples(before: pd.Series, after: pd.Series) -> pd.DataFrame:
+    example_count = min(10, len(before))
+    return pd.DataFrame(
+        {
+            "input_value": before.head(example_count).reset_index(drop=True),
+            "preview_output": after.head(example_count).reset_index(drop=True),
+        }
+    )
+
+
 def _preview_chart(before: pd.Series, after: pd.Series) -> pd.DataFrame:
     after_numeric = pd.to_numeric(after, errors="coerce")
     if after_numeric.dropna().empty:
@@ -638,13 +1433,18 @@ def render_builder_workspace(
     dataframe: pd.DataFrame,
     data_source_label: str,
     workspace_state: WorkspaceState,
-) -> dict[str, pd.DataFrame]:
+    preset_transformations: Any | None = None,
+    advanced_workspace: bool = False,
+    target_mode: str = "binary",
+    model_type: str = "logistic_regression",
+    data_structure: str = "cross_sectional",
+) -> dict[str, Any]:
     section_options = [
         "Dataset Preview",
         "Data Review",
         "Column Designer",
         "Feature Dictionary",
-        "Transformations",
+        "Transformation Studio",
         "Template Workbook",
     ]
 
@@ -653,6 +1453,63 @@ def render_builder_workspace(
     edited_transformations = workspace_state.transformation_frame
     feature_review_frame = workspace_state.feature_review_frame
     scorecard_override_frame = workspace_state.scorecard_override_frame
+    control_prefix = workspace_state.keys.editor_key
+    default_auto_interactions = bool(
+        getattr(preset_transformations, "auto_interactions_enabled", False)
+    )
+    default_numeric_interactions = bool(
+        getattr(preset_transformations, "include_numeric_numeric_interactions", True)
+    )
+    default_categorical_interactions = bool(
+        getattr(preset_transformations, "include_categorical_numeric_interactions", False)
+    )
+    default_max_auto_interactions = int(
+        getattr(preset_transformations, "max_auto_interactions", 5)
+    )
+    default_max_categorical_levels = int(
+        getattr(preset_transformations, "max_categorical_levels", 3)
+    )
+    default_min_interaction_score = float(
+        getattr(preset_transformations, "min_interaction_score", 0.0)
+    )
+    transformation_controls = {
+        "auto_interactions_enabled": bool(
+            st.session_state.get(
+                f"{control_prefix}_studio_auto_interactions",
+                default_auto_interactions,
+            )
+        ),
+        "include_numeric_numeric_interactions": bool(
+            st.session_state.get(
+                f"{control_prefix}_studio_numeric_interactions",
+                default_numeric_interactions,
+            )
+        ),
+        "include_categorical_numeric_interactions": bool(
+            st.session_state.get(
+                f"{control_prefix}_studio_categorical_interactions",
+                default_categorical_interactions,
+            )
+        ),
+        "max_auto_interactions": int(
+            st.session_state.get(
+                f"{control_prefix}_studio_max_interactions",
+                default_max_auto_interactions,
+            )
+        ),
+        "max_categorical_levels": int(
+            st.session_state.get(
+                f"{control_prefix}_studio_max_levels",
+                default_max_categorical_levels,
+            )
+        ),
+        "min_interaction_score": float(
+            st.session_state.get(
+                f"{control_prefix}_studio_min_interaction_score",
+                default_min_interaction_score,
+            )
+        ),
+    }
 
     render_html(
         '<div class="workflow-stage">'
@@ -719,79 +1576,17 @@ def render_builder_workspace(
             },
         )
 
-    elif selected_section == "Transformations":
-        st.caption(
-            "Governed transformations are fit on the training split and then replayed on "
-            "validation, test, and scored data."
-        )
-        edited_transformations = st.data_editor(
-            workspace_state.transformation_frame,
-            key=workspace_state.keys.transformation_widget,
-            num_rows="dynamic",
-            width="stretch",
-            hide_index=True,
-            column_config={
-                "enabled": st.column_config.CheckboxColumn("Enabled"),
-                "transform_type": st.column_config.SelectboxColumn(
-                    "Type",
-                    options=SUPPORTED_TRANSFORMATION_TYPES,
-                ),
-                "source_feature": st.column_config.TextColumn("Source feature"),
-                "secondary_feature": st.column_config.TextColumn("Secondary feature"),
-                "categorical_value": st.column_config.TextColumn("Categorical value"),
-                "output_feature": st.column_config.TextColumn("Output feature"),
-                "lower_quantile": st.column_config.NumberColumn(
-                    "Lower q",
-                    min_value=0.0,
-                    max_value=1.0,
-                    step=0.01,
-                ),
-                "upper_quantile": st.column_config.NumberColumn(
-                    "Upper q",
-                    min_value=0.0,
-                    max_value=1.0,
-                    step=0.01,
-                ),
-                "parameter_value": st.column_config.NumberColumn("Parameter"),
-                "window_size": st.column_config.NumberColumn("Window", min_value=1, step=1),
-                "lag_periods": st.column_config.NumberColumn(
-                    "Lag periods",
-                    min_value=1,
-                    step=1,
-                ),
-                "bin_edges": st.column_config.TextColumn("Bin edges"),
-                "generated_automatically": st.column_config.CheckboxColumn("Generated"),
-                "notes": st.column_config.TextColumn("Notes"),
-            },
-        )
-        with st.expander("Transformation Guidance", expanded=False):
-            st.markdown(
-                """
-                - **Numeric shape:** `winsorize`, `log1p`, `signed_log1p`, `box_cox`,
-                  `yeo_johnson`, `sqrt`, `reciprocal`, `square`, `power`, and
-                  `piecewise_linear` reshape skew, tails, and nonlinear effects.
-                - **Scaling and rank:** `standard_scale`, `robust_scale`,
-                  `min_max_scale`, `percentile_rank`, `normal_score`,
-                  `center_mean`, and `center_median` normalize magnitude while
-                  fitting parameters on train only.
-                - **Combinations:** `ratio`, `safe_ratio`, `margin_ratio`,
-                  `debt_service_ratio`, `add`, `subtract`, `product`, and
-                  `interaction` combine two fields using the secondary feature.
-                - **Time-aware:** `lag`, `difference`, `pct_change`, `ewma`,
-                  rolling, expanding, cumulative, baseline, and event-distance
-                  transforms respect configured date/entity ordering.
-                - **Binning and encoding:** manual, quantile, equal-width,
-                  monotonic, WOE, bad-rate, rare-category, frequency, ordinal,
-                  and target encodings support scorecards and categorical signal.
-                - **Date and missingness:** date-part, fiscal-quarter, age, row
-                  missing count/share, and any-missing flags document structural
-                  information without editing source data.
-                """
-            )
-        render_transformation_preview_panel(
-            dataframe,
-            edited_transformations,
-            editor_key=workspace_state.keys.editor_key,
+    elif selected_section == "Transformation Studio":
+        edited_transformations, transformation_controls = render_transformation_studio(
+            dataframe=dataframe,
+            schema_frame=edited_schema,
+            transformation_frame=workspace_state.transformation_frame,
+            workspace_state=workspace_state,
+            preset_transformations=preset_transformations,
+            advanced_workspace=advanced_workspace,
+            target_mode=target_mode,
+            model_type=model_type,
+            data_structure=data_structure,
         )
 
     else:
@@ -868,4 +1663,5 @@ def render_builder_workspace(
         "transformations": edited_transformations,
         "feature_review": feature_review_frame,
         "scorecard_overrides": scorecard_override_frame,
+        "transformation_controls": transformation_controls,
     }

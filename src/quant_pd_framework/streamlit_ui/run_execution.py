@@ -10,7 +10,14 @@ from typing import Any
 import pandas as pd
 import streamlit as st
 
-from quant_pd_framework import ExecutionMode, QuantModelOrchestrator
+from quant_pd_framework import ExecutionMode, LargeDataWorkerMode, QuantModelOrchestrator
+from quant_pd_framework.background_jobs import (
+    load_background_snapshot,
+    queue_background_workflow,
+    read_background_manifest,
+    request_background_cancel,
+    start_background_workflow,
+)
 from quant_pd_framework.checkpointing import (
     find_next_pending_stage,
     load_context_checkpoint,
@@ -96,6 +103,67 @@ def start_checkpointed_workflow(
         )
     )
     return {"manifest_path": str(manifest_path), "completed": False}
+
+
+def start_large_data_background_workflow(
+    *,
+    preview_config: Any,
+    dataframe: pd.DataFrame,
+    selected_input: SelectedInputDataset,
+    large_data_mode: bool,
+) -> dict[str, Any]:
+    """Starts a detached Large Data Mode workflow and returns UI state."""
+
+    input_data = build_run_input(
+        dataframe=dataframe,
+        selected_input=selected_input,
+        large_data_mode=large_data_mode,
+    )
+    worker_mode = _resolve_worker_mode(preview_config)
+    if worker_mode == LargeDataWorkerMode.WORKER_SERVICE:
+        manifest_path = queue_background_workflow(
+            config=preview_config,
+            input_data=input_data,
+            queue_dir=preview_config.artifacts.output_root / "_job_queue",
+        )
+    else:
+        manifest_path = start_background_workflow(config=preview_config, input_data=input_data)
+    manifest = read_background_manifest(manifest_path)
+    return {
+        "manifest_path": str(manifest_path),
+        "status": manifest.status,
+        "run_id": manifest.run_id,
+        "completed": manifest.status == "completed",
+        "dispatch_mode": manifest.dispatch_mode,
+    }
+
+
+def poll_large_data_background_workflow(
+    background_state: dict[str, Any],
+) -> tuple[dict[str, Any] | None, dict[str, Any]]:
+    """Reads the background job manifest and returns a completed snapshot when available."""
+
+    manifest_path = Path(str(background_state["manifest_path"]))
+    manifest = read_background_manifest(manifest_path)
+    snapshot = load_background_snapshot(manifest) if manifest.status == "completed" else None
+    updated_state = {
+        **background_state,
+        "status": manifest.status,
+        "run_id": manifest.run_id,
+        "completed": manifest.status == "completed",
+        "current_stage": manifest.current_stage,
+        "progress": manifest.progress,
+        "error_message": manifest.error_message,
+        "manifest": manifest.to_dict(),
+        "dispatch_mode": manifest.dispatch_mode,
+    }
+    return snapshot, updated_state
+
+
+def cancel_large_data_background_workflow(background_state: dict[str, Any]) -> None:
+    """Requests background cancellation at the next safe worker boundary."""
+
+    request_background_cancel(Path(str(background_state["manifest_path"])))
 
 
 def run_next_checkpoint_stage(
@@ -199,6 +267,34 @@ def render_runtime_status(
         else f"Completed in {format_elapsed_seconds(elapsed_seconds)}"
     )
     progress_placeholder.progress(progress_value, text=progress_text)
+
+
+def render_background_job_status(background_state: dict[str, Any]) -> None:
+    """Renders the latest detached large-data job state."""
+
+    manifest_payload = background_state.get("manifest") or {}
+    status = str(background_state.get("status") or manifest_payload.get("status") or "unknown")
+    current_stage = str(
+        background_state.get("current_stage") or manifest_payload.get("current_stage") or ""
+    )
+    progress = str(background_state.get("progress") or manifest_payload.get("progress") or "")
+    with st.container():
+        st.markdown("#### Background Large-Data Job")
+        status_columns = st.columns(4)
+        status_columns[0].metric("Status", status.replace("_", " ").title())
+        status_columns[1].metric("Run ID", background_state.get("run_id") or "Pending")
+        status_columns[2].metric("Current Stage", current_stage or "Starting")
+        status_columns[3].metric("Progress", progress or "Queued")
+        dispatch_mode = str(
+            background_state.get("dispatch_mode") or manifest_payload.get("dispatch_mode") or ""
+        )
+        if dispatch_mode:
+            st.caption(f"Execution dispatch: `{dispatch_mode}`")
+        manifest_path = background_state.get("manifest_path")
+        if manifest_path:
+            st.caption(f"Job manifest: `{manifest_path}`")
+        if status == "failed" and background_state.get("error_message"):
+            st.error(str(background_state["error_message"]))
 
 
 def _runtime_status_label(event_type: str, *, critical: bool = True) -> str:
@@ -368,3 +464,24 @@ def build_execution_plan_cards(
             "value": preview_config.artifacts.export_profile.value.title(),
         },
     ]
+
+
+def _resolve_worker_mode(preview_config: Any) -> LargeDataWorkerMode:
+    configured = preview_config.performance.large_data_worker_mode
+    mode = (
+        configured
+        if isinstance(configured, LargeDataWorkerMode)
+        else LargeDataWorkerMode(configured)
+    )
+    if mode != LargeDataWorkerMode.AUTO:
+        return mode
+    queue_dir = preview_config.artifacts.output_root / "_job_queue"
+    heartbeat_path = queue_dir / "worker_heartbeat.json"
+    try:
+        if heartbeat_path.exists():
+            age_seconds = pd.Timestamp.utcnow().timestamp() - heartbeat_path.stat().st_mtime
+            if age_seconds <= 120:
+                return LargeDataWorkerMode.WORKER_SERVICE
+    except OSError:
+        pass
+    return LargeDataWorkerMode.DETACHED_PROCESS

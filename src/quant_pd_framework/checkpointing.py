@@ -5,16 +5,19 @@ from __future__ import annotations
 import json
 import shutil
 from dataclasses import dataclass
+from dataclasses import replace as dataclass_replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 import joblib
+import pandas as pd
 
 from .context import PipelineContext
 
 CHECKPOINT_MANIFEST_FILE_NAME = "checkpoint_manifest.json"
 CHECKPOINT_CONTEXT_SUFFIX = ".joblib"
+CHECKPOINT_TABLE_REF_MARKER = "__quant_studio_checkpoint_table_ref__"
 
 
 @dataclass(frozen=True, slots=True)
@@ -113,7 +116,8 @@ def save_context_checkpoint(context: PipelineContext, path: Path) -> Path:
     """Persists a pipeline context without compression to avoid extra CPU overhead."""
 
     path.parent.mkdir(parents=True, exist_ok=True)
-    joblib.dump(context, path, compress=0)
+    checkpoint_context = _spill_large_data_context_tables(context, path)
+    joblib.dump(checkpoint_context, path, compress=0)
     return path
 
 
@@ -123,7 +127,173 @@ def load_context_checkpoint(path: Path) -> PipelineContext:
     context = joblib.load(path)
     if not isinstance(context, PipelineContext):
         raise TypeError(f"Checkpoint did not contain a PipelineContext: {path}")
+    _rehydrate_checkpoint_table_refs(context)
     return context
+
+
+def _spill_large_data_context_tables(
+    context: PipelineContext,
+    checkpoint_path: Path,
+) -> PipelineContext:
+    """
+    Writes large dataframe fields beside the checkpoint and stores lightweight refs.
+
+    This keeps Large Data Mode checkpoint joblib files from duplicating large pandas
+    frames. The loader rehydrates the refs before the next stage executes, preserving
+    the existing stage API while reducing checkpoint serialization pressure.
+    """
+
+    if not getattr(context.config.performance, "large_data_mode", False):
+        return context
+    row_cap = int(getattr(context.config.performance, "large_data_max_in_memory_rows", 0) or 0)
+    if row_cap <= 0:
+        return context
+
+    spill_dir = checkpoint_path.parent / "tables" / checkpoint_path.stem
+    checkpoint_context = dataclass_replace(context)
+    checkpoint_context.metadata = dict(context.metadata)
+    spill_records: list[dict[str, Any]] = []
+
+    for field_name in ("raw_data", "working_data", "feature_importance", "backtest_summary"):
+        value = getattr(context, field_name)
+        replacement, record = _spill_frame_if_needed(
+            value,
+            spill_dir=spill_dir,
+            field_name=field_name,
+            table_name=field_name,
+            row_cap=row_cap,
+        )
+        setattr(checkpoint_context, field_name, replacement)
+        if record:
+            spill_records.append(record)
+
+    for field_name in ("split_frames", "predictions", "scenario_results", "diagnostics_tables"):
+        value = getattr(context, field_name)
+        if isinstance(value, dict):
+            replacement, records = _spill_frame_mapping_if_needed(
+                value,
+                spill_dir=spill_dir,
+                field_name=field_name,
+                row_cap=row_cap,
+            )
+            setattr(checkpoint_context, field_name, replacement)
+            spill_records.extend(records)
+
+    if isinstance(context.comparison_results, pd.DataFrame):
+        replacement, record = _spill_frame_if_needed(
+            context.comparison_results,
+            spill_dir=spill_dir,
+            field_name="comparison_results",
+            table_name="comparison_results",
+            row_cap=row_cap,
+        )
+        checkpoint_context.comparison_results = replacement
+        if record:
+            spill_records.append(record)
+
+    if spill_records:
+        existing_records = checkpoint_context.metadata.get("checkpoint_table_refs", [])
+        if not isinstance(existing_records, list):
+            existing_records = []
+        checkpoint_context.metadata["checkpoint_table_refs"] = [
+            *existing_records,
+            *spill_records,
+        ]
+    return checkpoint_context
+
+
+def _spill_frame_mapping_if_needed(
+    value: dict[str, Any],
+    *,
+    spill_dir: Path,
+    field_name: str,
+    row_cap: int,
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    replacement = dict(value)
+    records: list[dict[str, Any]] = []
+    for key, frame in value.items():
+        table_name = f"{field_name}_{_safe_table_name(str(key))}"
+        spilled, record = _spill_frame_if_needed(
+            frame,
+            spill_dir=spill_dir,
+            field_name=field_name,
+            table_name=table_name,
+            row_cap=row_cap,
+            mapping_key=str(key),
+        )
+        replacement[key] = spilled
+        if record:
+            records.append(record)
+    return replacement, records
+
+
+def _spill_frame_if_needed(
+    value: Any,
+    *,
+    spill_dir: Path,
+    field_name: str,
+    table_name: str,
+    row_cap: int,
+    mapping_key: str = "",
+) -> tuple[Any, dict[str, Any] | None]:
+    if not isinstance(value, pd.DataFrame) or len(value) <= row_cap:
+        return value, None
+    spill_dir.mkdir(parents=True, exist_ok=True)
+    table_path = spill_dir / f"{_safe_table_name(table_name)}.parquet"
+    try:
+        value.to_parquet(table_path, index=False)
+    except Exception:
+        return value, None
+    record = {
+        CHECKPOINT_TABLE_REF_MARKER: True,
+        "field_name": field_name,
+        "mapping_key": mapping_key,
+        "path": str(table_path),
+        "format": "parquet",
+        "rows": int(len(value)),
+        "columns": list(map(str, value.columns)),
+        "memory_bytes": int(value.memory_usage(deep=True).sum()),
+    }
+    return dict(record), record
+
+
+def _rehydrate_checkpoint_table_refs(context: PipelineContext) -> None:
+    for field_name in ("raw_data", "working_data", "feature_importance", "backtest_summary"):
+        value = getattr(context, field_name)
+        if _is_checkpoint_table_ref(value):
+            setattr(context, field_name, _read_checkpoint_table_ref(value))
+
+    for field_name in ("split_frames", "predictions", "scenario_results", "diagnostics_tables"):
+        value = getattr(context, field_name)
+        if isinstance(value, dict):
+            setattr(
+                context,
+                field_name,
+                {
+                    key: _read_checkpoint_table_ref(item)
+                    if _is_checkpoint_table_ref(item)
+                    else item
+                    for key, item in value.items()
+                },
+            )
+
+    if _is_checkpoint_table_ref(context.comparison_results):
+        context.comparison_results = _read_checkpoint_table_ref(context.comparison_results)
+
+
+def _is_checkpoint_table_ref(value: Any) -> bool:
+    return isinstance(value, dict) and bool(value.get(CHECKPOINT_TABLE_REF_MARKER))
+
+
+def _read_checkpoint_table_ref(value: dict[str, Any]) -> pd.DataFrame:
+    return pd.read_parquet(Path(str(value["path"])))
+
+
+def _safe_table_name(value: str) -> str:
+    return "".join(
+        character if character.isalnum() or character in {"_", "-"} else "_"
+        for character in value
+    )
 
 
 def checkpoint_file_name(stage_order: int, stage_id: str) -> str:

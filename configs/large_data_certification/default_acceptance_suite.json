@@ -1,0 +1,89 @@
+{
+  "name": "default_large_data_acceptance_suite",
+  "description": "Default Quant Studio Large Data Mode certification suite. The smoke tier is intentionally small and CI-safe. Larger tiers are intended for high-memory workstations or SageMaker instances.",
+  "default_model_scope": "small",
+  "default_source_formats": ["parquet"],
+  "default_source_kinds": ["local"],
+  "small_model_types": [
+    "logistic_regression",
+    "linear_regression"
+  ],
+  "size_tiers": {
+    "smoke": {
+      "description": "Tiny acceptance run for validating the harness and report writers.",
+      "rows": 200,
+      "features": 4,
+      "sample_rows": 100,
+      "chunk_rows": 100,
+      "thresholds": {
+        "max_wall_time_seconds": 600,
+        "max_peak_memory_gb": 4,
+        "max_artifact_size_gb": 1,
+        "required_completion_status": "completed",
+        "expected_scoring_behavior": "policy_consistent",
+        "expected_export_policy_behavior": "compact_large_data_exports"
+      }
+    },
+    "1gb": {
+      "description": "Workstation confidence tier.",
+      "rows": 1000000,
+      "features": 20,
+      "sample_rows": 100000,
+      "chunk_rows": 100000,
+      "thresholds": {
+        "max_wall_time_seconds": 3600,
+        "max_peak_memory_gb": 32,
+        "max_artifact_size_gb": 20,
+        "required_completion_status": "completed",
+        "expected_scoring_behavior": "policy_consistent",
+        "expected_export_policy_behavior": "compact_large_data_exports"
+      }
+    },
+    "5gb": {
+      "description": "High-memory development tier.",
+      "rows": 5000000,
+      "features": 30,
+      "sample_rows": 250000,
+      "chunk_rows": 250000,
+      "thresholds": {
+        "max_wall_time_seconds": 10800,
+        "max_peak_memory_gb": 96,
+        "max_artifact_size_gb": 80,
+        "required_completion_status": "completed",
+        "expected_scoring_behavior": "policy_consistent",
+        "expected_export_policy_behavior": "compact_large_data_exports"
+      }
+    },
+    "10gb": {
+      "description": "High-RAM acceptance tier.",
+      "rows": 10000000,
+      "features": 40,
+      "sample_rows": 500000,
+      "chunk_rows": 500000,
+      "thresholds": {
+        "max_wall_time_seconds": 21600,
+        "max_peak_memory_gb": 192,
+        "max_artifact_size_gb": 160,
+        "required_completion_status": "completed",
+        "expected_scoring_behavior": "policy_consistent",
+        "expected_export_policy_behavior": "compact_large_data_exports"
+      }
+    },
+    "50gb_projected": {
+      "description": "Planning/reporting tier. It records projected scale without materializing 50 GB unless --materialize-50gb is explicitly passed.",
+      "rows": 1000000,
+      "projected_rows": 50000000,
+      "features": 50,
+      "sample_rows": 500000,
+      "chunk_rows": 500000,
+      "thresholds": {
+        "max_wall_time_seconds": 21600,
+        "max_peak_memory_gb": 256,
+        "max_artifact_size_gb": 200,
+        "required_completion_status": "completed",
+        "expected_scoring_behavior": "policy_consistent",
+        "expected_export_policy_behavior": "compact_large_data_exports"
+      }
+    }
+  }
+}

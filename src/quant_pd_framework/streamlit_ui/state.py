@@ -14,6 +14,7 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from quant_pd_framework import TargetMode
+from quant_pd_framework.large_data_runtime import ResultTableRef, TableRef
 from quant_pd_framework.presentation import plotly_display_config, prepare_display_table
 
 LAST_RUN_SNAPSHOT_KEY = "last_run_snapshot"
@@ -109,11 +110,23 @@ def build_run_snapshot(context, config_dict: dict[str, Any]) -> dict[str, Any]:
         key: (str(value) if value is not None else "") for key, value in context.artifacts.items()
     }
     score_column = infer_snapshot_score_column(context)
-    lazy_results = bool(context.config.performance.lazy_streamlit_results)
-    prediction_row_cap = int(context.config.diagnostics.max_plot_rows)
+    lazy_results = bool(
+        context.config.performance.lazy_streamlit_results
+        or context.config.performance.large_data_mode
+    )
+    prediction_row_cap = int(
+        min(
+            context.config.diagnostics.max_plot_rows,
+            context.config.performance.large_data_max_in_memory_rows,
+        )
+    )
     table_row_cap = max(
         int(context.config.diagnostics.max_plot_rows),
         int(context.config.performance.ui_preview_rows),
+    )
+    table_row_cap = min(
+        table_row_cap,
+        int(context.config.performance.large_data_max_in_memory_rows),
     )
     prediction_snapshots = {
         key: _snapshot_frame_for_session(
@@ -147,6 +160,7 @@ def build_run_snapshot(context, config_dict: dict[str, Any]) -> dict[str, Any]:
             else pd.DataFrame()
         ),
         "predictions": prediction_snapshots,
+        "prediction_table_refs": build_prediction_table_refs(context, score_column),
         "warnings": list(context.warnings),
         "events": list(context.events),
         "artifacts": artifact_paths,
@@ -171,6 +185,11 @@ def build_run_snapshot(context, config_dict: dict[str, Any]) -> dict[str, Any]:
             "diagnostics_table_rows_stored": {
                 key: int(value.shape[0]) for key, value in diagnostics_table_snapshots.items()
             },
+            "large_data_mode": bool(context.config.performance.large_data_mode),
+            "result_page_rows": int(context.config.performance.large_data_result_page_rows),
+            "max_in_memory_rows": int(context.config.performance.large_data_max_in_memory_rows),
+            "duckdb_threads": int(context.config.performance.duckdb_threads),
+            "duckdb_memory_limit_gb": context.config.performance.duckdb_memory_limit_gb,
         },
         "feature_columns": list(context.feature_columns),
         "numeric_features": list(context.numeric_features),
@@ -210,6 +229,56 @@ def build_run_snapshot(context, config_dict: dict[str, Any]) -> dict[str, Any]:
             context.metadata.get("interactive_report_payload", {})
         ),
     }
+
+
+def build_prediction_table_refs(context, score_column: str | None) -> dict[str, dict[str, Any]]:
+    """Builds file-backed prediction table refs for paged Large Data Mode browsing."""
+
+    refs: dict[str, dict[str, Any]] = {}
+    date_columns = [
+        column
+        for column in [context.config.split.date_column]
+        if column
+    ]
+    segment_columns = [
+        column
+        for column in [
+            context.config.diagnostics.default_segment_column,
+            *context.categorical_features,
+        ]
+        if column
+    ]
+    for artifact_key, ref_name in [
+        ("full_data_predictions", "full_data_predictions"),
+        ("predictions_parquet", "sample_predictions"),
+        ("predictions_csv", "sample_predictions"),
+        ("predictions", "sample_predictions"),
+    ]:
+        artifact_path = context.artifacts.get(artifact_key)
+        if artifact_path is None:
+            continue
+        path = Path(artifact_path)
+        if not path.exists() or not path.is_file():
+            continue
+        try:
+            table_ref = TableRef.from_path(
+                path,
+                name=ref_name,
+                source_role=artifact_key,
+            )
+            refs[ref_name] = ResultTableRef.from_table_ref(
+                table_ref,
+                score_column=score_column or "",
+                target_column=context.target_column or "",
+                split_column="split",
+                date_columns=date_columns,
+                segment_columns=[
+                    column for column in segment_columns if column in table_ref.columns
+                ],
+            ).to_dict()
+        except Exception:
+            continue
+    return refs
 
 
 def build_run_diagnostics(context) -> dict[str, Any]:

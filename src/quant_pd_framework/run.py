@@ -7,7 +7,7 @@ from copy import deepcopy
 from pathlib import Path
 
 from .config_io import load_framework_config
-from .large_data import build_dataset_handle
+from .large_data import build_dataset_handle, build_s3_dataset_handle, describe_s3_uri, is_s3_uri
 from .orchestrator import QuantModelOrchestrator
 
 
@@ -57,8 +57,14 @@ def run_saved_config(
     )
     orchestrator = QuantModelOrchestrator(config=config)
     if config.performance.large_data_mode:
+        if is_s3_uri(str(resolved_input)):
+            return orchestrator.run(
+                build_s3_dataset_handle(str(resolved_input), describe_s3_uri(str(resolved_input)))
+            )
         metadata = _describe_input_path(resolved_input)
         return orchestrator.run(build_dataset_handle(resolved_input, metadata))
+    if is_s3_uri(str(resolved_input)):
+        raise ValueError("S3 inputs require performance.large_data_mode=True.")
     return orchestrator.run(resolved_input)
 
 
@@ -66,8 +72,10 @@ def _resolve_input_path(
     config_path: Path,
     default_input_names: list[str],
     input_path: str | Path | None,
-) -> Path:
+) -> Path | str:
     if input_path is not None:
+        if is_s3_uri(str(input_path)):
+            return str(input_path)
         return Path(input_path)
 
     for default_input_name in default_input_names:

@@ -28,7 +28,7 @@ These stages are used for `fit_new_model` and `score_existing_model`.
 
 | Stage ID | UI label | Required? | What it does | Main controls |
 | --- | --- | --- | --- | --- |
-| `prepare_data` | Prepare data | Required | Loads data, applies schema, creates target, validates setup, cleans data, builds simple derived features, creates train/validation/test splits, runs assumption checks, fits imputation rules, applies governed transformations, and performs variable selection. | Step 1 `Dataset & Schema`; Step 2 `Core Setup`, `Split Strategy`, `Data Preparation`, `Selection & Documentation`; Column Designer; Transformations table. |
+| `prepare_data` | Prepare data | Required | Loads data, applies schema, creates target, validates setup, cleans data, builds simple derived features, creates train/validation/test splits, runs assumption checks, fits imputation rules, applies governed transformations, and performs variable selection. | Step 1 `Dataset & Schema`; Step 1 `Transformation Studio`; Step 2 `Core Setup`, `Split Strategy`, `Data Preparation`, `Selection & Documentation`; Column Designer. |
 | `fit_model` | Fit or load model | Required | Fits the configured model for `fit_new_model`, or loads the existing model artifact for `score_existing_model`. | Step 2 `Core Setup`; Step 2 `Model Settings`; existing model path and existing config path when scoring an existing model. |
 | `score_evaluate` | Score and evaluate | Required | Scores train/validation/test splits, calculates evaluation metrics, runs challenger comparison when enabled, and builds backtesting outputs. | Step 2 `Model Settings`; Step 2 `Challengers & Policies`; Step 2 calibration and backtest-related diagnostic settings. |
 | `diagnostics_overview` | Diagnostics: overview | Required | Builds the core diagnostics overview used by results, reports, and exports. | Step 2 `Diagnostics & Exports`; target mode; label availability. |
@@ -50,7 +50,7 @@ comparison-only checkpoint sequence.
 
 | Stage ID | UI label | Required? | What it does | Main controls |
 | --- | --- | --- | --- | --- |
-| `prepare_data` | Prepare data | Required | Loads data, applies schema, creates target, validates setup, cleans data, builds simple derived features, creates train/validation/test splits, runs assumption checks, fits imputation rules, and applies governed transformations. | Step 1 `Dataset & Schema`; Step 2 `Core Setup`; Step 2 `Split Strategy`; Step 2 `Data Preparation`; Column Designer; Transformations table. |
+| `prepare_data` | Prepare data | Required | Loads data, applies schema, creates target, validates setup, cleans data, builds simple derived features, creates train/validation/test splits, runs assumption checks, fits imputation rules, and applies governed transformations. | Step 1 `Dataset & Schema`; Step 1 `Transformation Studio`; Step 2 `Core Setup`; Step 2 `Split Strategy`; Step 2 `Data Preparation`; Column Designer. |
 | `feature_subset_search` | Run feature subset search | Required | Enumerates candidate feature subsets for the selected feature-dependent model family, fits candidates, ranks them by a target-appropriate metric, and records comparison evidence. | Step 2 `Core Setup` -> `Execution mode = search_feature_subsets`; Step 2 `Feature Subset Search`; enabled feature roles. |
 | `export_package` | Export package | Required | Writes subset-search ranking tables, comparison charts, winning-subset details, manifests, and report outputs. It does not create the final model-development package. | Step 2 `Output Options`; feature-subset-search settings. |
 

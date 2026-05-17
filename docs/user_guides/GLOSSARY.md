@@ -14,6 +14,7 @@ This glossary defines common terms used in Quant Studio.
 | Data Contract Scorecard | Step 1 review table that checks target role, date role, identifier role, missingness, duplicates, target distribution, and high-cardinality fields before configuration. |
 | Potential Leakage Flags | Step 1 name-based warning table for fields that may describe default, loss, recovery, collections, or other post-outcome information. |
 | Schema Fingerprint | Step 1 reproducibility table with deterministic hashes for the selected data source shape, column signature, and a small content sample. |
+| Transformation Studio | Step 1 governed-transformation workspace with recommendations, recipe cards, a custom builder, pipeline validation, advanced generation controls, and the workbook-compatible advanced table editor. |
 | Transformation Preview | Step 1 before/after preview for one configured or ad hoc transformation on a capped sample. |
 | Readiness Check & Run | Step 3 surface that consolidates validation issues and starts execution. |
 | Model Type Story Card | Step 2 guidance card that explains the selected model type, best-use cases, avoid conditions, key settings, outputs, and validation questions. |

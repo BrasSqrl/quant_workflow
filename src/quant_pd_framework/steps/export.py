@@ -53,6 +53,7 @@ from ..presentation import (
 )
 from ..report_payload import optimize_report_visualizations
 from ..reporting import build_regulatory_report_bundle
+from ..run_registry import write_per_run_audit_log
 from ..tabular_policy import resolve_tabular_output_format
 from ..validation_evidence import publish_validation_evidence_tables
 
@@ -124,6 +125,7 @@ class ArtifactExportStep(BasePipelineStep):
         validation_report_pdf_path = paths.validation_report_pdf_path
         reproducibility_manifest_path = paths.reproducibility_manifest_path
         run_debug_trace_path = paths.run_debug_trace_path
+        audit_events_path = paths.audit_events_path
         template_workbook_path = paths.template_workbook_path
         runner_script_path = paths.runner_script_path
         rerun_readme_path = paths.rerun_readme_path
@@ -149,6 +151,7 @@ class ArtifactExportStep(BasePipelineStep):
                 manifest_path=manifest_path,
                 step_manifest_path=step_manifest_path,
                 run_debug_trace_path=run_debug_trace_path,
+                audit_events_path=audit_events_path,
             )
 
         if context.model is None:
@@ -281,6 +284,11 @@ class ArtifactExportStep(BasePipelineStep):
         step_manifest = self._build_step_manifest(context)
         self._write_json(step_manifest_path, step_manifest)
         self._write_json(run_debug_trace_path, self._build_run_debug_trace(context))
+        audit_events_path = write_per_run_audit_log(
+            context.config.artifacts.output_root,
+            context.run_id,
+            output_root,
+        )
         start_here_path = paths.start_here_path
         start_here_path.write_text(
             self._build_start_here_guide(context=context, paths=paths),
@@ -310,6 +318,7 @@ class ArtifactExportStep(BasePipelineStep):
                 "tests": str(tests_path),
                 "step_manifest": str(step_manifest_path),
                 "run_debug_trace": str(run_debug_trace_path),
+                "audit_events": str(audit_events_path),
                 "artifact_manifest": str(manifest_path),
             },
             "directories": {
@@ -338,6 +347,33 @@ class ArtifactExportStep(BasePipelineStep):
                 ),
                 "large_data_metadata": self._path_string(
                     context.artifacts.get("large_data_metadata_dir")
+                ),
+            },
+            "large_data_artifacts": {
+                "dataset_profile": self._path_string(context.artifacts.get("large_data_profile")),
+                "execution_plan": self._path_string(
+                    context.artifacts.get("large_data_execution_plan")
+                ),
+                "transformation_contract": self._path_string(
+                    context.artifacts.get("large_data_transformation_contract")
+                ),
+                "feature_screening": self._path_string(
+                    context.artifacts.get("large_data_feature_screening")
+                ),
+                "feature_screening_manifest": self._path_string(
+                    context.artifacts.get("large_data_feature_screening_manifest")
+                ),
+                "partitioned_dataset_manifest": self._path_string(
+                    context.artifacts.get("partitioned_dataset_manifest")
+                ),
+                "projected_dataset": self._path_string(
+                    context.artifacts.get("large_data_projected_dataset")
+                ),
+                "prepared_dataset_manifest": self._path_string(
+                    context.artifacts.get("prepared_dataset_manifest")
+                ),
+                "full_data_predictions": self._path_string(
+                    context.artifacts.get("full_data_predictions")
                 ),
             },
             **visualization_manifest,
@@ -431,6 +467,7 @@ class ArtifactExportStep(BasePipelineStep):
             "figures_dir": figures_dir if figures_dir.exists() else None,
             "workbook": workbook_path if self._excel_workbook_enabled(context) else None,
             "run_debug_trace": run_debug_trace_path,
+            "audit_events": audit_events_path,
             "manifest": manifest_path,
             "artifact_manifest": manifest_path,
             "step_manifest": step_manifest_path,
@@ -439,6 +476,27 @@ class ArtifactExportStep(BasePipelineStep):
             "full_data_scoring_dir": context.artifacts.get("full_data_scoring_dir"),
             "full_data_predictions": context.artifacts.get("full_data_predictions"),
             "large_data_metadata_dir": context.artifacts.get("large_data_metadata_dir"),
+            "large_data_profile": context.artifacts.get("large_data_profile"),
+            "large_data_execution_plan": context.artifacts.get("large_data_execution_plan"),
+            "large_data_transformation_contract": context.artifacts.get(
+                "large_data_transformation_contract"
+            ),
+            "large_data_feature_screening": context.artifacts.get(
+                "large_data_feature_screening"
+            ),
+            "large_data_feature_screening_manifest": context.artifacts.get(
+                "large_data_feature_screening_manifest"
+            ),
+            "partitioned_dataset_manifest": context.artifacts.get(
+                "partitioned_dataset_manifest"
+            ),
+            "partitioned_sample_development_dir": context.artifacts.get(
+                "partitioned_sample_development_dir"
+            ),
+            "large_data_projected_dataset": context.artifacts.get(
+                "large_data_projected_dataset"
+            ),
+            "prepared_dataset_manifest": context.artifacts.get("prepared_dataset_manifest"),
             "large_data_full_scoring_progress": context.artifacts.get(
                 "large_data_full_scoring_progress"
             ),
@@ -853,6 +911,7 @@ class ArtifactExportStep(BasePipelineStep):
         manifest_path: Path,
         step_manifest_path: Path,
         run_debug_trace_path: Path,
+        audit_events_path: Path,
     ) -> PipelineContext:
         if not context.diagnostics_tables:
             raise ValueError("Feature subset search requires comparison tables before export.")
@@ -918,6 +977,11 @@ class ArtifactExportStep(BasePipelineStep):
         step_manifest = self._build_step_manifest(context)
         self._write_json(step_manifest_path, step_manifest)
         self._write_json(run_debug_trace_path, self._build_run_debug_trace(context))
+        audit_events_path = write_per_run_audit_log(
+            context.config.artifacts.output_root,
+            context.run_id,
+            output_root,
+        )
         paths = build_export_path_layout(context.config.artifacts, output_root)
         paths.start_here_path.write_text(
             self._build_start_here_guide(context=context, paths=paths),
@@ -938,6 +1002,7 @@ class ArtifactExportStep(BasePipelineStep):
                 "tests": str(tests_path),
                 "step_manifest": str(step_manifest_path),
                 "run_debug_trace": str(run_debug_trace_path),
+                "audit_events": str(audit_events_path),
                 "artifact_manifest": str(manifest_path),
             },
             "directories": {
@@ -989,6 +1054,7 @@ class ArtifactExportStep(BasePipelineStep):
             "artifact_manifest": manifest_path,
             "step_manifest": step_manifest_path,
             "run_debug_trace": run_debug_trace_path,
+            "audit_events": audit_events_path,
         }
         return context
 
@@ -1335,6 +1401,7 @@ class ArtifactExportStep(BasePipelineStep):
             "statistical_tests.json": "Structured statistical-test payloads.",
             "step_manifest.json": "Ordered pipeline step stack.",
             "run_debug_trace.json": "Per-step debug trace and timing metadata.",
+            "audit_events.jsonl": "Run-scoped audit event log for major GUI and workflow actions.",
             "reproducibility_manifest.json": "Hashes, package versions, and environment metadata.",
             "analysis_workbook.xlsx": (
                 "Excel workbook containing metrics, predictions, and diagnostics."

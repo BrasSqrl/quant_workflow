@@ -457,6 +457,13 @@ pipeline fails rather than silently applying a fallback imputer.
 and replays them on validation, test, score-only datasets, and the working
 diagnostic dataframe.
 
+In the GUI, transformations are created in Step 1 `Transformation Studio`
+instead of a raw table-first editor. The studio provides profile-driven
+`Recommendations`, grouped `Recipe Library` cards, a guided `Custom Builder`,
+and `Pipeline Review` with validation status plus the advanced editable table.
+Every accepted recommendation, recipe, or custom row still writes to the same
+`transformations` sheet/config schema.
+
 Supported transform families:
 
 - numeric shape transforms: `winsorize`, `log1p`, `signed_log1p`,
@@ -501,7 +508,8 @@ Parameter rules:
 Workbook support:
 
 - The Step 1 review workbook includes a `transform_catalog` sheet with each
-  transform's purpose, use case, parameter guidance, and output type.
+  transform's recipe group, purpose, use case, parameter guidance, output type,
+  and large-data status.
 - The `transformations.transform_type` dropdown uses a hidden validation list
   so the full expanded catalog remains selectable in Excel.
 

@@ -11,6 +11,7 @@ from sklearn.model_selection import train_test_split
 from ..base import BasePipelineStep
 from ..config import DataStructure, SplitConfig, SplitStrategy, TargetMode
 from ..context import PipelineContext
+from ..large_data_enterprise import record_partitioned_sample_manifest
 
 
 class SplitStep(BasePipelineStep):
@@ -68,6 +69,7 @@ class SplitStep(BasePipelineStep):
             "entity_column": split_config.entity_column,
             "custom_split_column": split_config.custom_split_column,
         }
+        record_partitioned_sample_manifest(context)
         return context
 
     def _resolve_strategy(self, split_config: SplitConfig) -> SplitStrategy:

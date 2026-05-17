@@ -19,6 +19,7 @@ pytest-cache-files-*/
 .coverage.*
 htmlcov/
 .setup_tmp/
+.quant_studio_cache/
 
 artifacts/
 Data_Load/*

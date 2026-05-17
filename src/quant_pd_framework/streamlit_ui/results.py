@@ -27,6 +27,12 @@ from quant_pd_framework.figure_exports import (
     build_figure_export_assets,
     build_individual_figure_zip,
 )
+from quant_pd_framework.large_data_runtime import (
+    ResultTableRef,
+    count_table_rows,
+    distinct_column_values,
+    query_table_page,
+)
 from quant_pd_framework.llm_documentation_package import (
     FIGURE_ASSETS_ROOT,
     build_llm_documentation_context_payload,
@@ -50,6 +56,14 @@ from quant_pd_framework.presentation import (
     summarize_run_kpis,
 )
 from quant_pd_framework.report_payload import optimize_report_visualizations
+from quant_pd_framework.run_registry import (
+    AuditEvent,
+    RunRegistryEntry,
+    load_audit_events,
+    load_run_registry,
+    sync_run_registry_from_artifacts,
+)
+from quant_pd_framework.streamlit_ui.audit import record_gui_audit_event
 from quant_pd_framework.streamlit_ui.data import sample_frame
 from quant_pd_framework.streamlit_ui.decision_room import build_decision_room_payload
 from quant_pd_framework.streamlit_ui.enterprise_workflow import (
@@ -185,6 +199,235 @@ def render_run_diagnostics_strip(snapshot: dict[str, Any]) -> None:
             "Peak tracked dataframe memory was not captured for this run. Enable "
             "`Capture memory profile in debug trace` to populate this value."
         )
+
+
+def render_run_registry_panel(output_root: str | Path) -> None:
+    """Renders the searchable completed-run registry and audit event table."""
+
+    output_root = Path(output_root)
+    st.markdown("### Run Registry")
+    st.caption(
+        "Browse previously completed or known failed runs without opening artifact "
+        "folders manually. The registry is an index; the run folders remain the "
+        "source of truth."
+    )
+    actions = st.columns([0.35, 0.65])
+    if actions[0].button(
+        "Refresh registry from artifacts",
+        key=f"refresh_run_registry_{output_root}",
+        width="stretch",
+    ):
+        sync_run_registry_from_artifacts(output_root)
+        st.success("Registry refreshed from artifact folders.")
+
+    entries = load_run_registry(output_root, refresh_from_artifacts=True)
+    if not entries:
+        st.info(f"No run registry entries were found under `{output_root}`.")
+        _render_audit_trail(output_root, run_id="")
+        return
+
+    registry_frame = _run_registry_frame(entries)
+    filter_columns = st.columns(4)
+    search_text = filter_columns[0].text_input(
+        "Search runs",
+        value="",
+        key=f"run_registry_search_{output_root}",
+        help="Search run ID, source, model type, execution mode, or artifact path.",
+    ).strip().lower()
+    status_options = ["All", *sorted(registry_frame["status"].dropna().unique().tolist())]
+    selected_status = filter_columns[1].selectbox(
+        "Status",
+        options=status_options,
+        key=f"run_registry_status_{output_root}",
+    )
+    model_options = ["All", *sorted(registry_frame["model_type"].dropna().unique().tolist())]
+    selected_model = filter_columns[2].selectbox(
+        "Model type",
+        options=model_options,
+        key=f"run_registry_model_{output_root}",
+    )
+    reviewer_options = [
+        "All",
+        *sorted(registry_frame["reviewer_status"].dropna().unique().tolist()),
+    ]
+    selected_reviewer = filter_columns[3].selectbox(
+        "Reviewer status",
+        options=reviewer_options,
+        key=f"run_registry_reviewer_{output_root}",
+    )
+    filtered = registry_frame.copy()
+    if search_text:
+        searchable = filtered.fillna("").astype(str).agg(" ".join, axis=1).str.lower()
+        filtered = filtered.loc[searchable.str.contains(search_text)]
+    if selected_status != "All":
+        filtered = filtered.loc[filtered["status"] == selected_status]
+    if selected_model != "All":
+        filtered = filtered.loc[filtered["model_type"] == selected_model]
+    if selected_reviewer != "All":
+        filtered = filtered.loc[filtered["reviewer_status"] == selected_reviewer]
+
+    st.dataframe(
+        prepare_table_for_display(filtered),
+        width="stretch",
+        hide_index=True,
+    )
+    if filtered.empty:
+        st.info("No runs match the current filters.")
+        _render_audit_trail(output_root, run_id="")
+        return
+
+    selected_run_id = st.selectbox(
+        "Inspect run",
+        options=filtered["run_id"].tolist(),
+        key=f"run_registry_selected_run_{output_root}",
+    )
+    selected_entry = next(entry for entry in entries if entry.run_id == selected_run_id)
+    _render_run_registry_entry_detail(selected_entry)
+    _render_audit_trail(output_root, run_id=selected_run_id)
+
+
+def _run_registry_frame(entries: list[RunRegistryEntry]) -> pd.DataFrame:
+    rows: list[dict[str, Any]] = []
+    for entry in entries:
+        metrics = entry.metrics_summary
+        rows.append(
+            {
+                "run_id": entry.run_id,
+                "status": entry.status,
+                "completed_at_utc": entry.completed_at_utc,
+                "elapsed_seconds": entry.elapsed_seconds,
+                "execution_mode": entry.execution_mode,
+                "model_type": entry.model_type,
+                "target_mode": entry.target_mode,
+                "dataset_source": entry.dataset_source_label,
+                "large_data": entry.large_data_mode,
+                "reviewer_status": entry.reviewer_status,
+                "warning_count": entry.warning_count,
+                "primary_metric": _primary_metric_text(metrics),
+                "artifact_root": entry.artifact_root,
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+def _render_run_registry_entry_detail(entry: RunRegistryEntry) -> None:
+    st.markdown("#### Selected Run Detail")
+    render_metric_strip(
+        [
+            {"label": "Run ID", "value": entry.run_id},
+            {"label": "Status", "value": entry.status.replace("_", " ").title()},
+            {"label": "Model", "value": entry.model_type.replace("_", " ").title()},
+            {"label": "Reviewer", "value": entry.reviewer_status or "Not reviewed"},
+        ],
+        compact=True,
+    )
+    detail_rows = [
+        ("Artifact root", entry.artifact_root),
+        ("Started", entry.started_at_utc),
+        ("Completed", entry.completed_at_utc),
+        ("Elapsed seconds", entry.elapsed_seconds),
+        ("Execution mode", entry.execution_mode),
+        ("Target mode", entry.target_mode),
+        ("Dataset source", entry.dataset_source_label),
+        ("Dataset source kind", entry.dataset_source_kind),
+        ("Large Data Mode", entry.large_data_mode),
+        ("Warnings", entry.warning_count),
+        ("Reviewer name", entry.reviewer_name),
+        ("Review updated", entry.review_updated_at_utc),
+        ("Error", entry.error_message),
+    ]
+    st.dataframe(
+        prepare_table_for_display(pd.DataFrame(detail_rows, columns=["field", "value"])),
+        width="stretch",
+        hide_index=True,
+    )
+    if entry.metrics_summary:
+        st.markdown("##### Metrics Summary")
+        st.dataframe(
+            prepare_table_for_display(
+                pd.DataFrame(
+                    [
+                        {"metric": metric, "value": value}
+                        for metric, value in entry.metrics_summary.items()
+                    ]
+                )
+            ),
+            width="stretch",
+            hide_index=True,
+        )
+    if entry.artifact_paths:
+        st.markdown("##### Primary Artifacts")
+        st.dataframe(
+            prepare_table_for_display(
+                pd.DataFrame(
+                    [
+                        {"artifact": key, "path": value}
+                        for key, value in entry.artifact_paths.items()
+                    ]
+                )
+            ),
+            width="stretch",
+            hide_index=True,
+        )
+
+
+def _render_audit_trail(output_root: Path, *, run_id: str) -> None:
+    st.markdown("### Audit Trail")
+    event_type_filter = st.text_input(
+        "Audit event contains",
+        value="",
+        key=f"audit_event_filter_{output_root}_{run_id or 'all'}",
+        help="Optional text filter across event type, source, run ID, and metadata.",
+    ).strip().lower()
+    events = load_audit_events(output_root, run_id=run_id or None, limit=500)
+    frame = _audit_event_frame(events)
+    if frame.empty:
+        st.info("No audit events have been recorded for the current filter.")
+        return
+    if event_type_filter:
+        searchable = frame.fillna("").astype(str).agg(" ".join, axis=1).str.lower()
+        frame = frame.loc[searchable.str.contains(event_type_filter)]
+    st.dataframe(
+        prepare_table_for_display(frame),
+        width="stretch",
+        hide_index=True,
+    )
+
+
+def _audit_event_frame(events: list[AuditEvent]) -> pd.DataFrame:
+    rows: list[dict[str, Any]] = []
+    for event in events:
+        rows.append(
+            {
+                "timestamp_utc": event.timestamp_utc,
+                "event_type": event.event_type,
+                "source": event.source,
+                "run_id": event.run_id,
+                "artifact_root": event.artifact_root,
+                "metadata": json.dumps(event.metadata, sort_keys=True, default=str),
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+def _primary_metric_text(metrics: dict[str, Any]) -> str:
+    for key, value in metrics.items():
+        if value not in {"", None}:
+            try:
+                return f"{key}: {float(value):.4g}"
+            except (TypeError, ValueError):
+                return f"{key}: {value}"
+    return ""
+
+
+def _snapshot_output_root(snapshot: dict[str, Any]) -> Path:
+    artifacts = snapshot.get("artifacts", {})
+    output_root = artifacts.get("output_root")
+    if output_root:
+        run_root = Path(str(output_root))
+        return run_root.parent if run_root.name == str(snapshot.get("run_id", "")) else run_root
+    config_root = snapshot.get("config", {}).get("artifacts", {}).get("output_root")
+    return Path(str(config_root or "artifacts"))
 
 
 def render_workflow_readiness(
@@ -347,9 +590,15 @@ def render_run_results(snapshot: dict[str, Any]) -> None:
     asset_catalog = prune_subset_search_highlight_assets(
         build_asset_catalog(snapshot["diagnostics_tables"], snapshot["visualizations"])
     )
-    all_predictions = pd.concat(snapshot["predictions"].values(), ignore_index=True)
+    prediction_frames = [
+        frame for frame in snapshot["predictions"].values() if isinstance(frame, pd.DataFrame)
+    ]
+    all_predictions = (
+        pd.concat(prediction_frames, ignore_index=True) if prediction_frames else pd.DataFrame()
+    )
     filter_state = render_result_filters(snapshot, all_predictions)
     filtered_predictions = apply_prediction_filters(snapshot, all_predictions, filter_state)
+    render_large_data_paged_prediction_browser(snapshot)
 
     section_map: dict[str, str] = {"Overview": "overview", "Governance": "governance"}
     section_labels = ["Overview"]
@@ -567,6 +816,7 @@ def render_decision_summary(snapshot: dict[str, Any]) -> None:
 
 
 def _render_decision_summary_download(snapshot: dict[str, Any]) -> None:
+    artifacts = snapshot.get("artifacts", {})
     st.download_button(
         "Download decision summary",
         data=build_decision_summary_markdown(snapshot),
@@ -575,6 +825,14 @@ def _render_decision_summary_download(snapshot: dict[str, Any]) -> None:
         width="stretch",
         key=f"{snapshot.get('run_id', 'run')}_decision_summary_download",
         help="Downloads the Markdown decision summary for the completed run.",
+        on_click=record_gui_audit_event,
+        kwargs={
+            "output_root": _snapshot_output_root(snapshot),
+            "event_type": "decision_summary_downloaded",
+            "run_id": str(snapshot.get("run_id", "")),
+            "artifact_root": artifacts.get("output_root"),
+            "metadata": {"file_name": f"{snapshot.get('run_id', 'run')}_decision_summary.md"},
+        },
     )
     st.caption("Downloads the Markdown decision summary immediately.")
 
@@ -616,6 +874,7 @@ def _render_individual_images_download(snapshot: dict[str, Any]) -> None:
             "Includes PNG files plus lightweight HTML charts that share one Plotly "
             "JavaScript file."
         ),
+        audit_event_prefix="individual_images_package",
     )
 
 
@@ -643,6 +902,7 @@ def _render_llm_package_download(snapshot: dict[str, Any]) -> None:
             "build timing profile, and capped HTML plus document-ready PNG chart assets."
         ),
         show_spinner=False,
+        audit_event_prefix="llm_package",
     )
 
 
@@ -897,10 +1157,13 @@ def _render_lazy_zip_download(
     ready_label: str,
     caption: str,
     show_spinner: bool = True,
+    audit_event_prefix: str = "",
 ) -> None:
     run_id = str(snapshot.get("run_id", "run"))
     state_key = f"{run_id}_{state_suffix}_bytes"
     error_key = f"{run_id}_{state_suffix}_error"
+    output_root = _snapshot_output_root(snapshot)
+    artifact_root = snapshot.get("artifacts", {}).get("output_root")
     if st.button(label, key=f"{state_key}_prepare", width="stretch", help=help_text):
         st.session_state.pop(error_key, None)
         try:
@@ -909,9 +1172,31 @@ def _render_lazy_zip_download(
                     st.session_state[state_key] = build_package()
             else:
                 st.session_state[state_key] = build_package()
+            if audit_event_prefix:
+                package_bytes = st.session_state.get(state_key, b"")
+                record_gui_audit_event(
+                    output_root,
+                    f"{audit_event_prefix}_prepared",
+                    run_id=run_id,
+                    artifact_root=artifact_root,
+                    metadata={
+                        "file_name": file_name,
+                        "size_bytes": len(package_bytes)
+                        if isinstance(package_bytes, bytes | bytearray)
+                        else None,
+                    },
+                )
         except Exception as exc:  # pragma: no cover - defensive UI fallback.
             st.session_state.pop(state_key, None)
             st.session_state[error_key] = str(exc)
+            if audit_event_prefix:
+                record_gui_audit_event(
+                    output_root,
+                    f"{audit_event_prefix}_prepare_failed",
+                    run_id=run_id,
+                    artifact_root=artifact_root,
+                    metadata={"file_name": file_name, "error_message": str(exc)},
+                )
 
     package_bytes = st.session_state.get(state_key)
     if package_bytes:
@@ -922,6 +1207,16 @@ def _render_lazy_zip_download(
             mime="application/zip",
             width="stretch",
             help=help_text,
+            on_click=record_gui_audit_event if audit_event_prefix else None,
+            kwargs={
+                "output_root": output_root,
+                "event_type": f"{audit_event_prefix}_downloaded",
+                "run_id": run_id,
+                "artifact_root": artifact_root,
+                "metadata": {"file_name": file_name, "size_bytes": len(package_bytes)},
+            }
+            if audit_event_prefix
+            else None,
         )
         st.caption(caption)
     elif st.session_state.get(error_key):
@@ -966,6 +1261,7 @@ def _render_monitoring_package_download(snapshot: dict[str, Any]) -> None:
         ),
         build_package=build_package,
         ready_label="Save OM Package ZIP",
+        audit_event_prefix="om_package",
         caption=(
             "Includes model, config, generated runner, manifest, metadata, and "
             "available CSV inputs/scores."
@@ -1385,11 +1681,15 @@ def render_result_filters(
     ):
         segment_candidates.insert(0, segment_default)
     segment_options = ["(none)", *segment_candidates]
-    date_candidates = [
-        column
-        for column in all_predictions.columns
-        if pd.api.types.is_datetime64_any_dtype(all_predictions[column])
-    ]
+    date_candidates = (
+        [
+            column
+            for column in all_predictions.columns
+            if pd.api.types.is_datetime64_any_dtype(all_predictions[column])
+        ]
+        if not all_predictions.empty
+        else []
+    )
 
     st.markdown("### Interactive Filters")
     with st.expander("Adjust the live view", expanded=True):
@@ -1491,6 +1791,8 @@ def apply_prediction_filters(
     filter_state: dict[str, Any],
 ) -> pd.DataFrame:
     selected_split = filter_state["selected_split"]
+    if all_predictions.empty:
+        return all_predictions
     filtered_predictions = (
         all_predictions
         if selected_split == "all"
@@ -1522,6 +1824,162 @@ def apply_prediction_filters(
             ]
 
     return filtered_predictions
+
+
+def render_large_data_paged_prediction_browser(snapshot: dict[str, Any]) -> None:
+    """Renders full row-level result access through file-backed paging."""
+
+    refs = snapshot.get("prediction_table_refs") or {}
+    streamlit_snapshot = snapshot.get("streamlit_snapshot") or {}
+    if not streamlit_snapshot.get("large_data_mode") or not refs:
+        return
+    selected_ref_payload = refs.get("full_data_predictions") or refs.get("sample_predictions")
+    if not selected_ref_payload:
+        return
+    table_ref = ResultTableRef.from_dict(selected_ref_payload)
+    if not table_ref.path:
+        return
+
+    st.markdown("### Full Row Browser")
+    st.caption(
+        "Large-data rows are queried from the exported file-backed predictions table. "
+        "The UI loads one page at a time instead of loading the full table into Streamlit."
+    )
+    with st.expander("Browse full prediction rows", expanded=False):
+        page_size_default = int(streamlit_snapshot.get("result_page_rows") or 1000)
+        controls = st.columns([1.0, 1.0, 1.1, 1.1])
+        page_size = int(
+            controls[0].number_input(
+                "Rows per page",
+                min_value=100,
+                max_value=10000,
+                value=max(100, min(page_size_default, 10000)),
+                step=100,
+                key=f"{snapshot['run_id']}_paged_result_rows",
+            )
+        )
+        row_count = table_ref.row_count
+        if row_count is None:
+            try:
+                row_count = count_table_rows(
+                    table_ref,
+                    duckdb_threads=int(streamlit_snapshot.get("duckdb_threads") or 0),
+                    duckdb_memory_limit_gb=streamlit_snapshot.get("duckdb_memory_limit_gb"),
+                )
+            except Exception:
+                row_count = None
+        max_page = max(1, ((int(row_count) - 1) // page_size) + 1) if row_count else 1
+        page_number = int(
+            controls[1].number_input(
+                "Page",
+                min_value=1,
+                max_value=max_page,
+                value=1,
+                step=1,
+                key=f"{snapshot['run_id']}_paged_result_page",
+            )
+        )
+        sort_options = ["(none)", *table_ref.columns]
+        sort_by = controls[2].selectbox(
+            "Sort column",
+            options=sort_options,
+            key=f"{snapshot['run_id']}_paged_result_sort",
+        )
+        descending = controls[3].checkbox(
+            "Descending",
+            value=False,
+            key=f"{snapshot['run_id']}_paged_result_desc",
+        )
+
+        filter_specs: list[dict[str, Any]] = []
+        filter_columns = [
+            column
+            for column in [
+                table_ref.split_column,
+                table_ref.target_column,
+                table_ref.score_column,
+                *table_ref.segment_columns[:3],
+            ]
+            if column and column in table_ref.columns
+        ]
+        if filter_columns:
+            filter_column = st.selectbox(
+                "Optional equality filter",
+                options=["(none)", *dict.fromkeys(filter_columns)],
+                key=f"{snapshot['run_id']}_paged_result_filter_column",
+            )
+            if filter_column != "(none)":
+                try:
+                    values = distinct_column_values(
+                        table_ref,
+                        filter_column,
+                        limit=250,
+                        duckdb_threads=int(streamlit_snapshot.get("duckdb_threads") or 0),
+                        duckdb_memory_limit_gb=streamlit_snapshot.get("duckdb_memory_limit_gb"),
+                    )
+                except Exception:
+                    values = []
+                if values:
+                    selected_value = st.selectbox(
+                        "Filter value",
+                        options=values,
+                        key=f"{snapshot['run_id']}_paged_result_filter_value",
+                    )
+                    filter_specs.append(
+                        {"column": filter_column, "op": "eq", "value": selected_value}
+                    )
+
+        preferred_columns = [
+            column
+            for column in [
+                table_ref.split_column,
+                *table_ref.date_columns,
+                *table_ref.segment_columns[:4],
+                table_ref.target_column,
+                table_ref.score_column,
+                "predicted_probability",
+                "predicted_value",
+                "predicted_class",
+                "scorecard_score",
+                "scorecard_points",
+            ]
+            if column and column in table_ref.columns
+        ]
+        selected_columns = st.multiselect(
+            "Displayed columns",
+            options=table_ref.columns,
+            default=list(dict.fromkeys(preferred_columns)) or table_ref.columns[:12],
+            key=f"{snapshot['run_id']}_paged_result_columns",
+        )
+        try:
+            page_frame = query_table_page(
+                table_ref,
+                columns=selected_columns or None,
+                filters=filter_specs,
+                sort_by=None if sort_by == "(none)" else sort_by,
+                descending=descending,
+                page=page_number,
+                page_size=page_size,
+                duckdb_threads=int(streamlit_snapshot.get("duckdb_threads") or 0),
+                duckdb_memory_limit_gb=streamlit_snapshot.get("duckdb_memory_limit_gb"),
+            )
+            if filter_specs:
+                filtered_count = count_table_rows(
+                    table_ref,
+                    filters=filter_specs,
+                    duckdb_threads=int(streamlit_snapshot.get("duckdb_threads") or 0),
+                    duckdb_memory_limit_gb=streamlit_snapshot.get("duckdb_memory_limit_gb"),
+                )
+                st.caption(f"Filtered rows: {filtered_count:,}")
+            elif row_count is not None:
+                st.caption(f"Rows available: {int(row_count):,}")
+            st.dataframe(
+                prepare_table_for_display(page_frame),
+                width="stretch",
+                hide_index=True,
+            )
+        except Exception as exc:
+            st.warning(f"Could not read the paged prediction table: {exc}")
 
 
 def render_chart_review_context(descriptor: Any) -> None:
@@ -2857,6 +3315,19 @@ def render_reviewer_workspace(snapshot: dict[str, Any]) -> None:
             review_path = Path(output_root) / "review_workspace.json"
             review_path.parent.mkdir(parents=True, exist_ok=True)
             review_path.write_text(json.dumps(asdict(reviewer_record), indent=2), encoding="utf-8")
+            record_gui_audit_event(
+                _snapshot_output_root(snapshot),
+                "review_record_saved",
+                run_id=str(snapshot.get("run_id", "")),
+                artifact_root=output_root,
+                metadata={
+                    "reviewer_name": reviewer_record.reviewer_name,
+                    "approval_status": reviewer_record.approval_status,
+                    "review_notes_chars": len(reviewer_record.review_notes),
+                    "exception_notes_chars": len(reviewer_record.exception_notes),
+                    "review_path": str(review_path),
+                },
+            )
             st.success(f"Saved review record to {review_path}.")
 
 

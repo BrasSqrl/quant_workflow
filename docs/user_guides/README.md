@@ -8,9 +8,11 @@ document model-development work. They are intentionally task oriented.
 Start with:
 
 1. [User Quick Start Guide](./QUICK_START.md)
-2. [Data Requirements Guide](./DATA_REQUIREMENTS.md)
-3. [Execution Mode Decision Guide](./EXECUTION_MODE_DECISION_GUIDE.md)
-4. [Artifact Map](./ARTIFACT_MAP.md)
+2. [PD Logistic Regression Walkthrough](./PD_LOGISTIC_REGRESSION_WALKTHROUGH.html)
+3. [Data Requirements Guide](./DATA_REQUIREMENTS.md)
+4. [Execution Mode Decision Guide](./EXECUTION_MODE_DECISION_GUIDE.md)
+5. [Artifact Map](./ARTIFACT_MAP.md)
+6. [Run Registry and Audit Guide](./RUN_REGISTRY_AND_AUDIT_GUIDE.md)
 
 That path explains how to launch the app, what data must look like, which
 workflow mode to choose, how to read the Step 5 decision summary, and where the
@@ -20,10 +22,12 @@ final outputs are written.
 
 Use these guides:
 
+- [PD Logistic Regression Walkthrough](./PD_LOGISTIC_REGRESSION_WALKTHROUGH.html)
 - [Configuration Cookbook](./CONFIGURATION_COOKBOOK.md)
 - [Model Selection Guide](./MODEL_SELECTION_GUIDE.md)
 - [Model Type Reference Guide](./MODEL_TYPE_REFERENCE_GUIDE.md)
 - [Large Data Playbook](./LARGE_DATA_PLAYBOOK.md)
+- [Large Data Certification Guide](./LARGE_DATA_CERTIFICATION_GUIDE.md)
 - [Glossary](./GLOSSARY.md)
 
 ## If You Are Reviewing A Model
@@ -32,6 +36,7 @@ Use these guides:
 
 - [Validation Reviewer Guide](./VALIDATION_REVIEWER_GUIDE.md)
 - [Artifact Map](./ARTIFACT_MAP.md)
+- [Run Registry and Audit Guide](./RUN_REGISTRY_AND_AUDIT_GUIDE.md)
 - [Troubleshooting Guide](./TROUBLESHOOTING.md)
 - [Glossary](./GLOSSARY.md)
 

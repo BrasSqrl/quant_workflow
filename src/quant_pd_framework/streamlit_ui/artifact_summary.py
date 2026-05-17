@@ -18,6 +18,7 @@ PRIMARY_ARTIFACTS: tuple[tuple[str, str, str], ...] = (
     ("config", "Run configuration", "Reproducibility"),
     ("reproducibility_manifest", "Reproducibility manifest", "Reproducibility"),
     ("run_debug_trace", "Run debug trace", "Debugging"),
+    ("audit_events", "Run audit events", "Governance"),
     ("predictions", "Predictions", "Output data"),
     ("full_data_predictions", "Full-data predictions", "Large Data Mode"),
     ("sample_development_dir", "Sample-development folder", "Large Data Mode"),

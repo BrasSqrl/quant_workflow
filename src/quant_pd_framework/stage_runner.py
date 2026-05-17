@@ -36,6 +36,11 @@ from .config import ExecutionMode, FrameworkConfig
 from .context import PipelineContext
 from .export_layout import build_export_path_layout
 from .orchestrator import QuantModelOrchestrator
+from .run_registry import (
+    append_audit_event,
+    build_failed_run_registry_entry,
+    upsert_run_registry_entry,
+)
 from .steps import (
     ArtifactExportStep,
     AssumptionCheckStep,
@@ -177,6 +182,19 @@ class CheckpointedWorkflowRunner:
             ),
             keep_all_checkpoints=self.config.artifacts.keep_all_checkpoints,
         )
+        append_audit_event(
+            self.config.artifacts.output_root,
+            "workflow_run_started",
+            source="checkpoint_runner",
+            run_id=context.run_id,
+            artifact_root=self.config.artifacts.output_root / context.run_id,
+            metadata={
+                "execution_mode": self.config.execution.mode.value,
+                "model_type": self.config.model.model_type.value,
+                "target_mode": self.config.target.mode.value,
+                "execution_strategy": manifest.get("execution_strategy", ""),
+            },
+        )
         self._notify(
             {
                 "event_type": "run_started",
@@ -253,6 +271,33 @@ class CheckpointedWorkflowRunner:
                 error_message=str(exc),
             )
             if stage.critical:
+                append_audit_event(
+                    self.config.artifacts.output_root,
+                    "workflow_run_failed",
+                    source="checkpoint_runner",
+                    run_id=str(manifest.get("run_id") or ""),
+                    artifact_root=self.config.artifacts.output_root
+                    / str(manifest.get("run_id") or ""),
+                    metadata={
+                        "stage_id": stage.stage_id,
+                        "stage_label": stage.label,
+                        "error_message": str(exc),
+                    },
+                )
+                upsert_run_registry_entry(
+                    self.config.artifacts.output_root,
+                    build_failed_run_registry_entry(
+                        output_root=self.config.artifacts.output_root,
+                        run_id=str(manifest.get("run_id") or ""),
+                        error_message=str(exc),
+                        execution_mode=self.config.execution.mode.value,
+                        model_type=self.config.model.model_type.value,
+                        target_mode=self.config.target.mode.value,
+                        large_data_mode=self.config.performance.large_data_mode,
+                        artifact_root=self.config.artifacts.output_root
+                        / str(manifest.get("run_id") or ""),
+                    ),
+                )
                 raise
             context.warn(f"Optional stage '{stage.label}' failed and was skipped: {exc}")
             stage_order = int(self._manifest_stage_row(manifest, stage.stage_id).get("order", 0))
@@ -523,6 +568,19 @@ class CheckpointedWorkflowRunner:
             manifest_path
         )
         self.orchestrator._refresh_exported_debug_trace(context)
+        append_audit_event(
+            self.config.artifacts.output_root,
+            "workflow_run_completed",
+            source="checkpoint_runner",
+            run_id=context.run_id,
+            artifact_root=context.artifacts.get("output_root"),
+            metadata={
+                "execution_mode": self.config.execution.mode.value,
+                "model_type": self.config.model.model_type.value,
+                "target_mode": self.config.target.mode.value,
+                "elapsed_seconds": context.metadata.get("run_elapsed_seconds"),
+            },
+        )
 
     def _copy_checkpoint_manifest_to_metadata(
         self,

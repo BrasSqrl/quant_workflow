@@ -38,7 +38,11 @@ from .config import (
     FeatureWorkbenchConfig,
     FrameworkConfig,
     ImputationSensitivityConfig,
+    LargeDataBackend,
     LargeDataExportPolicy,
+    LargeDataModelPolicy,
+    LargeDataPartitionStrategy,
+    LargeDataWorkerMode,
     ManualReviewConfig,
     MissingValuePolicy,
     ModelConfig,
@@ -254,6 +258,7 @@ def _build_model_config(payload: dict[str, Any]) -> ModelConfig:
         regularization_alpha=payload.get("regularization_alpha", 1.0),
         tree_n_estimators=payload.get("tree_n_estimators", 300),
         tree_max_depth=payload.get("tree_max_depth", 5),
+        n_jobs=payload.get("n_jobs", 0),
         gee_group_column=payload.get("gee_group_column"),
         mixed_effects_group_column=payload.get("mixed_effects_group_column"),
         spline_n_knots=payload.get("spline_n_knots", 5),
@@ -771,6 +776,13 @@ def _build_performance_config(payload: dict[str, Any]) -> PerformanceConfig:
     return PerformanceConfig(
         enabled=payload.get("enabled", True),
         large_data_mode=payload.get("large_data_mode", False),
+        large_data_backend=LargeDataBackend(payload.get("large_data_backend", "auto")),
+        large_data_model_policy=LargeDataModelPolicy(
+            payload.get("large_data_model_policy", "allow_sample_fallback")
+        ),
+        large_data_override_confirmed=payload.get("large_data_override_confirmed", False),
+        large_data_override_reason=payload.get("large_data_override_reason", ""),
+        s3_local_cache_dir=payload.get("s3_local_cache_dir", ".quant_studio_cache/s3"),
         upload_warning_mb=payload.get("upload_warning_mb", 5120),
         ui_preview_rows=payload.get("ui_preview_rows", 50),
         html_table_preview_rows=payload.get("html_table_preview_rows", 12),
@@ -805,8 +817,22 @@ def _build_performance_config(payload: dict[str, Any]) -> PerformanceConfig:
         csv_conversion_chunk_rows=payload.get("csv_conversion_chunk_rows", 100000),
         large_data_training_sample_rows=payload.get("large_data_training_sample_rows", 250000),
         large_data_score_chunk_rows=payload.get("large_data_score_chunk_rows", 100000),
+        large_data_result_page_rows=payload.get("large_data_result_page_rows", 1000),
+        large_data_max_in_memory_rows=payload.get("large_data_max_in_memory_rows", 250000),
         large_data_project_columns=payload.get("large_data_project_columns", True),
         large_data_auto_stage_parquet=payload.get("large_data_auto_stage_parquet", True),
+        large_data_profile_cache_enabled=payload.get("large_data_profile_cache_enabled", True),
+        large_data_partition_strategy=LargeDataPartitionStrategy(
+            payload.get("large_data_partition_strategy", "auto")
+        ),
+        large_data_prescreen_enabled=payload.get("large_data_prescreen_enabled", True),
+        large_data_auto_apply_prescreen=payload.get("large_data_auto_apply_prescreen", False),
+        large_data_worker_mode=LargeDataWorkerMode(
+            payload.get("large_data_worker_mode", "auto")
+        ),
+        large_data_certified_fit_enabled=payload.get("large_data_certified_fit_enabled", True),
+        duckdb_threads=payload.get("duckdb_threads", 0),
+        duckdb_memory_limit_gb=payload.get("duckdb_memory_limit_gb"),
         memory_limit_gb=payload.get("memory_limit_gb"),
         memory_estimate_file_multiplier=payload.get("memory_estimate_file_multiplier", 6.0),
         memory_estimate_dataframe_multiplier=payload.get(

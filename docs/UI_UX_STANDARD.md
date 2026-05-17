@@ -1,10 +1,11 @@
 # UI / UX Standard
 
-This standard defines how the Quant Studio GUI and exported diagnostic reports should look and behave. The target experience is a premium light-mode fintech dashboard for model builders and validation teams.
+This standard defines how the Quant Studio GUI and exported diagnostic reports
+should look and behave. The target experience is a premium light-mode fintech
+dashboard for model builders and validation teams.
 
-The companion implementation standard for the latest Streamlit enterprise
-redesign is [UI_ENTERPRISE_REDESIGN.md](./UI_ENTERPRISE_REDESIGN.md). That
-document governs the command bar, five-step workflow navigation, main-canvas
+This is the single UI/UX standard for the current Streamlit application. It
+governs the command bar, five-step workflow navigation, main-canvas
 configuration groups, readiness checkpoint, results/artifact workspace, and
 decision-summary scorecard.
 
@@ -33,6 +34,23 @@ The interface should avoid:
 - charts that rely on random default palettes
 
 ## 2. Layout Standard
+
+The live GUI uses five clickable workflow stages:
+
+1. `Dataset & Schema`
+2. `Model Configuration`
+3. `Readiness Check & Run`
+4. `Results & Artifacts`
+5. `Decision Summary`
+
+Active work should live in the main canvas. Persistent side panes should not be
+used for the primary workflow because they increase clutter and make the user
+scan competing control areas. Step 1 owns data source review, schema roles,
+feature dictionary, Transformation Studio, and the review workbook. Step 2 owns
+model configuration in compact grouped expanders. Step 3 owns readiness,
+resource checks, checkpoint flow, and run execution. Step 4 owns detailed run
+outputs and artifact review. Step 5 owns the decision-ready synthesis and
+download actions.
 
 The GUI and exported report should use the same diagnostic taxonomy, with Step
 4 `Results & Artifacts` acting as the live reviewer workspace and

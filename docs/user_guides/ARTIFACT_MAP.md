@@ -44,7 +44,15 @@ and summarizes the completed run in Step 5, `Decision Summary`.
 | `tables/governance/report_payload_audit.*` | Records embedded report charts kept, downsampled, or skipped by report-size controls. | Developer, validator, support |
 | `metadata/step_manifest.json` | Ordered pipeline step record. | Technical reviewer |
 | `metadata/run_debug_trace.json` | Run start/completion time, total elapsed runtime, per-step timing, shape snapshots, memory estimates, and failure details. | Developer, support, performance reviewer |
+| `metadata/audit_events.jsonl` | Run-scoped audit events copied from the global audit log, including profile actions, run start/completion/failure, package downloads, and review saves. | Validator, auditor, support |
 | `checkpoints/checkpoint_manifest.json` | Stage manifest for checkpointed execution, including stage status, elapsed time, checkpoint-retention policy, pruned context evidence, and optional-stage failures. | Developer, support, auditor |
+| `metadata/large_data/dataset_profile.json` | File-backed source profile with schema, preview metadata, row count where available, approximate null/cardinality/quantile evidence, and profile-cache hit/miss details. | Developer, support, auditor |
+| `metadata/large_data/execution_plan.json` | Per-stage Large Data Mode plan showing whether each stage is file-backed, full-data, sample-based, in-memory, blocked, or override-driven. | Developer, support, auditor |
+| `metadata/large_data/large_data_transformation_contract.json` | Transformation replay contract showing which governed transformations are compiled, sample-only, unsupported, or blocked in Large Data Mode. | Developer, support, auditor |
+| `metadata/large_data/feature_screening_manifest.json` | Manifest for advisory large-data feature pre-screening and any auto-applied exclusions. | Developer, validator, auditor |
+| `tables/feature_screening/large_data_feature_screening.*` | Advisory missingness, variance, cardinality, target-relationship, IV, and PSI evidence for large-data features. | Developer, validator, auditor |
+| `metadata/large_data/partitioned_dataset_manifest.json` | Split-aware governed-sample Parquet partition manifest. | Developer, support, auditor |
+| `metadata/large_data/prepared_dataset_manifest.json` | File-backed Large Data Mode bridge showing source, staged path, sample path, projected columns, target metadata, profile cache key, partition paths, artifact-size estimates, and row count where available. | Developer, support, auditor |
 | `metadata/reproducibility_manifest.json` | Hashes, package versions, environment, and input metadata. | Auditor, reproducibility reviewer |
 | `code/generated_run.py` | Python rerun script for running without the GUI. | Developer |
 | `code/HOW_TO_RERUN.md` | Plain-English rerun instructions. | Developer, reviewer |
@@ -101,12 +109,66 @@ and Parquet-to-CSV conversion during the main workflow.
 | `code/code_snapshot/` | Copy of relevant source, examples, tests, and project metadata when code snapshot export is enabled. |
 | `figures/` or equivalent figure folders | Separate chart HTML/PNG files for legacy code-driven runs. GUI users should use Step 5 `Download Individual Images` to generate these files on demand. |
 | `data/sample_development/` | Large Data Mode sample-development evidence. |
+| `data/sample_development/partitioned/` | Split-aware governed-sample Parquet partitions when partitioning is enabled. |
 | `data/full_data_scoring/` | Large Data Mode full-file scoring outputs. |
 | `metadata/large_data/` | Large Data Mode metadata, progress, and scoring summaries. |
+| `artifacts/_background_jobs/` | Transient detached-worker manifests, stdout/stderr logs, and bounded Streamlit snapshots for active or recently completed Large Data Mode background runs. |
+| `artifacts/_job_queue/` | Optional local worker-service queue used by `quant-pd-worker` when Large Data Mode worker service dispatch is enabled or detected. |
+| `artifacts/_run_registry/` | File-backed run registry and global audit event log used by the Step 4 Run Registry panel. |
+| `artifacts/certification/<timestamp>/` | CLI-generated Large Data Mode certification evidence with summary reports, scenario results, thresholds, environment profile, model capability matrix, run index, and linked benchmark folders. |
 
 There is intentionally no separate `json/` folder. Configuration JSON lives in
 `config/`, while metrics, manifests, statistical-test payloads, and debug JSON
 live in `metadata/`.
+
+## Run Registry And Audit Files
+
+Step 4, `Results & Artifacts`, includes a `Run Registry` panel. It indexes runs
+from the configured artifact root so users can find prior output folders,
+metrics, reviewer status, and key artifacts without browsing the filesystem.
+
+Global registry files live under:
+
+```text
+artifacts/_run_registry/
+```
+
+Key files:
+
+| File | Meaning |
+| --- | --- |
+| `run_registry.json` | Searchable index of completed and known failed runs. |
+| `audit_events.jsonl` | Append-only global audit log for high-value GUI and workflow actions. |
+
+Each run folder also includes `metadata/audit_events.jsonl`, a run-scoped copy
+of matching audit events. The audit log records major actions such as data
+selection, profile load/save, schema/transformation table fingerprints, run
+start/completion/failure, package downloads, and reviewer record saves. It does
+not store raw input rows, row-level predictions, model binaries, passwords,
+tokens, AWS credentials, or secrets.
+
+## Large Data Certification Artifacts
+
+The `quant-pd-certify-large-data` CLI and
+`python scripts/certify_large_data.py` wrapper write acceptance evidence under:
+
+```text
+artifacts/certification/<timestamp>/
+```
+
+Key files:
+
+| File | Meaning |
+| --- | --- |
+| `certification_summary.json` | Machine-readable suite result, status counts, thresholds, and overall pass/fail flag. |
+| `certification_summary.md` | Human-readable certification summary. |
+| `certification_report.html` | Standalone HTML report for reviewers. |
+| `scenario_results.csv` | Scenario-level model, source, capability, timing, memory, artifact-size, threshold, and result-status evidence. |
+| `model_capability_matrix.csv` | Static large-data model capability classification used to interpret benchmark evidence. |
+| `effective_thresholds.json` | Thresholds after default suite and CLI overrides are applied. |
+| `environment_profile.json` | Python, platform, CPU, memory, and working-directory evidence. |
+| `run_index.csv` | Links to each scenario benchmark JSON, Markdown summary, and run artifact folder. |
+| `benchmark_runs/` | Underlying scenario benchmark folders. |
 
 `config/configuration_template.xlsx` is the offline review workbook. It includes
 editable sheets for schema, feature dictionary, transformations, manual feature
@@ -133,6 +195,13 @@ Quant Studio deletes stale `.joblib` context files after a newer safe checkpoint
 exists and removes the final context checkpoint after successful completion. The
 manifest remains available for proving which stages completed, which optional
 stages failed, and which checkpoint contexts were pruned.
+
+In Large Data Mode, checkpoint contexts spill large dataframe fields to
+`checkpoints/tables/<checkpoint_name>/` as Parquet when the field exceeds the
+configured `Large-data max in-memory rows` control. The `.joblib` context stores
+lightweight table references and is rehydrated when the next stage loads the
+checkpoint. This reduces duplicate checkpoint size without changing the stage
+contract used by the modeling code.
 
 Turn `Keep all checkpoints` on before the run when a developer or support user
 needs to inspect context checkpoints after execution or rerun a later stage

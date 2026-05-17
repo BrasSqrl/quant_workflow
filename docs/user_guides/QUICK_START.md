@@ -7,6 +7,9 @@ dataset. The bundled sample is a 1,000-row synthetic commercial-loan panel:
 attributes, loan behavior fields, financial statement items, ratios, and a
 binary `default_status` target.
 
+For a visual, step-by-step PD logistic regression example, open
+[PD Logistic Regression Walkthrough](./PD_LOGISTIC_REGRESSION_WALKTHROUGH.html).
+
 ## What You Will Produce
 
 A successful first run writes a timestamped folder under `artifacts/` with:
@@ -72,7 +75,7 @@ Quant Studio opens to Step 1 by default.
 6. Confirm `as_of_date` is the date column.
 7. Confirm `loan_id` is the identifier for the panel.
 8. Confirm `legacy_text_field` is disabled or ignored.
-9. Open `Transformations` and use `Transformation Preview` if you want to inspect one before/after transformation sample before running.
+9. Open `Transformation Studio` after `Feature Dictionary` if you want to add governed transforms. Start with `Recommendations` or `Recipe Library`, use `Custom Builder` for one-off transforms, then confirm status in `Pipeline Review`.
 10. Open Step 2, `Model Configuration`.
 11. Use `Execution mode = fit_new_model`.
 12. Use `Model type = scorecard_logistic_regression`.
@@ -156,8 +159,8 @@ The workbook includes:
 - an `instructions` sheet that explains how each sheet should be used
 - an `allowed_values` sheet for roles, dtypes, missing policies,
   transformation types, manual-review decisions, and boolean fields
-- a `transform_catalog` sheet explaining each transformation, when to use it,
-  required parameters, and expected output type
+- a `transform_catalog` sheet explaining each transformation, recipe group,
+  when to use it, required parameters, large-data status, and expected output type
 - an `examples` sheet with realistic row patterns
 - a `required_columns` sheet that shows which headers must remain compatible
   for upload parsing

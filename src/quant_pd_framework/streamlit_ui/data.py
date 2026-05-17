@@ -18,7 +18,10 @@ from quant_pd_framework.large_data import (
     SUPPORTED_TABULAR_SUFFIXES,
     DatasetHandle,
     build_dataset_handle,
+    build_s3_dataset_handle,
     convert_csv_to_parquet,
+    describe_s3_uri,
+    is_s3_uri,
     profile_dataset_handle,
     read_dataset_preview,
     read_tabular_path,
@@ -195,18 +198,27 @@ def select_input_dataframe() -> SelectedInputDataset:
             )
             source_mode = st.radio(
                 "Input method",
-                options=["sample", "data_load", "upload"],
+                options=["sample", "data_load", "local_path", "s3", "upload"],
                 format_func={
                     "sample": "Bundled sample data",
                     "data_load": "Select from Data_Load",
+                    "local_path": "Specify local path",
+                    "s3": "Specify S3 path",
                     "upload": "Upload file",
                 }.get,
                 horizontal=False,
             )
+            if source_mode == "s3" and not large_data_mode:
+                st.info(
+                    "S3 paths run through Large Data Mode automatically so the browser "
+                    "does not buffer the full object."
+                )
+                large_data_mode = True
             if large_data_mode and source_mode == "upload":
                 st.warning(
-                    "Large Data Mode supports Data_Load or CLI file paths only. "
-                    "Browser upload still buffers the full file through Streamlit."
+                    "Large Data Mode supports Data_Load, local paths, or S3 paths. "
+                    "Browser upload still buffers the full file through Streamlit. "
+                    "Use Data_Load, local path, or S3 path for large files."
                 )
                 return SelectedInputDataset(None, "", {}, large_data_mode=True)
             if source_mode == "sample":
@@ -232,6 +244,17 @@ def select_input_dataframe() -> SelectedInputDataset:
                     format_func=format_data_load_file_option,
                 )
                 file_metadata = describe_data_file(selected_path)
+                render_large_input_file_warning(file_metadata)
+                if (
+                    int(file_metadata.get("size_bytes") or 0)
+                    > DEFAULT_PERFORMANCE_CONFIG.upload_warning_mb * 1024 * 1024
+                    and not large_data_mode
+                ):
+                    st.warning(
+                        "This Data_Load file is above the large-file threshold. Large "
+                        "Data Mode has been activated for this selection."
+                    )
+                    large_data_mode = True
                 if selected_path.suffix.lower() == ".csv":
                     if st.button("Convert selected CSV to Parquet", width="stretch"):
                         try:
@@ -282,6 +305,125 @@ def select_input_dataframe() -> SelectedInputDataset:
                     file_metadata,
                     large_data_mode=False,
                 )
+            elif source_mode == "local_path":
+                st.caption(
+                    "Enter a local or mounted file path. For multi-GB files, keep Large "
+                    "Data Mode on so the app previews the file without eager pandas loading."
+                )
+                local_path_text = st.text_input(
+                    "Local file path",
+                    placeholder=r"C:\data\loan_panel.csv or /mnt/data/loan_panel.parquet",
+                ).strip()
+                if not local_path_text:
+                    return SelectedInputDataset(None, "", {}, large_data_mode=large_data_mode)
+                selected_path = Path(local_path_text).expanduser()
+                if not selected_path.exists() or not selected_path.is_file():
+                    st.error("The local path does not exist or is not a file.")
+                    return SelectedInputDataset(None, "", {}, large_data_mode=large_data_mode)
+                if selected_path.suffix.lower() not in SUPPORTED_DATA_FILE_SUFFIXES:
+                    st.error("Provide a CSV, Excel, or Parquet file.")
+                    return SelectedInputDataset(None, "", {}, large_data_mode=large_data_mode)
+                file_metadata = describe_data_file(selected_path)
+                file_metadata["source_kind"] = "local_path"
+                file_metadata["display_label"] = str(selected_path)
+                file_metadata["relative_path"] = str(selected_path)
+                render_large_input_file_warning(file_metadata)
+                if (
+                    int(file_metadata.get("size_bytes") or 0)
+                    > DEFAULT_PERFORMANCE_CONFIG.upload_warning_mb * 1024 * 1024
+                    and not large_data_mode
+                ):
+                    st.warning(
+                        "This local file is above the large-file threshold. Large Data "
+                        "Mode has been activated for this selection."
+                    )
+                    large_data_mode = True
+                if large_data_mode:
+                    dataset_handle = build_dataset_handle(selected_path, file_metadata)
+                    preview_frame = read_dataset_preview(
+                        dataset_handle,
+                        rows=DEFAULT_PERFORMANCE_CONFIG.ui_preview_rows,
+                    )
+                    profile = profile_dataset_handle(dataset_handle)
+                    file_metadata["large_data_profile"] = profile
+                    attach_input_source_metadata(preview_frame, file_metadata)
+                    st.caption(
+                        "Selected local file: "
+                        f"`{selected_path}` | {format_file_size(file_metadata['size_bytes'])}"
+                    )
+                    return SelectedInputDataset(
+                        preview_frame,
+                        file_metadata["display_label"],
+                        file_metadata,
+                        dataset_handle=dataset_handle,
+                        large_data_mode=True,
+                    )
+                dataframe = load_data_load_dataframe(
+                    str(selected_path),
+                    file_metadata["suffix"],
+                    file_metadata["modified_ns"],
+                    file_metadata["size_bytes"],
+                )
+                attach_input_source_metadata(dataframe, file_metadata)
+                return SelectedInputDataset(
+                    dataframe,
+                    file_metadata["display_label"],
+                    file_metadata,
+                    large_data_mode=False,
+                )
+            elif source_mode == "s3":
+                st.caption(
+                    "Enter an S3 object path. Authentication uses the SageMaker role, "
+                    "AWS CLI profile, or standard AWS environment variables available "
+                    "to this Python process. Quant Studio does not store AWS secrets."
+                )
+                s3_uri = st.text_input(
+                    "S3 object path",
+                    placeholder="s3://bucket-name/path/to/file.csv",
+                    help="CSV and Parquet S3 objects are supported for Large Data Mode.",
+                ).strip()
+                if not s3_uri:
+                    return SelectedInputDataset(None, "", {}, large_data_mode=True)
+                if not is_s3_uri(s3_uri):
+                    st.error("S3 paths must start with `s3://`.")
+                    return SelectedInputDataset(None, "", {}, large_data_mode=True)
+                try:
+                    s3_metadata = describe_s3_uri(s3_uri)
+                    dataset_handle = build_s3_dataset_handle(s3_uri, s3_metadata)
+                    preview_frame = read_dataset_preview(
+                        dataset_handle,
+                        rows=DEFAULT_PERFORMANCE_CONFIG.ui_preview_rows,
+                    )
+                    profile = profile_dataset_handle(dataset_handle)
+                    s3_metadata["large_data_profile"] = profile
+                    attach_input_source_metadata(preview_frame, s3_metadata)
+                    st.caption(
+                        "Selected S3 object: "
+                        f"`{s3_uri}`"
+                        + (
+                            f" | {format_file_size(int(s3_metadata['size_bytes']))}"
+                            if str(s3_metadata.get("size_bytes") or "").isdigit()
+                            else ""
+                        )
+                    )
+                    if profile.get("row_count") is not None:
+                        st.caption(
+                            f"File-backed profile: {int(profile['row_count']):,} rows, "
+                            f"{int(profile['column_count']):,} columns."
+                        )
+                    return SelectedInputDataset(
+                        preview_frame,
+                        s3_uri,
+                        s3_metadata,
+                        dataset_handle=dataset_handle,
+                        large_data_mode=True,
+                    )
+                except Exception as exc:
+                    st.error(
+                        "Could not preview the S3 object. Confirm the path, IAM role, "
+                        f"and file type. Details: {exc}"
+                    )
+                    return SelectedInputDataset(None, "", {}, large_data_mode=True)
             else:
                 uploaded_file = st.file_uploader(
                     "Upload CSV, Excel, or Parquet",
@@ -295,6 +437,14 @@ def select_input_dataframe() -> SelectedInputDataset:
                 )
     if source_mode == "upload" and uploaded_file is not None:
         suffix = Path(uploaded_file.name).suffix.lower()
+        upload_size = int(getattr(uploaded_file, "size", 0) or 0)
+        if upload_size > DEFAULT_PERFORMANCE_CONFIG.upload_warning_mb * 1024 * 1024:
+            st.error(
+                "This file is over the large-file browser-upload threshold. Place it in "
+                "`Data_Load/` or provide an S3 path so Quant Studio can use file-backed "
+                "Large Data Mode."
+            )
+            return SelectedInputDataset(None, "", {}, large_data_mode=False)
         uploaded_file.seek(0)
         dataframe = load_uploaded_dataframe_bytes(uploaded_file.read(), suffix)
         metadata = {
@@ -303,7 +453,7 @@ def select_input_dataframe() -> SelectedInputDataset:
             "file_name": uploaded_file.name,
             "relative_path": "",
             "suffix": suffix,
-            "size_bytes": int(getattr(uploaded_file, "size", 0) or 0),
+            "size_bytes": upload_size,
             "modified_at_utc": "",
         }
         attach_input_source_metadata(dataframe, metadata)
@@ -344,10 +494,19 @@ def build_editor_key(dataframe: pd.DataFrame, data_source_label: str) -> str:
 
 def render_dataset_overview(dataframe: pd.DataFrame, data_source_label: str) -> None:
     file_label = "Bundled Sample" if data_source_label == "bundled_sample" else data_source_label
+    metadata = dataframe.attrs.get(INPUT_SOURCE_METADATA_ATTR, {})
+    profile = metadata.get("large_data_profile") if isinstance(metadata, dict) else None
+    profile_row_count = profile.get("row_count") if isinstance(profile, dict) else None
+    displayed_rows = profile_row_count if profile_row_count is not None else len(dataframe)
+    row_label = "Rows" if profile_row_count is None else "Profiled rows"
     left_column, right_column, third_column = st.columns(3)
-    left_column.metric("Rows", f"{len(dataframe):,}")
+    left_column.metric(row_label, f"{int(displayed_rows):,}")
     right_column.metric("Columns", f"{dataframe.shape[1]:,}")
     third_column.metric("Source", file_label)
+    if profile_row_count is not None and int(profile_row_count) != len(dataframe):
+        st.caption(
+            f"Showing a {len(dataframe):,}-row preview. Full-row access remains file-backed."
+        )
 
 
 def render_input_performance_notice(metadata: dict[str, Any]) -> None:

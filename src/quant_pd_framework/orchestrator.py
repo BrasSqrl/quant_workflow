@@ -17,6 +17,12 @@ from .base import BasePipelineStep
 from .config import ExecutionMode, FrameworkConfig
 from .config_io import load_framework_config
 from .context import PipelineContext
+from .run_registry import (
+    append_audit_event,
+    build_failed_run_registry_entry,
+    update_run_registry_from_context,
+    upsert_run_registry_entry,
+)
 from .steps import (
     ArtifactExportStep,
     AssumptionCheckStep,
@@ -256,6 +262,17 @@ class QuantModelOrchestrator:
         context.metadata["execution_mode"] = self.config.execution.mode.value
         context.metadata["step_manifest"] = self.describe_steps()
         context.metadata["run_started_at_utc"] = run_started_at.isoformat()
+        append_audit_event(
+            self.config.artifacts.output_root,
+            "workflow_run_started",
+            source="framework",
+            run_id=context.run_id,
+            metadata={
+                "execution_mode": self.config.execution.mode.value,
+                "model_type": self.config.model.model_type.value,
+                "target_mode": self.config.target.mode.value,
+            },
+        )
         self._notify_progress(
             {
                 "event_type": "run_started",
@@ -266,11 +283,40 @@ class QuantModelOrchestrator:
             }
         )
 
-        context = self.run_context(
-            context,
-            run_started=run_started,
-            total_steps=len(self.steps),
-        )
+        try:
+            context = self.run_context(
+                context,
+                run_started=run_started,
+                total_steps=len(self.steps),
+            )
+        except Exception as exc:
+            append_audit_event(
+                self.config.artifacts.output_root,
+                "workflow_run_failed",
+                source="framework",
+                run_id=context.run_id,
+                artifact_root=self.config.artifacts.output_root / context.run_id,
+                metadata={
+                    "execution_mode": self.config.execution.mode.value,
+                    "model_type": self.config.model.model_type.value,
+                    "target_mode": self.config.target.mode.value,
+                    "error_message": str(exc),
+                },
+            )
+            upsert_run_registry_entry(
+                self.config.artifacts.output_root,
+                build_failed_run_registry_entry(
+                    output_root=self.config.artifacts.output_root,
+                    run_id=context.run_id,
+                    error_message=str(exc),
+                    execution_mode=self.config.execution.mode.value,
+                    model_type=self.config.model.model_type.value,
+                    target_mode=self.config.target.mode.value,
+                    large_data_mode=self.config.performance.large_data_mode,
+                    started_at_utc=context.metadata.get("run_started_at_utc", ""),
+                ),
+            )
+            raise
 
         run_completed_at = datetime.now(UTC)
         run_elapsed_seconds = round(perf_counter() - run_started, 6)
@@ -278,6 +324,19 @@ class QuantModelOrchestrator:
         context.metadata["run_elapsed_seconds"] = run_elapsed_seconds
         context.metadata["run_status"] = "completed"
         self._refresh_exported_debug_trace(context)
+        append_audit_event(
+            self.config.artifacts.output_root,
+            "workflow_run_completed",
+            source="framework",
+            run_id=context.run_id,
+            artifact_root=context.artifacts.get("output_root"),
+            metadata={
+                "execution_mode": self.config.execution.mode.value,
+                "model_type": self.config.model.model_type.value,
+                "target_mode": self.config.target.mode.value,
+                "elapsed_seconds": run_elapsed_seconds,
+            },
+        )
         self._notify_progress(
             {
                 "event_type": "run_completed",
@@ -412,6 +471,10 @@ class QuantModelOrchestrator:
             trace_path.write_text(
                 json.dumps(payload, indent=2, default=str),
                 encoding="utf-8",
+            )
+            update_run_registry_from_context(
+                context,
+                status=str(context.metadata.get("run_status") or "completed"),
             )
         except Exception as exc:
             context.warn(f"Could not refresh run debug trace after export timing: {exc}")
