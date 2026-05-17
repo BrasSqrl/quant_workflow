@@ -283,9 +283,10 @@ Each reference workflow has:
 - a `reference_example_pack.md` guide inside every exported reference run bundle
 
 The repository also includes a GitHub Actions CI workflow at
-[.github/workflows/ci.yml](./.github/workflows/ci.yml) that runs Ruff, the
-golden reference checks, the Streamlit regression tests, and the full test
-suite on push and pull request.
+[.github/workflows/ci.yml](./.github/workflows/ci.yml) that runs Ruff,
+focused mypy type checks, pre-commit hooks, dependency auditing, secret
+scanning, coverage-gated pytest, and the full test suite on Linux, Windows,
+and macOS for push and pull request.
 
 ## Repository Layout
 
@@ -605,13 +606,16 @@ Otherwise supply `--input`.
 ### Run Tests
 
 ```powershell
-python -m pytest -q
+python -m pytest -q --cov=quant_pd_framework --cov-report=term-missing:skip-covered
 ```
 
-### Run Lint Checks
+### Run Quality Checks
 
 ```powershell
-python -m ruff check .
+python -m ruff check app src tests examples
+python -m mypy
+python -m pip_audit . --strict --progress-spinner off --cache-dir .pip-audit-cache
+python -m pre_commit run --all-files
 ```
 
 ## GUI Overview

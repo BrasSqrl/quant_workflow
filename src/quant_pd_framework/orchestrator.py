@@ -47,6 +47,12 @@ from .steps import (
 )
 
 
+def build_run_id() -> str:
+    """Builds a readable, filesystem-safe identifier for artifact folders."""
+
+    return datetime.now(UTC).strftime("run_%Y-%m-%d_%H-%M-%S_UTC")
+
+
 class QuantModelOrchestrator:
     """
     Runs the full modeling lifecycle from raw dataframe/file to exported artifacts.
@@ -254,7 +260,7 @@ class QuantModelOrchestrator:
 
         context = PipelineContext(
             config=self.config,
-            run_id=self._build_run_id(),
+            run_id=build_run_id(),
             raw_input=data,
         )
         run_started_at = datetime.now(UTC)
@@ -357,11 +363,6 @@ class QuantModelOrchestrator:
         except Exception:
             # Progress rendering must never change the modeling result.
             return
-
-    def _build_run_id(self) -> str:
-        """Builds a readable, filesystem-safe identifier for artifact folders."""
-
-        return datetime.now(UTC).strftime("run_%Y-%m-%d_%H-%M-%S_UTC")
 
     def _debug_snapshot(self, context: PipelineContext) -> dict[str, Any]:
         working_shape = self._frame_shape(context.working_data)

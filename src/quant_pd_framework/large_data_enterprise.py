@@ -17,7 +17,7 @@ from .config import (
     TargetMode,
     TransformationType,
 )
-from .context import PipelineContext
+from .context import PipelineContext, PipelineMetadataKey
 from .export_layout import build_export_path_layout
 from .large_data_policy import LargeDataCertification
 from .large_data_runtime import (
@@ -27,6 +27,8 @@ from .large_data_runtime import (
     LargeDataTransformationContract,
     PartitionedDatasetManifest,
 )
+
+Meta = PipelineMetadataKey
 
 COMPILED_TRANSFORMATIONS = {
     TransformationType.WINSORIZE,
@@ -120,7 +122,7 @@ def record_large_data_transformation_contract(context: PipelineContext) -> dict[
     metadata_dir = _large_data_metadata_dir(context)
     path = metadata_dir / "large_data_transformation_contract.json"
     path.write_text(json.dumps(payload, indent=2, default=str), encoding="utf-8")
-    context.metadata["large_data_transformation_contract"] = payload
+    context.set_metadata(Meta.LARGE_DATA_TRANSFORMATION_CONTRACT, payload)
     context.artifacts["large_data_transformation_contract"] = path
     context.diagnostics_tables["large_data_transformation_contract"] = pd.DataFrame(rows)
     if contract.fallback_count:
@@ -139,8 +141,8 @@ def record_large_data_execution_plan(
 ) -> dict[str, Any]:
     """Writes the per-stage large-data execution plan used by readiness and exports."""
 
-    profile = context.metadata.get("large_data_profile", {})
-    contract = context.metadata.get("large_data_transformation_contract", {})
+    profile = context.get_metadata_dict(Meta.LARGE_DATA_PROFILE)
+    contract = context.get_metadata_dict(Meta.LARGE_DATA_TRANSFORMATION_CONTRACT)
     rows = contract.get("rows", []) if isinstance(contract, dict) else []
     blocked_transforms = [
         row for row in rows if isinstance(row, dict) and row.get("large_data_status") == "blocked"
@@ -189,7 +191,7 @@ def record_large_data_execution_plan(
                 "The source is staged or reused as Parquet and projected to required "
                 "columns where possible."
             ),
-            details=context.metadata.get("large_data_projected_dataset", {}),
+            details=context.get_metadata_dict(Meta.LARGE_DATA_PROJECTED_DATASET),
         ),
         LargeDataExecutionPlanStage(
             stage_name="transformation_replay",
@@ -283,7 +285,7 @@ def record_large_data_execution_plan(
     metadata_dir = _large_data_metadata_dir(context)
     path = metadata_dir / "execution_plan.json"
     path.write_text(json.dumps(payload, indent=2, default=str), encoding="utf-8")
-    context.metadata["large_data_execution_plan"] = payload
+    context.set_metadata(Meta.LARGE_DATA_EXECUTION_PLAN, payload)
     context.artifacts["large_data_execution_plan"] = path
     context.diagnostics_tables["large_data_execution_plan"] = pd.DataFrame(
         [stage.to_dict() for stage in stages]
@@ -336,7 +338,7 @@ def record_partitioned_sample_manifest(context: PipelineContext) -> None:
     metadata_dir = _large_data_metadata_dir(context)
     path = metadata_dir / "partitioned_dataset_manifest.json"
     path.write_text(json.dumps(manifest.to_dict(), indent=2, default=str), encoding="utf-8")
-    context.metadata["partitioned_dataset_manifest"] = manifest.to_dict()
+    context.set_metadata(Meta.PARTITIONED_DATASET_MANIFEST, manifest.to_dict())
     context.artifacts["partitioned_dataset_manifest"] = path
     context.artifacts["partitioned_sample_development_dir"] = base_dir
     context.diagnostics_tables["partitioned_dataset_manifest"] = pd.DataFrame(
@@ -350,7 +352,7 @@ def record_large_data_feature_screening(context: PipelineContext) -> None:
     performance = context.config.performance
     if not performance.large_data_mode or not performance.large_data_prescreen_enabled:
         return
-    if context.metadata.get("large_data_feature_screening_recorded"):
+    if context.get_metadata(Meta.LARGE_DATA_FEATURE_SCREENING_RECORDED):
         return
     train_frame = context.split_frames.get("train")
     if train_frame is None or train_frame.empty or not context.feature_columns:
@@ -413,8 +415,8 @@ def record_large_data_feature_screening(context: PipelineContext) -> None:
         encoding="utf-8",
     )
     context.diagnostics_tables["large_data_feature_screening"] = table
-    context.metadata["large_data_feature_screening_manifest"] = manifest.to_dict()
-    context.metadata["large_data_feature_screening_recorded"] = True
+    context.set_metadata(Meta.LARGE_DATA_FEATURE_SCREENING_MANIFEST, manifest.to_dict())
+    context.set_metadata(Meta.LARGE_DATA_FEATURE_SCREENING_RECORDED, True)
     context.artifacts["large_data_feature_screening"] = table_path
     if str(parquet_path):
         context.artifacts["large_data_feature_screening_parquet"] = parquet_path
@@ -593,7 +595,7 @@ def _apply_feature_exclusions(context: PipelineContext, excluded: list[str]) -> 
     context.categorical_features = [
         feature for feature in context.categorical_features if feature not in excluded_set
     ]
-    context.metadata["large_data_prescreen_excluded_features"] = sorted(excluded_set)
+    context.set_metadata(Meta.LARGE_DATA_PRESCREEN_EXCLUDED_FEATURES, sorted(excluded_set))
 
 
 def _classify_transformation(transform_type: TransformationType) -> tuple[str, str, str]:

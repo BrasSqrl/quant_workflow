@@ -84,6 +84,19 @@ A design fails this standard if routine development work leaves large volumes of
 The current Quant Studio codebase aligns to this rubric in the following ways:
 
 - The GUI remains a configuration and review layer over the Python framework.
+- The Streamlit app is organized by workflow step: Step 1 dataset/schema
+  helpers live under `streamlit_ui/steps/step1_data_schema.py`, Step 2 model
+  configuration helpers under `step2_model_config.py`, Step 3 readiness/run
+  execution under `step3_readiness_run.py`, Step 4 results under
+  `step4_results_artifacts.py`, and Step 5 decision summary under
+  `step5_decision_summary.py`.
+- Result rendering has dedicated panel modules under `streamlit_ui/result_panels/`,
+  starting with the run registry and audit-trail panel, while `results.py`
+  preserves the existing public import surface.
+- Artifact layout and manifest/index logic lives under `quant_pd_framework.exporting`
+  so `ArtifactExportStep` can focus on workflow orchestration.
+- Large-data source handles and constants live under `quant_pd_framework.large_data_support`
+  while `large_data.py` keeps compatibility re-exports for existing imports.
 - Workflow execution is coordinated through explicit pipeline stages and
   checkpointed subprocess boundaries for memory isolation, restartability, and
   auditability.

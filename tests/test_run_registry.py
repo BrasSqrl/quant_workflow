@@ -70,7 +70,7 @@ def test_audit_event_log_redacts_sensitive_values_and_writes_run_copy() -> None:
             artifact_root=run_root,
             metadata={
                 "display_label": "sample.csv",
-                "aws_secret_access_key": "should-not-leak",
+                "aws_secret_access_key": "should-not-leak",  # pragma: allowlist secret
             },
         )
 

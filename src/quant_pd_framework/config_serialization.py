@@ -66,7 +66,7 @@ def serialize_config_value(value: Any) -> Any:
             str(key): serialize_config_value(item)
             for key, item in value.items()
         }
-    if is_dataclass(value):
+    if is_dataclass(value) and not isinstance(value, type):
         return {
             key: serialize_config_value(item)
             for key, item in asdict(value).items()

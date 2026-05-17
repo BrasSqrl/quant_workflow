@@ -5,8 +5,10 @@ from __future__ import annotations
 from typing import Any
 
 from .config import TabularOutputFormat
+from .context import PipelineMetadataKey
 
 PARQUET_INPUT_SUFFIXES = {".parquet", ".pq"}
+Meta = PipelineMetadataKey
 
 
 def original_input_is_parquet(metadata: dict[str, Any] | None) -> bool:
@@ -32,12 +34,12 @@ def resolve_tabular_output_format(metadata: dict[str, Any] | None) -> TabularOut
 def _input_source_suffix(metadata: dict[str, Any] | None) -> str:
     if not isinstance(metadata, dict):
         return ""
-    source_metadata = metadata.get("input_source")
+    source_metadata = metadata.get(Meta.INPUT_SOURCE.value)
     if isinstance(source_metadata, dict):
         suffix = _suffix_from_mapping(source_metadata)
         if suffix:
             return suffix
-    large_data_handle_metadata = metadata.get("large_data_handle")
+    large_data_handle_metadata = metadata.get(Meta.LARGE_DATA_HANDLE.value)
     if isinstance(large_data_handle_metadata, dict):
         suffix = _suffix_from_mapping(large_data_handle_metadata)
         if suffix:

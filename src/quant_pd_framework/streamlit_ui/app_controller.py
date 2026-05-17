@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import traceback
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
@@ -47,13 +46,7 @@ from quant_pd_framework.gui_support import (
     SUPPORTED_FEATURE_REVIEW_DECISIONS,
     SUPPORTED_MISSING_VALUE_POLICIES,
     GUIBuildInputs,
-    build_column_editor_frame,
-    build_feature_dictionary_editor_frame,
-    build_feature_review_editor_frame,
     build_gui_inputs_from_preset,
-    build_scorecard_override_editor_frame,
-    build_subset_search_feature_options,
-    build_transformation_editor_frame,
     default_challengers_for_target_mode,
     format_model_family,
     list_gui_preset_options,
@@ -111,32 +104,8 @@ from quant_pd_framework.streamlit_ui.config_profiles import (
 from quant_pd_framework.streamlit_ui.config_profiles import (
     save_configuration_profile as ui_save_configuration_profile,
 )
-from quant_pd_framework.streamlit_ui.data import (
-    build_editor_key as ui_build_editor_key,
-)
-from quant_pd_framework.streamlit_ui.data import (
-    render_input_performance_notice as ui_render_input_performance_notice,
-)
-from quant_pd_framework.streamlit_ui.data import (
-    select_input_dataframe as ui_select_input_dataframe,
-)
 from quant_pd_framework.streamlit_ui.enterprise_workflow import (
     build_config_diff_frame as ui_build_config_diff_frame,
-)
-from quant_pd_framework.streamlit_ui.enterprise_workflow import (
-    build_configuration_risk_score as ui_build_configuration_risk_score,
-)
-from quant_pd_framework.streamlit_ui.enterprise_workflow import (
-    build_model_suitability_explainer as ui_build_model_suitability_explainer,
-)
-from quant_pd_framework.streamlit_ui.enterprise_workflow import (
-    build_preflight_summary as ui_build_preflight_summary,
-)
-from quant_pd_framework.streamlit_ui.enterprise_workflow import (
-    build_resource_readiness_check as ui_build_resource_readiness_check,
-)
-from quant_pd_framework.streamlit_ui.enterprise_workflow import (
-    build_runtime_artifact_estimate as ui_build_runtime_artifact_estimate,
 )
 from quant_pd_framework.streamlit_ui.enterprise_workflow import (
     build_workflow_step_states as ui_build_workflow_step_states,
@@ -145,31 +114,7 @@ from quant_pd_framework.streamlit_ui.enterprise_workflow import (
     collect_readiness_issues as ui_collect_readiness_issues,
 )
 from quant_pd_framework.streamlit_ui.enterprise_workflow import (
-    render_configuration_risk_score as ui_render_configuration_risk_score,
-)
-from quant_pd_framework.streamlit_ui.enterprise_workflow import (
-    render_guidance_center as ui_render_guidance_center,
-)
-from quant_pd_framework.streamlit_ui.enterprise_workflow import (
-    render_issue_center as ui_render_issue_center,
-)
-from quant_pd_framework.streamlit_ui.enterprise_workflow import (
-    render_model_suitability_explainer as ui_render_model_suitability_explainer,
-)
-from quant_pd_framework.streamlit_ui.enterprise_workflow import (
-    render_preflight_summary as ui_render_preflight_summary,
-)
-from quant_pd_framework.streamlit_ui.enterprise_workflow import (
-    render_resource_readiness_check as ui_render_resource_readiness_check,
-)
-from quant_pd_framework.streamlit_ui.enterprise_workflow import (
-    render_runtime_artifact_estimate as ui_render_runtime_artifact_estimate,
-)
-from quant_pd_framework.streamlit_ui.enterprise_workflow import (
     render_workflow_status_strip as ui_render_workflow_status_strip,
-)
-from quant_pd_framework.streamlit_ui.error_guidance import (
-    classify_workflow_exception as ui_classify_workflow_exception,
 )
 from quant_pd_framework.streamlit_ui.glossary import (
     glossary_help_text as ui_glossary_help_text,
@@ -177,66 +122,44 @@ from quant_pd_framework.streamlit_ui.glossary import (
 from quant_pd_framework.streamlit_ui.model_story_cards import (
     render_model_story_card as ui_render_model_story_card,
 )
-from quant_pd_framework.streamlit_ui.results import (
-    render_decision_summary as ui_render_decision_summary,
-)
-from quant_pd_framework.streamlit_ui.results import (
-    render_run_registry_panel as ui_render_run_registry_panel,
-)
-from quant_pd_framework.streamlit_ui.results import (
-    render_run_results as ui_render_run_results,
-)
-from quant_pd_framework.streamlit_ui.results import (
-    render_workflow_readiness as ui_render_workflow_readiness,
-)
-from quant_pd_framework.streamlit_ui.run_execution import (
-    build_execution_plan_cards as ui_build_execution_plan_cards,
-)
-from quant_pd_framework.streamlit_ui.run_execution import (
-    cancel_large_data_background_workflow as ui_cancel_large_data_background_workflow,
-)
-from quant_pd_framework.streamlit_ui.run_execution import (
-    execute_workflow as ui_execute_workflow,
-)
-from quant_pd_framework.streamlit_ui.run_execution import (
-    poll_large_data_background_workflow as ui_poll_large_data_background_workflow,
-)
-from quant_pd_framework.streamlit_ui.run_execution import (
-    render_background_job_status as ui_render_background_job_status,
-)
-from quant_pd_framework.streamlit_ui.run_execution import (
-    render_runtime_status as ui_render_runtime_status,
-)
-from quant_pd_framework.streamlit_ui.run_execution import (
-    run_next_checkpoint_stage as ui_run_next_checkpoint_stage,
-)
-from quant_pd_framework.streamlit_ui.run_execution import (
-    start_checkpointed_workflow as ui_start_checkpointed_workflow,
-)
-from quant_pd_framework.streamlit_ui.run_execution import (
-    start_large_data_background_workflow as ui_start_large_data_background_workflow,
-)
-from quant_pd_framework.streamlit_ui.run_execution import (
-    workflow_spinner_message as ui_workflow_spinner_message,
-)
 from quant_pd_framework.streamlit_ui.state import (
-    WorkspaceState,
     WorkspaceStateKeys,
-)
-from quant_pd_framework.streamlit_ui.state import (
-    build_run_snapshot as ui_build_run_snapshot,
 )
 from quant_pd_framework.streamlit_ui.state import (
     get_last_run_snapshot as ui_get_last_run_snapshot,
 )
 from quant_pd_framework.streamlit_ui.state import (
-    get_or_initialize_frame as ui_get_or_initialize_frame,
-)
-from quant_pd_framework.streamlit_ui.state import (
-    set_last_run_snapshot as ui_set_last_run_snapshot,
-)
-from quant_pd_framework.streamlit_ui.state import (
     store_workspace_frame as ui_store_workspace_frame,
+)
+from quant_pd_framework.streamlit_ui.steps.step1_data_schema import (
+    initialize_dataset_workspace as ui_initialize_dataset_workspace,
+)
+from quant_pd_framework.streamlit_ui.steps.step1_data_schema import (
+    render_data_schema_workspace as ui_render_data_schema_workspace,
+)
+from quant_pd_framework.streamlit_ui.steps.step1_data_schema import (
+    render_input_notice as ui_render_input_notice,
+)
+from quant_pd_framework.streamlit_ui.steps.step1_data_schema import (
+    render_no_dataset_placeholders as ui_render_no_dataset_placeholders,
+)
+from quant_pd_framework.streamlit_ui.steps.step1_data_schema import (
+    select_dataset_input as ui_select_dataset_input,
+)
+from quant_pd_framework.streamlit_ui.steps.step2_model_config import (
+    render_configuration_quality_panels as ui_render_configuration_quality_panels,
+)
+from quant_pd_framework.streamlit_ui.steps.step2_model_config import (
+    render_model_configuration_intro as ui_render_model_configuration_intro,
+)
+from quant_pd_framework.streamlit_ui.steps.step3_readiness_run import (
+    render_readiness_check_and_run as ui_render_readiness_check_and_run,
+)
+from quant_pd_framework.streamlit_ui.steps.step4_results_artifacts import (
+    render_results_artifacts_tab as ui_render_results_artifacts_tab,
+)
+from quant_pd_framework.streamlit_ui.steps.step5_decision_summary import (
+    render_decision_summary_tab as ui_render_decision_summary_tab,
 )
 from quant_pd_framework.streamlit_ui.theme import (
     format_data_structure as ui_format_data_structure,
@@ -249,18 +172,6 @@ from quant_pd_framework.streamlit_ui.theme import (
 )
 from quant_pd_framework.streamlit_ui.theme import (
     render_header as ui_render_header,
-)
-from quant_pd_framework.streamlit_ui.workflow_feedback import (
-    render_execution_plan as ui_render_execution_plan,
-)
-from quant_pd_framework.streamlit_ui.workflow_feedback import (
-    render_run_failure as ui_render_run_failure,
-)
-from quant_pd_framework.streamlit_ui.workflow_feedback import (
-    render_run_success as ui_render_run_success,
-)
-from quant_pd_framework.streamlit_ui.workspace import (
-    render_builder_workspace as ui_render_builder_workspace,
 )
 from quant_pd_framework.tabular_policy import (
     original_input_is_parquet as ui_original_input_is_parquet,
@@ -1027,89 +938,38 @@ def run_app() -> None:
     )
 
     with data_tab:
-        selected_input = ui_select_input_dataframe()
+        selected_input = ui_select_dataset_input()
     dataframe = selected_input.dataframe
     data_source_label = selected_input.label
     source_large_data_mode = selected_input.large_data_mode
     if dataframe is None:
-        with workflow_status_container:
-            ui_render_workflow_status_strip(
-                ui_build_workflow_step_states(
-                    dataframe_loaded=False,
-                    preview_config=None,
-                    preview_error=None,
-                    preview_findings=[],
-                    last_run_snapshot=ui_get_last_run_snapshot(),
-                    current_config=None,
-                )
-            )
-        with data_tab:
-            st.info(
-                "Select a Data_Load file, upload a CSV/Excel/Parquet file, or use the "
-                "bundled sample dataset to begin."
-            )
-        with configuration_tab:
-            st.info("Complete Step 1 before configuring the model workflow.")
-        with readiness_tab:
-            st.info("Readiness checks appear after a dataset and schema are available.")
-        with results_tab:
-            st.info("Run a valid workflow from Step 3 to populate results and artifacts.")
-            ui_render_run_registry_panel(Path("artifacts"))
-        with decision_tab:
-            st.info("Complete a run before reviewing the Step 5 decision summary.")
+        ui_render_no_dataset_placeholders(
+            workflow_status_container=workflow_status_container,
+            data_tab=data_tab,
+            configuration_tab=configuration_tab,
+            readiness_tab=readiness_tab,
+            results_tab=results_tab,
+            decision_tab=decision_tab,
+        )
         return
-    with data_tab:
-        ui_render_input_performance_notice(selected_input.metadata)
+    ui_render_input_notice(data_tab=data_tab, metadata=selected_input.metadata)
 
-    editor_key = ui_build_editor_key(dataframe, data_source_label)
-    workspace_keys = WorkspaceStateKeys.from_editor_key(editor_key)
-    workspace_schema_frame = ui_get_or_initialize_frame(
-        workspace_keys.schema_frame,
-        lambda: build_column_editor_frame(
-            dataframe,
-            use_column_name_hints=data_source_label == "bundled_sample",
-        ),
+    dataset_workspace = ui_initialize_dataset_workspace(
+        dataframe=dataframe,
+        data_source_label=data_source_label,
     )
-    workspace_feature_dictionary_frame = ui_get_or_initialize_frame(
-        workspace_keys.feature_dictionary_frame,
-        lambda: build_feature_dictionary_editor_frame(dataframe),
-    )
-    workspace_transformation_frame = ui_get_or_initialize_frame(
-        workspace_keys.transformation_frame,
-        build_transformation_editor_frame,
-    )
-    workspace_feature_review_frame = ui_get_or_initialize_frame(
-        workspace_keys.feature_review_frame,
-        build_feature_review_editor_frame,
-    )
-    workspace_scorecard_override_frame = ui_get_or_initialize_frame(
-        workspace_keys.scorecard_override_frame,
-        build_scorecard_override_editor_frame,
-    )
-    subset_search_feature_options = build_subset_search_feature_options(
-        workspace_schema_frame,
-        workspace_transformation_frame,
-    )
-    categorical_like_columns = dataframe.select_dtypes(
-        include=["object", "string", "category"]
-    ).columns.tolist()
+    workspace_keys = dataset_workspace.keys
+    workspace_schema_frame = dataset_workspace.schema_frame
+    workspace_feature_dictionary_frame = dataset_workspace.feature_dictionary_frame
+    workspace_transformation_frame = dataset_workspace.transformation_frame
+    workspace_feature_review_frame = dataset_workspace.feature_review_frame
+    workspace_scorecard_override_frame = dataset_workspace.scorecard_override_frame
+    subset_search_feature_options = dataset_workspace.subset_search_feature_options
+    categorical_like_columns = dataset_workspace.categorical_like_columns
 
     with configuration_tab:
-        st.markdown(
-            """
-            <div class="step-panel-intro">
-              <span class="step-panel-kicker">Model Configuration</span>
-              <h3 class="step-panel-title">Configure the workflow</h3>
-              <p class="step-panel-copy">
-                Use the grouped panels to keep core setup visible while hiding
-                lower-priority tuning until you need it.
-              </p>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
+        ui_render_model_configuration_intro()
         profile_manager_container = st.container()
-        ui_render_guidance_center()
         preset_options = [
             ("custom", "Custom Configuration", "Start from the current manual controls."),
             *[
@@ -3966,24 +3826,17 @@ def run_app() -> None:
             )
             output_root = st.text_input("Artifact root", value="artifacts")
 
-    with data_tab:
-        workspace_frames = ui_render_builder_workspace(
-            data_source_label=data_source_label,
-            dataframe=dataframe,
-            workspace_state=WorkspaceState(
-                keys=workspace_keys,
-                schema_frame=workspace_schema_frame,
-                feature_dictionary_frame=workspace_feature_dictionary_frame,
-                transformation_frame=workspace_transformation_frame,
-                feature_review_frame=workspace_feature_review_frame,
-                scorecard_override_frame=workspace_scorecard_override_frame,
-            ),
-            preset_transformations=preset_inputs.transformations,
-            advanced_workspace=advanced_workspace,
-            target_mode=target_mode,
-            model_type=model_type,
-            data_structure=data_structure,
-        )
+    workspace_frames = ui_render_data_schema_workspace(
+        data_tab=data_tab,
+        data_source_label=data_source_label,
+        dataframe=dataframe,
+        workspace=dataset_workspace,
+        preset_transformations=preset_inputs.transformations,
+        advanced_workspace=advanced_workspace,
+        target_mode=target_mode,
+        model_type=model_type,
+        data_structure=data_structure,
+    )
 
     edited_schema = workspace_frames["schema"]
     feature_dictionary_frame = workspace_frames["feature_dictionary"]
@@ -4084,351 +3937,51 @@ def run_app() -> None:
                 current_config=current_config,
             )
         )
-    with configuration_tab:
-        with profile_manager_container:
-            render_configuration_profile_manager(
-                dataframe=dataframe,
-                data_source_label=data_source_label,
-                source_metadata=selected_input.metadata,
-                workspace_keys=workspace_keys,
-                preview_config=preview_config,
-                preview_error=preview_error,
-                edited_schema=edited_schema,
-                feature_dictionary_frame=feature_dictionary_frame,
-                transformation_frame=transformation_frame,
-                feature_review_frame=feature_review_frame,
-                scorecard_override_frame=scorecard_override_frame,
-            )
-        render_configuration_diff_viewer(
-            current_config=current_config,
-            active_profile=active_profile_payload,
-            last_run_snapshot=last_run_snapshot,
-        )
-        if preview_config is not None:
-            suitability_cards, suitability_details = ui_build_model_suitability_explainer(
-                dataframe=dataframe,
-                preview_config=preview_config,
-                edited_schema=edited_schema,
-                transformation_frame=transformation_frame,
-            )
-            ui_render_model_suitability_explainer(
-                cards=suitability_cards,
-                details=suitability_details,
-            )
-            risk_cards, risk_details = ui_build_configuration_risk_score(
-                dataframe=dataframe,
-                preview_config=preview_config,
-                edited_schema=edited_schema,
-                transformation_frame=transformation_frame,
-            )
-            ui_render_configuration_risk_score(cards=risk_cards, details=risk_details)
-            estimate_cards, estimate_details = ui_build_runtime_artifact_estimate(
-                dataframe=dataframe,
-                preview_config=preview_config,
-                transformation_frame=transformation_frame,
-            )
-            ui_render_runtime_artifact_estimate(
-                cards=estimate_cards,
-                details=estimate_details,
-            )
-        else:
-            st.info("Resolve the configuration before reviewing Step 2 suitability guidance.")
-    run_button_label = (
-        "Run Feature Subset Search"
-        if execution_mode == ExecutionMode.SEARCH_FEATURE_SUBSETS.value
-        else "Run Quant Model Workflow"
+    ui_render_configuration_quality_panels(
+        configuration_tab=configuration_tab,
+        profile_manager_container=profile_manager_container,
+        render_profile_manager=render_configuration_profile_manager,
+        render_configuration_diff_viewer=render_configuration_diff_viewer,
+        dataframe=dataframe,
+        data_source_label=data_source_label,
+        source_metadata=selected_input.metadata,
+        workspace_keys=workspace_keys,
+        preview_config=preview_config,
+        preview_error=preview_error,
+        edited_schema=edited_schema,
+        feature_dictionary_frame=feature_dictionary_frame,
+        transformation_frame=transformation_frame,
+        feature_review_frame=feature_review_frame,
+        scorecard_override_frame=scorecard_override_frame,
+        current_config=current_config,
+        active_profile_payload=active_profile_payload,
+        last_run_snapshot=last_run_snapshot,
     )
-    with readiness_tab:
-        ui_render_workflow_readiness(
-            preview_config=preview_config,
-            preview_findings=preview_findings,
-            preview_error=preview_error,
-        )
-        ui_render_issue_center(readiness_issues)
-        if preview_config is not None:
-            preflight_cards, preflight_details = ui_build_preflight_summary(
-                dataframe=dataframe,
-                data_source_label=data_source_label,
-                preview_config=preview_config,
-                edited_schema=edited_schema,
-                transformation_frame=transformation_frame,
-            )
-            ui_render_preflight_summary(cards=preflight_cards, details=preflight_details)
-            resource_cards, resource_details = ui_build_resource_readiness_check(
-                dataframe=dataframe,
-                preview_config=preview_config,
-                large_data_mode=large_data_mode,
-            )
-            ui_render_resource_readiness_check(
-                cards=resource_cards,
-                details=resource_details,
-            )
-        ui_render_execution_plan(
-            ui_build_execution_plan_cards(
-                preview_config=preview_config,
-                data_source_label=data_source_label,
-                large_data_mode=large_data_mode,
-            ),
-            large_data_mode=large_data_mode,
-        )
-        workflow_run_style = st.radio(
-            "Workflow run style",
-            options=["full", "step_by_step"],
-            index=0,
-            horizontal=True,
-            format_func={
-                "full": "Run full workflow",
-                "step_by_step": "Run checkpointed step-by-step",
-            }.get,
-            help=(
-                "Full workflow uses the same checkpoint engine automatically. "
-                "Step-by-step mode runs one checkpoint stage per click so a failed "
-                "diagnostic group can be reviewed without refitting the model."
-            ),
-        )
-        checkpoint_state = st.session_state.get(CHECKPOINTED_WORKFLOW_STATE_KEY)
-        background_state = st.session_state.get(BACKGROUND_WORKFLOW_STATE_KEY)
-        background_large_data_run = (
-            large_data_mode
-            and workflow_run_style == "full"
-            and selected_input.dataset_handle is not None
-        )
-        if background_large_data_run and background_state:
-            snapshot, background_state = ui_poll_large_data_background_workflow(background_state)
-            st.session_state[BACKGROUND_WORKFLOW_STATE_KEY] = background_state
-            ui_render_background_job_status(background_state)
-            if snapshot is not None:
-                ui_set_last_run_snapshot(snapshot)
-                st.success("Background large-data workflow completed. Results are available.")
-            background_actions = st.columns(2)
-            if background_actions[0].button(
-                "Cancel background job",
-                width="stretch",
-                key="readiness_cancel_background_job_button",
-                disabled=background_state.get("status") in {"completed", "failed"},
-            ):
-                ui_cancel_large_data_background_workflow(background_state)
-                st.warning("Cancel requested. The worker will stop at the next safe boundary.")
-            if background_actions[1].button(
-                "Clear background job state",
-                width="stretch",
-                key="readiness_clear_background_job_button",
-            ):
-                st.session_state.pop(BACKGROUND_WORKFLOW_STATE_KEY, None)
-                background_state = None
-        if workflow_run_style == "step_by_step" and checkpoint_state:
-            st.caption(
-                "Active checkpointed run: "
-                f"`{checkpoint_state.get('run_id', 'initialized')}` | "
-                f"{checkpoint_state.get('manifest_status', 'initialized')}"
-            )
-            reset_checkpoint_run = st.button(
-                "Reset checkpointed run",
-                width="stretch",
-                key="readiness_reset_checkpointed_run_button",
-            )
-            if reset_checkpoint_run:
-                st.session_state.pop(CHECKPOINTED_WORKFLOW_STATE_KEY, None)
-                checkpoint_state = None
-        run_clicked = st.button(
-            "Run Next Checkpoint Stage"
-            if workflow_run_style == "step_by_step" and checkpoint_state
-            else "Start Checkpointed Run"
-            if workflow_run_style == "step_by_step"
-            else "Refresh Background Large-Data Job"
-            if background_large_data_run and background_state
-            else "Start Background Large-Data Run"
-            if background_large_data_run
-            else run_button_label,
-            type="primary",
-            width="stretch",
-            key="readiness_run_workflow_button",
-        )
-
-    if run_clicked:
-        with readiness_tab:
-            if preview_error or preview_config is None:
-                st.error(
-                    preview_error or "Resolve the readiness issues before running the workflow."
-                )
-                ui_set_last_run_snapshot(None)
-            else:
-                try:
-                    status_placeholder = st.empty()
-                    progress_placeholder = st.empty()
-
-                    def render_progress(event: dict[str, Any]) -> None:
-                        ui_render_runtime_status(
-                            event,
-                            status_placeholder=status_placeholder,
-                            progress_placeholder=progress_placeholder,
-                        )
-                        event_type = str(event.get("event_type") or "")
-                        if event_type in {
-                            "run_started",
-                            "run_completed",
-                            "step_failed",
-                            "stage_failed",
-                        }:
-                            audit_type = (
-                                "workflow_run_completed"
-                                if event_type == "run_completed"
-                                else "workflow_run_failed"
-                                if event_type in {"step_failed", "stage_failed"}
-                                else "workflow_run_started"
-                            )
-                            ui_record_gui_audit_event(
-                                preview_config.artifacts.output_root,
-                                audit_type,
-                                run_id=str(event.get("run_id") or ""),
-                                artifact_root=preview_config.artifacts.output_root
-                                / str(event.get("run_id") or ""),
-                                metadata={
-                                    "event_type": event_type,
-                                    "stage": event.get("step_name") or event.get("stage_id"),
-                                    "step_order": event.get("step_order"),
-                                    "total_steps": event.get("total_steps"),
-                                    "elapsed_seconds": event.get("elapsed_seconds"),
-                                    "error_message": event.get("error_message", ""),
-                                },
-                                debounce_key=f"{audit_type}_{event.get('run_id', '')}_{event_type}",
-                            )
-
-                    if workflow_run_style == "step_by_step":
-                        checkpoint_state = st.session_state.get(CHECKPOINTED_WORKFLOW_STATE_KEY)
-                        if checkpoint_state is None:
-                            checkpoint_state = ui_start_checkpointed_workflow(
-                                preview_config=preview_config,
-                                dataframe=dataframe,
-                                selected_input=selected_input,
-                                large_data_mode=large_data_mode,
-                            )
-                            st.session_state[CHECKPOINTED_WORKFLOW_STATE_KEY] = checkpoint_state
-                        with st.spinner("Running the next checkpoint stage..."):
-                            context, checkpoint_state = ui_run_next_checkpoint_stage(
-                                preview_config=preview_config,
-                                checkpoint_state=checkpoint_state,
-                                progress_callback=render_progress,
-                            )
-                        st.session_state[CHECKPOINTED_WORKFLOW_STATE_KEY] = checkpoint_state
-                        if context is None:
-                            st.info(
-                                "Checkpoint stage completed. Continue running stages until "
-                                "the export package is complete."
-                            )
-                            ui_set_last_run_snapshot(None)
-                        else:
-                            snapshot = ui_build_run_snapshot(
-                                context,
-                                preview_config.to_dict(),
-                            )
-                            ui_set_last_run_snapshot(snapshot)
-                            ui_render_run_success(snapshot)
-                    elif background_large_data_run:
-                        background_state = st.session_state.get(BACKGROUND_WORKFLOW_STATE_KEY)
-                        if background_state is None or background_state.get("status") in {
-                            "completed",
-                            "failed",
-                        }:
-                            background_state = ui_start_large_data_background_workflow(
-                                preview_config=preview_config,
-                                dataframe=dataframe,
-                                selected_input=selected_input,
-                                large_data_mode=large_data_mode,
-                            )
-                            st.session_state[BACKGROUND_WORKFLOW_STATE_KEY] = background_state
-                            ui_render_background_job_status(background_state)
-                            st.info(
-                                "Large-data workflow is running in the background. "
-                                "Use Refresh Background Large-Data Job to update status."
-                            )
-                        else:
-                            snapshot, background_state = ui_poll_large_data_background_workflow(
-                                background_state
-                            )
-                            st.session_state[BACKGROUND_WORKFLOW_STATE_KEY] = background_state
-                            ui_render_background_job_status(background_state)
-                            if snapshot is not None:
-                                ui_set_last_run_snapshot(snapshot)
-                                ui_render_run_success(snapshot)
-                            elif background_state.get("status") == "failed":
-                                st.error(background_state.get("error_message", "Run failed."))
-                            else:
-                                st.info("Background workflow is still running.")
-                    else:
-                        with st.spinner(ui_workflow_spinner_message(execution_mode)):
-                            context = ui_execute_workflow(
-                                preview_config=preview_config,
-                                dataframe=dataframe,
-                                selected_input=selected_input,
-                                large_data_mode=large_data_mode,
-                                progress_callback=render_progress,
-                            )
-                        snapshot = ui_build_run_snapshot(
-                            context,
-                            preview_config.to_dict(),
-                        )
-                        ui_set_last_run_snapshot(snapshot)
-                        ui_render_run_success(snapshot)
-                except Exception as exc:
-                    ui_record_gui_audit_event(
-                        preview_config.artifacts.output_root,
-                        "workflow_run_failed",
-                        metadata={
-                            "execution_mode": preview_config.execution.mode.value,
-                            "model_type": preview_config.model.model_type.value,
-                            "target_mode": preview_config.target.mode.value,
-                            "error_message": str(exc),
-                        },
-                    )
-                    ui_render_run_failure(
-                        ui_classify_workflow_exception(
-                            exc,
-                            technical_details=traceback.format_exc(),
-                        )
-                    )
-                    ui_set_last_run_snapshot(None)
-
-    with results_tab:
-        last_run_snapshot = ui_get_last_run_snapshot()
-        if last_run_snapshot:
-            current_config = preview_config.to_dict() if preview_config is not None else None
-            if current_config is not None and last_run_snapshot.get("config") != current_config:
-                st.warning(
-                    "Results are from the last completed run and may be stale because "
-                    "the current workflow configuration has changed."
-                )
-            ui_render_run_results(last_run_snapshot)
-            st.divider()
-            if preview_config is not None:
-                registry_root = preview_config.artifacts.output_root
-            else:
-                snapshot_root = last_run_snapshot.get("artifacts", {}).get("output_root")
-                registry_root = (
-                    Path(str(snapshot_root)).parent if snapshot_root else Path(output_root)
-                )
-            ui_render_run_registry_panel(registry_root)
-        else:
-            st.info("Run a valid workflow from Step 3 to populate results and artifacts.")
-            registry_root = (
-                preview_config.artifacts.output_root
-                if preview_config is not None
-                else Path(output_root)
-            )
-            ui_render_run_registry_panel(registry_root)
-
-    with decision_tab:
-        last_run_snapshot = ui_get_last_run_snapshot()
-        if last_run_snapshot:
-            current_config = preview_config.to_dict() if preview_config is not None else None
-            if current_config is not None and last_run_snapshot.get("config") != current_config:
-                st.warning(
-                    "Decision summary is from the last completed run and may be stale because "
-                    "the current workflow configuration has changed."
-                )
-            ui_render_decision_summary(last_run_snapshot)
-        else:
-            st.info("Run a valid workflow from Step 3 to populate the decision summary.")
+    ui_render_readiness_check_and_run(
+        readiness_tab=readiness_tab,
+        preview_config=preview_config,
+        preview_findings=preview_findings,
+        preview_error=preview_error,
+        readiness_issues=readiness_issues,
+        dataframe=dataframe,
+        data_source_label=data_source_label,
+        edited_schema=edited_schema,
+        transformation_frame=transformation_frame,
+        selected_input=selected_input,
+        large_data_mode=large_data_mode,
+        execution_mode=execution_mode,
+        checkpoint_state_key=CHECKPOINTED_WORKFLOW_STATE_KEY,
+        background_state_key=BACKGROUND_WORKFLOW_STATE_KEY,
+    )
+    ui_render_results_artifacts_tab(
+        results_tab=results_tab,
+        preview_config=preview_config,
+        output_root=output_root,
+    )
+    ui_render_decision_summary_tab(
+        decision_tab=decision_tab,
+        preview_config=preview_config,
+    )
 
 
 if __name__ == "__main__":

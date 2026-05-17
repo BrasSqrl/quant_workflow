@@ -7,9 +7,15 @@ on:
       - "codex/**"
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
-  test:
-    runs-on: windows-latest
+  quality:
+    name: Quality gates
+    runs-on: ubuntu-latest
+    env:
+      PRE_COMMIT_HOME: .pre-commit-cache
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -21,13 +27,59 @@ jobs:
           cache: "pip"
 
       - name: Install dependencies
-        run: python -m pip install -e .[dev,gui]
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e .[dev,gui]
 
-      - name: Run Ruff
-        run: python -m ruff check app src tests examples
+      - name: Run pre-commit
+        run: python -m pre_commit run --all-files --show-diff-on-failure
 
-      - name: Run golden reference workflows
-        run: python -m pytest -q tests/test_reference_workflows.py
+      - name: Audit Python dependencies
+        run: python -m pip_audit . --strict --progress-spinner off --cache-dir .pip-audit-cache
 
-      - name: Run full test suite
-        run: python -m pytest -q
+  test:
+    name: Tests (${{ matrix.os }}, Python ${{ matrix.python-version }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - windows-latest
+          - macos-latest
+        python-version:
+          - "3.11"
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e .[dev,gui]
+
+      - name: Run tests with coverage
+        run: python -m pytest -q --cov=quant_pd_framework --cov-report=term-missing:skip-covered --cov-report=xml
+
+  secrets:
+    name: Secret scan
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run Gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

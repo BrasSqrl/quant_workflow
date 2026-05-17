@@ -10,9 +10,11 @@ import pandas as pd
 
 from ..base import BasePipelineStep
 from ..config import ExecutionMode, ModelType
-from ..context import PipelineContext
+from ..context import PipelineContext, PipelineMetadataKey
 from ..large_data_policy import resolve_large_data_certification
 from ..models import build_model_adapter
+
+Meta = PipelineMetadataKey
 
 
 class ModelTrainingStep(BasePipelineStep):
@@ -129,7 +131,7 @@ class ModelTrainingStep(BasePipelineStep):
             context.config.model.model_type,
             performance,
         )
-        sample_info = context.metadata.get("large_data_sample", {})
+        sample_info = context.get_metadata_dict(Meta.LARGE_DATA_SAMPLE)
         payload = {
             **certification.to_metadata(),
             "certified_fit_enabled": bool(performance.large_data_certified_fit_enabled),
@@ -148,7 +150,7 @@ class ModelTrainingStep(BasePipelineStep):
                 )
             ),
         }
-        context.metadata["large_data_fit_record"] = payload
+        context.set_metadata(Meta.LARGE_DATA_FIT_RECORD, payload)
         context.diagnostics_tables["large_data_fit_record"] = pd.DataFrame([payload])
 
     def _publish_model_numerical_findings(

@@ -15,6 +15,7 @@ import joblib
 
 from .config import FrameworkConfig
 from .config_io import load_framework_config
+from .context import PipelineMetadataKey
 from .large_data import (
     DatasetHandle,
     build_dataset_handle,
@@ -26,6 +27,7 @@ from .stage_runner import CheckpointedWorkflowRunner
 
 BACKGROUND_JOB_MANIFEST = "job_manifest.json"
 BACKGROUND_JOB_SNAPSHOT = "streamlit_snapshot.joblib"
+Meta = PipelineMetadataKey
 
 
 @dataclass(slots=True)
@@ -301,7 +303,7 @@ def run_background_manifest(manifest_path: str | Path) -> int:
             context.artifacts.get("output_root") or config.artifacts.output_root
         )
         manifest.source_profile_key = str(
-            context.metadata.get("large_data_profile", {}).get("profile_cache_key", "")
+            context.get_metadata_dict(Meta.LARGE_DATA_PROFILE).get("profile_cache_key", "")
         )
         manifest.prepared_manifest_path = str(
             context.artifacts.get("prepared_dataset_manifest", "")

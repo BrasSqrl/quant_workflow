@@ -10,7 +10,12 @@ import pandas as pd
 
 from ..base import BasePipelineStep
 from ..config import ArtifactConfig, ColumnRole, PerformanceConfig
-from ..context import PipelineContext
+from ..context import (
+    PipelineContext,
+    PipelineMetadataKey,
+    get_pipeline_metadata_dict,
+    set_pipeline_metadata,
+)
 from ..export_layout import build_export_path_layout
 from ..large_data import (
     DatasetHandle,
@@ -34,6 +39,7 @@ from ..large_data_policy import (
 from ..large_data_runtime import DatasetProfile, PreparedDatasetManifest
 
 INPUT_SOURCE_METADATA_ATTR = "quant_studio_input_source"
+Meta = PipelineMetadataKey
 
 
 class IngestionStep(BasePipelineStep):
@@ -55,14 +61,14 @@ class IngestionStep(BasePipelineStep):
             dataframe = self._read_large_data_handle(context, raw_input)
         elif isinstance(raw_input, pd.DataFrame):
             dataframe = raw_input.copy(deep=False)
-            context.metadata["input_type"] = "dataframe"
+            set_pipeline_metadata(context, Meta.INPUT_TYPE, "dataframe")
             source_metadata = raw_input.attrs.get(INPUT_SOURCE_METADATA_ATTR)
             if isinstance(source_metadata, dict):
-                context.metadata["input_source"] = dict(source_metadata)
+                set_pipeline_metadata(context, Meta.INPUT_SOURCE, dict(source_metadata))
         else:
             input_path = Path(raw_input)
-            context.metadata["input_type"] = input_path.suffix.lower()
-            context.metadata["input_source"] = self._describe_file_input(input_path)
+            set_pipeline_metadata(context, Meta.INPUT_TYPE, input_path.suffix.lower())
+            set_pipeline_metadata(context, Meta.INPUT_SOURCE, self._describe_file_input(input_path))
             dataframe = self._read_file(context, input_path)
 
         if dataframe.empty:
@@ -72,10 +78,14 @@ class IngestionStep(BasePipelineStep):
         context.raw_data = dataframe
         context.working_data = dataframe
         context.raw_input = None
-        context.metadata["input_shape"] = {
-            "rows": int(dataframe.shape[0]),
-            "columns": int(dataframe.shape[1]),
-        }
+        set_pipeline_metadata(
+            context,
+            Meta.INPUT_SHAPE,
+            {
+                "rows": int(dataframe.shape[0]),
+                "columns": int(dataframe.shape[1]),
+            },
+        )
         self._record_memory_estimate(context, dataframe)
         return context
 
@@ -95,9 +105,9 @@ class IngestionStep(BasePipelineStep):
                 s3_cache_dir=Path(performance.s3_local_cache_dir),
             )
         context.large_data_handle = active_handle
-        context.metadata["input_type"] = "large_data_file"
-        context.metadata["input_source"] = dict(handle.metadata)
-        context.metadata["large_data_handle"] = active_handle.to_metadata()
+        set_pipeline_metadata(context, Meta.INPUT_TYPE, "large_data_file")
+        set_pipeline_metadata(context, Meta.INPUT_SOURCE, dict(handle.metadata))
+        set_pipeline_metadata(context, Meta.LARGE_DATA_HANDLE, active_handle.to_metadata())
         self._record_large_data_profile(context, active_handle)
         record_large_data_transformation_contract(context)
         certification = self._record_large_data_certification(context, active_handle)
@@ -107,7 +117,11 @@ class IngestionStep(BasePipelineStep):
             source_identifier=active_handle.source_identifier,
         )
         if active_handle.staging_metadata:
-            context.metadata["csv_to_parquet_conversion"] = active_handle.staging_metadata
+            set_pipeline_metadata(
+                context,
+                Meta.CSV_TO_PARQUET_CONVERSION,
+                active_handle.staging_metadata,
+            )
             context.diagnostics_tables["csv_to_parquet_conversion"] = pd.DataFrame(
                 [active_handle.staging_metadata]
             )
@@ -131,12 +145,16 @@ class IngestionStep(BasePipelineStep):
             columns=projected_columns,
             random_state=context.config.split.random_state,
         )
-        context.metadata["large_data_sample"] = {
-            "sample_rows_requested": sample_rows,
-            "sample_rows_loaded": int(len(dataframe)),
-            "projected_columns": projected_columns or list(dataframe.columns),
-            "sample_strategy": "duckdb_reservoir_or_head_fallback",
-        }
+        set_pipeline_metadata(
+            context,
+            Meta.LARGE_DATA_SAMPLE,
+            {
+                "sample_rows_requested": sample_rows,
+                "sample_rows_loaded": int(len(dataframe)),
+                "projected_columns": projected_columns or list(dataframe.columns),
+                "sample_strategy": "duckdb_reservoir_or_head_fallback",
+            },
+        )
         sample_path = self._write_sample_development_artifacts(context, dataframe)
         self._record_prepared_dataset_manifest(
             context=context,
@@ -167,8 +185,8 @@ class IngestionStep(BasePipelineStep):
             json.dumps(profile, indent=2, default=str),
             encoding="utf-8",
         )
-        context.metadata["large_data_profile"] = profile
-        context.metadata["large_data_profile_path"] = str(profile_path)
+        set_pipeline_metadata(context, Meta.LARGE_DATA_PROFILE, profile)
+        set_pipeline_metadata(context, Meta.LARGE_DATA_PROFILE_PATH, str(profile_path))
         context.artifacts["large_data_profile"] = profile_path
         context.artifacts["large_data_metadata_dir"] = profile_dir
         context.diagnostics_tables["large_data_source_profile"] = pd.DataFrame(
@@ -185,9 +203,11 @@ class IngestionStep(BasePipelineStep):
                 }
             ]
         )
-        context.metadata["large_data_dataset_profile"] = DatasetProfile.from_profile_dict(
-            profile
-        ).to_dict()
+        set_pipeline_metadata(
+            context,
+            Meta.LARGE_DATA_DATASET_PROFILE,
+            DatasetProfile.from_profile_dict(profile).to_dict(),
+        )
 
     def _record_large_data_certification(
         self,
@@ -200,7 +220,7 @@ class IngestionStep(BasePipelineStep):
         )
         certification_metadata = certification.to_metadata()
         certification_metadata["source_identifier"] = handle.source_identifier
-        context.metadata["large_data_model_certification"] = certification_metadata
+        set_pipeline_metadata(context, Meta.LARGE_DATA_MODEL_CERTIFICATION, certification_metadata)
         context.diagnostics_tables["large_data_model_certification"] = pd.DataFrame(
             [certification_metadata]
         )
@@ -221,7 +241,7 @@ class IngestionStep(BasePipelineStep):
                 certification,
                 source_metadata=source_metadata,
             )
-            context.metadata["large_data_override_audit"] = audit
+            set_pipeline_metadata(context, Meta.LARGE_DATA_OVERRIDE_AUDIT, audit)
             context.diagnostics_tables["large_data_override_audit"] = pd.DataFrame([audit])
             context.warn(
                 "A forced large-data model override is active. This path is audited "
@@ -253,11 +273,11 @@ class IngestionStep(BasePipelineStep):
             duckdb_threads=performance.duckdb_threads,
             duckdb_memory_limit_gb=performance.duckdb_memory_limit_gb,
         )
-        context.metadata["large_data_projected_dataset"] = metadata
+        set_pipeline_metadata(context, Meta.LARGE_DATA_PROJECTED_DATASET, metadata)
         context.diagnostics_tables["large_data_projected_dataset"] = pd.DataFrame([metadata])
         if metadata.get("materialized"):
             context.artifacts["large_data_projected_dataset"] = destination_path
-            context.metadata["large_data_handle"] = projected_handle.to_metadata()
+            set_pipeline_metadata(context, Meta.LARGE_DATA_HANDLE, projected_handle.to_metadata())
         return projected_handle
 
     def _describe_file_input(self, path: Path) -> dict[str, str | int]:
@@ -305,7 +325,7 @@ class IngestionStep(BasePipelineStep):
                 chunk_rows=performance.csv_conversion_chunk_rows,
                 compression=artifacts.parquet_compression,
             )
-            context.metadata["csv_to_parquet_conversion"] = conversion_metadata
+            set_pipeline_metadata(context, Meta.CSV_TO_PARQUET_CONVERSION, conversion_metadata)
             context.diagnostics_tables["csv_to_parquet_conversion"] = pd.DataFrame(
                 [conversion_metadata]
             )
@@ -407,21 +427,29 @@ class IngestionStep(BasePipelineStep):
                 if spec.enabled
             ],
             target_column=context.config.target.output_column,
-            row_count=context.metadata.get("large_data_profile", {}).get("row_count"),
+            row_count=get_pipeline_metadata_dict(context, Meta.LARGE_DATA_PROFILE).get(
+                "row_count"
+            ),
             cache_key=str(
-                context.metadata.get("large_data_dataset_profile", {}).get("cache_key", "")
+                get_pipeline_metadata_dict(context, Meta.LARGE_DATA_DATASET_PROFILE).get(
+                    "cache_key",
+                    "",
+                )
             ),
             profile_cache_key=str(
-                context.metadata.get("large_data_profile", {}).get("profile_cache_key", "")
+                get_pipeline_metadata_dict(context, Meta.LARGE_DATA_PROFILE).get(
+                    "profile_cache_key",
+                    "",
+                )
             ),
             partition_columns=list(
-                context.metadata.get("partitioned_dataset_manifest", {}).get(
+                get_pipeline_metadata_dict(context, Meta.PARTITIONED_DATASET_MANIFEST).get(
                     "partition_columns",
                     [],
                 )
             ),
             partition_paths=dict(
-                context.metadata.get("partitioned_dataset_manifest", {}).get(
+                get_pipeline_metadata_dict(context, Meta.PARTITIONED_DATASET_MANIFEST).get(
                     "partition_paths",
                     {},
                 )
@@ -436,7 +464,7 @@ class IngestionStep(BasePipelineStep):
             json.dumps(prepared_manifest.to_dict(), indent=2, default=str),
             encoding="utf-8",
         )
-        context.metadata["prepared_dataset_manifest"] = prepared_manifest.to_dict()
+        set_pipeline_metadata(context, Meta.PREPARED_DATASET_MANIFEST, prepared_manifest.to_dict())
         context.artifacts["prepared_dataset_manifest"] = manifest_path
         context.diagnostics_tables["prepared_dataset_manifest"] = pd.DataFrame(
             [prepared_manifest.to_dict()]
@@ -464,12 +492,16 @@ class IngestionStep(BasePipelineStep):
             context.diagnostics_tables["dtype_optimization"] = audit_table
             before_bytes = int(audit_table["old_memory_bytes"].sum())
             after_bytes = int(audit_table["new_memory_bytes"].sum())
-            context.metadata["dtype_optimization"] = {
-                "columns_changed": int(len(audit_table)),
-                "memory_saved_bytes": int(audit_table["memory_saved_bytes"].sum()),
-                "changed_column_memory_before_bytes": before_bytes,
-                "changed_column_memory_after_bytes": after_bytes,
-            }
+            set_pipeline_metadata(
+                context,
+                Meta.DTYPE_OPTIMIZATION,
+                {
+                    "columns_changed": int(len(audit_table)),
+                    "memory_saved_bytes": int(audit_table["memory_saved_bytes"].sum()),
+                    "changed_column_memory_before_bytes": before_bytes,
+                    "changed_column_memory_after_bytes": after_bytes,
+                },
+            )
         return optimized
 
     def _record_memory_estimate(
@@ -477,9 +509,7 @@ class IngestionStep(BasePipelineStep):
         context: PipelineContext,
         dataframe: pd.DataFrame,
     ) -> None:
-        source_metadata = context.metadata.get("input_source", {})
-        if not isinstance(source_metadata, dict):
-            source_metadata = {}
+        source_metadata = get_pipeline_metadata_dict(context, Meta.INPUT_SOURCE)
         estimate = build_memory_estimate_table(
             dataframe,
             source_metadata,
@@ -487,7 +517,7 @@ class IngestionStep(BasePipelineStep):
         )
         context.diagnostics_tables["large_data_memory_estimate"] = estimate
         row = estimate.iloc[0].to_dict()
-        context.metadata["large_data_memory_estimate"] = row
+        set_pipeline_metadata(context, Meta.LARGE_DATA_MEMORY_ESTIMATE, row)
         if row.get("status") == "warn":
             warning = (
                 "Estimated peak memory for this workflow exceeds the configured "

@@ -96,7 +96,7 @@ For macOS use:
 | Catalog | [Model Catalog](./MODEL_CATALOG.md) | Implemented model families and how they map to use cases. |
 | Catalog | [Metric Catalog](./METRIC_CATALOG.md) | Metrics, diagnostics, and interpretation guidance. |
 | Catalog | [Statistical Test Catalog](./STATISTICAL_TEST_CATALOG.md) | Statistical tests, when to use them, code references, and outcome interpretation. |
-| Standard | [Engineering Rubric](./ENGINEERING_RUBRIC.md) | Code quality, architecture, reproducibility, documentation, and operational standards. |
+| Standard | [Engineering Rubric](./ENGINEERING_RUBRIC.md) | Code quality, architecture, developer module map, reproducibility, documentation, and operational standards. |
 | Standard | [UI / UX Standard](./UI_UX_STANDARD.md) | Current GUI/report visual, layout, interaction, chart, table, and export standards. |
 | Release evidence | [Release Notes v1.0.0](./RELEASE_NOTES_V1.0.0.md) | Release-ready baseline and scope. |
 | Release evidence | [Release Validation Report](./RELEASE_VALIDATION_REPORT.md) | Validation evidence for the release baseline. |

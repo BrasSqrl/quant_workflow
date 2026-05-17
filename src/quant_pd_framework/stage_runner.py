@@ -35,7 +35,7 @@ from .checkpointing import (
 from .config import ExecutionMode, FrameworkConfig
 from .context import PipelineContext
 from .export_layout import build_export_path_layout
-from .orchestrator import QuantModelOrchestrator
+from .orchestrator import QuantModelOrchestrator, build_run_id
 from .run_registry import (
     append_audit_event,
     build_failed_run_registry_entry,
@@ -152,7 +152,7 @@ class CheckpointedWorkflowRunner:
 
         context = PipelineContext(
             config=self.config,
-            run_id=self.orchestrator._build_run_id(),
+            run_id=build_run_id(),
             raw_input=data,
         )
         run_started_at = datetime.now(UTC)

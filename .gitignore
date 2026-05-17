@@ -14,9 +14,12 @@ test_tmp_configuration_profiles/
 .pytest_cache/
 pytest-cache-files-*/
 .ruff_cache/
+.pre-commit-cache/
+.pip-audit-cache/
 .mypy_cache/
 .coverage
 .coverage.*
+coverage.xml
 htmlcov/
 .setup_tmp/
 .quant_studio_cache/

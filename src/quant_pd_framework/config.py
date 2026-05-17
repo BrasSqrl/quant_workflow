@@ -5,9 +5,17 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
-from typing import Any
+from typing import Any, TypeVar
 
 from .config_serialization import framework_config_to_dict
+
+EnumValue = TypeVar("EnumValue", bound=StrEnum)
+
+
+def _coerce_str_enum(value: EnumValue | str, enum_type: type[EnumValue]) -> EnumValue:
+    if isinstance(value, enum_type):
+        return value
+    return enum_type(value)
 
 
 class DataStructure(StrEnum):
@@ -491,8 +499,8 @@ class TargetConfig:
 class SplitConfig:
     """Defines the train/validation/test partition strategy."""
 
-    data_structure: DataStructure = DataStructure.CROSS_SECTIONAL
-    split_strategy: SplitStrategy = SplitStrategy.AUTO
+    data_structure: DataStructure | str = DataStructure.CROSS_SECTIONAL
+    split_strategy: SplitStrategy | str = SplitStrategy.AUTO
     train_size: float = 0.6
     validation_size: float = 0.2
     test_size: float = 0.2
@@ -508,17 +516,18 @@ class SplitConfig:
     test_end_date: str | None = None
     custom_split_column: str | None = None
 
+    def __post_init__(self) -> None:
+        self.data_structure = _coerce_str_enum(self.data_structure, DataStructure)
+        self.split_strategy = _coerce_str_enum(self.split_strategy, SplitStrategy)
+
     def validate(self) -> None:
-        if isinstance(self.split_strategy, str):
-            self.split_strategy = SplitStrategy(self.split_strategy)
-        if isinstance(self.data_structure, str):
-            self.data_structure = DataStructure(self.data_structure)
+        split_strategy = _coerce_str_enum(self.split_strategy, SplitStrategy)
         percentage_strategies = {
             SplitStrategy.AUTO,
             SplitStrategy.RANDOM,
             SplitStrategy.CHRONOLOGICAL_PERCENTAGE,
         }
-        if self.split_strategy in percentage_strategies:
+        if split_strategy in percentage_strategies:
             total = self.train_size + self.validation_size + self.test_size
             if abs(total - 1.0) > 1e-9:
                 raise ValueError(
@@ -534,28 +543,28 @@ class SplitConfig:
                 raise ValueError(f"{split_name} must be non-negative. Received {split_value}.")
         if self.train_size <= 0:
             raise ValueError(f"train_size must be greater than 0. Received {self.train_size}.")
-        if self.split_strategy in {
+        if split_strategy in {
             SplitStrategy.CHRONOLOGICAL_PERCENTAGE,
             SplitStrategy.DATE_CUTOFF,
             SplitStrategy.EXPLICIT_DATE_WINDOWS,
         } and not (self.date_column or "").strip():
             raise ValueError(
-                f"SplitConfig.date_column is required for {self.split_strategy.value}."
+                f"SplitConfig.date_column is required for {split_strategy.value}."
             )
-        if self.split_strategy == SplitStrategy.DATE_CUTOFF and not (
+        if split_strategy == SplitStrategy.DATE_CUTOFF and not (
             self.validation_start_date or self.test_start_date
         ):
             raise ValueError(
                 "date_cutoff split strategy requires validation_start_date or test_start_date."
             )
         if (
-            self.split_strategy == SplitStrategy.EXPLICIT_DATE_WINDOWS
+            split_strategy == SplitStrategy.EXPLICIT_DATE_WINDOWS
             and not self._has_date_window("train")
         ):
             raise ValueError(
                 "explicit_date_windows split strategy requires a train date window."
             )
-        if self.split_strategy == SplitStrategy.CUSTOM_COLUMN and not (
+        if split_strategy == SplitStrategy.CUSTOM_COLUMN and not (
             self.custom_split_column or ""
         ).strip():
             raise ValueError("custom_column split strategy requires custom_split_column.")
@@ -1364,9 +1373,10 @@ class TransformationConfig:
         if transformation.transform_type == TransformationType.PRODUCT:
             return f"{transformation.source_feature}_times_{transformation.secondary_feature}"
         if transformation.transform_type == TransformationType.INTERACTION:
-            if (transformation.categorical_value or "").strip():
+            categorical_value = (transformation.categorical_value or "").strip()
+            if categorical_value:
                 category_token = (
-                    transformation.categorical_value.strip().replace(" ", "_").replace("/", "_")
+                    categorical_value.replace(" ", "_").replace("/", "_")
                 )
                 return (
                     f"{transformation.source_feature}_x_"
@@ -1806,8 +1816,10 @@ class PerformanceConfig:
 
     enabled: bool = True
     large_data_mode: bool = False
-    large_data_backend: LargeDataBackend = LargeDataBackend.AUTO
-    large_data_model_policy: LargeDataModelPolicy = LargeDataModelPolicy.ALLOW_SAMPLE_FALLBACK
+    large_data_backend: LargeDataBackend | str = LargeDataBackend.AUTO
+    large_data_model_policy: LargeDataModelPolicy | str = (
+        LargeDataModelPolicy.ALLOW_SAMPLE_FALLBACK
+    )
     large_data_override_confirmed: bool = False
     large_data_override_reason: str = ""
     s3_local_cache_dir: str = ".quant_studio_cache/s3"
@@ -1843,10 +1855,12 @@ class PerformanceConfig:
     large_data_project_columns: bool = True
     large_data_auto_stage_parquet: bool = True
     large_data_profile_cache_enabled: bool = True
-    large_data_partition_strategy: LargeDataPartitionStrategy = LargeDataPartitionStrategy.AUTO
+    large_data_partition_strategy: LargeDataPartitionStrategy | str = (
+        LargeDataPartitionStrategy.AUTO
+    )
     large_data_prescreen_enabled: bool = True
     large_data_auto_apply_prescreen: bool = False
-    large_data_worker_mode: LargeDataWorkerMode = LargeDataWorkerMode.AUTO
+    large_data_worker_mode: LargeDataWorkerMode | str = LargeDataWorkerMode.AUTO
     large_data_certified_fit_enabled: bool = True
     duckdb_threads: int = 0
     duckdb_memory_limit_gb: float | None = None
@@ -1854,17 +1868,25 @@ class PerformanceConfig:
     memory_estimate_file_multiplier: float = 6.0
     memory_estimate_dataframe_multiplier: float = 4.0
 
+    def __post_init__(self) -> None:
+        self.large_data_backend = _coerce_str_enum(
+            self.large_data_backend,
+            LargeDataBackend,
+        )
+        self.large_data_model_policy = _coerce_str_enum(
+            self.large_data_model_policy,
+            LargeDataModelPolicy,
+        )
+        self.large_data_partition_strategy = _coerce_str_enum(
+            self.large_data_partition_strategy,
+            LargeDataPartitionStrategy,
+        )
+        self.large_data_worker_mode = _coerce_str_enum(
+            self.large_data_worker_mode,
+            LargeDataWorkerMode,
+        )
+
     def validate(self) -> None:
-        if isinstance(self.large_data_backend, str):
-            self.large_data_backend = LargeDataBackend(self.large_data_backend)
-        if isinstance(self.large_data_model_policy, str):
-            self.large_data_model_policy = LargeDataModelPolicy(self.large_data_model_policy)
-        if isinstance(self.large_data_partition_strategy, str):
-            self.large_data_partition_strategy = LargeDataPartitionStrategy(
-                self.large_data_partition_strategy
-            )
-        if isinstance(self.large_data_worker_mode, str):
-            self.large_data_worker_mode = LargeDataWorkerMode(self.large_data_worker_mode)
         for field_name, value in {
             "upload_warning_mb": self.upload_warning_mb,
             "ui_preview_rows": self.ui_preview_rows,

@@ -34,6 +34,23 @@ from ..export_profiles import (
     regulatory_reports_enabled,
     resolve_html_report_limits,
 )
+from ..exporting.layout import (
+    ensure_layout_directories,
+    table_export_path,
+    table_group_directories,
+)
+from ..exporting.manifest import (
+    ARTIFACT_LAYOUT_VERSION,
+    artifact_audience,
+    artifact_category,
+    artifact_purpose,
+    build_artifact_index,
+    iter_manifest_file_paths,
+    json_default,
+    path_string,
+    write_json,
+    write_manifest,
+)
 from ..feature_lineage import build_feature_lineage_table, summarize_feature_lineage
 from ..figure_exports import export_figure_files_to_directory
 from ..gui_support import (
@@ -49,29 +66,12 @@ from ..presentation import (
     apply_advanced_visual_analytics,
     build_interactive_report_html,
     enhance_report_visualizations,
-    infer_asset_section,
 )
 from ..report_payload import optimize_report_visualizations
 from ..reporting import build_regulatory_report_bundle
 from ..run_registry import write_per_run_audit_log
 from ..tabular_policy import resolve_tabular_output_format
 from ..validation_evidence import publish_validation_evidence_tables
-
-ARTIFACT_LAYOUT_VERSION = "2.0"
-TABLE_SECTION_DIRECTORIES = {
-    "model_performance": "model_performance",
-    "calibration_thresholds": "calibration",
-    "stability_drift": "stability",
-    "sample_segmentation": "segmentation",
-    "feature_effects": "explainability",
-    "statistical_tests": "statistical_tests",
-    "feature_subset_search": "feature_subset_search",
-    "scorecard_workbench": "scorecard",
-    "credit_risk_development": "credit_risk",
-    "data_quality": "diagnostics",
-    "backtesting_time": "backtesting",
-    "governance_export": "governance",
-}
 
 
 class ArtifactExportStep(BasePipelineStep):
@@ -843,7 +843,7 @@ class ArtifactExportStep(BasePipelineStep):
         return Path(primary_path)
 
     def _path_string(self, path: Path | None) -> str | None:
-        return str(path) if path is not None else None
+        return path_string(path)
 
     def _write_parquet(
         self,
@@ -1257,65 +1257,36 @@ class ArtifactExportStep(BasePipelineStep):
         shutil.copy2(manifest_path, destination_path)
 
     def _ensure_layout_directories(self, paths: ExportPathLayout) -> None:
-        directories = [
-            paths.reports_dir,
-            paths.model_dir,
-            paths.data_input_dir,
-            paths.data_predictions_dir,
-            paths.tables_dir,
-            paths.config_dir,
-            paths.metadata_dir,
-            paths.workbooks_dir,
-            paths.code_dir,
-        ]
-        directories.extend(paths.tables_dir / name for name in TABLE_SECTION_DIRECTORIES.values())
-        for directory in dict.fromkeys(directories):
-            directory.mkdir(parents=True, exist_ok=True)
+        ensure_layout_directories(paths)
 
     def _table_export_path(self, tables_dir: Path, table_name: str) -> Path:
-        section = infer_asset_section(table_name, kind="table")
-        directory_name = TABLE_SECTION_DIRECTORIES.get(section, "other")
-        return tables_dir / directory_name / f"{self._sanitize_name(table_name)}.csv"
+        return table_export_path(
+            tables_dir,
+            table_name,
+            sanitized_name=self._sanitize_name(table_name),
+        )
 
     def _table_group_directories(self, tables_dir: Path) -> dict[str, str | None]:
-        return {
-            group_name: str(tables_dir / group_name) if (tables_dir / group_name).exists() else None
-            for group_name in sorted(set(TABLE_SECTION_DIRECTORIES.values()))
-        }
+        return table_group_directories(tables_dir)
 
     def _write_manifest(self, path: Path, manifest: dict[str, Any], *, output_root: Path) -> None:
-        manifest["artifact_layout_version"] = ARTIFACT_LAYOUT_VERSION
-        manifest.pop("artifact_index", None)
-        manifest["artifact_index"] = self._build_artifact_index(manifest, output_root)
-        self._write_json(path, manifest)
+        write_manifest(
+            path,
+            manifest,
+            output_root=output_root,
+            monitoring_bundle_directory_name=self.MONITORING_BUNDLE_DIRECTORY_NAME,
+        )
 
     def _build_artifact_index(
         self,
         manifest: dict[str, Any],
         output_root: Path,
     ) -> list[dict[str, str]]:
-        rows: list[dict[str, str]] = []
-        seen: set[str] = set()
-        for key_path, path in self._iter_manifest_file_paths(manifest):
-            try:
-                resolved = path.resolve()
-                relative_path = resolved.relative_to(output_root.resolve()).as_posix()
-            except ValueError:
-                relative_path = str(path)
-            if relative_path in seen:
-                continue
-            seen.add(relative_path)
-            category = self._artifact_category(relative_path)
-            rows.append(
-                {
-                    "key": key_path,
-                    "category": category,
-                    "purpose": self._artifact_purpose(key_path, relative_path),
-                    "relative_path": relative_path,
-                    "send_to": self._artifact_audience(category, relative_path),
-                }
-            )
-        return sorted(rows, key=lambda row: row["relative_path"])
+        return build_artifact_index(
+            manifest,
+            output_root,
+            monitoring_bundle_directory_name=self.MONITORING_BUNDLE_DIRECTORY_NAME,
+        )
 
     def _iter_manifest_file_paths(
         self,
@@ -1323,113 +1294,29 @@ class ArtifactExportStep(BasePipelineStep):
         *,
         prefix: str = "",
     ) -> list[tuple[str, Path]]:
-        paths: list[tuple[str, Path]] = []
-        if isinstance(payload, dict):
-            for key, value in payload.items():
-                if key == "artifact_index":
-                    continue
-                next_prefix = f"{prefix}.{key}" if prefix else str(key)
-                paths.extend(self._iter_manifest_file_paths(value, prefix=next_prefix))
-        elif isinstance(payload, list):
-            for index, value in enumerate(payload):
-                paths.extend(self._iter_manifest_file_paths(value, prefix=f"{prefix}[{index}]"))
-        elif isinstance(payload, str) and (":" in payload or "\\" in payload or "/" in payload):
-            path = Path(payload)
-            if path.suffix or path.exists():
-                paths.append((prefix, path))
-        return paths
+        return iter_manifest_file_paths(payload, prefix=prefix)
 
     def _artifact_category(self, relative_path: str) -> str:
-        top_level = relative_path.split("/", 1)[0]
-        return {
-            "reports": "reports",
-            "model": "model",
-            "data": "data",
-            "tables": "tables",
-            "config": "configuration",
-            "metadata": "metadata",
-            "workbooks": "workbooks",
-            "code": "rerun_code",
-            "figures": "figures",
-            self.MONITORING_BUNDLE_DIRECTORY_NAME: "monitoring_bundle",
-            "artifact_manifest.json": "manifest",
-            "START_HERE.md": "orientation",
-        }.get(top_level, "other")
+        return artifact_category(
+            relative_path,
+            monitoring_bundle_directory_name=self.MONITORING_BUNDLE_DIRECTORY_NAME,
+        )
 
     def _artifact_audience(self, category: str, relative_path: str) -> str:
-        if category == "reports":
-            return "model builders, validators, business reviewers"
-        if category == "model":
-            return "model builders, scoring workflows"
-        if category == "data":
-            return "model builders, validators, downstream scoring users"
-        if category == "tables":
-            return "validators, auditors, technical reviewers"
-        if category in {"configuration", "metadata", "manifest"}:
-            return "auditors, technical reviewers"
-        if category == "rerun_code":
-            return "developers"
-        if category == "monitoring_bundle":
-            return "monitoring application"
-        if relative_path == "START_HERE.md":
-            return "all reviewers"
-        return "technical reviewers"
+        return artifact_audience(category, relative_path)
 
     def _artifact_purpose(self, key_path: str, relative_path: str) -> str:
-        file_name = Path(relative_path).name
-        purpose_by_name = {
-            "START_HERE.md": "Plain-English orientation guide for the run folder.",
-            "artifact_manifest.json": "Machine-readable index of exported artifacts.",
-            "interactive_report.html": "Standalone visual diagnostic report.",
-            "decision_summary.md": "Decision-ready scorecard for model review.",
-            "run_report.md": "Markdown summary of run metrics, warnings, and diagnostics.",
-            "model_documentation_pack.md": "Development-facing model documentation summary.",
-            "model_development_dossier.md": (
-                "Audit-ready narrative dossier connecting purpose, data, model, "
-                "validation evidence, lineage, and open review items."
-            ),
-            "validation_pack.md": "Validator-facing evidence index and review summary.",
-            "quant_model.joblib": "Serialized fitted model object.",
-            "feature_importance.csv": "Feature-level coefficients or importance values.",
-            "feature_lineage_map.csv": (
-                "Feature-level lineage, transformation, imputation, and documentation map."
-            ),
-            "model_summary.txt": "Text model summary from the fitted estimator.",
-            "run_config.json": "Resolved configuration used for the run.",
-            "configuration_template.xlsx": "Offline review workbook for configuration edits.",
-            "metrics.json": "Structured metrics by split.",
-            "statistical_tests.json": "Structured statistical-test payloads.",
-            "step_manifest.json": "Ordered pipeline step stack.",
-            "run_debug_trace.json": "Per-step debug trace and timing metadata.",
-            "audit_events.jsonl": "Run-scoped audit event log for major GUI and workflow actions.",
-            "reproducibility_manifest.json": "Hashes, package versions, and environment metadata.",
-            "analysis_workbook.xlsx": (
-                "Excel workbook containing metrics, predictions, and diagnostics."
-            ),
-            "generated_run.py": "Python entry point for rerunning the workflow without the GUI.",
-            "HOW_TO_RERUN.md": "Plain-English rerun instructions.",
-        }
-        if file_name in purpose_by_name:
-            return purpose_by_name[file_name]
-        if "predictions" in file_name:
-            return "Row-level model scoring output."
-        if relative_path.startswith("tables/"):
-            return "Diagnostic table exported from the model-development workflow."
-        if relative_path.startswith("figures/"):
-            return "Individual chart export."
-        if relative_path.startswith(self.MONITORING_BUNDLE_DIRECTORY_NAME):
-            return "Copied artifact for the separate monitoring application."
-        return f"Exported artifact recorded from `{key_path}`."
+        return artifact_purpose(
+            key_path,
+            relative_path,
+            monitoring_bundle_directory_name=self.MONITORING_BUNDLE_DIRECTORY_NAME,
+        )
 
     def _write_json(self, path: Path, payload: Any) -> None:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        with path.open("w", encoding="utf-8") as handle:
-            json.dump(payload, handle, indent=2, default=self._json_default)
+        write_json(path, payload)
 
     def _json_default(self, value: Any) -> Any:
-        if hasattr(value, "item"):
-            return value.item()
-        raise TypeError(f"Object of type {type(value)!r} is not JSON serializable")
+        return json_default(value)
 
     def _build_decision_summary(
         self,

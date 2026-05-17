@@ -11,7 +11,7 @@ import pandas as pd
 
 from ..base import BasePipelineStep
 from ..config import ExecutionMode, TabularOutputFormat, TargetMode
-from ..context import PipelineContext
+from ..context import PipelineContext, PipelineMetadataKey
 from ..export_layout import build_export_path_layout
 from ..large_data import iter_dataset_batches
 from ..tabular_policy import resolve_tabular_output_format
@@ -21,6 +21,8 @@ from .imputation import ImputationRule, ImputationStep
 from .schema import SchemaManagementStep
 from .target import TargetConstructionStep
 from .transformations import ResolvedTransformation, TransformationStep
+
+Meta = PipelineMetadataKey
 
 
 class LargeDataFullScoringStep(BasePipelineStep):
@@ -57,7 +59,9 @@ class LargeDataFullScoringStep(BasePipelineStep):
             else "predictions.csv"
         )
         progress_path = metadata_dir / "large_data_full_scoring_progress.json"
-        projected_columns = context.metadata.get("large_data_sample", {}).get("projected_columns")
+        projected_columns = context.get_metadata_dict(Meta.LARGE_DATA_SAMPLE).get(
+            "projected_columns"
+        )
         if not isinstance(projected_columns, list):
             projected_columns = None
 
@@ -143,7 +147,7 @@ class LargeDataFullScoringStep(BasePipelineStep):
             json.dumps(metadata, indent=2, default=str),
             encoding="utf-8",
         )
-        context.metadata["large_data_full_scoring"] = metadata
+        context.set_metadata(Meta.LARGE_DATA_FULL_SCORING, metadata)
         context.artifacts["full_data_scoring_dir"] = scoring_dir
         context.artifacts["full_data_predictions"] = predictions_path
         context.artifacts["large_data_metadata_dir"] = metadata_dir

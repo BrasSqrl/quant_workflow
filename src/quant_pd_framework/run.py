@@ -61,8 +61,9 @@ def run_saved_config(
             return orchestrator.run(
                 build_s3_dataset_handle(str(resolved_input), describe_s3_uri(str(resolved_input)))
             )
-        metadata = _describe_input_path(resolved_input)
-        return orchestrator.run(build_dataset_handle(resolved_input, metadata))
+        resolved_input_path = Path(resolved_input)
+        metadata = _describe_input_path(resolved_input_path)
+        return orchestrator.run(build_dataset_handle(resolved_input_path, metadata))
     if is_s3_uri(str(resolved_input)):
         raise ValueError("S3 inputs require performance.large_data_mode=True.")
     return orchestrator.run(resolved_input)
