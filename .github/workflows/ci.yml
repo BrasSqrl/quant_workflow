@@ -10,6 +10,9 @@ on:
 permissions:
   contents: read
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   quality:
     name: Quality gates
@@ -58,6 +61,10 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
           cache: "pip"
+
+      - name: Install macOS OpenMP runtime
+        if: runner.os == 'macOS'
+        run: brew install libomp
 
       - name: Install dependencies
         run: |
