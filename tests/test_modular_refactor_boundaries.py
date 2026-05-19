@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pandas as pd
@@ -20,6 +21,10 @@ from quant_pd_framework.large_data import (
     parse_s3_uri,
 )
 from quant_pd_framework.large_data_support.handles import DatasetHandle as SupportDatasetHandle
+from quant_pd_framework.streamlit_ui.run_execution import (
+    build_background_checkpoint_flow_event,
+    render_background_job_status,
+)
 from quant_pd_framework.streamlit_ui.steps.step1_data_schema import DatasetWorkspace
 from quant_pd_framework.streamlit_ui.steps.step2_model_config import (
     render_model_configuration_intro,
@@ -79,3 +84,68 @@ def test_streamlit_step_modules_expose_refactor_boundaries() -> None:
     assert callable(render_readiness_check_and_run)
     assert callable(render_results_artifacts_tab)
     assert callable(render_decision_summary_tab)
+    assert callable(render_background_job_status)
+
+
+def test_background_checkpoint_flow_event_reads_manifest_stages(tmp_path: Path) -> None:
+    manifest_path = tmp_path / "checkpoint_manifest.json"
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "created_at_utc": "2026-05-19T00:00:00+00:00",
+                "status": "running",
+                "stages": [
+                    {
+                        "order": 1,
+                        "label": "Prepare data",
+                        "status": "completed",
+                        "critical": True,
+                    },
+                    {
+                        "order": 2,
+                        "label": "Fit or load model",
+                        "status": "running",
+                        "critical": True,
+                    },
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    event = build_background_checkpoint_flow_event(
+        {
+            "status": "running",
+            "current_stage": "Fit or load model",
+            "manifest": {"checkpoint_manifest_path": str(manifest_path)},
+        }
+    )
+
+    assert event is not None
+    assert event["event_type"] == "stage_started"
+    assert event["step_name"] == "Fit or load model"
+    assert event["step_order"] == 1
+    assert event["total_steps"] == 2
+    assert event["stages"][1]["status"] == "running"
+
+
+def test_background_checkpoint_flow_event_handles_missing_or_corrupt_manifest(
+    tmp_path: Path,
+) -> None:
+    missing_event = build_background_checkpoint_flow_event(
+        {
+            "status": "running",
+            "manifest": {"checkpoint_manifest_path": str(tmp_path / "missing.json")},
+        }
+    )
+    corrupt_path = tmp_path / "checkpoint_manifest.json"
+    corrupt_path.write_text("{not json", encoding="utf-8")
+    corrupt_event = build_background_checkpoint_flow_event(
+        {
+            "status": "running",
+            "manifest": {"checkpoint_manifest_path": str(corrupt_path)},
+        }
+    )
+
+    assert missing_event is None
+    assert corrupt_event is None

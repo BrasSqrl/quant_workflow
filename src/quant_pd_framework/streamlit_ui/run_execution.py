@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 from dataclasses import replace as dataclass_replace
+from datetime import UTC, datetime
 from html import escape
 from pathlib import Path
 from typing import Any
@@ -170,6 +171,8 @@ def poll_large_data_background_workflow(
         "current_stage": manifest.current_stage,
         "progress": manifest.progress,
         "error_message": manifest.error_message,
+        "technical_details": manifest.technical_details,
+        "checkpoint_manifest_path": manifest.checkpoint_manifest_path,
         "manifest": manifest.to_dict(),
         "dispatch_mode": manifest.dispatch_mode,
     }
@@ -309,8 +312,109 @@ def render_background_job_status(background_state: dict[str, Any]) -> None:
         manifest_path = background_state.get("manifest_path")
         if manifest_path:
             st.caption(f"Job manifest: `{manifest_path}`")
+        checkpoint_manifest_path = str(
+            background_state.get("checkpoint_manifest_path")
+            or manifest_payload.get("checkpoint_manifest_path")
+            or ""
+        )
+        if checkpoint_manifest_path:
+            st.caption(f"Checkpoint manifest: `{checkpoint_manifest_path}`")
+        checkpoint_event = build_background_checkpoint_flow_event(background_state)
+        if checkpoint_event is None:
+            st.info(
+                "Preparing checkpoint flow. Background progress updates when this panel "
+                "refreshes or Streamlit reruns."
+            )
+        else:
+            st.info(
+                "Background progress is polled from the worker manifest. Use Refresh "
+                "Background Large-Data Job to update the checkpoint flow."
+            )
+            _render_stage_flow(checkpoint_event)
         if status == "failed" and background_state.get("error_message"):
             st.error(str(background_state["error_message"]))
+            technical_details = str(
+                background_state.get("technical_details")
+                or manifest_payload.get("technical_details")
+                or ""
+            )
+            if technical_details:
+                with st.expander("Technical details", expanded=False):
+                    st.code(technical_details, language="text")
+
+
+def build_background_checkpoint_flow_event(
+    background_state: dict[str, Any],
+) -> dict[str, Any] | None:
+    """Builds a checkpoint-flow event from a detached background job manifest."""
+
+    manifest_payload = background_state.get("manifest") or {}
+    if not isinstance(manifest_payload, dict):
+        return None
+    checkpoint_manifest_path = str(
+        background_state.get("checkpoint_manifest_path")
+        or manifest_payload.get("checkpoint_manifest_path")
+        or ""
+    ).strip()
+    if not checkpoint_manifest_path:
+        return None
+    checkpoint_path = Path(checkpoint_manifest_path)
+    if not checkpoint_path.exists():
+        return None
+    try:
+        checkpoint_manifest = read_checkpoint_manifest(checkpoint_path)
+    except (OSError, ValueError):
+        return None
+    stages = checkpoint_manifest.get("stages")
+    if not isinstance(stages, list) or not stages:
+        return None
+    return {
+        "event_type": _background_status_to_event_type(
+            str(background_state.get("status") or manifest_payload.get("status") or "")
+        ),
+        "step_name": (
+            background_state.get("current_stage")
+            or manifest_payload.get("current_stage")
+            or checkpoint_manifest.get("status")
+            or "Background workflow"
+        ),
+        "step_order": _background_completed_stage_count(stages),
+        "total_steps": len(stages),
+        "elapsed_seconds": _checkpoint_manifest_elapsed_seconds(checkpoint_manifest),
+        "stages": stages,
+    }
+
+
+def _background_status_to_event_type(status: str) -> str:
+    normalized = status.strip().lower()
+    if normalized == "completed":
+        return "run_completed"
+    if normalized == "failed":
+        return "stage_failed"
+    return "stage_started"
+
+
+def _background_completed_stage_count(stages: list[Any]) -> int:
+    return sum(
+        1
+        for stage in stages
+        if isinstance(stage, dict)
+        and str(stage.get("status") or "").lower()
+        in {"completed", "failed", "failed_optional", "skipped"}
+    )
+
+
+def _checkpoint_manifest_elapsed_seconds(manifest: dict[str, Any]) -> float:
+    created_at_text = str(manifest.get("created_at_utc") or "")
+    if not created_at_text:
+        return 0.0
+    try:
+        created_at = datetime.fromisoformat(created_at_text)
+    except ValueError:
+        return 0.0
+    if created_at.tzinfo is None:
+        created_at = created_at.replace(tzinfo=UTC)
+    return max(0.0, (datetime.now(UTC) - created_at.astimezone(UTC)).total_seconds())
 
 
 def _runtime_status_label(event_type: str, *, critical: bool = True) -> str:
