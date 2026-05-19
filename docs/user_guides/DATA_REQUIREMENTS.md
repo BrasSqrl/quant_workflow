@@ -26,7 +26,7 @@ A normal model-development run needs:
 | Features | Yes | Numeric and categorical predictors used to fit or score the model. |
 | Date | Required for time-series, panel, vintage, and backtesting views | Strongly recommended for development documentation even in cross-sectional data. |
 | Identifier | Optional | Useful for traceability but should not enter the feature set. |
-| Segment fields | Optional | Useful for segmentation, grouped imputation, stability, and scenario review. |
+| Segment fields | Optional | Useful for segmentation, segmented model builds, grouped imputation, stability, and scenario review. |
 
 ## Target Requirements
 
@@ -59,9 +59,27 @@ Use the Column Designer to set:
 | `target_source` | Raw target field used to create the final modeled target. |
 | `date` | Time field used for splits, backtests, vintage, drift, and time diagnostics. |
 | `identifier` | Record, customer, loan, or account ID. Keep for traceability but not modeling. |
+| `segment` | Population field used for diagnostics and segmented model routing. Segment columns are not model features by default. |
 | `ignore` | Data that should not enter the model or exported modeling schema. |
 
 Only one target source should be active for a standard run.
+
+## Segment Fields And Segmented Model Builds
+
+Use `segment` for columns that define materially different populations, such as
+DPD bucket, product, channel, region, borrower type, or collateral type. When
+segmented modeling is enabled in Step 2, Quant Studio fits a global fallback
+model first and then fits separate segment-level models for eligible segment
+combinations.
+
+Practical requirements:
+
+- Use one or a small number of low-to-moderate-cardinality segment columns.
+- Keep the number of segment combinations below the configured maximum.
+- For binary PD models, each fitted segment needs enough events and non-events.
+- Small, missing, failed, or unseen segments route to the global fallback model.
+- Segment columns do not enter the model feature set unless the user explicitly
+  provides them separately as features or transformations.
 
 ## Feature Requirements
 

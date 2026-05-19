@@ -38,6 +38,7 @@ from quant_pd_framework import (
     TargetMode,
 )
 from quant_pd_framework.config import (
+    SEGMENTED_MODEL_SUPPORTED_TYPES,
     feature_subset_search_default_ranking_metric,
     feature_subset_search_ranking_metrics_for_target_mode,
 )
@@ -1730,6 +1731,101 @@ def run_app() -> None:
                 disabled=model_type != ModelType.TOBIT_REGRESSION.value,
                 help="Leave blank for one-sided Tobit.",
             )
+
+        segmented_supported = ModelType(model_type) in SEGMENTED_MODEL_SUPPORTED_TYPES
+        with left_config_column.expander("Segmented Modeling", expanded=False):
+            st.caption(
+                "Fit one global fallback model plus separate models for eligible segment "
+                "combinations. Segment columns are used for routing, not as model features "
+                "unless they are also provided through separate transformed/duplicated features."
+            )
+            segment_options = [str(column) for column in dataframe.columns]
+            role_segment_defaults = [
+                str(row["name"])
+                for _, row in workspace_schema_frame.iterrows()
+                if str(row.get("role", "")).strip().lower() == ColumnRole.SEGMENT.value
+                and bool(row.get("enabled", True))
+                and str(row.get("name", "")).strip() in segment_options
+            ]
+            preset_segment_defaults = [
+                column
+                for column in preset_inputs.segmented_model.segment_columns
+                if column in segment_options
+            ]
+            segmented_model_enabled = st.checkbox(
+                "Enable segmented model build",
+                value=bool(preset_inputs.segmented_model.enabled),
+                disabled=(
+                    execution_mode != ExecutionMode.FIT_NEW_MODEL.value
+                    or not segmented_supported
+                ),
+                help=(
+                    "Available for supported model families during fit-new-model runs. "
+                    "Existing segmented router bundles can still be scored in existing-model mode."
+                ),
+            )
+            segmented_model_columns = st.multiselect(
+                "Segment columns",
+                options=segment_options,
+                default=preset_segment_defaults or role_segment_defaults,
+                disabled=not segmented_model_enabled,
+                help=(
+                    "One or more low-to-moderate-cardinality fields that define populations "
+                    "such as DPD bucket, product, or borrower segment."
+                ),
+            )
+            segment_guardrail_columns = st.columns(3)
+            segmented_model_min_rows = int(
+                segment_guardrail_columns[0].number_input(
+                    "Min rows per segment",
+                    min_value=25,
+                    max_value=1_000_000,
+                    value=int(preset_inputs.segmented_model.min_segment_rows),
+                    step=25,
+                    disabled=not segmented_model_enabled,
+                )
+            )
+            segmented_model_min_events = int(
+                segment_guardrail_columns[1].number_input(
+                    "Min events / non-events",
+                    min_value=0,
+                    max_value=1_000_000,
+                    value=int(preset_inputs.segmented_model.min_segment_events),
+                    step=10,
+                    disabled=not segmented_model_enabled
+                    or target_mode != TargetMode.BINARY.value,
+                    help=(
+                        "Binary segmented models need enough defaults and non-defaults. "
+                        "Segments below this threshold route to the global fallback model."
+                    ),
+                )
+            )
+            segmented_model_max_segments = int(
+                segment_guardrail_columns[2].number_input(
+                    "Max segment models",
+                    min_value=1,
+                    max_value=250,
+                    value=int(preset_inputs.segmented_model.max_segments),
+                    step=1,
+                    disabled=not segmented_model_enabled,
+                )
+            )
+            if segmented_supported:
+                st.success("The selected model family is eligible for segmented model builds.")
+            else:
+                st.warning(
+                    "The selected model family is not certified for segmented model builds. "
+                    "Use logistic, scorecard logistic, regularized linear, tree/forest, "
+                    "XGBoost, or EBM-style models."
+                )
+            if segmented_model_enabled and segmented_model_columns:
+                segment_count_estimate = int(
+                    dataframe[segmented_model_columns].astype("object").drop_duplicates().shape[0]
+                )
+                st.caption(
+                    f"Current preview resolves approximately {segment_count_estimate:,} "
+                    "segment combinations."
+                )
 
         subset_search_enabled = execution_mode == ExecutionMode.SEARCH_FEATURE_SUBSETS.value
         with left_config_column.expander(
@@ -3865,6 +3961,17 @@ def run_app() -> None:
     )
     feature_review_frame = feature_review_rows.copy(deep=True)
     scorecard_override_frame = scorecard_override_rows.copy(deep=True)
+    if segmented_model_enabled:
+        edited_role_segment_columns = [
+            str(row["name"]).strip()
+            for _, row in edited_schema.iterrows()
+            if bool(row.get("enabled", True))
+            and str(row.get("role", "")).strip().lower() == ColumnRole.SEGMENT.value
+            and str(row.get("name", "")).strip()
+        ]
+        segmented_model_columns = list(
+            dict.fromkeys([*segmented_model_columns, *edited_role_segment_columns])
+        )
     tobit_right_censoring = (
         float(tobit_right_censoring_text) if tobit_right_censoring_text.strip() else None
     )

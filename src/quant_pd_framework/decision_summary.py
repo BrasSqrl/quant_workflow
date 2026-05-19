@@ -33,6 +33,7 @@ def build_decision_summary(snapshot: Mapping[str, Any]) -> dict[str, Any]:
     target_mode = str(snapshot.get("target_mode", ""))
     execution_mode = str(snapshot.get("execution_mode", ""))
     feature_columns = list(snapshot.get("feature_columns", []))
+    segmented_model = _mapping(snapshot.get("segmented_model"))
 
     split_name, split_metrics = _preferred_metric_split(metrics)
     primary_metric_name, primary_metric_value = _primary_metric(target_mode, split_metrics)
@@ -66,6 +67,19 @@ def build_decision_summary(snapshot: Mapping[str, Any]) -> dict[str, Any]:
         {"label": "Warnings", "value": f"{len(warnings):,}"},
         {"label": "Decision Issues", "value": f"{issue_counts['material']:,}"},
     ]
+    if segmented_model.get("enabled"):
+        cards.extend(
+            [
+                {
+                    "label": "Segment Models",
+                    "value": f"{int(segmented_model.get('fitted_segment_count', 0)):,}",
+                },
+                {
+                    "label": "Fallback Segments",
+                    "value": f"{int(segmented_model.get('fallback_segment_count', 0)):,}",
+                },
+            ]
+        )
     return {
         "recommendation": recommendation,
         "level": level,
@@ -136,6 +150,14 @@ def build_decision_summary_markdown(snapshot: Mapping[str, Any]) -> str:
         "",
     ]
     lines.extend(f"- {item}" for item in summary["rationale"])
+    segmented_model = _mapping(snapshot.get("segmented_model"))
+    if segmented_model.get("enabled"):
+        lines.extend(
+            [
+                "- Segmented model routing is enabled; review fitted and fallback "
+                "segment counts before approval.",
+            ]
+        )
     lines.extend(["", "## Decision Scorecard", ""])
     lines.extend(_frame_to_markdown(pd.DataFrame(summary["cards"])))
     lines.extend(["", "## Primary Metrics", ""])
@@ -179,6 +201,7 @@ def build_decision_summary_snapshot_from_context(
             if isinstance(feature_importance, pd.DataFrame)
             else pd.DataFrame()
         ),
+        "segmented_model": dict(context.metadata.get("segmented_model", {})),
         "artifacts": dict(artifacts or getattr(context, "artifacts", {})),
     }
 

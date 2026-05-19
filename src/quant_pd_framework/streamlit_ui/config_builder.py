@@ -29,6 +29,7 @@ from quant_pd_framework import (
     ReproducibilityConfig,
     ScorecardConfig,
     ScorecardMonotonicity,
+    SegmentedModelConfig,
     SplitStrategy,
     SuitabilityCheckConfig,
     TabularOutputFormat,
@@ -149,6 +150,13 @@ def build_preview_configuration(
                 sarimax_order_d=int(values["sarimax_order_d"]),
                 sarimax_order_q=int(values["sarimax_order_q"]),
                 seasonal_periods=values["seasonal_periods"],
+            ),
+            segmented_model=SegmentedModelConfig(
+                enabled=values["segmented_model_enabled"],
+                segment_columns=values["segmented_model_columns"],
+                min_segment_rows=int(values["segmented_model_min_rows"]),
+                min_segment_events=int(values["segmented_model_min_events"]),
+                max_segments=int(values["segmented_model_max_segments"]),
             ),
             cleaning=CleaningConfig(
                 trim_string_columns=values["trim_string_columns"],

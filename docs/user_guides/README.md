@@ -26,6 +26,7 @@ Use these guides:
 - [Configuration Cookbook](./CONFIGURATION_COOKBOOK.md)
 - [Model Selection Guide](./MODEL_SELECTION_GUIDE.md)
 - [Model Type Reference Guide](./MODEL_TYPE_REFERENCE_GUIDE.md)
+- [Segment Fields And Segmented Model Builds](./DATA_REQUIREMENTS.md#segment-fields-and-segmented-model-builds)
 - [Large Data Playbook](./LARGE_DATA_PLAYBOOK.md)
 - [Large Data Certification Guide](./LARGE_DATA_CERTIFICATION_GUIDE.md)
 - [Glossary](./GLOSSARY.md)

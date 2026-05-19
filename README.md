@@ -9,6 +9,8 @@ evidence for model methodology documentation.
 ## What The App Does
 
 - Builds new models, scores existing models, and runs feature subset search.
+- Can fit governed segmented model builds, where one router artifact contains a
+  global fallback model plus eligible segment-level models.
 - Supports common credit-risk and forecasting model families, including logistic and
   scorecard logistic regression, linear/regularized models, Tobit/probit-style options,
   XGBoost, panel/time-series choices, and SAS-equivalent Python model paths where
@@ -56,8 +58,8 @@ SageMaker setup and launch guidance is in [SageMaker setup](SAGEMAKER_SETUP.txt)
 1. Load data from bundled sample data, `Data_Load/`, upload, local path, or S3 path.
 2. Review schema, roles, target, identifiers, feature dictionary, and Transformation
    Studio.
-3. Configure execution mode, model family/type, split strategy, diagnostics, large-data
-   behavior, outputs, and governance settings.
+3. Configure execution mode, model family/type, optional segmented modeling, split
+   strategy, diagnostics, large-data behavior, outputs, and governance settings.
 4. Run readiness checks, review resource warnings, then execute the workflow.
 5. Review results, artifacts, decision summary, downloads, registry entries, and audit
    events.

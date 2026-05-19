@@ -64,6 +64,8 @@ from .config import (
     ScorecardConfig,
     ScorecardMonotonicity,
     ScorecardWorkbenchConfig,
+    SegmentedModelConfig,
+    SegmentedModelFallbackPolicy,
     SplitConfig,
     SplitStrategy,
     StructuralBreakConfig,
@@ -93,6 +95,7 @@ def load_framework_config(source: str | Path | dict[str, Any]) -> FrameworkConfi
         preset_name=_build_preset_name(payload.get("preset_name")),
         execution=_build_execution_config(payload.get("execution", {}), base_path),
         model=_build_model_config(payload.get("model", {})),
+        segmented_model=_build_segmented_model_config(payload.get("segmented_model", {})),
         comparison=_build_comparison_config(payload.get("comparison", {})),
         subset_search=_build_feature_subset_search_config(payload.get("subset_search", {})),
         feature_policy=_build_feature_policy_config(payload.get("feature_policy", {})),
@@ -268,6 +271,22 @@ def _build_model_config(payload: dict[str, Any]) -> ModelConfig:
         sarimax_order_d=payload.get("sarimax_order_d", 0),
         sarimax_order_q=payload.get("sarimax_order_q", 0),
         seasonal_periods=payload.get("seasonal_periods"),
+    )
+
+
+def _build_segmented_model_config(payload: dict[str, Any]) -> SegmentedModelConfig:
+    return SegmentedModelConfig(
+        enabled=payload.get("enabled", False),
+        segment_columns=payload.get("segment_columns", []),
+        min_segment_rows=payload.get("min_segment_rows", 500),
+        min_segment_events=payload.get("min_segment_events", 50),
+        max_segments=payload.get("max_segments", 25),
+        fallback_policy=SegmentedModelFallbackPolicy(
+            payload.get(
+                "fallback_policy",
+                SegmentedModelFallbackPolicy.FALLBACK_GLOBAL.value,
+            )
+        ),
     )
 
 

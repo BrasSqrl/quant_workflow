@@ -239,7 +239,14 @@ class ColumnRole(StrEnum):
     TARGET_SOURCE = "target_source"
     DATE = "date"
     IDENTIFIER = "identifier"
+    SEGMENT = "segment"
     IGNORE = "ignore"
+
+
+class SegmentedModelFallbackPolicy(StrEnum):
+    """Supported routing behavior when a segment-specific model is unavailable."""
+
+    FALLBACK_GLOBAL = "fallback_global"
 
 
 class MissingValuePolicy(StrEnum):
@@ -721,6 +728,67 @@ class ModelConfig:
             ModelType.ORDINAL_LOGISTIC_REGRESSION,
         }:
             raise ValueError(f"{self.model_type.value} requires a multiclass target.")
+
+
+SEGMENTED_MODEL_SUPPORTED_TYPES = frozenset(
+    {
+        ModelType.LOGISTIC_REGRESSION,
+        ModelType.ELASTIC_NET_LOGISTIC_REGRESSION,
+        ModelType.SCORECARD_LOGISTIC_REGRESSION,
+        ModelType.LINEAR_REGRESSION,
+        ModelType.RIDGE_REGRESSION,
+        ModelType.LASSO_REGRESSION,
+        ModelType.ELASTIC_NET_REGRESSION,
+        ModelType.DECISION_TREE,
+        ModelType.RANDOM_FOREST,
+        ModelType.EXTRA_TREES,
+        ModelType.XGBOOST,
+        ModelType.EXPLAINABLE_BOOSTING_MACHINE,
+    }
+)
+
+
+@dataclass(slots=True)
+class SegmentedModelConfig:
+    """Controls fitting one global model plus governed segment-specific models."""
+
+    enabled: bool = False
+    segment_columns: list[str] = field(default_factory=list)
+    min_segment_rows: int = 500
+    min_segment_events: int = 50
+    max_segments: int = 25
+    fallback_policy: SegmentedModelFallbackPolicy = (
+        SegmentedModelFallbackPolicy.FALLBACK_GLOBAL
+    )
+
+    def validate(self, model_type: ModelType, target_mode: TargetMode) -> None:
+        if self.min_segment_rows <= 0:
+            raise ValueError("SegmentedModelConfig.min_segment_rows must be greater than 0.")
+        if self.min_segment_events < 0:
+            raise ValueError("SegmentedModelConfig.min_segment_events cannot be negative.")
+        if self.max_segments <= 0:
+            raise ValueError("SegmentedModelConfig.max_segments must be greater than 0.")
+        if not self.enabled:
+            return
+        normalized_columns = [
+            str(column_name).strip()
+            for column_name in self.segment_columns
+            if str(column_name).strip()
+        ]
+        if not normalized_columns:
+            raise ValueError(
+                "SegmentedModelConfig.enabled=True requires at least one segment column."
+            )
+        if len(normalized_columns) != len(set(normalized_columns)):
+            raise ValueError("SegmentedModelConfig.segment_columns contains duplicates.")
+        if model_type not in SEGMENTED_MODEL_SUPPORTED_TYPES:
+            supported = ", ".join(sorted(model.value for model in SEGMENTED_MODEL_SUPPORTED_TYPES))
+            raise ValueError(
+                f"Segmented modeling is not supported for {model_type.value}. "
+                f"Use one of: {supported}."
+            )
+        if target_mode == TargetMode.MULTICLASS:
+            raise ValueError("Segmented modeling is not supported for multiclass targets in V1.")
 
 
 FEATURE_SUBSET_SEARCH_LOWER_IS_BETTER_METRICS = frozenset(
@@ -2247,6 +2315,7 @@ class FrameworkConfig:
     preset_name: PresetName | None = None
     execution: ExecutionConfig = field(default_factory=ExecutionConfig)
     model: ModelConfig = field(default_factory=ModelConfig)
+    segmented_model: SegmentedModelConfig = field(default_factory=SegmentedModelConfig)
     comparison: ComparisonConfig = field(default_factory=ComparisonConfig)
     subset_search: FeatureSubsetSearchConfig = field(default_factory=FeatureSubsetSearchConfig)
     feature_policy: FeaturePolicyConfig = field(default_factory=FeaturePolicyConfig)
@@ -2298,6 +2367,7 @@ class FrameworkConfig:
         self.split.validate()
         self.execution.validate()
         self.model.validate(self.target.mode)
+        self.segmented_model.validate(self.model.model_type, self.target.mode)
         self.comparison.validate(self.model.model_type, self.target.mode)
         self.subset_search.validate()
         self.feature_policy.validate()

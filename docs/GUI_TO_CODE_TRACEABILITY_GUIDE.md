@@ -328,7 +328,22 @@ strategies are intended for true out-of-time validation design.
 | `Seasonal periods` | `ModelConfig.seasonal_periods` | `ExponentialSmoothingForecastAdapter`, `UnobservedComponentsForecastAdapter` |
 | `Tobit ...` controls | `ModelConfig.tobit_*` | `TobitRegressionAdapter` |
 
-## 10. Step 2 Group: Feature Subset Search
+## 10. Step 2 Group: Segmented Modeling
+
+| GUI control | Config field(s) | Main implementation | Export evidence |
+| --- | --- | --- | --- |
+| `Enable segmented model build` | `SegmentedModelConfig.enabled` | `ModelTrainingStep._fit_segmented_model`, `SegmentedModelBundle` | router model in `model/quant_model.joblib` |
+| `Segment columns` | `SegmentedModelConfig.segment_columns`; schema role `segment` can also seed this list | `build_segment_key_series(...)` | prediction columns `segment_key`, `segment_model_id`, `segment_model_status`, `used_global_fallback` |
+| `Minimum segment rows` | `SegmentedModelConfig.min_segment_rows` | segment eligibility guardrail | `segment_model_inventory`, fallback reasons |
+| `Minimum segment events/non-events` | `SegmentedModelConfig.min_segment_events` | binary segment eligibility guardrail | `segment_model_inventory`, fallback reasons |
+| `Max segment models` | `SegmentedModelConfig.max_segments` | readiness validation and training guardrail | `metadata/segmented_model_config.json` |
+
+Segmented modeling fits the selected model family globally, then fits one
+eligible model per segment key. The single exported `quant_model.joblib`
+artifact is a router bundle that falls back to the global model for small,
+failed, missing, or unseen segments.
+
+## 11. Step 2 Group: Feature Subset Search
 
 These controls only matter when `ExecutionConfig.mode` is
 `search_feature_subsets`.
@@ -346,7 +361,7 @@ These controls only matter when `ExecutionConfig.mode` is
 | `Top candidates to retain` | `FeatureSubsetSearchConfig.top_candidate_count` | `FeatureSubsetSearchStep` | `subset_search_candidates`, `subset_search_top_candidate_comparison`, `subset_search_feature_frequency`, `subset_search_contribution_consistency`, `subset_search_redundancy_diagnostics`, `subset_search_significance_tests` |
 | `Include paired significance tests ...` | `FeatureSubsetSearchConfig.include_significance_tests` | `FeatureSubsetSearchStep` | `subset_search_significance_tests` |
 
-## 11. Step 2 Group: Data Preparation
+## 12. Step 2 Group: Data Preparation
 
 | GUI control | Config field(s) | Main implementation |
 | --- | --- | --- |
@@ -359,7 +374,7 @@ These controls only matter when `ExecutionConfig.mode` is
 | `Drop raw date columns from working data when safe` | `FeatureEngineeringConfig.drop_raw_date_columns` | `FeatureEngineeringStep`; raw datetime columns remain excluded from model features |
 | `Date parts` | `FeatureEngineeringConfig.date_parts` | `FeatureEngineeringStep` |
 
-## 12. Step 2 Group: Diagnostics & Exports
+## 13. Step 2 Group: Diagnostics & Exports
 
 | GUI control | Config field(s) | Main implementation |
 | --- | --- | --- |
@@ -434,7 +449,7 @@ These controls only matter when `ExecutionConfig.mode` is
 | `Top credit-risk segments` | `CreditRiskDiagnosticConfig.top_segments` | segment-limited credit diagnostics |
 | `Macro shock std multiplier` | `CreditRiskDiagnosticConfig.shock_std_multiplier` | macro sensitivity diagnostics |
 
-## 13. Step 2 Group: Challengers & Policies
+## 14. Step 2 Group: Challengers & Policies
 
 | GUI control | Config field(s) | Main implementation | Export evidence |
 | --- | --- | --- | --- |
@@ -451,7 +466,7 @@ These controls only matter when `ExecutionConfig.mode` is
 | `Minimum IV` | `FeaturePolicyConfig.minimum_information_value` | policy checks | `feature_policy_checks` |
 | `Fail run on policy violation` | `FeaturePolicyConfig.error_on_violation` | policy checks | run failure if violated |
 
-## 14. Step 2 Group: Selection & Documentation
+## 15. Step 2 Group: Selection & Documentation
 
 | GUI control | Config field(s) | Main implementation |
 | --- | --- | --- |
@@ -485,7 +500,7 @@ those fields.
 | `Validation template name` | `RegulatoryReportConfig.validation_template_name` | validation-ready report export |
 | report section toggles | `RegulatoryReportConfig.include_*` | regulator-ready report assembly |
 
-## 15. Step 2 Group: Governance & Review
+## 16. Step 2 Group: Governance & Review
 
 | GUI control | Config field(s) | Main implementation | Export evidence |
 | --- | --- | --- | --- |
@@ -504,7 +519,7 @@ those fields.
 | feature review editor rows | `ManualReviewConfig.feature_decisions` | `parse_manual_review_frames(...)`, `VariableSelectionStep` | `manual_review_feature_decisions` |
 | scorecard override rows | `ManualReviewConfig.scorecard_bin_overrides` | `parse_manual_review_frames(...)`, `ScorecardLogisticRegressionAdapter` | `scorecard_bin_overrides` |
 
-## 16. Step 2 Group: Explainability & Scenarios
+## 17. Step 2 Group: Explainability & Scenarios
 
 | GUI control | Config field(s) | Main implementation |
 | --- | --- | --- |
@@ -533,7 +548,7 @@ those fields.
 | `Scenario evaluation split` | `ScenarioTestConfig.evaluation_split` | scenario testing |
 | scenario editor rows | `ScenarioTestConfig.scenarios` | scenario testing |
 
-## 17. Step 2 Group: Output Options
+## 18. Step 2 Group: Output Options
 
 | GUI control | Config field(s) | Main implementation |
 | --- | --- | --- |

@@ -185,6 +185,22 @@ def cancel_large_data_background_workflow(background_state: dict[str, Any]) -> N
     request_background_cancel(Path(str(background_state["manifest_path"])))
 
 
+def is_background_job_active(background_state: dict[str, Any] | None) -> bool:
+    """Returns whether a background job should still be treated as running."""
+
+    if not background_state:
+        return False
+    manifest_payload = background_state.get("manifest") or {}
+    if not isinstance(manifest_payload, dict):
+        manifest_payload = {}
+    status = str(
+        background_state.get("status")
+        or manifest_payload.get("status")
+        or ""
+    ).strip().lower()
+    return bool(status) and status not in {"completed", "failed"}
+
+
 def run_next_checkpoint_stage(
     *,
     preview_config: Any,

@@ -46,6 +46,32 @@ show `Logistic / PD`, `Linear / Baseline`, and `Smooth / Nonlinear`; continuous
 targets show families such as `LGD / Severity`, `GLM / Count / Skewed`, and
 `Panel / Forecasting`.
 
+## Optional Segmented Model Build
+
+For supported model families, Step 2 includes `Segmented Modeling`. This mode
+fits one global fallback model and separate segment-level models for eligible
+segment combinations. Mark segment fields in Step 1 with role `segment`, or
+select them directly in Step 2.
+
+Supported V1 families are logistic, elastic-net logistic, scorecard logistic,
+linear/ridge/lasso/elastic-net regression, decision tree, random forest, extra
+trees, XGBoost, and EBM-style models. Segmented modeling is not intended for
+multiclass, survival, forecasting, GEE, mixed-effects, Tobit, beta, or other
+statsmodels-heavy families in this release.
+
+Use segmented modeling when the business population truly needs distinct model
+behavior, such as separate DPD buckets, products, channels, or collateral
+segments. Small or unstable segments are not forced: they route to the global
+fallback model and are documented in the exported segment inventory.
+
+Primary outputs to review:
+
+- `model/segmented_model_manifest.json`
+- `tables/segmentation/segment_model_inventory.*`
+- `tables/segmentation/segment_metrics.*`
+- `tables/segmentation/segment_coefficients_or_importance.*`
+- segmented model charts in the interactive report
+
 ## Quick Model Map
 
 | Model type | Target mode | Best use |

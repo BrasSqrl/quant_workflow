@@ -34,7 +34,8 @@ class FeatureEngineeringStep(BasePipelineStep):
         identifier_columns = {
             spec.name
             for spec in context.config.schema.column_specs
-            if spec.role in {ColumnRole.IDENTIFIER, ColumnRole.IGNORE} and spec.enabled
+            if spec.role in {ColumnRole.IDENTIFIER, ColumnRole.SEGMENT, ColumnRole.IGNORE}
+            and spec.enabled
         }
         if (
             context.config.model.model_type == ModelType.PANEL_REGRESSION

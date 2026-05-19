@@ -23,6 +23,7 @@ from quant_pd_framework.large_data import (
 from quant_pd_framework.large_data_support.handles import DatasetHandle as SupportDatasetHandle
 from quant_pd_framework.streamlit_ui.run_execution import (
     build_background_checkpoint_flow_event,
+    is_background_job_active,
     render_background_job_status,
 )
 from quant_pd_framework.streamlit_ui.steps.step1_data_schema import DatasetWorkspace
@@ -85,6 +86,15 @@ def test_streamlit_step_modules_expose_refactor_boundaries() -> None:
     assert callable(render_results_artifacts_tab)
     assert callable(render_decision_summary_tab)
     assert callable(render_background_job_status)
+    assert callable(is_background_job_active)
+
+
+def test_background_job_active_status_helper() -> None:
+    assert is_background_job_active({"status": "running"}) is True
+    assert is_background_job_active({"manifest": {"status": "queued"}}) is True
+    assert is_background_job_active({"status": "completed"}) is False
+    assert is_background_job_active({"manifest": {"status": "failed"}}) is False
+    assert is_background_job_active(None) is False
 
 
 def test_background_checkpoint_flow_event_reads_manifest_stages(tmp_path: Path) -> None:

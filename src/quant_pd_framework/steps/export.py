@@ -164,6 +164,15 @@ class ArtifactExportStep(BasePipelineStep):
             raise ValueError("Cannot export artifacts before diagnostics finish.")
 
         dump_joblib_with_hash(context.model, model_path)
+        segmented_model_manifest_path = paths.model_dir / "segmented_model_manifest.json"
+        segmented_model_config_path = metadata_dir / "segmented_model_config.json"
+        segmented_model_manifest = self._build_segmented_model_manifest(context)
+        if segmented_model_manifest:
+            self._write_json(segmented_model_manifest_path, segmented_model_manifest)
+            self._write_json(
+                segmented_model_config_path,
+                context.config.to_dict()["segmented_model"],
+            )
         self._write_json(metrics_path, context.metrics)
         self._write_json(config_path, self._build_export_config_payload(context, model_path))
         self._write_json(tests_path, context.statistical_tests)
@@ -301,6 +310,11 @@ class ArtifactExportStep(BasePipelineStep):
                 "start_here": str(start_here_path),
                 "export_profile": context.config.artifacts.export_profile.value,
                 "model": str(model_path),
+                "segmented_model_manifest": self._path_string(
+                    segmented_model_manifest_path
+                    if segmented_model_manifest_path.exists()
+                    else None
+                ),
                 "metrics": str(metrics_path),
                 "predictions": self._path_string(self._primary_export_path(prediction_exports)),
                 "predictions_csv": self._path_string(predictions_path)
@@ -376,6 +390,16 @@ class ArtifactExportStep(BasePipelineStep):
                     context.artifacts.get("full_data_predictions")
                 ),
             },
+            "segmented_model": {
+                "manifest": self._path_string(
+                    segmented_model_manifest_path
+                    if segmented_model_manifest_path.exists()
+                    else None
+                ),
+                "config": self._path_string(
+                    segmented_model_config_path if segmented_model_config_path.exists() else None
+                ),
+            },
             **visualization_manifest,
             "interactive_report": str(interactive_report_path),
             "decision_summary": str(decision_summary_path),
@@ -427,6 +451,12 @@ class ArtifactExportStep(BasePipelineStep):
             "output_root": output_root,
             "start_here": start_here_path,
             "model": model_path,
+            "segmented_model_manifest": segmented_model_manifest_path
+            if segmented_model_manifest_path.exists()
+            else None,
+            "segmented_model_config": segmented_model_config_path
+            if segmented_model_config_path.exists()
+            else None,
             "metrics": metrics_path,
             "input_snapshot": self._primary_export_path(input_snapshot_exports),
             "input_snapshot_csv": input_snapshot_path if input_snapshot_path.exists() else None,
@@ -2151,6 +2181,32 @@ class ArtifactExportStep(BasePipelineStep):
             exported_config.execution.existing_model_path = Path("..") / "model" / model_path.name
             exported_config.execution.existing_config_path = None
         return exported_config.to_dict()
+
+    def _build_segmented_model_manifest(self, context: PipelineContext) -> dict[str, Any]:
+        if not context.config.segmented_model.enabled:
+            return {}
+        inventory = context.diagnostics_tables.get("segment_model_inventory")
+        metrics = context.diagnostics_tables.get("segment_metrics")
+        segment_metadata = context.metadata.get("segmented_model", {})
+        return {
+            "enabled": True,
+            "model_type": context.config.model.model_type.value,
+            "target_mode": context.config.target.mode.value,
+            "segment_columns": list(context.config.segmented_model.segment_columns),
+            "fallback_policy": context.config.segmented_model.fallback_policy.value,
+            "min_segment_rows": int(context.config.segmented_model.min_segment_rows),
+            "min_segment_events": int(context.config.segmented_model.min_segment_events),
+            "max_segments": int(context.config.segmented_model.max_segments),
+            "segment_count": int(segment_metadata.get("segment_count", 0)),
+            "fitted_segment_count": int(segment_metadata.get("fitted_segment_count", 0)),
+            "fallback_segment_count": int(segment_metadata.get("fallback_segment_count", 0)),
+            "inventory_rows": inventory.to_dict(orient="records")
+            if isinstance(inventory, pd.DataFrame)
+            else [],
+            "metric_rows": metrics.to_dict(orient="records")
+            if isinstance(metrics, pd.DataFrame)
+            else [],
+        }
 
     def _build_start_here_guide(
         self,

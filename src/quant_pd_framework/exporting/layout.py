@@ -12,6 +12,7 @@ TABLE_SECTION_DIRECTORIES = {
     "calibration_thresholds": "calibration",
     "stability_drift": "stability",
     "sample_segmentation": "segmentation",
+    "segmented_model_build": "segmented_model",
     "feature_effects": "explainability",
     "statistical_tests": "statistical_tests",
     "feature_subset_search": "feature_subset_search",
@@ -57,4 +58,3 @@ def table_group_directories(tables_dir: Path) -> dict[str, str | None]:
         group_name: str(tables_dir / group_name) if (tables_dir / group_name).exists() else None
         for group_name in sorted(set(TABLE_SECTION_DIRECTORIES.values()))
     }
-

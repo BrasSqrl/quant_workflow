@@ -101,6 +101,8 @@ class DiagnosticsStep(BasePipelineStep):
             self._add_metric_overview_outputs(context)
             self._add_feature_importance_overview(context)
             self._add_model_artifact_outputs(context)
+            if context.config.segmented_model.enabled:
+                self._add_segmented_model_outputs(context)
 
         if self._diagnostic_group_enabled(active_groups, "governance"):
             if context.config.documentation.enabled:
@@ -325,6 +327,73 @@ class DiagnosticsStep(BasePipelineStep):
         for artifact_name, artifact in context.model_artifacts.items():
             if isinstance(artifact, pd.DataFrame):
                 context.diagnostics_tables[artifact_name] = artifact.copy(deep=True)
+
+    def _add_segmented_model_outputs(self, context: PipelineContext) -> None:
+        metrics = context.diagnostics_tables.get("segment_metrics")
+        inventory = context.diagnostics_tables.get("segment_model_inventory")
+        if metrics is not None and not metrics.empty:
+            metric_column = (
+                "roc_auc"
+                if "roc_auc" in metrics.columns
+                else "rmse"
+                if "rmse" in metrics.columns
+                else None
+            )
+            if metric_column is not None:
+                chart_frame = metrics.dropna(subset=[metric_column]).copy(deep=True)
+                if not chart_frame.empty:
+                    context.visualizations["segmented_model_metric_ranking"] = px.bar(
+                        chart_frame,
+                        x="segment_key",
+                        y=metric_column,
+                        color="split",
+                        barmode="group",
+                        title=f"Segmented Model: {metric_column.upper()} by Segment",
+                        labels={
+                            "segment_key": "Segment",
+                            metric_column: metric_column.replace("_", " ").title(),
+                        },
+                    )
+            if {"segment_key", "observation_count"}.issubset(metrics.columns):
+                context.visualizations["segmented_model_volume"] = px.bar(
+                    metrics,
+                    x="segment_key",
+                    y="observation_count",
+                    color="split",
+                    barmode="group",
+                    title="Segmented Model: Observation Volume by Segment",
+                    labels={
+                        "segment_key": "Segment",
+                        "observation_count": "Observations",
+                    },
+                )
+            if {"segment_key", "fallback_rate"}.issubset(metrics.columns):
+                fallback_frame = metrics.dropna(subset=["fallback_rate"])
+                if not fallback_frame.empty:
+                    context.visualizations["segmented_model_fallback_rate"] = px.bar(
+                        fallback_frame,
+                        x="segment_key",
+                        y="fallback_rate",
+                        color="split",
+                        barmode="group",
+                        title="Segmented Model: Global Fallback Rate by Segment",
+                        labels={
+                            "segment_key": "Segment",
+                            "fallback_rate": "Fallback Rate",
+                        },
+                    )
+        if inventory is not None and not inventory.empty:
+            status_counts = (
+                inventory.groupby("status", dropna=False)["segment_key"]
+                .count()
+                .reset_index(name="segment_count")
+            )
+            context.visualizations["segmented_model_inventory_status"] = px.pie(
+                status_counts,
+                names="status",
+                values="segment_count",
+                title="Segmented Model: Fitted vs Fallback Segments",
+            )
 
     def _build_data_quality_outputs(self, context: PipelineContext) -> None:
         data_quality = pd.DataFrame(

@@ -7,6 +7,7 @@ import pandas as pd
 from ..base import BasePipelineStep
 from ..config import ColumnRole, DataStructure, ExecutionMode, ModelType, TargetMode
 from ..context import PipelineContext
+from ..segmented_model import build_segment_key_series
 
 
 class ValidationStep(BasePipelineStep):
@@ -151,6 +152,35 @@ class ValidationStep(BasePipelineStep):
             if not date_column:
                 raise ValueError(
                     "discrete_time_hazard_model requires a valid date column."
+                )
+
+        if context.config.segmented_model.enabled:
+            segment_config = context.config.segmented_model
+            missing_segment_columns = [
+                column_name
+                for column_name in segment_config.segment_columns
+                if column_name not in dataframe.columns
+            ]
+            if missing_segment_columns:
+                raise ValueError(
+                    "Segmented modeling requires configured segment columns to exist "
+                    "after schema management: "
+                    + ", ".join(missing_segment_columns)
+                )
+            segment_keys = build_segment_key_series(dataframe, segment_config.segment_columns)
+            segment_count = int(segment_keys.nunique(dropna=False))
+            context.metadata["segmented_model_preview"] = {
+                "segment_count": segment_count,
+                "max_segments": int(segment_config.max_segments),
+                "min_segment_rows": int(segment_config.min_segment_rows),
+                "min_segment_events": int(segment_config.min_segment_events),
+            }
+            if segment_count > int(segment_config.max_segments):
+                raise ValueError(
+                    "Segmented modeling resolved "
+                    f"{segment_count:,} segment combinations, above the configured maximum "
+                    f"of {int(segment_config.max_segments):,}. Reduce segment columns or "
+                    "increase the maximum only after governance review."
                 )
 
         null_ratio = dataframe.isna().mean().sort_values(ascending=False).to_dict()

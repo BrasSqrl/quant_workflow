@@ -37,6 +37,28 @@ the exported run config records the selected model type.
 | Non-linear challenger | `xgboost`, `random_forest`, `extra_trees`, or `explainable_boosting_machine` |
 | Simple continuous baseline | `linear_regression` |
 
+## Segmented Model Builds
+
+Use Step 2 `Segmented Modeling` when the business process requires distinct
+models by population, such as DPD bucket, product, channel, collateral type, or
+borrower segment. Quant Studio fits one global fallback model and then fits one
+model for each eligible segment combination. The exported `quant_model.joblib`
+is a router bundle that chooses the correct segment model at scoring time and
+uses the global model for small, missing, failed, or unseen segments.
+
+Segmented modeling is supported for the most defensible V1 families:
+
+- binary logistic, elastic-net logistic, and scorecard logistic
+- linear, ridge, lasso, and elastic-net regression
+- decision tree, random forest, extra trees, XGBoost, and EBM-style models
+
+Do not use segmented modeling just because segment diagnostics differ. Prefer a
+single global model with segment diagnostics when differences are small, segment
+volumes are thin, or governance would not support maintaining multiple segment
+models. Use segmented modeling when coefficients, score behavior, calibration,
+or business policy are materially different by segment and each segment has
+enough data to support independent estimation.
+
 ## Binary Target Models
 
 | Model | Best use | Main caution |

@@ -95,6 +95,7 @@ INHERITED_EXISTING_CONFIG_FIELDS: frozenset[str] = frozenset(
         "target",
         "split",
         "model",
+        "segmented_model",
         "preset_name",
     }
 )

@@ -85,6 +85,11 @@ class EvaluationStep(BasePipelineStep):
             context.predictions[split_name] = scored_frame
             context.metrics[split_name] = metrics
 
+        if context.config.segmented_model.enabled:
+            segment_metrics = self._build_segment_metrics(context)
+            if not segment_metrics.empty:
+                context.diagnostics_tables["segment_metrics"] = segment_metrics
+
         context.feature_importance = context.model.get_feature_importance()
         context.model_artifacts = context.model.get_model_artifacts()
         return context
@@ -100,7 +105,7 @@ class EvaluationStep(BasePipelineStep):
         labels_available: bool,
         context: PipelineContext,
     ) -> tuple[pd.DataFrame, dict[str, float | int | None]]:
-        x_values = frame[feature_columns]
+        x_values = self._model_input_frame(frame, feature_columns, model)
         probability = np.asarray(model.predict_score(x_values))
         predicted_class = np.asarray(model.predict_class(x_values, threshold))
 
@@ -181,7 +186,7 @@ class EvaluationStep(BasePipelineStep):
         labels_available: bool,
         context: PipelineContext,
     ) -> tuple[pd.DataFrame, dict[str, float | int | None]]:
-        x_values = frame[feature_columns]
+        x_values = self._model_input_frame(frame, feature_columns, model)
         predicted_class = np.asarray(model.predict_class(x_values, threshold=0.5)).astype(int)
         probabilities = self._predict_multiclass_probabilities(model, x_values)
 
@@ -245,7 +250,7 @@ class EvaluationStep(BasePipelineStep):
         labels_available: bool,
         context: PipelineContext,
     ) -> tuple[pd.DataFrame, dict[str, float | int | None]]:
-        x_values = frame[feature_columns]
+        x_values = self._model_input_frame(frame, feature_columns, model)
         prediction = np.asarray(model.predict_score(x_values))
 
         scored_frame = self._build_scored_frame(frame, context, target_column)
@@ -314,6 +319,7 @@ class EvaluationStep(BasePipelineStep):
             context.config.split.entity_column,
             target_column,
             context.config.diagnostics.default_segment_column,
+            *context.config.segmented_model.segment_columns,
             context.config.credit_risk.migration_state_column,
             *context.metadata.get("hazard_time_features", []),
             *self._transition_state_columns(frame, context),
@@ -336,6 +342,19 @@ class EvaluationStep(BasePipelineStep):
                 if column_name and column_name in frame.columns
             )
         )
+
+    def _model_input_frame(
+        self,
+        frame: pd.DataFrame,
+        feature_columns: list[str],
+        model,
+    ) -> pd.DataFrame:
+        extra_columns = [
+            column
+            for column in getattr(model, "segment_columns_", [])
+            if column in frame.columns and column not in feature_columns
+        ]
+        return frame[[*feature_columns, *extra_columns]]
 
     def _transition_state_columns(
         self,
@@ -364,6 +383,108 @@ class EvaluationStep(BasePipelineStep):
         if value is None or pd.isna(value):
             return None
         return float(value)
+
+    def _build_segment_metrics(self, context: PipelineContext) -> pd.DataFrame:
+        rows: list[dict[str, float | int | str | bool | None]] = []
+        for split_name, scored_frame in context.predictions.items():
+            if "segment_key" not in scored_frame.columns:
+                continue
+            for segment_key, segment_frame in scored_frame.groupby("segment_key", dropna=False):
+                row: dict[str, float | int | str | bool | None] = {
+                    "split": split_name,
+                    "segment_key": str(segment_key),
+                    "observation_count": int(len(segment_frame)),
+                    "fallback_count": int(
+                        segment_frame.get(
+                            "used_global_fallback",
+                            pd.Series(False, index=segment_frame.index),
+                        ).astype(bool).sum()
+                    ),
+                }
+                row["fallback_rate"] = (
+                    float(row["fallback_count"] / row["observation_count"])
+                    if row["observation_count"]
+                    else None
+                )
+                if context.config.target.mode == TargetMode.BINARY:
+                    score_column = "predicted_probability"
+                    if score_column in segment_frame.columns:
+                        scores = pd.to_numeric(segment_frame[score_column], errors="coerce")
+                        row["average_predicted_probability"] = (
+                            float(scores.mean()) if not scores.dropna().empty else None
+                        )
+                    if context.target_column in segment_frame.columns:
+                        labels = pd.to_numeric(
+                            segment_frame[context.target_column],
+                            errors="coerce",
+                        ).dropna()
+                        aligned_scores = pd.to_numeric(
+                            segment_frame.loc[labels.index, score_column],
+                            errors="coerce",
+                        )
+                        valid = labels.notna() & aligned_scores.notna()
+                        labels = labels.loc[valid].astype(int)
+                        aligned_scores = aligned_scores.loc[valid]
+                        row["default_rate"] = float(labels.mean()) if len(labels) else None
+                        row["event_count"] = int(labels.sum()) if len(labels) else 0
+                        row["roc_auc"] = (
+                            self._safe_metric(
+                                lambda y=labels, score=aligned_scores: roc_auc_score(y, score)
+                            )
+                            if labels.nunique(dropna=True) == 2
+                            else None
+                        )
+                        row["ks_statistic"] = (
+                            self._safe_metric(
+                                lambda y=labels, score=aligned_scores: self._ks_statistic(
+                                    y, score
+                                )
+                            )
+                            if labels.nunique(dropna=True) == 2
+                            else None
+                        )
+                        row["brier_score"] = (
+                            self._safe_metric(
+                                lambda y=labels, score=aligned_scores: brier_score_loss(y, score)
+                            )
+                            if len(labels)
+                            else None
+                        )
+                elif context.config.target.mode == TargetMode.CONTINUOUS:
+                    score_column = "predicted_value"
+                    if score_column in segment_frame.columns:
+                        predictions = pd.to_numeric(segment_frame[score_column], errors="coerce")
+                        row["mean_predicted"] = (
+                            float(predictions.mean()) if not predictions.dropna().empty else None
+                        )
+                    if context.target_column in segment_frame.columns:
+                        actual = pd.to_numeric(
+                            segment_frame[context.target_column],
+                            errors="coerce",
+                        )
+                        predictions = pd.to_numeric(segment_frame[score_column], errors="coerce")
+                        valid = actual.notna() & predictions.notna()
+                        actual = actual.loc[valid]
+                        predictions = predictions.loc[valid]
+                        row["mean_actual"] = float(actual.mean()) if len(actual) else None
+                        row["rmse"] = (
+                            self._safe_metric(
+                                lambda y=actual, pred=predictions: math.sqrt(
+                                    mean_squared_error(y, pred)
+                                )
+                            )
+                            if len(actual)
+                            else None
+                        )
+                        row["mae"] = (
+                            self._safe_metric(
+                                lambda y=actual, pred=predictions: mean_absolute_error(y, pred)
+                            )
+                            if len(actual)
+                            else None
+                        )
+                rows.append(row)
+        return pd.DataFrame(rows)
 
     def _append_prediction_outputs(
         self,

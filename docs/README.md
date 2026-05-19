@@ -14,6 +14,7 @@ references, governance standards, release evidence, and root convenience files.
 | Choose the right execution mode | [Execution Mode Decision Guide](./user_guides/EXECUTION_MODE_DECISION_GUIDE.md) |
 | Find and understand exported files | [Artifact Map](./user_guides/ARTIFACT_MAP.md) |
 | Pick a model family | [Model Selection Guide](./user_guides/MODEL_SELECTION_GUIDE.md) |
+| Build separate models by governed population segment | [Model Selection Guide: Segmented Model Builds](./user_guides/MODEL_SELECTION_GUIDE.md#segmented-model-builds) |
 | Walk through each selectable model type | [Model Type Reference Guide](./user_guides/MODEL_TYPE_REFERENCE_GUIDE.md) |
 | Configure a common workflow | [Configuration Cookbook](./user_guides/CONFIGURATION_COOKBOOK.md) |
 | Review a completed model package and decision summary | [Validation Reviewer Guide](./user_guides/VALIDATION_REVIEWER_GUIDE.md) |
@@ -88,6 +89,7 @@ For macOS use:
 | User workflow | [Configuration Cookbook](./user_guides/CONFIGURATION_COOKBOOK.md) | Practical setup recipes for common modeling workflows. |
 | User workflow | [Model Selection Guide](./user_guides/MODEL_SELECTION_GUIDE.md) | How to choose model families by use case and target mode. |
 | User workflow | [Model Type Reference Guide](./user_guides/MODEL_TYPE_REFERENCE_GUIDE.md) | Detailed model-type walkthroughs and usage notes. |
+| User workflow | [Segment Fields And Segmented Model Builds](./user_guides/DATA_REQUIREMENTS.md#segment-fields-and-segmented-model-builds) | How to prepare segment columns, guardrails, router fallback behavior, and segment-model evidence. |
 | User workflow | [Validation Reviewer Guide](./user_guides/VALIDATION_REVIEWER_GUIDE.md) | How validation/risk reviewers inspect completed runs. |
 | User workflow | [Troubleshooting Guide](./user_guides/TROUBLESHOOTING.md) | Common launch, data, model, report, and SageMaker issues. |
 | User workflow | [Glossary](./user_guides/GLOSSARY.md) | Common app, modeling, artifact, and validation terms. |

@@ -353,6 +353,9 @@
           <div class="callout">
             If the bundled sample defaults to scorecard logistic regression, switch the model type to plain `logistic_regression` for this walkthrough. Scorecard logistic regression is useful later when you want binning, WOE, score points, and reason codes.
           </div>
+          <div class="callout">
+            Optional: use `Segmented Modeling` only when you intentionally want separate models by a field such as DPD bucket, product, or channel. For a first simple PD logistic run, leave it off and review segment diagnostics first. If enabled, Quant Studio fits a global fallback model plus eligible segment-level models and exports a segmented router model.
+          </div>
         </div>
       </article>
 

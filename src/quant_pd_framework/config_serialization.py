@@ -14,6 +14,7 @@ FRAMEWORK_CONFIG_SECTION_NAMES: tuple[str, ...] = (
     "split",
     "execution",
     "model",
+    "segmented_model",
     "comparison",
     "subset_search",
     "feature_policy",

@@ -86,6 +86,16 @@ SECTION_SPECS: OrderedDict[str, dict[str, str]] = OrderedDict(
             },
         ),
         (
+            "segmented_model_build",
+            {
+                "title": "Segmented Model Build",
+                "description": (
+                    "Global fallback routing, segment-model inventory, fallback rates, "
+                    "and segment-level model performance."
+                ),
+            },
+        ),
+        (
             "feature_effects",
             {
                 "title": "Feature Effects / Explainability",
@@ -179,6 +189,7 @@ REPORT_TABLE_SECTION_DIRECTORIES = {
     "calibration_thresholds": "calibration",
     "stability_drift": "stability",
     "sample_segmentation": "segmentation",
+    "segmented_model_build": "segmented_model",
     "feature_effects": "explainability",
     "statistical_tests": "statistical_tests",
     "feature_subset_search": "feature_subset_search",
@@ -1397,6 +1408,17 @@ def infer_asset_section(asset_key: str, *, kind: str) -> str:
         "segment_volume",
     }:
         return "sample_segmentation"
+    if asset_key in {
+        "segment_metrics",
+        "segment_model_inventory",
+        "fallback_segments",
+        "segment_coefficients_or_importance",
+        "segmented_model_metric_ranking",
+        "segmented_model_volume",
+        "segmented_model_fallback_rate",
+        "segmented_model_inventory_status",
+    }:
+        return "segmented_model_build"
     if asset_key in {
         "vintage_summary",
         "vintage_curve",

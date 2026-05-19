@@ -29,6 +29,8 @@ and summarizes the completed run in Step 5, `Decision Summary`.
 | `reports/model_development_dossier.md` | Audit-ready narrative tying purpose, data, target, feature lineage, model methodology, validation evidence, limitations, and primary artifacts together. | Model developer, validator, auditor |
 | `reports/interactive_report.html` | Standalone formal visual report with grouped diagnostics, companion charts, interpretation badges, and reviewer guidance. | Model developer, validator, business reviewer |
 | `model/quant_model.joblib` | Saved fitted model object. | Developer, future scoring workflow, monitoring handoff |
+| `model/segmented_model_manifest.json` | Segment columns, fitted segment counts, fallback segment counts, inventory rows, and segment metric rows when segmented modeling is enabled. | Developer, validator, auditor |
+| `metadata/segmented_model_config.json` | Resolved segmented-model settings used for the run. | Developer, validator, auditor |
 | `config/run_config.json` | Effective configuration used for the run. | Developer, auditor, reproducibility review |
 | `metadata/metrics.json` | Model metrics by split. | Developer, validator |
 | `data/predictions/predictions.csv` or `data/predictions/predictions.parquet` | Row-level scores and predicted outputs. Compact by default so it does not duplicate every feature column. | Developer, reviewer, downstream user |
@@ -120,6 +122,34 @@ and Parquet-to-CSV conversion during the main workflow.
 There is intentionally no separate `json/` folder. Configuration JSON lives in
 `config/`, while metrics, manifests, statistical-test payloads, and debug JSON
 live in `metadata/`.
+
+## Segmented Model Artifacts
+
+When Step 2 `Segmented Modeling` is enabled, the primary model object remains:
+
+```text
+model/quant_model.joblib
+```
+
+That object is a segmented router bundle, not a single plain estimator. It
+stores the global fallback model, the eligible fitted segment models, the
+segment-key construction rule, and routing behavior for missing or unseen
+segments. Existing-model scoring can load the same artifact and route new rows
+using the configured segment columns.
+
+Additional evidence is exported to:
+
+| File or table | Meaning |
+| --- | --- |
+| `model/segmented_model_manifest.json` | Machine-readable summary of segment columns, fitted models, fallback segments, and segment metric rows. |
+| `metadata/segmented_model_config.json` | Resolved guardrails: minimum rows, minimum events, maximum segment count, and fallback policy. |
+| `tables/segmented_model/segment_model_inventory.*` | One row per segment showing fit/fallback status, row count, event count, model ID, and fallback reason. |
+| `tables/segmented_model/segment_metrics.*` | Split-level segment metrics, including AUC/KS for binary targets or RMSE/MAE for continuous targets where labels are available. |
+| `tables/segmented_model/segment_coefficients_or_importance.*` | Global and segment-level coefficients or feature-importance outputs where available. |
+| `tables/segmented_model/fallback_segments.*` | Segments routed to the global fallback because of guardrails or fit failures. |
+
+The interactive report includes segment model ranking, volume, fallback-rate,
+and inventory-status visuals when the run produces the required evidence.
 
 ## Run Registry And Audit Files
 

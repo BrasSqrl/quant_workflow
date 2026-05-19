@@ -53,6 +53,7 @@ from .config import (
     ScorecardBinOverride,
     ScorecardConfig,
     ScorecardWorkbenchConfig,
+    SegmentedModelConfig,
     SplitConfig,
     SplitStrategy,
     SuitabilityCheckConfig,
@@ -186,6 +187,7 @@ class GUIBuildInputs:
 
     preset_name: PresetName | None = None
     model: ModelConfig = field(default_factory=ModelConfig)
+    segmented_model: SegmentedModelConfig = field(default_factory=SegmentedModelConfig)
     cleaning: CleaningConfig = field(default_factory=CleaningConfig)
     feature_engineering: FeatureEngineeringConfig = field(default_factory=FeatureEngineeringConfig)
     comparison: ComparisonConfig = field(default_factory=ComparisonConfig)
@@ -477,6 +479,7 @@ def build_framework_config_from_editor(
             existing_config_path=inputs.existing_config_path,
         ),
         model=inputs.model,
+        segmented_model=inputs.segmented_model,
         comparison=inputs.comparison,
         subset_search=inputs.subset_search,
         feature_policy=inputs.feature_policy,
@@ -2371,6 +2374,10 @@ def _schema_role_meaning(role: ColumnRole) -> str:
         ColumnRole.TARGET_SOURCE: "Raw outcome column used to build the modeled target.",
         ColumnRole.DATE: "Date/time field used for splits and time-aware diagnostics.",
         ColumnRole.IDENTIFIER: "Record/entity ID used for panel structure and traceability.",
+        ColumnRole.SEGMENT: (
+            "Population segment used for diagnostics or segmented model routing; "
+            "not a model feature unless separately transformed or duplicated."
+        ),
         ColumnRole.IGNORE: "Column excluded from modeling and downstream feature treatment.",
     }
     return meanings[role]

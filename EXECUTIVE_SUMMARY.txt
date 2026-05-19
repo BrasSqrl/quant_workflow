@@ -40,6 +40,8 @@ file and guides the run through the major stages of model development:
 - model-suitability and assumption checks
 - variable selection and manual review
 - model training, existing-model scoring, or feature-subset comparison
+- optional segmented model builds that fit a global fallback model plus
+  governed segment-level models for eligible population segments
 - calibration, evaluation, backtesting, and scenario testing
 - expanded statistical-review frameworks for distribution shifts, residual
   bias, outliers, dependency clustering, econometric checks, and structural
@@ -114,6 +116,11 @@ without rebuilding the model.
 It also includes a separate feature-subset-search mode that compares candidate
 feature sets for a selected model family before a final development run is
 chosen.
+
+For supported model families, Quant Studio can also export a segmented router
+model in the same `quant_model.joblib` location. That router applies the
+appropriate segment-level model when a segment was eligible during training and
+falls back to the global model for small, failed, missing, or unseen segments.
 
 Key Outputs
 -----------

@@ -73,6 +73,23 @@ Optional extensions also support auditability:
 
 This is why the rest of the pipeline can remain model-agnostic.
 
+## Segmented Model Router
+
+Segmented modeling is an optional wrapper around supported model families, not
+a separate statistical estimator. When Step 2 `Segmented Modeling` is enabled,
+Quant Studio fits the selected model type globally, then fits eligible
+segment-level models using the same model configuration. The exported
+`model/quant_model.joblib` remains the primary model object, but it becomes a
+router bundle that chooses a fitted segment model when available and routes
+small, failed, missing, or unseen segments to the global fallback model.
+
+Supported V1 families are logistic, elastic-net logistic, scorecard logistic,
+linear/ridge/lasso/elastic-net regression, decision tree, random forest, extra
+trees, XGBoost, and EBM-style models. Segment evidence is exported through
+`segment_model_inventory`, `segment_metrics`,
+`segment_coefficients_or_importance`, and
+`model/segmented_model_manifest.json`.
+
 ## 1. Logistic Regression
 
 ### When to use it
