@@ -314,6 +314,11 @@ def test_large_data_config_round_trips_through_loader() -> None:
         convert_csv_to_parquet=True,
         large_data_backend=LargeDataBackend.DISK_BACKED,
         large_data_model_policy=LargeDataModelPolicy.ALLOW_SAMPLE_FALLBACK,
+        large_data_auto_detected=True,
+        large_data_user_override_disabled=True,
+        large_data_standard_execution_override_reason="Manual full-memory validation",
+        large_data_effective_mode="standard_in_memory_forced",
+        large_data_source_kind="data_load",
         large_data_partition_strategy=LargeDataPartitionStrategy.SPLIT,
         large_data_worker_mode=LargeDataWorkerMode.WORKER_SERVICE,
         large_data_profile_cache_enabled=False,
@@ -329,6 +334,13 @@ def test_large_data_config_round_trips_through_loader() -> None:
     assert loaded.performance.large_data_mode is True
     assert loaded.performance.large_data_backend == LargeDataBackend.DISK_BACKED
     assert loaded.performance.large_data_model_policy == LargeDataModelPolicy.ALLOW_SAMPLE_FALLBACK
+    assert loaded.performance.large_data_auto_detected is True
+    assert loaded.performance.large_data_user_override_disabled is True
+    assert loaded.performance.large_data_standard_execution_override_reason == (
+        "Manual full-memory validation"
+    )
+    assert loaded.performance.large_data_effective_mode == "standard_in_memory_forced"
+    assert loaded.performance.large_data_source_kind == "data_load"
     assert loaded.performance.large_data_partition_strategy == LargeDataPartitionStrategy.SPLIT
     assert loaded.performance.large_data_worker_mode == LargeDataWorkerMode.WORKER_SERVICE
     assert loaded.performance.large_data_profile_cache_enabled is False

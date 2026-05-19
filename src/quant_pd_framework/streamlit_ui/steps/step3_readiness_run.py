@@ -20,12 +20,14 @@ from quant_pd_framework.streamlit_ui.enterprise_workflow import (
 from quant_pd_framework.streamlit_ui.error_guidance import classify_workflow_exception
 from quant_pd_framework.streamlit_ui.results import render_workflow_readiness
 from quant_pd_framework.streamlit_ui.run_execution import (
+    build_config_for_large_data_execution_override,
     build_execution_plan_cards,
     cancel_large_data_background_workflow,
     execute_workflow,
     poll_large_data_background_workflow,
     render_background_job_status,
     render_runtime_status,
+    resolve_large_data_execution_override,
     run_next_checkpoint_stage,
     start_checkpointed_workflow,
     start_large_data_background_workflow,
@@ -73,19 +75,90 @@ def render_readiness_check_and_run(
             preview_error=preview_error,
         )
         render_issue_center(readiness_issues)
+        detected_large_data_mode = bool(large_data_mode)
+        force_standard_requested = False
+        force_standard_confirmed = False
+        force_standard_reason = ""
+        workflow_columns = st.columns([1.3, 1.0])
+        with workflow_columns[0]:
+            workflow_run_style = st.radio(
+                "Workflow run style",
+                options=["full", "step_by_step"],
+                index=0,
+                horizontal=True,
+                format_func={
+                    "full": "Run full workflow",
+                    "step_by_step": "Run checkpointed step-by-step",
+                }.get,
+                help=(
+                    "Full workflow uses the same checkpoint engine automatically. "
+                    "Step-by-step mode runs one checkpoint stage per click so a failed "
+                    "diagnostic group can be reviewed without refitting the model."
+                ),
+            )
+        with workflow_columns[1]:
+            if detected_large_data_mode:
+                force_standard_requested = st.toggle(
+                    "Force standard in-memory execution",
+                    value=False,
+                    help=(
+                        "Bypasses auto-enabled Large Data Mode for this run only. "
+                        "This can load the full dataset into memory and may fail or "
+                        "make the app unresponsive."
+                    ),
+                )
+        if force_standard_requested:
+            confirmation_label = (
+                "I understand this may load the full dataset into memory and can fail "
+                "or make the app unresponsive."
+            )
+            force_standard_confirmed = st.checkbox(
+                confirmation_label,
+                value=False,
+                key="readiness_force_standard_execution_confirmed",
+            )
+            force_standard_reason = st.text_area(
+                "Override reason",
+                value="",
+                placeholder=(
+                    "Example: machine has sufficient RAM and final development requires "
+                    "standard full in-memory model fitting."
+                ),
+                help="Written to the run audit metadata when the override is used.",
+                key="readiness_force_standard_execution_reason",
+            ).strip()
+        large_data_override = resolve_large_data_execution_override(
+            selected_input=selected_input,
+            detected_large_data_mode=detected_large_data_mode,
+            force_standard_requested=force_standard_requested,
+            force_standard_confirmed=force_standard_confirmed,
+            reason=force_standard_reason,
+        )
+        runtime_config = build_config_for_large_data_execution_override(
+            preview_config,
+            large_data_override,
+        )
+        effective_large_data_mode = large_data_override.effective_large_data_mode
+        if large_data_override.blocked_reason:
+            st.error(large_data_override.blocked_reason)
+        elif large_data_override.user_override_disabled:
+            st.warning(
+                "Large Data Mode will be bypassed for this run. The standard workflow "
+                "will attempt to load and process the full file in memory."
+            )
         if preview_config is not None:
             preflight_cards, preflight_details = build_preflight_summary(
                 dataframe=dataframe,
                 data_source_label=data_source_label,
-                preview_config=preview_config,
+                preview_config=runtime_config,
                 edited_schema=edited_schema,
                 transformation_frame=transformation_frame,
             )
             render_preflight_summary(cards=preflight_cards, details=preflight_details)
             resource_cards, resource_details = build_resource_readiness_check(
                 dataframe=dataframe,
-                preview_config=preview_config,
-                large_data_mode=large_data_mode,
+                preview_config=runtime_config,
+                large_data_mode=effective_large_data_mode,
             )
             render_resource_readiness_check(
                 cards=resource_cards,
@@ -93,31 +166,19 @@ def render_readiness_check_and_run(
             )
         render_execution_plan(
             build_execution_plan_cards(
-                preview_config=preview_config,
+                preview_config=runtime_config,
                 data_source_label=data_source_label,
-                large_data_mode=large_data_mode,
+                large_data_mode=effective_large_data_mode,
+                large_data_user_override_disabled=(
+                    large_data_override.user_override_disabled
+                ),
             ),
-            large_data_mode=large_data_mode,
-        )
-        workflow_run_style = st.radio(
-            "Workflow run style",
-            options=["full", "step_by_step"],
-            index=0,
-            horizontal=True,
-            format_func={
-                "full": "Run full workflow",
-                "step_by_step": "Run checkpointed step-by-step",
-            }.get,
-            help=(
-                "Full workflow uses the same checkpoint engine automatically. "
-                "Step-by-step mode runs one checkpoint stage per click so a failed "
-                "diagnostic group can be reviewed without refitting the model."
-            ),
+            large_data_mode=effective_large_data_mode,
         )
         checkpoint_state = st.session_state.get(checkpoint_state_key)
         background_state = st.session_state.get(background_state_key)
         background_large_data_run = (
-            large_data_mode
+            effective_large_data_mode
             and workflow_run_style == "full"
             and selected_input.dataset_handle is not None
         )
@@ -171,17 +232,43 @@ def render_readiness_check_and_run(
             type="primary",
             width="stretch",
             key="readiness_run_workflow_button",
+            disabled=bool(large_data_override.blocked_reason),
         )
 
     if not run_clicked:
         return
 
     with readiness_tab:
-        if preview_error or preview_config is None:
+        if preview_error or runtime_config is None:
             st.error(preview_error or "Resolve the readiness issues before running the workflow.")
             set_last_run_snapshot(None)
             return
+        if large_data_override.blocked_reason:
+            st.error(large_data_override.blocked_reason)
+            set_last_run_snapshot(None)
+            return
         try:
+            if large_data_override.user_override_disabled:
+                record_gui_audit_event(
+                    runtime_config.artifacts.output_root,
+                    "large_data_standard_execution_override",
+                    metadata={
+                        "source_kind": large_data_override.source_kind,
+                        "reason": large_data_override.reason,
+                        "large_data_override_reason": large_data_override.reason,
+                        "large_data_auto_detected": (
+                            large_data_override.detected_large_data_mode
+                        ),
+                        "large_data_effective_mode": (
+                            runtime_config.performance.large_data_effective_mode
+                        ),
+                    },
+                    debounce_key="large_data_standard_execution_override",
+                    debounce_payload={
+                        "source_kind": large_data_override.source_kind,
+                        "reason": large_data_override.reason,
+                    },
+                )
             status_placeholder = st.empty()
             progress_placeholder = st.empty()
 
@@ -206,10 +293,10 @@ def render_readiness_check_and_run(
                         else "workflow_run_started"
                     )
                     record_gui_audit_event(
-                        preview_config.artifacts.output_root,
+                        runtime_config.artifacts.output_root,
                         audit_type,
                         run_id=str(event.get("run_id") or ""),
-                        artifact_root=preview_config.artifacts.output_root
+                        artifact_root=runtime_config.artifacts.output_root
                         / str(event.get("run_id") or ""),
                         metadata={
                             "event_type": event_type,
@@ -226,15 +313,15 @@ def render_readiness_check_and_run(
                 checkpoint_state = st.session_state.get(checkpoint_state_key)
                 if checkpoint_state is None:
                     checkpoint_state = start_checkpointed_workflow(
-                        preview_config=preview_config,
+                        preview_config=runtime_config,
                         dataframe=dataframe,
                         selected_input=selected_input,
-                        large_data_mode=large_data_mode,
+                        large_data_mode=effective_large_data_mode,
                     )
                     st.session_state[checkpoint_state_key] = checkpoint_state
                 with st.spinner("Running the next checkpoint stage..."):
                     context, checkpoint_state = run_next_checkpoint_stage(
-                        preview_config=preview_config,
+                        preview_config=runtime_config,
                         checkpoint_state=checkpoint_state,
                         progress_callback=render_progress,
                     )
@@ -246,7 +333,7 @@ def render_readiness_check_and_run(
                     )
                     set_last_run_snapshot(None)
                 else:
-                    snapshot = build_run_snapshot(context, preview_config.to_dict())
+                    snapshot = build_run_snapshot(context, runtime_config.to_dict())
                     set_last_run_snapshot(snapshot)
                     render_run_success(snapshot)
             elif background_large_data_run:
@@ -256,10 +343,10 @@ def render_readiness_check_and_run(
                     "failed",
                 }:
                     background_state = start_large_data_background_workflow(
-                        preview_config=preview_config,
+                        preview_config=runtime_config,
                         dataframe=dataframe,
                         selected_input=selected_input,
-                        large_data_mode=large_data_mode,
+                        large_data_mode=effective_large_data_mode,
                     )
                     st.session_state[background_state_key] = background_state
                     render_background_job_status(background_state)
@@ -283,23 +370,23 @@ def render_readiness_check_and_run(
             else:
                 with st.spinner(workflow_spinner_message(execution_mode)):
                     context = execute_workflow(
-                        preview_config=preview_config,
+                        preview_config=runtime_config,
                         dataframe=dataframe,
                         selected_input=selected_input,
-                        large_data_mode=large_data_mode,
+                        large_data_mode=effective_large_data_mode,
                         progress_callback=render_progress,
                     )
-                snapshot = build_run_snapshot(context, preview_config.to_dict())
+                snapshot = build_run_snapshot(context, runtime_config.to_dict())
                 set_last_run_snapshot(snapshot)
                 render_run_success(snapshot)
         except Exception as exc:
             record_gui_audit_event(
-                preview_config.artifacts.output_root,
+                runtime_config.artifacts.output_root,
                 "workflow_run_failed",
                 metadata={
-                    "execution_mode": preview_config.execution.mode.value,
-                    "model_type": preview_config.model.model_type.value,
-                    "target_mode": preview_config.target.mode.value,
+                    "execution_mode": runtime_config.execution.mode.value,
+                    "model_type": runtime_config.model.model_type.value,
+                    "target_mode": runtime_config.target.mode.value,
                     "error_message": str(exc),
                 },
             )
@@ -310,4 +397,3 @@ def render_readiness_check_and_run(
                 )
             )
             set_last_run_snapshot(None)
-

@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from dataclasses import dataclass
+from dataclasses import replace as dataclass_replace
 from html import escape
 from pathlib import Path
 from typing import Any
@@ -30,6 +32,20 @@ from quant_pd_framework.streamlit_ui.data import SelectedInputDataset
 from quant_pd_framework.streamlit_ui.theme import render_html
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
+
+
+@dataclass(frozen=True)
+class LargeDataExecutionOverride:
+    """Resolved runtime choice for bypassing file-backed Large Data Mode."""
+
+    detected_large_data_mode: bool
+    force_standard_requested: bool
+    force_standard_confirmed: bool
+    reason: str
+    source_kind: str
+    effective_large_data_mode: bool
+    user_override_disabled: bool
+    blocked_reason: str = ""
 
 
 def workflow_spinner_message(execution_mode: str) -> str:
@@ -408,9 +424,99 @@ def build_run_input(
     return dataframe
 
 
+def resolve_large_data_execution_override(
+    *,
+    selected_input: SelectedInputDataset,
+    detected_large_data_mode: bool,
+    force_standard_requested: bool,
+    force_standard_confirmed: bool,
+    reason: str,
+) -> LargeDataExecutionOverride:
+    """Determines whether a Step 3 standard-execution override is safe to apply."""
+
+    detected = bool(detected_large_data_mode)
+    requested = bool(detected and force_standard_requested)
+    confirmed = bool(requested and force_standard_confirmed)
+    normalized_reason = str(reason or "").strip()
+    source_kind = selected_source_kind(selected_input)
+    blocked_reason = ""
+    effective_large_data_mode = detected
+    user_override_disabled = False
+
+    if requested:
+        if source_kind == "s3":
+            blocked_reason = (
+                "S3 inputs require Large Data Mode because standard in-memory execution "
+                "does not safely load full S3 objects into pandas."
+            )
+        elif not confirmed:
+            blocked_reason = (
+                "Confirm the standard in-memory execution override before running."
+            )
+        elif selected_input.dataset_handle is not None and (
+            _selected_file_input_path(selected_input) is None
+        ):
+            blocked_reason = (
+                "This large-data source only has a preview dataframe available in the UI. "
+                "Select a Data_Load or local-path file so the full file can be passed to "
+                "standard execution."
+            )
+        else:
+            effective_large_data_mode = False
+            user_override_disabled = True
+
+    return LargeDataExecutionOverride(
+        detected_large_data_mode=detected,
+        force_standard_requested=requested,
+        force_standard_confirmed=confirmed,
+        reason=normalized_reason,
+        source_kind=source_kind,
+        effective_large_data_mode=effective_large_data_mode,
+        user_override_disabled=user_override_disabled,
+        blocked_reason=blocked_reason,
+    )
+
+
+def build_config_for_large_data_execution_override(
+    preview_config: Any,
+    override: LargeDataExecutionOverride,
+) -> Any:
+    """Returns a run-only config with large-data override evidence embedded."""
+
+    if preview_config is None:
+        return None
+    effective_mode = (
+        "large_data"
+        if override.effective_large_data_mode
+        else "standard_in_memory_forced"
+        if override.user_override_disabled
+        else "standard_in_memory"
+    )
+    performance = dataclass_replace(
+        preview_config.performance,
+        large_data_mode=override.effective_large_data_mode,
+        large_data_override_reason=(
+            override.reason
+            if override.user_override_disabled
+            else preview_config.performance.large_data_override_reason
+        ),
+        large_data_auto_detected=override.detected_large_data_mode,
+        large_data_user_override_disabled=override.user_override_disabled,
+        large_data_standard_execution_override_reason=override.reason,
+        large_data_effective_mode=effective_mode,
+        large_data_source_kind=override.source_kind,
+    )
+    return dataclass_replace(preview_config, performance=performance)
+
+
+def selected_source_kind(selected_input: SelectedInputDataset) -> str:
+    metadata = selected_input.metadata or {}
+    return str(metadata.get("source_kind") or "").strip().lower()
+
+
 def _selected_file_input_path(selected_input: SelectedInputDataset) -> Path | None:
     metadata = selected_input.metadata or {}
-    if metadata.get("source_kind") != "data_load":
+    if metadata.get("source_kind") not in {"data_load", "local_path"}:
         return None
     relative_path = str(metadata.get("relative_path") or "")
     if not relative_path:
@@ -426,6 +532,7 @@ def build_execution_plan_cards(
     preview_config: Any,
     data_source_label: str,
     large_data_mode: bool,
+    large_data_user_override_disabled: bool = False,
 ) -> list[dict[str, str]]:
     """Summarizes what the next run will do in user-facing terms."""
 
@@ -441,6 +548,14 @@ def build_execution_plan_cards(
         fit_strategy = "Feature subset comparison"
     elif preview_config.execution.mode == ExecutionMode.SCORE_EXISTING_MODEL:
         fit_strategy = "Existing model scoring"
+
+    data_mode = (
+        "Standard in-memory execution forced by user override"
+        if large_data_user_override_disabled
+        else "Large Data Mode"
+        if large_data_mode
+        else "Standard in-memory execution"
+    )
 
     return [
         {
@@ -458,6 +573,10 @@ def build_execution_plan_cards(
         {
             "label": "Fit Strategy",
             "value": fit_strategy,
+        },
+        {
+            "label": "Data Mode",
+            "value": data_mode,
         },
         {
             "label": "Export Profile",

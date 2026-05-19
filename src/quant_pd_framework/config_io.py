@@ -782,6 +782,15 @@ def _build_performance_config(payload: dict[str, Any]) -> PerformanceConfig:
         ),
         large_data_override_confirmed=payload.get("large_data_override_confirmed", False),
         large_data_override_reason=payload.get("large_data_override_reason", ""),
+        large_data_auto_detected=payload.get("large_data_auto_detected", False),
+        large_data_user_override_disabled=payload.get(
+            "large_data_user_override_disabled", False
+        ),
+        large_data_standard_execution_override_reason=payload.get(
+            "large_data_standard_execution_override_reason", ""
+        ),
+        large_data_effective_mode=payload.get("large_data_effective_mode", ""),
+        large_data_source_kind=payload.get("large_data_source_kind", ""),
         s3_local_cache_dir=payload.get("s3_local_cache_dir", ".quant_studio_cache/s3"),
         upload_warning_mb=payload.get("upload_warning_mb", 5120),
         ui_preview_rows=payload.get("ui_preview_rows", 50),

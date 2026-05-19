@@ -1822,6 +1822,11 @@ class PerformanceConfig:
     )
     large_data_override_confirmed: bool = False
     large_data_override_reason: str = ""
+    large_data_auto_detected: bool = False
+    large_data_user_override_disabled: bool = False
+    large_data_standard_execution_override_reason: str = ""
+    large_data_effective_mode: str = ""
+    large_data_source_kind: str = ""
     s3_local_cache_dir: str = ".quant_studio_cache/s3"
     upload_warning_mb: int = 5_120
     ui_preview_rows: int = 50

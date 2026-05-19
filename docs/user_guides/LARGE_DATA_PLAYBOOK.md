@@ -108,6 +108,24 @@ Forced overrides are not treated as certified. They are written to the exported
 metadata with the selected model, source file metadata, confirmation, reason,
 and recommendation.
 
+## Forcing Standard In-Memory Execution
+
+Step 3 `Readiness Check & Run` includes `Force standard in-memory execution`
+when Large Data Mode was auto-detected or enabled upstream. This is an advanced
+escape hatch for users who intentionally want the standard pandas/scikit-learn
+workflow to attempt the full local file in memory.
+
+Use this only when the machine is sized for the full dataset and the model or
+diagnostic path must run outside Large Data Mode. The run records
+`large_data_auto_detected`, `large_data_user_override_disabled`,
+`large_data_override_reason`, `large_data_standard_execution_override_reason`,
+`large_data_effective_mode`, and `large_data_source_kind` in the exported run
+configuration.
+
+S3 inputs cannot use this override in the current implementation. S3 continues
+to require Large Data Mode so the app does not try to buffer a full remote object
+through Streamlit or pandas.
+
 ## S3 Intake
 
 Use Step 1 `Specify S3 path` for S3-resident CSV or Parquet files. Examples:
