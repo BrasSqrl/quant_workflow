@@ -1,0 +1,24 @@
+# Shared GUI/runtime dependencies for launching Quant Studio from Windows,
+# macOS/Linux, and SageMaker bootstrap scripts.
+#
+# Install these first, then install the local project in editable mode with:
+#   python -m pip install -e . --no-deps --no-build-isolation
+#
+# Keeping third-party dependencies separate from the editable project install
+# avoids build-isolation resolver issues and makes environment rebuilds easier
+# to diagnose.
+
+joblib>=1.3
+duckdb>=1.0
+kaleido>=1.2
+numpy>=1.26
+openpyxl>=3.1
+pandas>=2.2
+plotly>=6.0
+pyarrow>=15
+scikit-learn>=1.4
+statsmodels>=0.14
+streamlit>=1.44
+xgboost>=3.0
+setuptools>=68
+wheel

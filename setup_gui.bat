@@ -85,36 +85,45 @@ if errorlevel 1 (
 )
 
 echo.
-echo Installing GUI dependencies into .venv...
-call "%VENV_PYTHON%" -m pip install --disable-pip-version-check -e ".[dev,gui]"
+echo Installing GUI runtime dependencies into .venv...
+call "%VENV_PYTHON%" -m pip install --disable-pip-version-check -r requirements-gui.txt
+if errorlevel 1 goto dependency_fallback
+
+echo.
+echo Installing Quant Studio from the local source tree...
+call "%VENV_PYTHON%" -m pip install --disable-pip-version-check -e . --no-deps --no-build-isolation
+if errorlevel 1 goto dependency_fallback
+goto install_complete
+
+:dependency_fallback
+echo.
+echo Dependency or local project installation failed.
+echo Checking whether the bootstrap Python already has the required GUI packages...
+call %BOOTSTRAP_PYTHON% -c "import joblib, openpyxl, pandas, plotly, sklearn, statsmodels, streamlit, xgboost"
 if errorlevel 1 (
+  set "EXIT_CODE=!errorlevel!"
   echo.
-  echo Full dependency installation failed.
-  echo Checking whether the bootstrap Python already has the required GUI packages...
-  call %BOOTSTRAP_PYTHON% -c "import joblib, openpyxl, pandas, plotly, sklearn, statsmodels, streamlit, xgboost"
-  if errorlevel 1 (
-    set "EXIT_CODE=!errorlevel!"
-    echo.
-    echo Failed while installing project dependencies into .venv.
-    pause
-    endlocal
-    exit /b !EXIT_CODE!
-  )
-
-  call %BOOTSTRAP_PYTHON% -c "import site; from pathlib import Path; paths = [Path(r'%CD%') / 'src', *[Path(path) for path in site.getsitepackages()], Path(site.getusersitepackages())]; target = Path(r'%VENV_DIR%') / 'Lib' / 'site-packages' / 'quant_pd_launcher_fallback.pth'; target.write_text(''.join(f'{path}\n' for path in paths if path.exists()), encoding='utf-8')"
-  if errorlevel 1 (
-    set "EXIT_CODE=!errorlevel!"
-    echo.
-    echo Failed while creating the fallback site-packages bridge for .venv.
-    pause
-    endlocal
-    exit /b !EXIT_CODE!
-  )
-
-  echo.
-  echo Falling back to packages already available in the bootstrap Python environment.
-  echo launch_gui.bat will use the local source tree and bridged site-packages.
+  echo Failed while installing project dependencies into .venv.
+  pause
+  endlocal
+  exit /b !EXIT_CODE!
 )
+
+call %BOOTSTRAP_PYTHON% -c "import site; from pathlib import Path; paths = [Path(r'%CD%') / 'src', *[Path(path) for path in site.getsitepackages()], Path(site.getusersitepackages())]; target = Path(r'%VENV_DIR%') / 'Lib' / 'site-packages' / 'quant_pd_launcher_fallback.pth'; target.write_text(''.join(f'{path}\n' for path in paths if path.exists()), encoding='utf-8')"
+if errorlevel 1 (
+  set "EXIT_CODE=!errorlevel!"
+  echo.
+  echo Failed while creating the fallback site-packages bridge for .venv.
+  pause
+  endlocal
+  exit /b !EXIT_CODE!
+)
+
+echo.
+echo Falling back to packages already available in the bootstrap Python environment.
+echo launch_gui.bat will use the local source tree and bridged site-packages.
+
+:install_complete
 
 echo.
 echo GUI environment is ready.

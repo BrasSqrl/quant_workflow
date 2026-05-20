@@ -1,24 +1,12 @@
-# SageMaker runtime dependencies for launching Quant Studio from a Linux-based
+# SageMaker dependency entry point for launching Quant Studio from a Linux-based
 # SageMaker Code Editor or JupyterLab environment.
 #
 # The SageMaker bootstrap installs these into .sagemaker_venv so Quant Studio's
 # Streamlit runtime stays isolated from SageMaker's JupyterLab/Notebook runtime.
-# Install these first, then install the local project in editable mode with:
+# This file reuses the shared GUI runtime requirements, then the bootstrap
+# installs the local project in editable mode with:
 #   .sagemaker_venv/bin/python -m pip install -e . --no-deps --no-build-isolation
 #
 # These versions mirror the package minimums declared in pyproject.toml.
 
-joblib>=1.3
-duckdb>=1.0
-kaleido>=1.2
-numpy>=1.26
-openpyxl>=3.1
-pandas>=2.2
-plotly>=6.0
-pyarrow>=15
-scikit-learn>=1.4
-statsmodels>=0.14
-streamlit>=1.44
-xgboost>=3.0
-setuptools>=68
-wheel
+-r requirements-gui.txt

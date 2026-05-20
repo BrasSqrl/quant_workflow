@@ -70,10 +70,10 @@ SageMaker browser proxy URL instead of VS Code port forwarding.
   - verifies Python `3.11+`
   - creates a repo-local `.sagemaker_venv` virtual environment
   - upgrades `pip`, `setuptools`, and `wheel` when possible
-  - installs the runtime dependencies listed in `requirements-sagemaker.txt`
-    into `.sagemaker_venv`
-  - installs the local project in editable mode with `--no-build-isolation`
-    inside `.sagemaker_venv`
+  - installs the runtime dependencies listed in `requirements-sagemaker.txt`,
+    which reuses the shared `requirements-gui.txt` dependency list
+  - installs the local project in editable mode with `--no-deps
+    --no-build-isolation` inside `.sagemaker_venv`
   - checks Plotly static chart export support for optional per-figure PNG
     exports and attempts to install Chrome for Kaleido unless disabled with
     `INSTALL_PLOTLY_CHROME=0`
@@ -178,6 +178,22 @@ notebook 7.4.4 requires jupyterlab<4.5,>=4.4.4, but you have jupyterlab 4.2.5
 Quant Studio runs as a Streamlit app and does not need to modify SageMaker's
 Jupyter runtime, so the project-local `.sagemaker_venv` keeps those two
 environments separate.
+
+## Manual Install Equivalent
+
+The bootstrap script is the recommended path. If you need to run the same
+install steps manually from the repo root, use:
+
+```bash
+python -m venv .sagemaker_venv
+.sagemaker_venv/bin/python -m pip install --upgrade pip setuptools wheel
+.sagemaker_venv/bin/python -m pip install -r requirements-sagemaker.txt
+.sagemaker_venv/bin/python -m pip install -e . --no-deps --no-build-isolation
+```
+
+The requirements command installs third-party packages only. The editable
+install command is still required so Python imports Quant Studio from the
+current repo checkout.
 
 ## Downloaded HTML Reports And Chart Rendering
 

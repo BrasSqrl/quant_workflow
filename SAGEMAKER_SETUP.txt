@@ -54,8 +54,10 @@ What the scripts do
 - scripts/bootstrap_sagemaker.sh
   - checks for Python 3.11+
   - creates a repo-local .sagemaker_venv virtual environment
-  - installs the dependencies from requirements-sagemaker.txt into that venv
-  - installs Quant Studio from the local source tree
+  - installs the dependencies from requirements-sagemaker.txt, which reuses
+    the shared requirements-gui.txt dependency list
+  - installs Quant Studio from the local source tree with:
+    .sagemaker_venv/bin/python -m pip install -e . --no-deps --no-build-isolation
   - checks Plotly static chart export support for optional per-figure PNG
     exports and attempts to install Chrome for Kaleido unless disabled with
     INSTALL_PLOTLY_CHROME=0
@@ -78,6 +80,21 @@ environment can surface resolver warnings such as:
 Quant Studio does not need to alter SageMaker's IDE packages. The bootstrap
 script therefore installs the app into .sagemaker_venv so the Streamlit app
 runtime is isolated from SageMaker's Jupyter runtime.
+
+Manual install equivalent
+-------------------------
+
+The bootstrap script is recommended. If you need to run the same install steps
+manually from the repo root, use:
+
+   python -m venv .sagemaker_venv
+   .sagemaker_venv/bin/python -m pip install --upgrade pip setuptools wheel
+   .sagemaker_venv/bin/python -m pip install -r requirements-sagemaker.txt
+   .sagemaker_venv/bin/python -m pip install -e . --no-deps --no-build-isolation
+
+The requirements command installs third-party packages only. The editable
+install command is still required so Python imports Quant Studio from the
+current repo checkout.
 
 Loading data in SageMaker
 -------------------------
@@ -209,6 +226,7 @@ Files added for SageMaker support
 ---------------------------------
 
 - requirements-sagemaker.txt
+- requirements-gui.txt
 - scripts/bootstrap_sagemaker.sh
 - scripts/run_sagemaker_streamlit.sh
 - scripts/sagemaker_code_editor_lifecycle.sh

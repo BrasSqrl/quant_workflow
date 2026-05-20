@@ -81,6 +81,7 @@ For macOS use:
 | Setup | [SageMaker Setup](./SAGEMAKER_SETUP.md) | SageMaker, VS Code Remote, port forwarding, and large-data setup instructions. |
 | Setup | [Root macOS Setup Mirror](../MACOS_SETUP.txt) | Plain-text macOS convenience mirror. |
 | Setup | [Root SageMaker Setup Mirror](../SAGEMAKER_SETUP.txt) | Plain-text SageMaker convenience mirror. |
+| Setup | [GUI Requirements](../requirements-gui.txt) | Shared GUI/runtime dependency list used by local and SageMaker setup scripts. |
 | Setup | [SageMaker Requirements](../requirements-sagemaker.txt) | Isolated SageMaker runtime dependency list used by bootstrap scripts. |
 | User workflow | [Data Requirements Guide](./user_guides/DATA_REQUIREMENTS.md) | Input formats, schema roles, target/date/entity expectations, and large-file intake. |
 | User workflow | [Execution Mode Decision Guide](./user_guides/EXECUTION_MODE_DECISION_GUIDE.md) | When to fit a new model, score an existing model, or search feature subsets. |

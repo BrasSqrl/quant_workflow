@@ -26,13 +26,15 @@ evidence for model methodology documentation.
 
 ## Quick Start
 
-Install GUI dependencies:
+Install GUI dependencies manually, if you are not using the launcher scripts:
 
 ```powershell
-python -m pip install -e ".[gui]"
+python -m pip install -r requirements-gui.txt
+python -m pip install -e . --no-deps --no-build-isolation
 ```
 
-Launch on Windows:
+Launch on Windows. If `.venv` is missing, `launch_gui.bat` runs `setup_gui.bat`
+and uses the same requirements-first install path:
 
 ```powershell
 .\launch_gui.bat

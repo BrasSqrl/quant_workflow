@@ -27,8 +27,30 @@ def test_setup_gui_script_rebuilds_incomplete_venv() -> None:
         'call %BOOTSTRAP_PYTHON% -m pip --python "%VENV_PYTHON%" install '
         '"%BOOTSTRAP_PIP_WHEEL%"' in script_text
     )
+    assert (
+        'call "%VENV_PYTHON%" -m pip install --disable-pip-version-check '
+        "-r requirements-gui.txt" in script_text
+    )
+    assert (
+        'call "%VENV_PYTHON%" -m pip install --disable-pip-version-check '
+        '-e . --no-deps --no-build-isolation' in script_text
+    )
     assert "quant_pd_launcher_fallback.pth" in script_text
     assert 'rmdir /s /q "%VENV_DIR%"' in script_text
+
+
+def test_sagemaker_requirements_reuse_shared_gui_requirements() -> None:
+    requirements_text = (PROJECT_ROOT / "requirements-sagemaker.txt").read_text(encoding="utf-8")
+    gui_requirements_text = (PROJECT_ROOT / "requirements-gui.txt").read_text(encoding="utf-8")
+    bootstrap_text = (PROJECT_ROOT / "scripts" / "bootstrap_sagemaker.sh").read_text(
+        encoding="utf-8"
+    )
+
+    assert "-r requirements-gui.txt" in requirements_text
+    assert "streamlit>=1.44" in gui_requirements_text
+    assert "xgboost>=3.0" in gui_requirements_text
+    assert '"$VENV_PYTHON" -m pip install -r requirements-sagemaker.txt' in bootstrap_text
+    assert '"$VENV_PYTHON" -m pip install -e . --no-deps --no-build-isolation' in bootstrap_text
 
 
 def test_macos_bootstrap_script_creates_local_venv_and_installs_gui_extra() -> None:

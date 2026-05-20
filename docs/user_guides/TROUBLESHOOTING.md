@@ -8,7 +8,7 @@ fixes.
 | Symptom | Likely cause | Fix |
 | --- | --- | --- |
 | Double-click launcher appears to do nothing | Virtual environment or dependency setup failed before the browser opened | Run `.\setup_gui.bat`, then run `.\launch_gui.bat` from PowerShell so errors stay visible. |
-| Streamlit command not found | GUI dependencies are not installed in the active environment | Run `.\setup_gui.bat` or install with `python -m pip install -e .[gui]`. |
+| Streamlit command not found | GUI dependencies are not installed in the active environment | Run `.\setup_gui.bat` or install with `python -m pip install -r requirements-gui.txt` followed by `python -m pip install -e . --no-deps --no-build-isolation`. |
 | `pyproject.toml` not found | Command was run outside repo root | `cd` to the folder that contains `pyproject.toml`. |
 | Git says dubious ownership | Repo was created or modified by another Windows identity | Run the safe-directory command shown by Git from your own terminal. |
 | macOS script says permission denied | Shell script is not executable or was downloaded with restrictive flags | Run with `bash scripts/bootstrap_macos.sh`, or use `chmod +x scripts/*.sh`. |

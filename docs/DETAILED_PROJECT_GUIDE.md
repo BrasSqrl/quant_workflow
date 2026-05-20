@@ -491,7 +491,9 @@ The easiest Windows launch command is:
 
 That root-level batch file now does two things:
 
-- on the first run, it creates a local `.venv` in the project directory and installs `.[dev,gui]`
+- on the first run, it creates a local `.venv` in the project directory,
+  installs `requirements-gui.txt`, and installs the local project with
+  `pip install -e . --no-deps --no-build-isolation`
 - on later runs, it reuses `.venv` and launches the GUI immediately
 - if `.venv` exists but is incomplete or broken, it rebuilds the environment automatically
 - if package installation into `.venv` fails but the current Python already has the GUI dependencies, it falls back to the local `src` tree and existing site-packages so the launcher still works
@@ -571,9 +573,11 @@ Then forward remote port `8501` from the local VS Code Ports panel and open the
 forwarded local URL, usually `http://localhost:8501`.
 
 The SageMaker bootstrap creates `.sagemaker_venv` in the repo and installs
-Quant Studio there. This avoids changing SageMaker's own JupyterLab/Notebook
-packages, which can otherwise produce resolver warnings from the preinstalled
-IDE environment.
+the dependencies from `requirements-sagemaker.txt`, which reuses the shared
+`requirements-gui.txt` list, then installs Quant Studio there with `python -m
+pip install -e . --no-deps --no-build-isolation`. This avoids changing
+SageMaker's own JupyterLab/Notebook packages, which can otherwise produce
+resolver warnings from the preinstalled IDE environment.
 
 If you are not using local VS Code Remote and must use SageMaker JupyterLab's
 browser proxy directly, use:
