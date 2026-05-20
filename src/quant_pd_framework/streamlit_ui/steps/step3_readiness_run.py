@@ -117,7 +117,7 @@ def render_readiness_check_and_run(
             force_standard_confirmed = st.checkbox(
                 confirmation_label,
                 value=False,
-                key="readiness_force_standard_execution_confirmed",
+                key="readiness_force_std_exec_ok",
             )
             force_standard_reason = st.text_area(
                 "Override reason",

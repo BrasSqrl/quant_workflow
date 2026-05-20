@@ -5,6 +5,7 @@ on:
     branches:
       - main
       - "codex/**"
+      - "codex-*"
   pull_request:
 
 permissions:
@@ -38,7 +39,10 @@ jobs:
         run: python -m pre_commit run --all-files --show-diff-on-failure
 
       - name: Audit Python dependencies
-        run: python -m pip_audit . --strict --progress-spinner off --cache-dir .pip-audit-cache
+        # PYSEC-2024-277 is a disputed joblib advisory with no fixed version.
+        # Quant Studio treats joblib artifacts as trusted-only and verifies
+        # exported artifacts with SHA-256 sidecars before loading.
+        run: python -m pip_audit . --strict --progress-spinner off --cache-dir .pip-audit-cache --ignore-vuln PYSEC-2024-277
 
   test:
     name: Tests (${{ matrix.os }}, Python ${{ matrix.python-version }})
