@@ -2178,9 +2178,20 @@ def build_forecasting_series_frame(
             and context.target_column
             and context.target_column in aggregation_frame.columns
         ):
+            aggregation_frame[context.target_column] = pd.to_numeric(
+                aggregation_frame[context.target_column],
+                errors="coerce",
+            )
             aggregations["target_mean"] = (context.target_column, "mean")
         for feature_name in top_features[:3]:
             if feature_name in aggregation_frame.columns:
+                numeric_feature = pd.to_numeric(
+                    aggregation_frame[feature_name],
+                    errors="coerce",
+                )
+                if numeric_feature.notna().sum() == 0:
+                    continue
+                aggregation_frame[feature_name] = numeric_feature
                 aggregations[feature_name] = (feature_name, "mean")
         series_frame = (
             aggregation_frame.groupby(date_column, dropna=False)
