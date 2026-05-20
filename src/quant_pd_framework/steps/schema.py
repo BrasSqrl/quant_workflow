@@ -85,7 +85,7 @@ class SchemaManagementStep(BasePipelineStep):
         return working, dropped_columns
 
     def _cast_series(self, series: pd.Series, dtype: str) -> pd.Series:
-        normalized = dtype.lower()
+        normalized = dtype.strip().lower()
 
         if normalized in {"string", "str", "text"}:
             return series.astype("string")
@@ -94,7 +94,7 @@ class SchemaManagementStep(BasePipelineStep):
         if normalized in {"float", "float64", "double"}:
             return pd.to_numeric(series, errors="coerce").astype("float64")
         if normalized in {"int", "int64", "integer"}:
-            return pd.to_numeric(series, errors="coerce").astype("Int64")
+            return self._coerce_integer_series(series)
         if normalized in {"bool", "boolean"}:
             return self._coerce_boolean_series(series)
         if normalized in {"datetime", "datetime64", "date"}:
@@ -103,6 +103,11 @@ class SchemaManagementStep(BasePipelineStep):
         raise ValueError(
             f"Unsupported dtype '{dtype}'. Use one of string/category/float/int/bool/datetime."
         )
+
+    def _coerce_integer_series(self, series: pd.Series) -> pd.Series:
+        numeric = pd.to_numeric(series, errors="coerce")
+        integer_like = numeric.isna() | numeric.mod(1).eq(0)
+        return numeric.where(integer_like).astype("Int64")
 
     def _coerce_boolean_series(self, series: pd.Series) -> pd.Series:
         truthy = {"1", "true", "t", "yes", "y"}
