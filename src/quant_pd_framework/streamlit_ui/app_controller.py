@@ -3903,7 +3903,7 @@ def run_app() -> None:
             )
             pass_through_unconfigured_columns = st.checkbox(
                 "Keep unconfigured columns",
-                value=True,
+                value=False,
             )
             reproducibility_enabled = st.checkbox(
                 "Export reproducibility manifest",
