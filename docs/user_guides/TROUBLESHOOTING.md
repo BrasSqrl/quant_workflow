@@ -79,6 +79,7 @@ fixes.
 | Symptom | Likely cause | Fix |
 | --- | --- | --- |
 | Machine freezes or swaps heavily | Pandas load exceeds available RAM | Stop run if possible, use Parquet, Large Data Mode, governed sample, and larger compute. |
+| `Checkpoint stage ... exceeded subprocess timeout of 3600 seconds` | One checkpoint stage exceeded the default one-hour guardrail, often during scoring, evaluation, diagnostics, or export for a large standard in-memory run | Prefer Large Data Mode for file-backed chunked scoring. If you intentionally forced standard in-memory execution, increase Step 2 `Diagnostics & Exports` -> `Checkpoint stage timeout (minutes)` and reduce optional diagnostics/report visuals. |
 | Full CSV export is too large | Export policy writes full tables for a non-Parquet input | Use sampled or metadata-only policy, or use a Parquet Step 1 input when Parquet artifacts are required. |
 | Run takes too long | Expensive diagnostics, advanced visuals, subset search, or dense HTML chart payloads | Use fast export profile, keep Advanced Visual Analytics off while tuning, reduce diagnostic scope, lower report-size controls, or use governed sample. Generate individual chart files only from Step 5 after the run. |
 

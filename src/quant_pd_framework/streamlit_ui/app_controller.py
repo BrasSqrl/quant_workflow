@@ -2185,6 +2185,32 @@ def run_app() -> None:
                     help="Caps heavy diagnostic samples when large data mode is enabled.",
                 )
             )
+            checkpoint_stage_timeout_minutes = int(
+                st.number_input(
+                    "Checkpoint stage timeout (minutes)",
+                    min_value=5,
+                    max_value=1440,
+                    value=int(
+                        min(
+                            max(
+                                round(
+                                    preset_inputs.performance.stage_subprocess_timeout_seconds
+                                    / 60
+                                ),
+                                5,
+                            ),
+                            1440,
+                        )
+                    ),
+                    step=5,
+                    help=(
+                        "Maximum time allowed for any single checkpoint stage before "
+                        "the subprocess is stopped. Large standard in-memory scoring "
+                        "runs may need a higher value; Large Data Mode is usually the "
+                        "safer path for very large files."
+                    ),
+                )
+            )
             memory_limit_gb_input = st.number_input(
                 "Memory warning threshold (GB, 0 = off)",
                 min_value=0.0,
@@ -2924,6 +2950,7 @@ def run_app() -> None:
                 large_data_worker_mode=LargeDataWorkerMode(large_data_worker_mode),
                 large_data_certified_fit_enabled=large_data_certified_fit_enabled,
                 diagnostic_sample_rows=diagnostic_sample_rows,
+                stage_subprocess_timeout_seconds=checkpoint_stage_timeout_minutes * 60,
                 optimize_dtypes=optimize_dtypes,
                 capture_memory_profile=capture_memory_profile,
                 retain_full_working_data=retain_full_working_data,

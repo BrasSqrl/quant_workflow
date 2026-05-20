@@ -191,3 +191,16 @@ def test_workflow_error_guidance_classifies_memory_failures() -> None:
 
     assert "memory" in guidance.title.lower()
     assert "Large Data Mode" in guidance.recommended_action
+
+
+def test_workflow_error_guidance_classifies_checkpoint_timeouts() -> None:
+    guidance = classify_workflow_exception(
+        RuntimeError(
+            "Checkpoint stage 'Score and evaluate' exceeded subprocess timeout of "
+            "3600 seconds."
+        )
+    )
+
+    assert "runtime limit" in guidance.title.lower()
+    assert "Checkpoint stage timeout" in guidance.recommended_action
+    assert "Large Data Mode" in guidance.recommended_action

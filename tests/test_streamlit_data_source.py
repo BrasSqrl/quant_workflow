@@ -99,8 +99,12 @@ def test_data_load_csv_can_convert_to_parquet() -> None:
     with temporary_artifact_root("data_load_csv_conversion") as data_load_dir:
         path = data_load_dir / "loans.csv"
         path.write_text("balance,default_status\n100,0\n200,1\n", encoding="utf-8")
+        progress_events = []
 
-        converted_path = convert_data_load_csv_to_parquet(path)
+        converted_path = convert_data_load_csv_to_parquet(
+            path,
+            progress_callback=progress_events.append,
+        )
         converted = pd.read_parquet(converted_path)
 
     assert converted_path.name == "loans.parquet"
@@ -108,6 +112,10 @@ def test_data_load_csv_can_convert_to_parquet() -> None:
         "balance": [100, 200],
         "default_status": [0, 1],
     }
+    assert progress_events[0]["phase"] == "starting"
+    assert any(event["phase"] == "converting" for event in progress_events)
+    assert progress_events[-1]["phase"] == "complete"
+    assert progress_events[-1]["progress"] == 1.0
 
 
 def test_reproducibility_manifest_rows_include_input_source_metadata() -> None:

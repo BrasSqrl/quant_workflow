@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from io import BytesIO
@@ -73,13 +74,18 @@ def load_data_load_dataframe(
     return read_tabular_path(path)
 
 
-def convert_data_load_csv_to_parquet(path: Path) -> Path:
+def convert_data_load_csv_to_parquet(
+    path: Path,
+    *,
+    progress_callback: Callable[[dict[str, Any]], None] | None = None,
+) -> Path:
     destination = path.with_suffix(".parquet")
     convert_csv_to_parquet(
         path,
         destination,
         chunk_rows=DEFAULT_PERFORMANCE_CONFIG.csv_conversion_chunk_rows,
         compression="snappy",
+        progress_callback=progress_callback,
     )
     return destination
 
@@ -136,6 +142,37 @@ def format_file_size(size_bytes: int) -> str:
             return f"{size:.1f} {unit}" if unit != "B" else f"{int(size)} B"
         size /= 1024.0
     return f"{size:.1f} GB"
+
+
+def render_csv_to_parquet_progress(
+    progress_bar: Any,
+    status_placeholder: Any,
+    event: dict[str, Any],
+) -> None:
+    """Updates Streamlit progress while a CSV is streamed into Parquet."""
+
+    progress_value = event.get("progress")
+    if isinstance(progress_value, (int, float)):
+        progress = float(progress_value)
+    else:
+        progress = 0.0
+    progress = max(0.0, min(1.0, progress))
+    phase = str(event.get("phase") or "converting").replace("_", " ").title()
+    row_count = int(event.get("row_count") or 0)
+    chunk_count = int(event.get("chunk_count") or 0)
+    source_bytes = int(event.get("source_size_bytes") or 0)
+    source_read = int(event.get("source_bytes_read") or 0)
+    if source_bytes > 0:
+        detail = (
+            f"{phase}: {format_file_size(source_read)} of "
+            f"{format_file_size(source_bytes)} processed"
+        )
+    else:
+        detail = f"{phase}: {row_count:,} rows processed"
+    if chunk_count:
+        detail = f"{detail} across {chunk_count:,} chunks"
+    progress_bar.progress(progress, text=detail)
+    status_placeholder.caption(detail)
 
 
 def is_large_input_file(metadata: dict[str, Any]) -> bool:
@@ -257,11 +294,31 @@ def select_input_dataframe() -> SelectedInputDataset:
                     large_data_mode = True
                 if selected_path.suffix.lower() == ".csv":
                     if st.button("Convert selected CSV to Parquet", width="stretch"):
+                        progress_bar = st.progress(
+                            0.0,
+                            text=f"Starting conversion for {selected_path.name}",
+                        )
+                        conversion_status = st.empty()
                         try:
-                            converted_path = convert_data_load_csv_to_parquet(selected_path)
+                            converted_path = convert_data_load_csv_to_parquet(
+                                selected_path,
+                                progress_callback=lambda event: render_csv_to_parquet_progress(
+                                    progress_bar,
+                                    conversion_status,
+                                    event,
+                                ),
+                            )
                             load_data_load_dataframe.clear()
+                            progress_bar.progress(
+                                1.0,
+                                text=f"Conversion complete: {converted_path.name}",
+                            )
+                            conversion_status.caption(
+                                f"Conversion complete. Created `{converted_path.name}`."
+                            )
                             st.success(f"Created `{converted_path.name}`. Refresh the file list.")
                         except Exception as exc:
+                            progress_bar.progress(0.0, text="CSV-to-Parquet conversion failed.")
                             st.error(f"CSV-to-Parquet conversion failed: {exc}")
                 st.caption(
                     "Selected file: "

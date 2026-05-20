@@ -85,6 +85,7 @@ Step 2 `Diagnostics & Exports` includes large-data execution controls:
 | `Apply large-data pre-screening recommendations` | off | When enabled, automatically excludes features flagged by the pre-screen and records the exclusions in run metadata. |
 | `Large-data worker mode` | `auto` | Uses a detected local worker service when available; otherwise starts the detached background process. |
 | `Enable certified large-data fit planner` | on | Records the certified, sample-fallback, in-memory-only, or override fit basis for the selected model family. |
+| `Checkpoint stage timeout (minutes)` | `60` | Stops any single checkpoint subprocess that runs longer than the configured limit. Increase this only when a large standard in-memory run is expected to spend more than one hour in scoring, diagnostics, or export. |
 
 The current capability matrix records one of five statuses:
 

@@ -76,6 +76,14 @@ small `checkpoint_manifest.json` remains in `checkpoints/` and is copied to
 `metadata/` so stage status, timing, optional failures, and pruning evidence
 remain auditable.
 
+Each checkpoint stage runs in a bounded subprocess. The default per-stage limit
+is 60 minutes and is controlled in Step 2 `Diagnostics & Exports` by
+`Checkpoint stage timeout (minutes)`. If a large standard in-memory run times
+out in `Score and evaluate`, prefer Large Data Mode for chunked file-backed
+scoring when possible. Increase the timeout only when the run is intentionally
+using standard in-memory execution and the machine has enough CPU/RAM for the
+longer stage.
+
 Turn `Keep all checkpoints` on when support needs to inspect or reload every
 saved context after the run. This increases artifact-folder storage because
 each `.joblib` context can contain modeled data, predictions, and diagnostics.

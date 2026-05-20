@@ -43,6 +43,24 @@ def classify_workflow_exception(
             technical_details=technical_details,
         )
 
+    if "exceeded subprocess timeout" in lowered or "timeoutexpired" in lowered:
+        return WorkflowErrorGuidance(
+            title="The checkpoint stage exceeded its runtime limit.",
+            likely_cause=(
+                "One checkpoint stage ran longer than the configured per-stage timeout. "
+                "For large standard in-memory runs this commonly happens during scoring, "
+                "evaluation, diagnostics, or export after the model has already fit."
+            ),
+            recommended_action=(
+                "Use Large Data Mode for file-backed chunked scoring when possible. If "
+                "you intentionally forced standard in-memory execution, increase Step 2 "
+                "`Diagnostics & Exports` -> `Checkpoint stage timeout (minutes)`, reduce "
+                "diagnostic/report workload, or rerun with a smaller development dataset."
+            ),
+            technical_summary=summary,
+            technical_details=technical_details,
+        )
+
     if any(token in lowered for token in ("target", "positive_values", "target-source")):
         return WorkflowErrorGuidance(
             title="The target definition could not be built.",

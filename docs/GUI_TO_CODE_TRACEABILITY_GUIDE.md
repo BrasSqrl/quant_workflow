@@ -392,6 +392,7 @@ These controls only matter when `ExecutionConfig.mode` is
 | `Large-data worker mode` | `PerformanceConfig.large_data_worker_mode` | `start_large_data_background_workflow`, `queue_background_workflow`, `quant-pd-worker` |
 | `Enable certified large-data fit planner` | `PerformanceConfig.large_data_certified_fit_enabled` | `large_data_fit_record`, model certification metadata |
 | `Large-data diagnostic sample rows` | `PerformanceConfig.diagnostic_sample_rows` | diagnostics sampling helpers |
+| `Checkpoint stage timeout (minutes)` | `PerformanceConfig.stage_subprocess_timeout_seconds` | `CheckpointedWorkflowRunner._run_stage_subprocess` per-stage subprocess guardrail |
 | `Memory warning threshold` | `PerformanceConfig.memory_limit_gb` | `IngestionStep._record_memory_estimate` |
 | `Optimize dtypes during ingestion` | `PerformanceConfig.optimize_dtypes` | `IngestionStep._apply_large_data_controls` |
 | `Capture memory profile in debug trace` | `PerformanceConfig.capture_memory_profile` | `QuantModelOrchestrator._memory_profile` |

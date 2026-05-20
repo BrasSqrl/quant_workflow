@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import shutil
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -631,22 +632,25 @@ def convert_csv_to_parquet(
     *,
     chunk_rows: int,
     compression: str,
+    progress_callback: Callable[[dict[str, Any]], None] | None = None,
 ) -> dict[str, Any]:
     """Converts a CSV file to Parquet without loading the full file into pandas."""
 
-    duckdb_metadata = _convert_csv_to_parquet_with_duckdb(
-        source_path,
-        destination_path,
-        chunk_rows=chunk_rows,
-        compression=compression,
-    )
-    if duckdb_metadata is not None:
-        return duckdb_metadata
+    if progress_callback is None:
+        duckdb_metadata = _convert_csv_to_parquet_with_duckdb(
+            source_path,
+            destination_path,
+            chunk_rows=chunk_rows,
+            compression=compression,
+        )
+        if duckdb_metadata is not None:
+            return duckdb_metadata
     return _convert_csv_to_parquet_with_pyarrow_stream(
         source_path,
         destination_path,
         chunk_rows=chunk_rows,
         compression=compression,
+        progress_callback=progress_callback,
     )
 
 
@@ -656,6 +660,7 @@ def convert_s3_csv_to_parquet(
     *,
     chunk_rows: int,
     compression: str,
+    progress_callback: Callable[[dict[str, Any]], None] | None = None,
 ) -> dict[str, Any]:
     """Streams an S3 CSV object into a local Parquet cache."""
 
@@ -667,6 +672,7 @@ def convert_s3_csv_to_parquet(
         chunk_rows=chunk_rows,
         compression=compression,
         engine="pyarrow_s3_stream",
+        progress_callback=progress_callback,
     )
 
 
@@ -728,6 +734,7 @@ def _convert_csv_to_parquet_with_pyarrow_stream(
     *,
     chunk_rows: int,
     compression: str,
+    progress_callback: Callable[[dict[str, Any]], None] | None = None,
 ) -> dict[str, Any]:
     return _convert_csv_stream_to_parquet(
         source_display=str(source_path),
@@ -736,6 +743,8 @@ def _convert_csv_to_parquet_with_pyarrow_stream(
         chunk_rows=chunk_rows,
         compression=compression,
         engine="pyarrow_local_stream",
+        source_size_bytes=source_path.stat().st_size,
+        progress_callback=progress_callback,
     )
 
 
@@ -747,6 +756,8 @@ def _convert_csv_stream_to_parquet(
     chunk_rows: int,
     compression: str,
     engine: str,
+    source_size_bytes: int | None = None,
+    progress_callback: Callable[[dict[str, Any]], None] | None = None,
 ) -> dict[str, Any]:
     try:
         import pyarrow as pa
@@ -759,6 +770,15 @@ def _convert_csv_stream_to_parquet(
     writer: pq.ParquetWriter | None = None
     chunk_count = 0
     row_count = 0
+    _notify_csv_conversion_progress(
+        progress_callback,
+        phase="starting",
+        progress=0.0,
+        chunk_count=0,
+        row_count=0,
+        source_size_bytes=source_size_bytes,
+        source_bytes_read=0,
+    )
     try:
         with source_opener() as source:
             reader = pc.open_csv(
@@ -778,10 +798,35 @@ def _convert_csv_stream_to_parquet(
                 writer.write_table(table)
                 chunk_count += 1
                 row_count += int(table.num_rows)
+                source_bytes_read = _safe_stream_position(source)
+                progress = None
+                if source_size_bytes:
+                    progress = min(
+                        0.99,
+                        max(0.0, source_bytes_read / max(1, source_size_bytes)),
+                    )
+                _notify_csv_conversion_progress(
+                    progress_callback,
+                    phase="converting",
+                    progress=progress,
+                    chunk_count=chunk_count,
+                    row_count=row_count,
+                    source_size_bytes=source_size_bytes,
+                    source_bytes_read=source_bytes_read,
+                )
     finally:
         if writer is not None:
             writer.close()
 
+    _notify_csv_conversion_progress(
+        progress_callback,
+        phase="complete",
+        progress=1.0,
+        chunk_count=chunk_count,
+        row_count=row_count,
+        source_size_bytes=source_size_bytes,
+        source_bytes_read=source_size_bytes,
+    )
     return {
         "source_path": source_display if not is_s3_uri(source_display) else "",
         "source_uri": source_display if is_s3_uri(source_display) else "",
@@ -792,6 +837,22 @@ def _convert_csv_stream_to_parquet(
         "compression": compression,
         "conversion_engine": engine,
     }
+
+
+def _notify_csv_conversion_progress(
+    progress_callback: Callable[[dict[str, Any]], None] | None,
+    **payload: Any,
+) -> None:
+    if progress_callback is None:
+        return
+    progress_callback({"event": "csv_to_parquet_progress", **payload})
+
+
+def _safe_stream_position(source: Any) -> int:
+    try:
+        return int(source.tell())
+    except (AttributeError, OSError, ValueError, TypeError):
+        return 0
 
 
 def _read_parquet_rows(
