@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import importlib
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -27,6 +29,42 @@ from tests.support import (
     build_panel_forecast_dataframe,
     temporary_artifact_root,
 )
+
+
+def _skip_if_xgboost_unavailable(model_type: ModelType) -> None:
+    if model_type != ModelType.XGBOOST:
+        return
+    try:
+        importlib.import_module("xgboost")
+    except Exception as exc:  # noqa: BLE001 - xgboost can fail on native-library loading.
+        pytest.skip(f"XGBoost runtime is unavailable in this environment: {exc}")
+
+
+def test_xgboost_adapter_failure_is_lazy_and_model_specific(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from quant_pd_framework import optional_dependencies
+
+    real_import_module = importlib.import_module
+
+    def fake_import_module(name: str, package: str | None = None):
+        if name == "xgboost":
+            raise RuntimeError("native library missing")
+        return real_import_module(name, package)
+
+    monkeypatch.setattr(optional_dependencies.importlib, "import_module", fake_import_module)
+
+    with pytest.raises(ImportError, match="XGBoost could not be loaded"):
+        build_model_adapter(
+            ModelConfig(model_type=ModelType.XGBOOST),
+            TargetMode.BINARY,
+        )
+
+    non_xgboost_adapter = build_model_adapter(
+        ModelConfig(model_type=ModelType.LOGISTIC_REGRESSION),
+        TargetMode.BINARY,
+    )
+    assert non_xgboost_adapter.model_type == ModelType.LOGISTIC_REGRESSION
 
 
 @pytest.mark.parametrize(
@@ -97,6 +135,7 @@ from tests.support import (
     ],
 )
 def test_binary_model_variants_run(model_type: ModelType, model_config: ModelConfig) -> None:
+    _skip_if_xgboost_unavailable(model_type)
     dataframe = build_binary_dataframe()
     with temporary_artifact_root(f"pytest_{model_type.value}") as artifact_root:
         config = FrameworkConfig(

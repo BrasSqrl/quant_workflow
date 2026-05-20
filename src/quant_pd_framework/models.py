@@ -41,7 +41,6 @@ from statsmodels.tools.sm_exceptions import HessianInversionWarning
 from statsmodels.tsa.holtwinters import ExponentialSmoothing
 from statsmodels.tsa.statespace.sarimax import SARIMAX
 from statsmodels.tsa.statespace.structural import UnobservedComponents
-from xgboost import XGBClassifier, XGBRegressor
 
 from .config import (
     ModelConfig,
@@ -50,6 +49,7 @@ from .config import (
     ScorecardMonotonicity,
     TargetMode,
 )
+from .optional_dependencies import load_xgboost_estimators
 
 ODDS_RATIO_CLIP_BOUND = 40.0
 
@@ -1774,7 +1774,7 @@ class XGBoostAdapter(SklearnAdapter):
 
     def __init__(self, model_config: ModelConfig, target_mode: TargetMode) -> None:
         estimator = (
-            XGBClassifier(
+            load_xgboost_estimators()[0](
                 objective="binary:logistic",
                 n_estimators=model_config.xgboost_n_estimators,
                 learning_rate=model_config.xgboost_learning_rate,
@@ -1785,7 +1785,7 @@ class XGBoostAdapter(SklearnAdapter):
                 n_jobs=_resolved_n_jobs(model_config),
             )
             if target_mode == TargetMode.BINARY
-            else XGBRegressor(
+            else load_xgboost_estimators()[1](
                 objective="reg:squarederror",
                 n_estimators=model_config.xgboost_n_estimators,
                 learning_rate=model_config.xgboost_learning_rate,
