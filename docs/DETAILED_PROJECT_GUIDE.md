@@ -1866,7 +1866,8 @@ result browser so full prediction files are queried from disk instead of
 concatenated into Streamlit session state.
 
 Large files should be referenced from `Data_Load/`, a CLI file path, or an S3
-URI such as `s3://bucket/key.csv`. Quant Studio does not store AWS credentials;
+URI such as `s3://bucket/key.csv`, `s3://bucket/key.xlsx`, or
+`s3://bucket/key.parquet`. Quant Studio does not store AWS credentials;
 S3 access uses the active SageMaker role, AWS CLI profile, or environment
 credentials available to the Python process.
 

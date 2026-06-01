@@ -384,7 +384,7 @@ These controls only matter when `ExecutionConfig.mode` is
 | `Large-data model policy` | `PerformanceConfig.large_data_model_policy` | certified-only, sample-fallback, or force-override policy |
 | `I understand this complex large-data model path is experimental` | `PerformanceConfig.large_data_override_confirmed` | required for forced complex-model override |
 | `Override reason` | `PerformanceConfig.large_data_override_reason` | exported override audit rationale |
-| `S3 local staging cache` | `PerformanceConfig.s3_local_cache_dir` | local cache for staged S3 CSV/Parquet sources |
+| `S3 local staging cache` | `PerformanceConfig.s3_local_cache_dir` | local cache for staged S3 CSV, Excel, and Parquet sources |
 | `Use persistent large-data profile cache` | `PerformanceConfig.large_data_profile_cache_enabled` | `profile_dataset_handle_cached`, `metadata/large_data/dataset_profile.json` |
 | `Large-data partition strategy` | `PerformanceConfig.large_data_partition_strategy` | `record_partitioned_sample_manifest`, `metadata/large_data/partitioned_dataset_manifest.json` |
 | `Run large-data feature pre-screening` | `PerformanceConfig.large_data_prescreen_enabled` | `record_large_data_feature_screening`, `tables/feature_screening/large_data_feature_screening.*` |

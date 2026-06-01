@@ -6,6 +6,7 @@ import hashlib
 import json
 import shutil
 from collections.abc import Callable
+from io import BytesIO
 from pathlib import Path
 from typing import Any
 
@@ -36,6 +37,8 @@ from .large_data_support.handles import (
 from .large_data_support.handles import (
     read_tabular_path as read_tabular_path,
 )
+
+EXCEL_SUFFIXES = {".xlsx", ".xlsm", ".xls"}
 
 __all__ = [
     "DatasetHandle",
@@ -252,18 +255,19 @@ def _stage_s3_data_file(
     compression: str,
     s3_cache_dir: Path,
 ) -> DatasetHandle:
-    """Stages S3 CSV/Parquet sources into a local reusable cache."""
+    """Stages S3 CSV, Excel, and Parquet sources into a local reusable cache."""
 
     source_uri = handle.uri or handle.source_identifier
     suffix = handle.source_suffix
-    if suffix not in {".csv", *PARQUET_SUFFIXES}:
+    if suffix not in {".csv", *EXCEL_SUFFIXES, *PARQUET_SUFFIXES}:
         raise ValueError(
-            "S3 large-data intake supports CSV and Parquet files. "
+            "S3 large-data intake supports CSV, Excel, and Parquet files. "
             f"Received suffix: {suffix or 'unknown'}."
         )
     s3_cache_dir.mkdir(parents=True, exist_ok=True)
     cache_key = _source_cache_key(source_uri, handle.metadata)
-    staged_path = s3_cache_dir / f"{cache_key}.parquet"
+    staged_suffix = ".parquet" if suffix == ".csv" else suffix
+    staged_path = s3_cache_dir / f"{cache_key}{staged_suffix}"
     metadata_path = s3_cache_dir / f"{cache_key}.json"
     reused = staged_path.exists()
     if reused:
@@ -318,7 +322,7 @@ def read_dataset_preview(
     suffix = path.suffix.lower()
     if suffix == ".csv":
         return pd.read_csv(path, nrows=rows, usecols=columns)
-    if suffix in {".xlsx", ".xlsm", ".xls"}:
+    if suffix in EXCEL_SUFFIXES:
         preview = pd.read_excel(path, nrows=rows)
         if columns:
             return preview.loc[:, [column for column in columns if column in preview.columns]]
@@ -366,6 +370,9 @@ def iter_dataset_batches(
     suffix = path.suffix.lower()
     if suffix == ".csv":
         yield from pd.read_csv(path, chunksize=batch_rows, usecols=columns)
+        return
+    if suffix in EXCEL_SUFFIXES:
+        yield from _iter_excel_batches(path, batch_rows=batch_rows, columns=columns)
         return
     if suffix in PARQUET_SUFFIXES:
         try:
@@ -781,39 +788,43 @@ def _convert_csv_stream_to_parquet(
     )
     try:
         with source_opener() as source:
-            reader = pc.open_csv(
-                source,
-                read_options=pc.ReadOptions(block_size=max(1, int(chunk_rows)) * 1024),
-            )
-            for batch in reader:
-                table = pa.Table.from_batches([batch])
-                if writer is None:
-                    writer = pq.ParquetWriter(
-                        destination_path,
-                        table.schema,
-                        compression=compression,
-                    )
-                else:
-                    table = table.cast(writer.schema, safe=False)
-                writer.write_table(table)
-                chunk_count += 1
-                row_count += int(table.num_rows)
-                source_bytes_read = _safe_stream_position(source)
-                progress = None
-                if source_size_bytes:
-                    progress = min(
-                        0.99,
-                        max(0.0, source_bytes_read / max(1, source_size_bytes)),
-                    )
-                _notify_csv_conversion_progress(
-                    progress_callback,
-                    phase="converting",
-                    progress=progress,
-                    chunk_count=chunk_count,
-                    row_count=row_count,
-                    source_size_bytes=source_size_bytes,
-                    source_bytes_read=source_bytes_read,
+            _validate_csv_stream_signature(source_display, source)
+            try:
+                reader = pc.open_csv(
+                    source,
+                    read_options=pc.ReadOptions(block_size=max(1, int(chunk_rows)) * 1024),
                 )
+                for batch in reader:
+                    table = pa.Table.from_batches([batch])
+                    if writer is None:
+                        writer = pq.ParquetWriter(
+                            destination_path,
+                            table.schema,
+                            compression=compression,
+                        )
+                    else:
+                        table = table.cast(writer.schema, safe=False)
+                    writer.write_table(table)
+                    chunk_count += 1
+                    row_count += int(table.num_rows)
+                    source_bytes_read = _safe_stream_position(source)
+                    progress = None
+                    if source_size_bytes:
+                        progress = min(
+                            0.99,
+                            max(0.0, source_bytes_read / max(1, source_size_bytes)),
+                        )
+                    _notify_csv_conversion_progress(
+                        progress_callback,
+                        phase="converting",
+                        progress=progress,
+                        chunk_count=chunk_count,
+                        row_count=row_count,
+                        source_size_bytes=source_size_bytes,
+                        source_bytes_read=source_bytes_read,
+                    )
+            except Exception as exc:
+                raise ValueError(_csv_parse_failure_message(source_display, exc)) from exc
     finally:
         if writer is not None:
             writer.close()
@@ -922,6 +933,8 @@ def _read_s3_rows(
     suffix = handle.source_suffix
     if suffix == ".csv":
         return _read_s3_csv_rows(uri, rows=rows, columns=columns)
+    if suffix in EXCEL_SUFFIXES:
+        return _read_s3_excel_rows(uri, rows=rows, columns=columns)
     if suffix in PARQUET_SUFFIXES:
         return _read_s3_parquet_rows(uri, rows=rows, columns=columns)
     raise ValueError(f"Unsupported S3 preview format: {suffix}")
@@ -933,16 +946,75 @@ def _read_s3_csv_rows(
     rows: int,
     columns: list[str] | None,
 ) -> pd.DataFrame:
+    filesystem, object_path = _s3_filesystem_and_path(uri)
+    with filesystem.open_input_file(object_path) as source:
+        return _read_csv_rows_from_stream(
+            source,
+            source_display=uri,
+            rows=rows,
+            columns=columns,
+        )
+
+
+def _read_s3_excel_rows(
+    uri: str,
+    *,
+    rows: int,
+    columns: list[str] | None,
+) -> pd.DataFrame:
+    filesystem, object_path = _s3_filesystem_and_path(uri)
+    with filesystem.open_input_file(object_path) as source:
+        payload = source.read()
+    buffer = BytesIO(bytes(payload or b""))
+    try:
+        preview = pd.read_excel(buffer, nrows=rows)
+    except ImportError as exc:
+        raise ImportError("Reading S3 Excel previews requires `openpyxl`.") from exc
+    if columns:
+        return preview.loc[:, [column for column in columns if column in preview.columns]]
+    return preview
+
+
+def _iter_excel_batches(
+    path: Path,
+    *,
+    batch_rows: int,
+    columns: list[str] | None,
+):
+    start_row = 0
+    while True:
+        skiprows = range(1, start_row + 1) if start_row else None
+        frame = pd.read_excel(
+            path,
+            nrows=batch_rows,
+            skiprows=skiprows,
+            usecols=columns,
+        )
+        if frame.empty:
+            break
+        yield frame
+        if len(frame) < batch_rows:
+            break
+        start_row += len(frame)
+
+
+def _read_csv_rows_from_stream(
+    source: Any,
+    *,
+    source_display: str,
+    rows: int,
+    columns: list[str] | None,
+) -> pd.DataFrame:
     try:
         import pyarrow.csv as pc
     except ImportError as exc:
-        raise ImportError("Reading S3 CSV previews requires `pyarrow`.") from exc
+        raise ImportError("Reading CSV previews requires `pyarrow`.") from exc
 
-    filesystem, object_path = _s3_filesystem_and_path(uri)
-    with filesystem.open_input_file(object_path) as source:
+    _validate_csv_stream_signature(source_display, source)
+    frames: list[pd.DataFrame] = []
+    remaining = rows
+    try:
         reader = pc.open_csv(source)
-        frames: list[pd.DataFrame] = []
-        remaining = rows
         for batch in reader:
             table = batch.to_pandas()
             if columns:
@@ -951,6 +1023,8 @@ def _read_s3_csv_rows(
             remaining -= len(frames[-1])
             if remaining <= 0:
                 break
+    except Exception as exc:
+        raise ValueError(_csv_parse_failure_message(source_display, exc)) from exc
     if not frames:
         return pd.DataFrame()
     return pd.concat(frames, ignore_index=True)
@@ -991,6 +1065,99 @@ def _s3_filesystem_and_path(uri: str):
 
     filesystem, object_path = pafs.FileSystem.from_uri(uri)
     return filesystem, object_path
+
+
+def _validate_csv_stream_signature(source_display: str, source: Any) -> None:
+    prefix = _read_stream_prefix(source)
+    if not prefix:
+        return
+    stripped = prefix.lstrip()
+    lower_name = source_display.lower()
+    if prefix.startswith(b"PAR1") or stripped.startswith(b"PAR1"):
+        raise ValueError(
+            "The object appears to be a Parquet file, but it is being read as CSV. "
+            "Use an S3 path ending in `.parquet` or `.pq`."
+        )
+    if prefix.startswith(b"PK\x03\x04"):
+        raise ValueError(
+            "The object appears to be an Excel or ZIP file, but it is being read "
+            "as CSV. Use an S3 path ending in `.xlsx`, `.xlsm`, or `.xls` for Excel "
+            "files, or export it as UTF-8 CSV or Parquet."
+        )
+    if prefix.startswith(b"\x1f\x8b"):
+        raise ValueError(
+            "The object appears to be gzip-compressed. S3 CSV preview expects an "
+            "uncompressed `.csv` object. Decompress it first or convert it to Parquet."
+        )
+    if prefix.startswith(b"BZh") or prefix.startswith(b"\xfd7zXZ\x00"):
+        raise ValueError(
+            "The object appears to be compressed. S3 CSV preview expects an "
+            "uncompressed `.csv` object. Decompress it first or convert it to Parquet."
+        )
+    if prefix.startswith((b"\xff\xfe", b"\xfe\xff")) or _nul_byte_ratio(prefix) > 0.10:
+        raise ValueError(
+            "The object looks like UTF-16 or binary data, not a plain UTF-8 CSV. "
+            "Export it as UTF-8 CSV or convert it to Parquet before using S3 intake."
+        )
+    if lower_name.endswith((".xlsx", ".xls", ".xlsm")):
+        raise ValueError(
+            "The object has an Excel extension but is being read as CSV. Use the "
+            "Excel S3 path directly instead of a `.csv` suffix."
+        )
+
+
+def _read_stream_prefix(source: Any, *, byte_count: int = 4096) -> bytes:
+    position = None
+    try:
+        position = source.tell()
+    except Exception:
+        position = None
+    try:
+        prefix = source.read(byte_count)
+    except Exception:
+        return b""
+    finally:
+        if position is not None:
+            try:
+                source.seek(position)
+            except Exception:
+                pass
+    if isinstance(prefix, str):
+        return prefix.encode("utf-8", errors="replace")
+    return bytes(prefix or b"")
+
+
+def _nul_byte_ratio(payload: bytes) -> float:
+    if not payload:
+        return 0.0
+    return payload.count(b"\x00") / len(payload)
+
+
+def _csv_parse_failure_message(source_display: str, exc: Exception) -> str:
+    detail = _sanitize_error_detail(str(exc))
+    extra = ""
+    if "expected 1 columns" in detail.lower() or "got" in detail.lower():
+        extra = (
+            " The first rows may have inconsistent column counts, a preamble before "
+            "the header, a non-comma delimiter, or a malformed quoted field."
+        )
+    return (
+        f"Could not parse `{source_display}` as a plain CSV.{extra} "
+        "Confirm the object is an uncompressed UTF-8 comma-delimited CSV with one "
+        "header row, or convert it to Parquet. Parser detail: "
+        f"{detail}"
+    )
+
+
+def _sanitize_error_detail(detail: str, *, max_length: int = 240) -> str:
+    cleaned = "".join(
+        character if character.isprintable() or character in {"\t", " "} else "?"
+        for character in detail.replace("\r", " ").replace("\n", " ")
+    )
+    cleaned = cleaned.encode("ascii", errors="replace").decode("ascii")
+    if len(cleaned) > max_length:
+        return cleaned[: max_length - 3].rstrip() + "..."
+    return cleaned
 
 
 def _source_cache_key(source_identifier: str, metadata: dict[str, Any]) -> str:

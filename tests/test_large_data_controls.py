@@ -9,6 +9,7 @@ import joblib
 import pandas as pd
 import pytest
 
+import quant_pd_framework.large_data as large_data_module
 from quant_pd_framework import (
     ArtifactConfig,
     CleaningConfig,
@@ -54,6 +55,8 @@ from quant_pd_framework.large_data import (
     convert_csv_to_parquet,
     parse_s3_uri,
     profile_dataset_handle_cached,
+    read_dataset_preview,
+    read_dataset_sample,
     stage_large_data_file,
 )
 from quant_pd_framework.large_data_enterprise import (
@@ -190,6 +193,43 @@ def test_chunked_csv_to_parquet_conversion_helper() -> None:
     assert converted.to_dict(orient="list") == {"x": [1, 2, 3], "y": ["a", "b", "c"]}
 
 
+def test_csv_to_parquet_rejects_mislabeled_excel_zip_with_actionable_message() -> None:
+    with temporary_artifact_root("pytest_mislabeled_excel_csv") as artifact_root:
+        csv_path = artifact_root / "input.csv"
+        parquet_path = artifact_root / "converted" / "input.parquet"
+        csv_path.write_bytes(b"PK\x03\x04\x14\x00fake-excel-zip,a\n\x00\x01\x02")
+
+        with pytest.raises(ValueError, match="Excel or ZIP"):
+            convert_csv_to_parquet(
+                csv_path,
+                parquet_path,
+                chunk_rows=2,
+                compression="snappy",
+                progress_callback=lambda _event: None,
+            )
+
+
+def test_csv_to_parquet_wraps_inconsistent_columns_with_actionable_message() -> None:
+    with temporary_artifact_root("pytest_inconsistent_csv_columns") as artifact_root:
+        csv_path = artifact_root / "input.csv"
+        parquet_path = artifact_root / "converted" / "input.parquet"
+        csv_path.write_text("Report export\nx,y\n1,a\n", encoding="utf-8")
+
+        with pytest.raises(ValueError) as exc_info:
+            convert_csv_to_parquet(
+                csv_path,
+                parquet_path,
+                chunk_rows=2,
+                compression="snappy",
+                progress_callback=lambda _event: None,
+            )
+
+    message = str(exc_info.value)
+    assert "Could not parse" in message
+    assert "one header row" in message
+    assert "inconsistent column counts" in message
+
+
 def test_s3_uri_handle_normalization_does_not_require_secrets() -> None:
     uri = "s3://example-bucket/path/to/input.csv"
 
@@ -204,6 +244,85 @@ def test_s3_uri_handle_normalization_does_not_require_secrets() -> None:
     assert handle.metadata["source_kind"] == "s3"
     assert handle.metadata["bucket"] == "example-bucket"
     assert handle.metadata["size_bytes"] == 123
+
+
+def test_s3_excel_preview_reads_from_remote_object_stream(monkeypatch: pytest.MonkeyPatch) -> None:
+    class FakeS3Filesystem:
+        def __init__(self, path: Path) -> None:
+            self.path = path
+
+        def open_input_file(self, _object_path: str):
+            return self.path.open("rb")
+
+    with temporary_artifact_root("pytest_s3_excel_preview") as artifact_root:
+        excel_path = artifact_root / "input.xlsx"
+        pd.DataFrame(
+            {
+                "balance": [100, 200, 300],
+                "default_status": [0, 1, 0],
+            }
+        ).to_excel(excel_path, index=False)
+        monkeypatch.setattr(
+            large_data_module,
+            "_s3_filesystem_and_path",
+            lambda _uri: (FakeS3Filesystem(excel_path), "input.xlsx"),
+        )
+        handle = build_s3_dataset_handle(
+            "s3://example-bucket/path/to/input.xlsx",
+            {"size_bytes": excel_path.stat().st_size},
+        )
+
+        preview = read_dataset_preview(handle, rows=2)
+
+    assert preview.to_dict(orient="list") == {
+        "balance": [100, 200],
+        "default_status": [0, 1],
+    }
+
+
+def test_s3_excel_stages_to_local_cache_with_excel_suffix(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FakeS3Filesystem:
+        def __init__(self, path: Path) -> None:
+            self.path = path
+
+        def open_input_file(self, _object_path: str):
+            return self.path.open("rb")
+
+    with temporary_artifact_root("pytest_s3_excel_staging") as artifact_root:
+        excel_path = artifact_root / "input.xlsx"
+        pd.DataFrame(
+            {
+                "balance": [100, 200, 300],
+                "default_status": [0, 1, 0],
+            }
+        ).to_excel(excel_path, index=False)
+        monkeypatch.setattr(
+            large_data_module,
+            "_s3_filesystem_and_path",
+            lambda _uri: (FakeS3Filesystem(excel_path), "input.xlsx"),
+        )
+        handle = build_s3_dataset_handle(
+            "s3://example-bucket/path/to/input.xlsx",
+            {"size_bytes": excel_path.stat().st_size},
+        )
+
+        staged = stage_large_data_file(
+            handle,
+            chunk_rows=2,
+            compression="snappy",
+            s3_cache_dir=artifact_root / "cache",
+        )
+        sample = read_dataset_sample(staged, rows=2, columns=None, random_state=42)
+
+        assert staged.active_path.suffix == ".xlsx"
+        assert staged.active_path.exists()
+        assert staged.staging_metadata["conversion_engine"] == "s3_object_copy"
+        assert sample.to_dict(orient="list") == {
+            "balance": [100, 200],
+            "default_status": [0, 1],
+        }
 
 
 def test_large_data_certification_policy_blocks_uncertified_models() -> None:

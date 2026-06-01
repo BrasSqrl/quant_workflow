@@ -437,7 +437,7 @@ def select_input_dataframe() -> SelectedInputDataset:
                 s3_uri = st.text_input(
                     "S3 object path",
                     placeholder="s3://bucket-name/path/to/file.csv",
-                    help="CSV and Parquet S3 objects are supported for Large Data Mode.",
+                    help="CSV, Excel, and Parquet S3 objects are supported for Large Data Mode.",
                 ).strip()
                 if not s3_uri:
                     return SelectedInputDataset(None, "", {}, large_data_mode=True)

@@ -19,6 +19,7 @@ pyarrow>=15
 scikit-learn>=1.4
 statsmodels>=0.14
 streamlit>=1.44
+xlrd>=2.0
 xgboost>=3.0
 setuptools>=68
 wheel

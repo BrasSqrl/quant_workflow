@@ -129,17 +129,19 @@ through Streamlit or pandas.
 
 ## S3 Intake
 
-Use Step 1 `Specify S3 path` for S3-resident CSV or Parquet files. Examples:
+Use Step 1 `Specify S3 path` for S3-resident CSV, Excel, or Parquet files.
+Examples:
 
 ```text
 s3://my-credit-risk-bucket/modeling/loan_panel.csv
+s3://my-credit-risk-bucket/modeling/loan_panel.xlsx
 s3://my-credit-risk-bucket/modeling/loan_panel.parquet
 ```
 
 Quant Studio reads only a capped preview for the UI, then stages the S3 object
 locally when the run starts. CSV objects are streamed into the local Parquet
-cache. Parquet objects are copied into the cache for repeatability unless a
-future direct-scan backend is enabled.
+cache. Excel and Parquet objects are copied into the cache for repeatability
+unless a future direct-scan backend is enabled.
 
 The S3 local cache defaults to:
 
