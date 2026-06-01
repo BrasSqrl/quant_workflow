@@ -259,14 +259,15 @@ def _stage_s3_data_file(
 
     source_uri = handle.uri or handle.source_identifier
     suffix = handle.source_suffix
-    if suffix not in {".csv", *EXCEL_SUFFIXES, *PARQUET_SUFFIXES}:
+    effective_suffix = _resolve_s3_effective_suffix(source_uri, suffix)
+    if effective_suffix not in {".csv", *EXCEL_SUFFIXES, *PARQUET_SUFFIXES}:
         raise ValueError(
             "S3 large-data intake supports CSV, Excel, and Parquet files. "
             f"Received suffix: {suffix or 'unknown'}."
         )
     s3_cache_dir.mkdir(parents=True, exist_ok=True)
     cache_key = _source_cache_key(source_uri, handle.metadata)
-    staged_suffix = ".parquet" if suffix == ".csv" else suffix
+    staged_suffix = ".parquet" if effective_suffix == ".csv" else effective_suffix
     staged_path = s3_cache_dir / f"{cache_key}{staged_suffix}"
     metadata_path = s3_cache_dir / f"{cache_key}.json"
     reused = staged_path.exists()
@@ -279,7 +280,7 @@ def _stage_s3_data_file(
             "s3_local_cache_dir": str(s3_cache_dir),
             "metadata_path": str(metadata_path),
         }
-    elif suffix == ".csv":
+    elif effective_suffix == ".csv":
         staging_metadata = convert_s3_csv_to_parquet(
             source_uri,
             staged_path,
@@ -297,6 +298,8 @@ def _stage_s3_data_file(
             "staging_required": True,
             "source_kind": "s3",
             "source_uri": source_uri,
+            "source_suffix": suffix,
+            "detected_suffix": effective_suffix,
             "reused_existing_staging_file": reused,
             "metadata_path": str(metadata_path),
             "s3_local_cache_dir": str(s3_cache_dir),
@@ -930,7 +933,7 @@ def _read_s3_rows(
     columns: list[str] | None,
 ) -> pd.DataFrame:
     uri = handle.uri or handle.source_identifier
-    suffix = handle.source_suffix
+    suffix = _resolve_s3_effective_suffix(uri, handle.source_suffix)
     if suffix == ".csv":
         return _read_s3_csv_rows(uri, rows=rows, columns=columns)
     if suffix in EXCEL_SUFFIXES:
@@ -948,6 +951,13 @@ def _read_s3_csv_rows(
 ) -> pd.DataFrame:
     filesystem, object_path = _s3_filesystem_and_path(uri)
     with filesystem.open_input_file(object_path) as source:
+        if _looks_like_excel_prefix(_read_stream_prefix(source)):
+            return _read_excel_rows_from_stream(
+                source,
+                source_display=uri,
+                rows=rows,
+                columns=columns,
+            )
         return _read_csv_rows_from_stream(
             source,
             source_display=uri,
@@ -964,12 +974,33 @@ def _read_s3_excel_rows(
 ) -> pd.DataFrame:
     filesystem, object_path = _s3_filesystem_and_path(uri)
     with filesystem.open_input_file(object_path) as source:
-        payload = source.read()
+        return _read_excel_rows_from_stream(
+            source,
+            source_display=uri,
+            rows=rows,
+            columns=columns,
+        )
+
+
+def _read_excel_rows_from_stream(
+    source: Any,
+    *,
+    source_display: str,
+    rows: int,
+    columns: list[str] | None,
+) -> pd.DataFrame:
+    payload = _read_stream_payload(source)
     buffer = BytesIO(bytes(payload or b""))
     try:
         preview = pd.read_excel(buffer, nrows=rows)
     except ImportError as exc:
         raise ImportError("Reading S3 Excel previews requires `openpyxl`.") from exc
+    except Exception as exc:
+        raise ValueError(
+            f"Could not parse `{source_display}` as an Excel workbook. "
+            "If this is a ZIP archive rather than an Excel file, extract it first. "
+            f"Parser detail: {_sanitize_error_detail(str(exc))}"
+        ) from exc
     if columns:
         return preview.loc[:, [column for column in columns if column in preview.columns]]
     return preview
@@ -1067,18 +1098,39 @@ def _s3_filesystem_and_path(uri: str):
     return filesystem, object_path
 
 
+def _resolve_s3_effective_suffix(source_uri: str, suffix: str) -> str:
+    normalized_suffix = str(suffix or "").lower()
+    prefix = _read_s3_object_prefix(source_uri)
+    if _looks_like_excel_prefix(prefix):
+        return ".xlsx"
+    if _looks_like_parquet_prefix(prefix):
+        return ".parquet"
+    if normalized_suffix:
+        return normalized_suffix
+    return ".csv" if _looks_text_like(prefix) else normalized_suffix
+
+
+def _read_s3_object_prefix(source_uri: str) -> bytes:
+    try:
+        filesystem, object_path = _s3_filesystem_and_path(source_uri)
+        with filesystem.open_input_file(object_path) as source:
+            return _read_stream_prefix(source)
+    except Exception:
+        return b""
+
+
 def _validate_csv_stream_signature(source_display: str, source: Any) -> None:
     prefix = _read_stream_prefix(source)
     if not prefix:
         return
     stripped = prefix.lstrip()
     lower_name = source_display.lower()
-    if prefix.startswith(b"PAR1") or stripped.startswith(b"PAR1"):
+    if _looks_like_parquet_prefix(prefix) or _looks_like_parquet_prefix(stripped):
         raise ValueError(
             "The object appears to be a Parquet file, but it is being read as CSV. "
             "Use an S3 path ending in `.parquet` or `.pq`."
         )
-    if prefix.startswith(b"PK\x03\x04"):
+    if _looks_like_excel_prefix(prefix):
         raise ValueError(
             "The object appears to be an Excel or ZIP file, but it is being read "
             "as CSV. Use an S3 path ending in `.xlsx`, `.xlsm`, or `.xls` for Excel "
@@ -1106,6 +1158,30 @@ def _validate_csv_stream_signature(source_display: str, source: Any) -> None:
         )
 
 
+def _looks_like_excel_prefix(prefix: bytes) -> bool:
+    return prefix.startswith(b"PK\x03\x04") or prefix.startswith(
+        b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"
+    )
+
+
+def _looks_like_parquet_prefix(prefix: bytes) -> bool:
+    return prefix.startswith(b"PAR1")
+
+
+def _looks_text_like(payload: bytes) -> bool:
+    if not payload:
+        return False
+    sample = payload[:1024]
+    if _nul_byte_ratio(sample) > 0.01:
+        return False
+    text_bytes = sum(
+        1
+        for byte in sample
+        if byte in {9, 10, 13} or 32 <= byte <= 126 or byte >= 128
+    )
+    return text_bytes / len(sample) > 0.90
+
+
 def _read_stream_prefix(source: Any, *, byte_count: int = 4096) -> bytes:
     position = None
     try:
@@ -1125,6 +1201,17 @@ def _read_stream_prefix(source: Any, *, byte_count: int = 4096) -> bytes:
     if isinstance(prefix, str):
         return prefix.encode("utf-8", errors="replace")
     return bytes(prefix or b"")
+
+
+def _read_stream_payload(source: Any) -> bytes:
+    try:
+        source.seek(0)
+    except Exception:
+        pass
+    payload = source.read()
+    if isinstance(payload, str):
+        return payload.encode("utf-8", errors="replace")
+    return bytes(payload or b"")
 
 
 def _nul_byte_ratio(payload: bytes) -> float:

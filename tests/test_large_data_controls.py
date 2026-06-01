@@ -325,6 +325,51 @@ def test_s3_excel_stages_to_local_cache_with_excel_suffix(
         }
 
 
+def test_s3_excel_content_is_detected_even_when_key_ends_with_csv(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FakeS3Filesystem:
+        def __init__(self, path: Path) -> None:
+            self.path = path
+
+        def open_input_file(self, _object_path: str):
+            return self.path.open("rb")
+
+    with temporary_artifact_root("pytest_s3_excel_content_csv_key") as artifact_root:
+        excel_path = artifact_root / "input.xlsx"
+        pd.DataFrame(
+            {
+                "balance": [100, 200, 300],
+                "default_status": [0, 1, 0],
+            }
+        ).to_excel(excel_path, index=False)
+        monkeypatch.setattr(
+            large_data_module,
+            "_s3_filesystem_and_path",
+            lambda _uri: (FakeS3Filesystem(excel_path), "input.csv"),
+        )
+        handle = build_s3_dataset_handle(
+            "s3://example-bucket/path/to/input.csv",
+            {"size_bytes": excel_path.stat().st_size},
+        )
+
+        preview = read_dataset_preview(handle, rows=2)
+        staged = stage_large_data_file(
+            handle,
+            chunk_rows=2,
+            compression="snappy",
+            s3_cache_dir=artifact_root / "cache",
+        )
+
+        assert preview.to_dict(orient="list") == {
+            "balance": [100, 200],
+            "default_status": [0, 1],
+        }
+        assert staged.active_path.suffix == ".xlsx"
+        assert staged.staging_metadata["detected_suffix"] == ".xlsx"
+        assert staged.staging_metadata["source_suffix"] == ".csv"
+
+
 def test_large_data_certification_policy_blocks_uncertified_models() -> None:
     certification = resolve_large_data_certification(
         ModelType.TOBIT_REGRESSION,
